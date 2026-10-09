@@ -42,3 +42,9 @@ TASKS.md and an active phase in ROADMAP.md.
 - In-game overlay (hudhook) for team display and a debug panel.
 - Team colour or marker on opposing players (reuse invader phantom tinting if the engine still has it?).
 - Rewards, rankings, balancing (PvP damage scaling via `vs_player_dmg_correct_rate_*` params).
+
+## Release and permissions
+- Before any public release, contact Yui (SC author) about a PvP mod that requires SC. SC terms forbid bundling or modifying it, and the author worries about takedowns and vanilla-matchmaking exposure. Users would install SC themselves from Nexus.
+
+## Known side effects to fix later
+- With team_type 29 the player cannot interact with sites of grace (no level-up menu), though passing through still applies the effect. Probably an interaction check on team type. Phase 3 candidate fixes: temporarily restore the team value while near or at a grace, or find the interaction check. (TC-004 run 4, 2026-10-09)

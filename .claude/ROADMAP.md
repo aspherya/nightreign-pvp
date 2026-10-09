@@ -37,8 +37,16 @@ mostly confirms it holds across a whole session.
    TECHNICAL_NOTES.md §1.
 6. **Death and revive in PvP:** NR's downed and revive logic assumes allies, so a PvP kill may leave a
    player stuck or end the run. This is tested in TC-003's tail.
+7. **SC reverts or blocks our team-type writes** (ER SC has a "minimalist anticheat" that reverts some runtime edits; NR SC hooks
+   `WorldChrManImp`). Detected by TC-004 under the SC profile. Mitigation: persist mode, SpEffect `change_team_type`
+   (A1), or EMEVD (A2).
+8. **Permission:** SC terms forbid bundling or modification. A public PvP release built on SC needs Yui's blessing. This doesn't affect private
+   development.
 
 ## Completed work
+
+- 2026-10-09: **H1 prerequisite proven solo:** ChrIns+0x74 controls hostility in NR (TC-004 run 2). The PvPvE candidate value is 29 (Indiscriminate), tested in FS-1.
+- 2026-10-09: SC+me3 launch path, singleton discovery, RTTI, local-player resolution, and the gated team write all verified.
 
 - 2026-10-09: environment survey, ecosystem research, stack proposal (ADR-001), task breakdown.
 

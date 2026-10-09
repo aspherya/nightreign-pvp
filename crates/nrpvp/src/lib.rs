@@ -2,8 +2,17 @@
 //!
 //! T-001 skeleton: on `DLL_PROCESS_ATTACH` spawn one thread (nothing else happens under the loader
 //! lock); that thread sets up file logging next to the DLL and writes the startup banner.
+//! T-006: the same thread then discovers engine singletons (see `game`).
+//! T-007a: it then recovers RTTI and, on F9 (see `hotkey`) and automatically, dumps ChrIns objects.
+//! T-008: team-type debug controls (see `game::team`, config in `nrpvp.toml`).
+//! T-013: in-game ImGui debug overlay (see `overlay`) and configurable hotkeys (see `hotkey`).
 
+mod config;
+mod game;
+mod hotkey;
 mod logging;
+mod logring;
+mod overlay;
 mod startup;
 mod sysinfo;
 

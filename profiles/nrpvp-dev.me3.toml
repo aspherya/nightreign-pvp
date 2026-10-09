@@ -11,7 +11,24 @@
 # Run scripts/build.ps1 first. The profile deliberately sets no start_online, so me3 keeps its default
 # of blocking the official matchmaking servers.
 
+# Save file (T-004b): this profile has no Seamless Co-op, so without `savefile` the game would write the
+# vanilla %APPDATA%\Nightreign\<steamid64>\NR0000.sl2. `savefile` is a bare FILE NAME (not a path):
+#   - docs/configuration-reference.md (me3 v0.11.0): "the file name of the savefile the game will use instead
+#     of the default one ... If a file with that name does not already exist, me3 copies and renames an
+#     existing base savefile. The default save directory is unchanged."
+#   - crates/cli/src/commands/launch.rs:279-297 (v0.11.0): rejects names containing < > : " / \ | ? * or
+#     control characters, so no directory part is possible.
+#   - crates/mod-host/src/savefile.rs:54-71 (v0.11.0): the override path is
+#     `current_path.with_file_name(name)`, i.e. the same <steamid64> folder as NR0000.sl2; if it does not
+#     exist, the existing NR0000.sl2 is COPIED (read only, never modified) to seed it. The matching `.bak`
+#     becomes `<name>.bak`.
+#   - crates/mod-protocol/src/game.rs:94-110 (v0.11.0): Nightreign is supported (dir %APPDATA%\Nightreign),
+#     and crates/mod-host/src/lib.rs:117 applies the override with no per-game gate.
+#   - crates/mod-host-assets/src/mapping/savefile.rs:42: only `.sl2` files under that dir are redirected,
+#     so SC's `.co2` saves are unaffected (the SC profile must NOT set `savefile`).
+# The new file is %APPDATA%\Nightreign\<steamid64>\nrpvp-dev.sl2. Do not put `savefile` in nrpvp-sc.me3.toml.
 profileVersion = "v1"
+savefile = "nrpvp-dev.sl2"
 
 [[supports]]
 game = "nightreign"

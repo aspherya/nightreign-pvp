@@ -13,6 +13,15 @@ crate-type = ["cdylib"]
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
 tracing-appender = "0.2"
+# T-006: pattern iterators for the FD4 singleton scan (we drive them ourselves over every executable
+# section; see src/game/singletons.rs). Deliberately NOT the eldenring crate (its RVA table panics on NR).
+from-singleton = "3.0.1"
+# T-008: nrpvp.toml config (see src/config.rs).
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
+# T-013: in-game ImGui overlay. Pinned to the version whose source was read (programmatic Hudhook builder API,
+# Direct3D 12 hooks only; no inject helpers). It pulls in imgui 0.12 and uses the same `windows` 0.62 as we do.
+hudhook = { version = "=0.9.3", default-features = false, features = ["dx12"] }
 
 [dependencies.windows]
 version = "0.62"
@@ -20,7 +29,10 @@ features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
     "Win32_System_ProcessStatus",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
 ]

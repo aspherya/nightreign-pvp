@@ -1,0 +1,62 @@
+# me3 profile: Seamless Co-op (nrsc.dll) + nrpvp.dll for ELDEN RING NIGHTREIGN (T-004).
+# The no-SC profile is nrpvp-dev.me3.toml. This one is the default for scripts/launch.ps1.
+#
+# Sources, all me3 v0.11.0 (https://github.com/garyttierney/me3/tree/v0.11.0). me3.help returned 403 to our
+# fetch tool, so the repo at the tag was used:
+#   - docs/configuration-reference.md + schemas/mod-profile.md: profileVersion, [[supports]], [[natives]],
+#     load_early (schema line: "Should this native be loaded before the game has initialized? Default: false"),
+#     initializer, load_before / load_after, optional. NOTE: schemas/mod-profile.md is stale; it omits the
+#     top-level `disable_arxan` / `patch_mem` keys that crates/mod-protocol/src/lib.rs (struct ModProfileV1,
+#     lines ~120-152) does accept.
+#   - crates/mod-protocol/src/native.rs: `struct Native` (field list and defaults), and `Dependency::id()`,
+#     which says a native's id for load_before/load_after is its DLL FILE NAME (e.g. "nrsc.dll").
+#   - crates/mod-protocol/src/dependency.rs: `Dependent { id, optional }`, both fields required, so
+#     load_after entries are written { id = "...", optional = false }.
+#   - crates/mod-host/src/host.rs `ModHost::load_native` (lines ~62-110): when a native has NO `initializer`,
+#     me3 looks up the export `modengine_ext_init` and calls it ("loaded native with me2 compatibility shim").
+#     When `initializer` IS set (delay or function), that lookup is skipped. So nrsc.dll gets NO initializer
+#     here. That is the "Support loading mods that rely on modengine_ext_init" path (CHANGELOG v0.5.0).
+#     me3 discussion #118 (June 2025) also warns that forcing initializer = { function = "modengine_ext_init" }
+#     will likely crash, because that function expects values to be set by the caller.
+#   - crates/mod-host/src/lib.rs `before_game_main` / `after_game_main` (lines ~155-228) and
+#     crates/cli/src/db/profile.rs `Profile::compile` (lines ~123-165): natives with load_early = true go to
+#     `early_natives` and are loaded in `before_game_main`; all other natives load later in `after_game_main`
+#     (after the game's SteamAPI_Init succeeds). Natives that have an initializer are loaded on a separate
+#     thread after those without one.
+#   - me3 issue #621 (v0.9.0, Dec 2025): "Unable to load into Nightreign ... me3 + Seamless Coop", error
+#     "Method "SignIn" is not available nrsc\cs\auto_control_api\auto_control_api.cpp 20". The maintainer says the
+#     latest SC update "has some different requirements on how it's loaded during game startup" and that
+#     PR #624 (load_early, shipped in v0.10.0 and so in 0.11.0) lets users configure it in their profile.
+#     That is the only documented reason to use load_early for SC. SC's own message ("make sure seamless co-op
+#     is loaded early") agrees. It is UNVERIFIED on this machine until the HUMAN test passes.
+#
+# `path` for a native may be relative to this file or absolute (crates/mod-protocol/src/package.rs
+# `ModFile::make_absolute` only rewrites relative paths). nrsc.dll is referenced IN PLACE by absolute path; we
+# never copy or modify SC files. Single-quoted TOML strings avoid backslash escaping.
+#
+# Deliberately NOT set:
+#   - start_online: the config reference says it "is not needed for Seamless Co-op". Default false keeps the
+#     official matchmaking servers blocked.
+#   - savefile: SC picks its own .co2 save by itself; a me3 savefile override would only add a variable.
+#   - disable_arxan: default is false (crates/cli/src/commands/launch.rs, `profile_options.disable_arxan
+#     .unwrap_or(false)`). Nothing in the me3 v0.11.0 docs or source says Nightreign natives need it; it is
+#     only forced on for Dark Souls 3 (host.rs `ModHost::new`). dearxan lists Nightreign as supported. Use it
+#     only as a troubleshooting step: uncomment the next line (or run me3 with --disable-arxan). See
+#     .claude/README.md "Troubleshooting".
+# disable_arxan = true
+
+profileVersion = "v1"
+
+[[supports]]
+game = "nightreign"
+
+# Seamless Co-op, loaded early, with no initializer so me3 calls its modengine_ext_init export.
+[[natives]]
+path = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\SeamlessCoop\nrsc.dll'
+load_early = true
+
+# Our mod: normal (non-early) load, explicitly ordered after SC. Early natives always load before non-early
+# ones (profile.rs: a non-early native may not be load_before an early one, but may be load_after one).
+[[natives]]
+path = '../dist/nrpvp.dll'
+load_after = [{ id = "nrsc.dll", optional = false }]

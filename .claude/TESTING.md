@@ -53,46 +53,91 @@ Then check SC's in-game items and menus for any PvP or friendly-fire option, and
 Expected: unknown. This test establishes the baseline. Record for each attack type: hit reaction yes/no,
 HP loss on B's screen, HP loss on A's view of B, and status buildup.
 
-### TC-003 — E-003 hostile team type matrix (decisive)
-Preconditions: T-004 and T-008 done; me3 launch on both PCs; both in the same expedition, standing close
-together, away from enemies.
-Matrix: for each candidate value `V` from T-007 (start with the value normal enemies use, then
-invader-like values if any exist):
+### TC-003 — E-003: PvP via team 29 (FS-1, decisive)
+Preconditions: both PCs launched through the me3 SC path with the same nrpvp build (compare the `VERSION.txt` from the friend kit) and the same nrsc.dll hash.
+Both are in the same **"Up to 6 players"** expedition (A hosts, B joins). Overlay visible on both. Stand together, away from enemies.
+Everyone uses **MARK** before and after each step (e.g. `MARK: row2 A hits B`).
+Each row: A attacks B 3 times (melee), then B attacks A 3 times. Record **on both screens**: lock-on possible? hit reaction? HP bar drops (attacker's view and victim's view)?
 
-| Row | A (attacker) sets self to V | B (victim) sets self to V | Result |
+| Row | On A's PC | On B's PC | Question answered |
 |---|---|---|---|
-| 1 | no | yes | |
-| 2 | yes | no | |
-| 3 | yes | yes | |
+| 0 | nothing (both team 2) | nothing | Baseline: is there friendly fire at all? (= TC-002) |
+| 1 | — | B sets **own** (LOCAL) to 29 | Victim-side flag enough? |
+| 2 | A sets **B's copy** (REMOTE) to 29 | B restores own to 2 | Attacker-side flag enough? |
+| 3 | A sets B's copy to 29 | B sets own to 29 | Both sides agree on B |
+| 4 | A sets **own** to 29 + B's copy to 29 | B sets own to 29 + A's copy to 29 | **Target config: free-for-all** (both hostile both ways) |
 
-Per row record: does A's lock-on target B; hit reaction on B (both screens); HP loss (both screens); status
-buildup; can B hit A back; how normal enemies now treat A and B; does the value persist through a dodge, death,
-revive, and the next day phase (watch the log); does anything crash or disconnect.
-After the matrix: if any row gives two-way damage, play 10 minutes of PvPvE and kill B. Check death,
-revive or downed state, and whether the expedition continues for both.
+Row 4 tail (≈10 min): both fight each other **and** nearby enemies (PvPvE). Then A kills B: record downed/death state, whether A can or must revive B,
+whether B respawns, whether the expedition continues for both, whether team values survive (watch the overlay). Then let the night circle close, if time allows.
+Pass criterion for H1: row 3 or row 4 gives two-way damage that is visible and consistent on both screens, without a disconnect.
 
 ### TC-004 — E-002: team type vs AI hostility (HUMAN-solo)
-Preconditions: T-008 done; me3 launch with SC + nrpvp; solo SC expedition; `nrpvp.log` open in a tail
-window (`Get-Content nrpvp.log -Wait`).
-Steps:
-1. Stand near a group of normal enemies, out of aggro range. Press F8 and record the enemies' team types.
-2. Press F5 (self → `hostile_team_type`). Walk into the group. Record: do they aggro? Do your attacks
-   still damage them? Can you lock on?
-3. Press F6 (restore). Repeat step 2.
-4. With F5 active and persist mode **off**, do each of the following and watch the log for resets: dodge
-   roll, take damage, die and get revived (or the solo equivalent), use the ultimate art, rest or level up
-   at a site of grace, fight the night-boss transition, day change.
-5. Repeat step 4 with persist mode **on** (F7). Note any stutter, crash, or odd AI behaviour.
-6. Optional, if T-007 found other candidate values: repeat steps 2–3 per value.
-Expected: unknown. This is what we're testing. Record the result for every step.
+Preconditions: T-008 and T-013 done; `./scripts/build.ps1`, then `./scripts/launch.ps1` (SC + nrpvp; never online); solo SC
+"Solo Mission"/expedition; `dist\nrpvp.log` open in a tail window (`Get-Content dist\nrpvp.log -Wait -Tail 50`). The game
+window must be in the foreground. **Delete `dist\nrpvp.toml` first** so the new defaults are regenerated (an old file works, but
+its missing keys fall back to the defaults silently). The effective config and `overlay: ...` lines are logged at startup.
+Primary method: the **overlay** (ImGui panel, Direct3D 12). It appears on the first rendered frame, visible, top-left; **Insert**
+hides/shows it (`overlay_toggle_key`). Panel: status block (WorldChrMan, local player, live `team_type`, captured original,
+selected candidate, persist + reverts in the last second, busy flag), one button per candidate (`6 Enemy`, `29 Indiscriminate`,
+`3 Black Ghost`, `16 Invader`, `13 Invader`, `2 White Ghost`, `1 Player`; the selected one is green): **click = select and write
+to the local player**, `Restore original`, a `Persist` checkbox, `Discovery` and `Histogram` buttons (disabled while busy) and a
+scrollable log tail. Clicks on the panel are not passed to the game while the cursor is over it. If the mouse cannot reach the
+panel in-game, use the hotkey fallback below and report it. Every overlay action also logs as before, with `overlay` in place of the
+key name (e.g. `T-008: overlay team write PlayerIns 0x... +0x74: N -> V (readback V)`).
+Fallback hotkeys (game window in the foreground; rebindable in `nrpvp.toml`; **F4 is not bound**, SC uses it for pause): F5 write
+the selected candidate, F6 restore, F7 persist on/off, F8 histogram, F9 discovery. Cycling the selection is overlay-only (set
+`hotkey_cycle` to bind it). The selection starts at the first candidate (6). All log lines start with `T-008:`.
+Steps (overlay; each has a hotkey equivalent):
+0. About 30 s after the world loads, check the panel's status block (or the log): `WorldChrMan: live`, `Local player: PlayerIns 0x...`
+   and `Local team_type (live): N`. The log has `ChrSet ... capacity=6`, six `entry[i] raw=...` lines, `local player = 0x...
+   (reason)` and `new WorldChrMan instance ...: local player 0x... team_type = N at start`. Record N. If the panel says
+   "not resolved" or the log says "ambiguous"/"NONE", stop and report: the candidate buttons and F5-F7 will refuse to write.
+1. Stand near a group of normal enemies, out of aggro range. Click `Histogram` (or F8) and record the histogram lines in the log
+   (`F8 all:` and the per-class lines); the enemies' value is expected to be 6, the local player's is the N from step 0.
+2. Click the first candidate button you want (do the candidates in list order, one at a time, steps 2-3 per candidate): expect
+   `overlay team write PlayerIns 0x... +0x74: N -> V (readback V)` and the status block showing `Local team_type (live): V`, with
+   `Original (captured): N`. Walk into the group. Record: do they aggro? Do your attacks still damage them? Can you lock on? Does
+   the watcher (`watch: PlayerIns ... team_type=`) show V staying put?
+3. Click `Restore original` (F6): expect `overlay restore ... V -> N (readback N)`. Repeat the observation from step 2 (they should
+   behave as vanilla again). Then go back to step 2 with the next candidate. (Persist must be OFF for the restore to stick.)
+4. With a candidate applied and persist mode **off**, do each of the following and watch the log tail / status block for resets (the
+   watcher prints a `watch:` line with `(was ... team_type=V)` whenever the value changes): dodge roll, take damage, die and get
+   revived (or the solo equivalent), use the ultimate art, rest or level up at a site of grace, fight the night-boss transition, day
+   change. A new area/map load logs `WorldChrMan instance is now ...` and a new `new WorldChrMan instance ...: local player ...
+   team_type = N at start` line, and the status block shows `Original (captured): none yet`: the applied value is probably gone
+   with the old objects; click the candidate again if so.
+5. Repeat step 4 with persist mode **on**: click a candidate once, then tick `Persist` (F7; log `persist ON`). The status block shows
+   `reverts in last 1 s: n   total: m`; the log prints `persist: N reverts in last 1 s, last seen value X` once per second only
+   while the game is reverting the value (silence means it holds). Note any stutter, crash, or odd AI behaviour. Untick `Persist`
+   (`persist OFF (K revert(s) counted)`), then `Restore original`.
+6. Repeat steps 2-3 for the remaining candidates (the card's list in order: 29, 3, 16, 13, 2, 1) and record, per value, the
+   behaviour of nearby enemies. Click `Histogram` once at the end to confirm it is back to normal after the restore.
+Also record for T-013: does Insert toggle the panel, does the mouse reach it, is the game stable for 10 minutes with it visible.
+Expected: unknown. This is what we're testing. Record the result for every step. Attach the `T-008:` lines of the log.
 
 ---
 
 ## 3. Results log
 
+### 2026-10-09 — TC-004 run 1 (Leonardo solo, SC profile)
+Only value **29** was tested (the instructions wrongly said to press F4 first; selection starts at 6). Write and restore worked; no visible
+change with 29 (expected: enemies were already hostile). Value 6 is untested. F4 triggers SC's "Paused". Local team = 2 in the expedition.
+
+### 2026-10-09 — TC-004 run 2 (Leonardo solo): **PASS, core**
+F5 2→6: no lock-on, enemies ignore the player and don't hit, the player deals no damage. F6 6→2: normal. No reverts in 25 s.
+Still open: persistence through death/revive, grace, night transition, day change (TC-004 steps 4–5), to be done with the T-013 overlay.
+
 (Newest first. Use the header format above.)
 
-_No results yet._
+### 2026-10-09 — TC-000 (stock SC launcher) and T-004 (me3 sc profile), Leonardo solo
+Pins: game 1.03.3 (1.3.3.0), SC v1.1.3 (in-game text; = Nexus "1.13"), me3 0.11.0, nrpvp 0.1.0.
+- **TC-000:** SC active. Choosing the "Up to 6 players" expedition while alone fails with a "failed to organize party"-style
+  error. Classified `SC-LIMITATION` [HYPOTHESIS: the multiplayer option needs &ge;2 lobby members]. "Solo Mission" not yet tried.
+- **T-004:** identical SC behaviour via `launch.ps1` (sc profile). me3 log: nrsc.dll in `early_natives`, "loaded native
+  with me2 compatibility shim"; nrpvp.dll loaded after it (`dist/nrpvp.log` 17:55Z, FileVersion 1.3.3.0); `NR0000.co2`
+  written. **SC under me3 on NR: VERIFIED.**
+- Side finding: the T-001 `dev` profile (no SC) wrote the **vanilla** `NR0000.sl2` (14:45). Offline only, but it should
+  use a separate save file. Follow-up in T-004b.
 
 ## 4. Known bugs
 
@@ -106,14 +151,14 @@ Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once i
 
 ## 6. Friend Session runbooks
 
-### FS-1 — First two-player session (≈90 min). **Status: draft. Opus finalises it at the readiness gate.**
-Preconditions: both PCs have the same SC build (compare `nrsc.dll` hash), the same `dist/nrpvp.dll` + `nrpvp.toml`
-(zip them from `dist/` for the friend), saves backed up on both, and a voice call for coordination.
-Leonardo hosts.
-1. **TC-001** through the me3 launch path (≈20 min). If me3 fails for the friend, fall back to the stock SC
-   launcher for TC-001/TC-002 and skip TC-003.
-2. **TC-002** friendly-fire probe (≈10 min).
-3. **T-007 FS check:** the partner's team type is visible in the log on both PCs (≈5 min).
-4. **TC-003** E-003 matrix (≈40 min), including the death/revive tail.
-5. Collect `nrpvp.log` from both PCs into `.claude/experiments/FS-1/` (rename to `host.log` / `client.log`).
-
+### FS-1 — First two-player session (≈90 min). **Status: final draft. Ready once T-015 and T-016 are done.**
+**Before the session (friend, ~15 min, async):** follow `README-FRIEND.md` in the friend kit: install me3 0.11.0 + SC v1.1.3, back up saves,
+run `launch-friend.ps1 -DryRun` and send Leonardo the printed nrsc.dll hash. Leonardo: rebuild, run `scripts/package-friend.ps1`, send the zip.
+**Session (voice call; Leonardo hosts):**
+1. Both launch (Leonardo `scripts\launch.ps1`, friend `launch-friend.ps1`). Check the overlays show; both press MARK "session start". (5 min)
+2. **TC-001:** A hosts "Up to 6 players", B joins, both start the expedition. Check that both see each other and enemies, and fight enemies together for 5 min. (15 min)
+   If B can't join via me3, B retries with the stock `nrsc_launcher.exe` (no nrpvp), and we do TC-001 + TC-002 only.
+3. **Panel check:** each overlay should list 2 players. Each person confirms which row is LOCAL (use "this is me" if UNKNOWN). Note both team values. (5 min)
+4. **TC-003** rows 0–4 + row 4 tail. (45 min)
+5. Quit. Both zip their kit or `dist` `logs\` folder; Leonardo copies both into `.claude/experiments/FS-1/` (`host/`, `client/`). (5 min)
+**Stop rules:** a crash or disconnect → note the time and MARK, relaunch, continue from the same row. Two crashes on the same row → skip it and move on.
