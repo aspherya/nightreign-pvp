@@ -39,7 +39,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hotkey::{self, Action};
 use crate::logring;
-use shared::{team_name, Command, Shared, Snapshot};
+use shared::{team_name, Command, PlayerRow, Role, Shared, Snapshot};
 
 /// How long to wait for the game window before giving up on the overlay.
 const WINDOW_WAIT: Duration = Duration::from_secs(600);
@@ -52,6 +52,7 @@ const MIN_WINDOW: (i32, i32) = (320, 240);
 const BUTTONS_PER_ROW: usize = 4;
 
 const GREEN: [f32; 4] = [0.20, 0.55, 0.25, 1.0];
+const GREEN_TEXT: [f32; 4] = [0.45, 0.90, 0.50, 1.0];
 const RED: [f32; 4] = [0.95, 0.35, 0.30, 1.0];
 const AMBER: [f32; 4] = [0.95, 0.75, 0.25, 1.0];
 const GREY: [f32; 4] = [0.60, 0.60, 0.60, 1.0];
@@ -181,6 +182,8 @@ struct OverlayApp {
     snap: Snapshot,
     log_seq: u64,
     log_lines: Vec<String>,
+    /// T-015: the MARK text box content.
+    mark_text: String,
 }
 
 impl OverlayApp {
@@ -193,12 +196,14 @@ impl OverlayApp {
             snap: Snapshot::default(),
             log_seq: u64::MAX,
             log_lines: Vec::new(),
+            mark_text: String::new(),
         }
     }
 
     fn send(&self, c: Command) {
+        let shown = format!("{c:?}");
         if !self.shared.push(c) {
-            tracing::warn!("overlay: command queue full; dropped {c:?}");
+            tracing::warn!("overlay: command queue full; dropped {shown}");
         }
     }
 
@@ -216,12 +221,14 @@ impl OverlayApp {
             env!("CARGO_PKG_VERSION")
         );
         ui.window(title)
-            .size([560.0, 660.0], Condition::FirstUseEver)
+            .size([640.0, 780.0], Condition::FirstUseEver)
             .position([16.0, 16.0], Condition::FirstUseEver)
             .bg_alpha(0.88)
             .build(|| {
                 self.status_block(ui);
                 self.controls(ui);
+                self.players_block(ui);
+                self.mark_block(ui);
                 self.log_tail(ui);
             });
     }
@@ -245,7 +252,13 @@ impl OverlayApp {
             ));
         }
         match s.local_player {
-            Some(p) => ui.text(format!("Local player: PlayerIns 0x{p:X}")),
+            Some(p) => {
+                ui.text(format!("Local player: PlayerIns 0x{p:X}"));
+                if !s.local_basis.is_empty() {
+                    ui.same_line();
+                    ui.text_colored(GREY, format!("({})", s.local_basis));
+                }
+            }
             None => {
                 ui.text_colored(AMBER, "Local player: not resolved");
                 if !s.vtables_known {
@@ -288,7 +301,7 @@ impl OverlayApp {
     fn controls(&self, ui: &Ui) {
         let s = &self.snap;
         ui.separator();
-        ui.text("Team candidates (click = select and write to the local player)");
+        ui.text("Team candidates (click = select and write to the local player; per-player buttons are below)");
         let can_write = s.local_player.is_some();
         {
             let _off = ui.begin_disabled(!can_write);
@@ -332,6 +345,109 @@ impl OverlayApp {
                 GREY,
                 "Candidate and Restore buttons need a resolved local player.",
             );
+        }
+    }
+
+    /// T-015: every PlayerIns of the ChrSet with its own buttons. Any row can be written, local or remote.
+    fn players_block(&self, ui: &Ui) {
+        let s = &self.snap;
+        ui.separator();
+        ui.text(format!("Players in the ChrSet: {}", s.players.len()));
+        if s.players.is_empty() {
+            ui.text_colored(GREY, "  none (WorldChrMan not live, or the ChrSet is empty while loading)");
+            return;
+        }
+        if s.players.len() > 1 && s.local_player.is_none() {
+            ui.text_colored(
+                AMBER,
+                "More than one PlayerIns and the local one is UNKNOWN: press \"This is me\" on your own row.",
+            );
+        }
+        for row in &s.players {
+            self.player_row(ui, row, &s.candidates);
+        }
+    }
+
+    fn player_row(&self, ui: &Ui, row: &PlayerRow, candidates: &[u8]) {
+        let id = ui.push_id_usize(row.addr);
+        ui.separator();
+        let (who, colour) = match row.role {
+            Role::Local => ("LOCAL".to_string(), GREEN_TEXT),
+            Role::Remote => (format!("REMOTE[{}]", row.index), AMBER),
+            Role::Unknown => (format!("UNKNOWN[{}]", row.index), RED),
+        };
+        ui.text_colored(colour, &who);
+        ui.same_line();
+        let team = row.team.map_or("?".to_string(), |t| format!("{t} ({})", team_name(t)));
+        ui.text(format!(
+            "entry[{}] 0x{:X}  team_type {team}  entry bytes +8/+9: {:02X} {:02X}",
+            row.index, row.addr, row.state8, row.state9
+        ));
+        if row.role == Role::Local {
+            ui.text_colored(GREY, format!("  decided by: {}", row.basis));
+        }
+        if row.original.is_some() || row.persist.is_some() {
+            ui.text_colored(
+                GREY,
+                format!(
+                    "  original {}   persist {}   reverts last 1 s {} total {}",
+                    row.original.map_or("-".to_string(), |o| o.to_string()),
+                    row.persist.map_or("off".to_string(), |p| p.to_string()),
+                    row.reverts_last_sec,
+                    row.reverts_total
+                ),
+            );
+        }
+        if ui.button("This is me") {
+            self.send(Command::SetLocalOverride { addr: row.addr });
+        }
+        if row.chosen {
+            ui.same_line();
+            if ui.button("Clear choice") {
+                self.send(Command::ClearLocalOverride);
+            }
+        }
+        for (k, &v) in candidates.iter().enumerate() {
+            ui.same_line();
+            if ui.button_with_size(format!("{v}##c{k}"), [38.0, 0.0]) {
+                self.send(Command::SetFor { addr: row.addr, value: v });
+            }
+            if ui.is_item_hovered() {
+                ui.tooltip_text(format!("write {v} ({}) to this player", team_name(v)));
+            }
+        }
+        {
+            let _off = ui.begin_disabled(row.original.is_none());
+            if ui.button("Restore") {
+                self.send(Command::RestoreFor { addr: row.addr });
+            }
+        }
+        ui.same_line();
+        let mut persist = row.persist.is_some();
+        if ui.checkbox("Persist", &mut persist) {
+            self.send(Command::PersistFor { addr: row.addr, on: persist });
+        }
+        id.pop();
+    }
+
+    /// T-015: the MARK text box (Enter submits) and button. While the box is focused ImGui wants text input
+    /// and `message_filter` keeps the keyboard away from the game.
+    fn mark_block(&mut self, ui: &Ui) {
+        ui.separator();
+        ui.text(format!(
+            "MARK note ({} logged; hotkey logs one without text)",
+            self.snap.marks
+        ));
+        let entered = ui
+            .input_text("##mark_text", &mut self.mark_text)
+            .hint("what just happened? Enter = MARK")
+            .enter_returns_true(true)
+            .build();
+        ui.same_line();
+        let clicked = ui.button("MARK");
+        if entered || clicked {
+            let text = std::mem::take(&mut self.mark_text);
+            self.send(Command::Mark(Some(text)));
         }
     }
 
@@ -399,17 +515,29 @@ impl ImguiRenderLoop for OverlayApp {
     }
 
     fn message_filter(&self, io: &Io) -> MessageFilter {
-        let mut f = MessageFilter::empty();
-        if self.visible && !self.broken {
-            if io.want_capture_mouse {
-                f |= MessageFilter::InputMouse | MessageFilter::InputRaw;
-            }
-            if io.want_text_input {
-                f |= MessageFilter::InputKeyboard;
-            }
-        }
-        f
+        input_filter(
+            self.visible,
+            self.broken,
+            io.want_capture_mouse,
+            io.want_text_input,
+        )
     }
+}
+
+/// Which input the game must not see. Mouse and raw input are blocked while the panel is up and ImGui
+/// wants the mouse; the keyboard is blocked only while a text box is focused (`want_text_input`), so the
+/// game keeps its keys the rest of the time (T-015).
+fn input_filter(visible: bool, broken: bool, want_mouse: bool, want_text: bool) -> MessageFilter {
+    let mut f = MessageFilter::empty();
+    if visible && !broken {
+        if want_mouse {
+            f |= MessageFilter::InputMouse | MessageFilter::InputRaw;
+        }
+        if want_text {
+            f |= MessageFilter::InputKeyboard;
+        }
+    }
+    f
 }
 
 #[cfg(test)]
@@ -433,6 +561,52 @@ mod tests {
             reverts_total: 4,
             busy: false,
             note: String::new(),
+            players: vec![
+                PlayerRow {
+                    index: 1,
+                    addr: 0x2_0000,
+                    role: Role::Local,
+                    basis: "only PlayerIns in the ChrSet".to_string(),
+                    chosen: false,
+                    team: Some(2),
+                    state8: 4,
+                    state9: 4,
+                    original: Some(2),
+                    persist: Some(29),
+                    reverts_last_sec: 0,
+                    reverts_total: 2,
+                },
+                PlayerRow {
+                    index: 3,
+                    addr: 0x3_0000,
+                    role: Role::Remote,
+                    basis: "not the local player".to_string(),
+                    chosen: false,
+                    team: None,
+                    state8: 4,
+                    state9: 2,
+                    original: None,
+                    persist: None,
+                    reverts_last_sec: 0,
+                    reverts_total: 0,
+                },
+                PlayerRow {
+                    index: 4,
+                    addr: 0x4_0000,
+                    role: Role::Unknown,
+                    basis: "UNKNOWN".to_string(),
+                    chosen: true,
+                    team: Some(30),
+                    state8: 0,
+                    state9: 0,
+                    original: Some(30),
+                    persist: None,
+                    reverts_last_sec: 0,
+                    reverts_total: 0,
+                },
+            ],
+            local_basis: "only PlayerIns in the ChrSet".to_string(),
+            marks: 2,
         }
     }
 
@@ -498,9 +672,45 @@ mod tests {
         );
         app.visible = false;
         assert_eq!(app.message_filter(ctx.io()).bits(), 0);
+        // Keyboard: blocked from the game only while a text box is focused.
+        ctx.io_mut().want_capture_mouse = false;
+        ctx.io_mut().want_text_input = true;
+        app.visible = true;
+        app.broken = false;
+        assert_eq!(
+            app.message_filter(ctx.io()).bits(),
+            MessageFilter::InputKeyboard.bits()
+        );
+        ctx.io_mut().want_capture_mouse = true;
+        assert_eq!(
+            app.message_filter(ctx.io()).bits(),
+            (MessageFilter::InputMouse | MessageFilter::InputRaw | MessageFilter::InputKeyboard).bits()
+        );
+        ctx.io_mut().want_text_input = false;
+        ctx.io_mut().want_capture_mouse = true;
+        app.visible = false;
+        assert_eq!(app.message_filter(ctx.io()).bits(), 0);
         app.visible = true;
         app.broken = true;
         assert_eq!(app.message_filter(ctx.io()).bits(), 0);
+    }
+
+    #[test]
+    fn keyboard_reaches_the_game_unless_a_text_box_is_focused() {
+        let kb = MessageFilter::InputKeyboard.bits();
+        let mouse = (MessageFilter::InputMouse | MessageFilter::InputRaw).bits();
+        // (visible, broken, want_mouse, want_text) -> expected bits
+        let cases = [
+            (true, false, false, false, 0),
+            (true, false, true, false, mouse),
+            (true, false, false, true, kb),
+            (true, false, true, true, mouse | kb),
+            (false, false, true, true, 0),
+            (true, true, true, true, 0),
+        ];
+        for (v, b, m, t, want) in cases {
+            assert_eq!(input_filter(v, b, m, t).bits(), want, "{v} {b} {m} {t}");
+        }
     }
 
     #[test]

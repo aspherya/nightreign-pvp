@@ -555,6 +555,7 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
         Action::Persist => Some(Command::TogglePersist),
         Action::Histogram => Some(Command::RunHistogram),
         Action::Discovery => Some(Command::RunDiscovery),
+        Action::Mark => Some(Command::Mark(None)),
         Action::Cycle | Action::ToggleOverlay => None,
     }
 }
@@ -572,6 +573,12 @@ fn run_command(
         Command::Set(v) => team.set_and_write(v, src),
         Command::Restore => team.restore(src),
         Command::TogglePersist => team.toggle_persist(src),
+        Command::SetFor { addr, value } => team.set_for(addr, value, src),
+        Command::RestoreFor { addr } => team.restore_for(addr, src),
+        Command::PersistFor { addr, on } => team.set_persist_for(addr, on, src),
+        Command::SetLocalOverride { addr } => team.set_local_override(addr, src),
+        Command::ClearLocalOverride => team.clear_local_override(src),
+        Command::Mark(text) => team.mark(text.as_deref()),
         Command::RunDiscovery => {
             if wcm_live {
                 if let Err(ms) = disc.start(wcm_inst, src) {
@@ -789,6 +796,10 @@ mod command_tests {
             Some(Command::RunDiscovery)
         );
         // Cycle only changes the selection; the overlay toggle belongs to the render thread.
+        assert_eq!(
+            hotkey_command(Action::Mark, &team),
+            Some(Command::Mark(None))
+        );
         assert_eq!(hotkey_command(Action::Cycle, &team), None);
         assert_eq!(hotkey_command(Action::ToggleOverlay, &team), None);
     }
@@ -805,6 +816,13 @@ mod command_tests {
             Command::TogglePersist,
             Command::RunDiscovery,
             Command::RunHistogram,
+            Command::SetFor { addr: 0x10, value: 6 },
+            Command::RestoreFor { addr: 0x10 },
+            Command::PersistFor { addr: 0x10, on: true },
+            Command::SetLocalOverride { addr: 0x10 },
+            Command::ClearLocalOverride,
+            Command::Mark(Some("x".to_string())),
+            Command::Mark(None),
         ] {
             run_command(cmd, "test", &mut team, &mut disc, 0);
         }

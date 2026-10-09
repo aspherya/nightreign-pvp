@@ -12,6 +12,7 @@ mod game;
 mod hotkey;
 mod logging;
 mod logring;
+mod mark;
 mod overlay;
 mod startup;
 mod sysinfo;

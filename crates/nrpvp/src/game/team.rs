@@ -1660,33 +1660,6 @@ mod tests {
     }
 
     #[test]
-    fn local_player_choice() {
-        let (l, why) = choose_local(&[], None);
-        assert_eq!(l, None);
-        assert!(why.contains("no valid PlayerIns"));
-
-        let (l, why) = choose_local(&[0x100], Some(0x100));
-        assert_eq!(l, Some(0x100));
-        assert!(why.contains("exactly one") && why.contains("also the PlayerIns"));
-        let (l, why) = choose_local(&[0x100], Some(0x200));
-        assert_eq!(l, Some(0x100));
-        assert!(why.contains("different PlayerIns 0x200"));
-        let (l, _) = choose_local(&[0x100], None);
-        assert_eq!(l, Some(0x100));
-
-        // Several: prefer the one the +0x1C820 array references.
-        let (l, why) = choose_local(&[0x100, 0x200, 0x300], Some(0x200));
-        assert_eq!(l, Some(0x200));
-        assert!(why.contains("3 valid") && why.contains("+0x1C820"));
-        // Several and no match: refuse.
-        let (l, why) = choose_local(&[0x100, 0x200], Some(0x999));
-        assert_eq!(l, None);
-        assert!(why.contains("ambiguous"));
-        let (l, _) = choose_local(&[0x100, 0x200], None);
-        assert_eq!(l, None);
-    }
-
-    #[test]
     fn candidate_cycling_wraps_and_reports_position() {
         let mut c = Cycler::new(&[6, 29, 3]);
         assert_eq!((c.current(), c.position()), (6, (1, 3)));
@@ -1786,11 +1759,11 @@ mod tests {
         assert_eq!(w.update(0x20, a), Some(None)); // other address is independent
         w.clear();
         assert_eq!(w.update(0x10, b), Some(None));
-        let line = watch_line(0x10, true, b, Some(a));
+        let line = watch_line(0x10, "REMOTE[2]", b, Some(a));
         assert!(
-            line.contains("[local]") && line.contains("team_type=6") && line.contains("was id=1")
+            line.contains("who=REMOTE[2]") && line.contains("team_type=6") && line.contains("was id=1")
         );
-        assert!(!watch_line(0x10, false, b, None).contains("was"));
+        assert!(!watch_line(0x10, "LOCAL", b, None).contains("was"));
     }
 
     #[test]
@@ -1809,14 +1782,146 @@ mod tests {
         assert_eq!(fmt_counts(&BTreeMap::new()), "");
     }
 
+    // ---- T-015: the local-player decision on synthetic multi-player data ----
+
+    /// A probe with the given decisive signal values (names are positional stand-ins).
+    fn probe(addr: usize, index: usize, vals: &[u64]) -> PlayerProbe {
+        const NAMES: [&str; 4] = ["sigA", "sigB", "sigC", "sigD"];
+        PlayerProbe {
+            addr,
+            index,
+            signals: vals
+                .iter()
+                .enumerate()
+                .map(|(i, &v)| Signal {
+                    name: NAMES[i],
+                    value: Some(v),
+                    hex: false,
+                    decisive: true,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn odd_one_out_needs_three_players_and_an_exact_one_vs_rest_split() {
+        let v = |a: &[(usize, u64)]| a.iter().map(|&(x, y)| (x, Some(y))).collect::<Vec<_>>();
+        // Exactly one differs, the rest agree.
+        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 9)])), Some(3));
+        assert_eq!(odd_one_out(&v(&[(1, 9), (2, 5), (3, 5), (4, 5)])), Some(1));
+        // Two players: cannot tell which is the odd one.
+        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 9)])), None);
+        // All equal, all distinct, or a 2-vs-2 split: no single odd one.
+        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 5)])), None);
+        assert_eq!(odd_one_out(&v(&[(1, 1), (2, 2), (3, 3)])), None);
+        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 9), (4, 9)])), None);
+        // Any unreadable value disables the signal.
+        assert_eq!(
+            odd_one_out(&[(1, Some(5)), (2, None), (3, Some(9))]),
+            None
+        );
+        assert_eq!(odd_one_out(&[]), None);
+    }
+
+    #[test]
+    fn local_decision_with_zero_one_and_two_players() {
+        let d = decide_local(&[], None);
+        assert_eq!((d.local, &d.basis), (None, &Basis::NoPlayers));
+
+        // Exactly one PlayerIns is LOCAL, whatever its signals say.
+        let d = decide_local(&[probe(0x100, 3, &[1, 2])], None);
+        assert_eq!((d.local, &d.basis), (Some(0x100), &Basis::OnlyPlayer));
+
+        // Two players: UNKNOWN, even if a signal differs; the HUMAN's choice resolves it.
+        let two = [probe(0x100, 0, &[1]), probe(0x200, 1, &[2])];
+        let d = decide_local(&two, None);
+        assert_eq!(d.local, None);
+        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("this is me")));
+        let d = decide_local(&two, Some(0x200));
+        assert_eq!((d.local, &d.basis), (Some(0x200), &Basis::Chosen));
+    }
+
+    #[test]
+    fn local_decision_suggests_the_odd_one_out_of_three_or_more() {
+        // sigA splits C from A and B; sigB is the same everywhere.
+        let ps = [
+            probe(0xA, 0, &[5, 7]),
+            probe(0xB, 1, &[5, 7]),
+            probe(0xC, 2, &[9, 7]),
+        ];
+        let d = decide_local(&ps, None);
+        assert_eq!(d.local, Some(0xC));
+        assert_eq!(d.basis, Basis::Heuristic("sigA".to_string()));
+        assert_eq!(d.basis.label(), "heuristic: sigA");
+
+        // Two signals pointing at the same player are both named.
+        let ps = [
+            probe(0xA, 0, &[5, 1]),
+            probe(0xB, 1, &[5, 1]),
+            probe(0xC, 2, &[9, 0]),
+        ];
+        let d = decide_local(&ps, None);
+        assert_eq!(d.local, Some(0xC));
+        assert_eq!(d.basis, Basis::Heuristic("sigA, sigB".to_string()));
+
+        // Signals that point at different players disagree: no suggestion.
+        let ps = [
+            probe(0xA, 0, &[9, 1]),
+            probe(0xB, 1, &[5, 0]),
+            probe(0xC, 2, &[5, 1]),
+        ];
+        let d = decide_local(&ps, None);
+        assert_eq!(d.local, None);
+        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("disagree")));
+
+        // No signal splits one-vs-rest (all distinct / all equal): UNKNOWN.
+        let ps = [
+            probe(0xA, 0, &[1, 4]),
+            probe(0xB, 1, &[2, 4]),
+            probe(0xC, 2, &[3, 4]),
+        ];
+        let d = decide_local(&ps, None);
+        assert_eq!(d.local, None);
+        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("no candidate signal")));
+        // The HUMAN's choice beats any suggestion.
+        let ps = [
+            probe(0xA, 0, &[5]),
+            probe(0xB, 1, &[5]),
+            probe(0xC, 2, &[9]),
+        ];
+        let d = decide_local(&ps, Some(0xA));
+        assert_eq!((d.local, &d.basis), (Some(0xA), &Basis::Chosen));
+        // A stale choice (not one of the players) is ignored.
+        let d = decide_local(&ps, Some(0xDEAD));
+        assert_eq!(d.local, Some(0xC));
+        // Log-only signals never decide.
+        let mut ps = [
+            probe(0xA, 0, &[5]),
+            probe(0xB, 1, &[5]),
+            probe(0xC, 2, &[9]),
+        ];
+        for p in &mut ps {
+            p.signals[0].decisive = false;
+        }
+        assert_eq!(decide_local(&ps, None).local, None);
+    }
+
+    #[test]
+    fn who_labels() {
+        assert_eq!(who_label(Role::Local, 2), "LOCAL");
+        assert_eq!(who_label(Role::Remote, 3), "REMOTE[3]");
+        assert_eq!(who_label(Role::Unknown, 0), "UNKNOWN[0]");
+    }
+
     // ---- resolve() and the gated write on fake memory ----
 
     const VT_PLAYER: usize = 0x7FF6_0000_0000;
     const VT_ENEMY: usize = 0x7FF6_0000_1000;
 
-    /// A fake object: 0x100 bytes, first qword = vtable, byte 0x74 = team.
+    /// A fake object: 0x800 bytes (so every candidate offset is inside it), first qword = vtable, byte
+    /// 0x74 = team.
     fn fake_obj(vt: usize, team: u8) -> Vec<u8> {
-        let mut v = vec![0u8; 0x100];
+        let mut v = vec![0u8; 0x800];
         v[..8].copy_from_slice(&(vt as u64).to_le_bytes());
         v[CHR_TEAM] = team;
         v[CHR_ID..CHR_ID + 4].copy_from_slice(&1234u32.to_le_bytes());
@@ -1827,32 +1932,38 @@ mod tests {
         PlayerVtables::from_set([VT_PLAYER].into_iter().collect())
     }
 
-    /// A fake WorldChrMan big enough for +0x1C820, with a ChrSet at +0x9A40 of the given capacity.
-    fn fake_wcm(capacity: u32, entries: &[u8], array: &[u64]) -> (Vec<u8>, Vec<u8>, Vec<u64>) {
+    /// Entries buffer with explicit state bytes (+8, +9), padded so reads stay inside the allocation.
+    fn entries_with_state(ptrs: &[u64], state: &[(u8, u8)]) -> Vec<u8> {
+        let mut b = Vec::new();
+        for (i, p) in ptrs.iter().enumerate() {
+            let (s8, s9) = state.get(i).copied().unwrap_or((4, 4));
+            b.extend_from_slice(&p.to_le_bytes());
+            b.extend_from_slice(&[s8, s9, 0, 0, 0, 0, 0, 0]);
+        }
+        b.resize(0x100, 0);
+        b
+    }
+
+    /// A fake WorldChrMan big enough for +0x9A40 with a ChrSet of the given capacity. The entries buffer
+    /// is returned too and must stay alive.
+    fn fake_wcm(capacity: u32, entries: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let mut w = vec![0u8; 0x1D000];
         w[WCM_CHRSET + CHRSET_CAPACITY..WCM_CHRSET + CHRSET_CAPACITY + 4]
             .copy_from_slice(&capacity.to_le_bytes());
         let e = entries.to_vec();
         w[WCM_CHRSET + CHRSET_ENTRIES..WCM_CHRSET + CHRSET_ENTRIES + 8]
             .copy_from_slice(&(e.as_ptr() as u64).to_le_bytes());
-        let a = array.to_vec();
-        w[WCM_MAIN_ARRAY..WCM_MAIN_ARRAY + 8].copy_from_slice(&(a.as_ptr() as u64).to_le_bytes());
-        (w, e, a)
+        (w, e)
     }
 
     #[test]
-    fn resolve_finds_the_local_player_among_entries() {
+    fn resolve_finds_the_players_among_entries() {
         let player = fake_obj(VT_PLAYER, 30);
         let enemy = fake_obj(VT_ENEMY, 6);
         let pa = player.as_ptr() as u64;
-        let mut entries = entry_bytes(&[0, pa, enemy.as_ptr() as u64, 0, 0, 0]);
-        entries.resize(0x100, 0); // padding so reads stay inside our allocation
-        let (wcm, _e, _a) = fake_wcm(
-            6,
-            &entries,
-            &[0, 0, pa, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        );
-        let r = resolve(wcm.as_ptr() as usize, &vts()).expect("resolves");
+        let entries = entries_with_state(&[0, pa, enemy.as_ptr() as u64, 0, 0, 0], &[]);
+        let (wcm, _e) = fake_wcm(6, &entries);
+        let r = resolve(wcm.as_ptr() as usize, &vts(), None).expect("resolves");
         assert_eq!(r.capacity, 6);
         assert_eq!(r.entries.len(), 6);
         let kinds: Vec<EntryKind> = r.entries.iter().map(|e| e.kind).collect();
@@ -1868,37 +1979,111 @@ mod tests {
             ]
         );
         assert_eq!(r.players, vec![pa as usize]);
-        assert_eq!(r.array_player, Some(pa as usize));
+        // The only PlayerIns is LOCAL; its ChrSet entry index is 1.
         assert_eq!(r.local, Some(pa as usize));
+        assert_eq!(r.basis, Basis::OnlyPlayer);
+        assert_eq!(r.who(pa as usize).as_deref(), Some("LOCAL"));
+        assert_eq!(r.who(enemy.as_ptr() as usize), None);
 
-        // The log prints every raw entry the first time, nothing when unchanged.
+        // The log prints every raw entry and the evidence for the player the first time, nothing when
+        // unchanged.
         let mut lg = ResolveLog::default();
         let lines = lg.lines(&r, 0, (0, 0));
-        assert_eq!(lines.iter().filter(|l| l.contains("entry[")).count(), 6);
-        assert!(lines.iter().any(|l| l.contains("local player = 0x")));
+        assert_eq!(lines.iter().filter(|l| l.contains("entry[")).count(), 6 + 1);
+        let ev: Vec<&String> = lines.iter().filter(|l| l.contains("evidence")).collect();
+        assert_eq!(ev.len(), 1);
+        assert!(ev[0].contains("UNVERIFIED") && ev[0].contains("net_authority@+0x1EC"));
+        assert!(ev[0].contains("04 04"), "the raw entry bytes are in the evidence");
+        assert!(lines.iter().any(|l| l.contains("local player = ")));
+        assert!(
+            !lines.iter().any(|l| l.contains("1C820")),
+            "the old +0x1C820 rule and its log lines are gone"
+        );
         assert!(lg.lines(&r, 10, (0, 0)).is_empty());
     }
 
     #[test]
-    fn resolve_refuses_bad_capacity_and_pointer() {
-        let (wcm, _e, _a) = fake_wcm(0, &[0u8; 0x100], &[0; 16]);
+    fn resolve_with_several_players_suggests_chooses_and_labels_rows() {
+        // Three PlayerIns; the third has a different chr_type (+0x70), the others share one.
+        let mut a = fake_obj(VT_PLAYER, 2);
+        let mut b = fake_obj(VT_PLAYER, 2);
+        let mut c = fake_obj(VT_PLAYER, 2);
+        for o in [&mut a, &mut b] {
+            o[CHR_TYPE70..CHR_TYPE70 + 4].copy_from_slice(&5u32.to_le_bytes());
+        }
+        c[CHR_TYPE70..CHR_TYPE70 + 4].copy_from_slice(&13u32.to_le_bytes());
+        let (pa, pb, pc) = (
+            a.as_ptr() as usize,
+            b.as_ptr() as usize,
+            c.as_ptr() as usize,
+        );
+        // Entry 0 is empty so the ChrSet indices are 1, 2, 3.
+        let entries = entries_with_state(&[0, pa as u64, pb as u64, pc as u64], &[]);
+        let (wcm, _e) = fake_wcm(4, &entries);
+        let w = wcm.as_ptr() as usize;
+
+        let r = resolve(w, &vts(), None).expect("resolves");
+        assert_eq!(r.players, vec![pa, pb, pc]);
+        assert_eq!(r.local, Some(pc), "the odd one out is suggested");
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts()).err(),
+            r.basis,
+            Basis::Heuristic("chr_type@+0x70[ER +0x68]".to_string())
+        );
+        assert_eq!(r.who(pc).as_deref(), Some("LOCAL"));
+        assert_eq!(r.who(pa).as_deref(), Some("REMOTE[1]"));
+        assert_eq!(r.who(pb).as_deref(), Some("REMOTE[2]"));
+        assert_eq!(r.role_of(pa), Role::Remote);
+
+        // The HUMAN overrides the suggestion.
+        let r = resolve(w, &vts(), Some(pa)).expect("resolves");
+        assert_eq!(r.local, Some(pa));
+        assert_eq!(r.basis, Basis::Chosen);
+        assert_eq!(r.who(pc).as_deref(), Some("REMOTE[3]"));
+        let rows = r.rows(Some(pa), &mut |addr| {
+            Some(unsafe { *((addr + CHR_TEAM) as *const u8) })
+        });
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows.iter().map(|x| (x.index, x.role)).collect::<Vec<_>>(),
+            vec![(1, Role::Local), (2, Role::Remote), (3, Role::Remote)]
+        );
+        assert!(rows[0].chosen && !rows[1].chosen);
+        assert_eq!((rows[0].state8, rows[0].state9, rows[0].team), (4, 4, Some(2)));
+
+        // When nothing splits them the players are UNKNOWN, not guessed.
+        let mut d = fake_obj(VT_PLAYER, 2);
+        d[CHR_TYPE70] = 5;
+        let (pa2, pb2, pd) = (pa, pb, d.as_ptr() as usize);
+        // a and b equal (chr_type 5), d also 5: all equal on every signal.
+        let entries = entries_with_state(&[pa2 as u64, pb2 as u64, pd as u64], &[]);
+        let (wcm2, _e2) = fake_wcm(3, &entries);
+        let r = resolve(wcm2.as_ptr() as usize, &vts(), None).expect("resolves");
+        assert_eq!(r.local, None);
+        assert!(matches!(r.basis, Basis::Unknown(_)));
+        assert_eq!(r.who(pa2).as_deref(), Some("UNKNOWN[0]"));
+        assert_eq!(r.role_of(pb2), Role::Unknown);
+    }
+
+    #[test]
+    fn resolve_refuses_bad_capacity_and_pointer() {
+        let (wcm, _e) = fake_wcm(0, &[0u8; 0x100]);
+        assert_eq!(
+            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
             Some(ResolveError::BadCapacity(0))
         );
-        let (wcm, _e, _a) = fake_wcm(17, &[0u8; 0x100], &[0; 16]);
+        let (wcm, _e) = fake_wcm(17, &[0u8; 0x100]);
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts()).err(),
+            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
             Some(ResolveError::BadCapacity(17))
         );
         let mut wcm = vec![0u8; 0x1D000];
         wcm[WCM_CHRSET + CHRSET_CAPACITY] = 6; // entries pointer left null
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts()).err(),
+            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
             Some(ResolveError::BadEntriesPtr(0))
         );
         assert_eq!(
-            resolve(0, &vts()).err(),
+            resolve(0, &vts(), None).err(),
             Some(ResolveError::HeaderUnreadable)
         );
     }
@@ -1907,17 +2092,15 @@ mod tests {
     fn resolve_log_reports_changes_and_coalesces_bursts() {
         let player = fake_obj(VT_PLAYER, 30);
         let pa = player.as_ptr() as u64;
-        let mut entries = entry_bytes(&[pa, 0]);
-        entries.resize(0x100, 0);
-        let (wcm, e, _a) = fake_wcm(2, &entries, &[pa]);
-        let _ = &e;
+        let entries = entries_with_state(&[pa, 0], &[]);
+        let (wcm, _e) = fake_wcm(2, &entries);
         let mut lg = ResolveLog::default();
-        let r1 = resolve(wcm.as_ptr() as usize, &vts()).expect("ok");
+        let r1 = resolve(wcm.as_ptr() as usize, &vts(), None).expect("ok");
         assert!(!lg.lines(&r1, 0, (0, 0)).is_empty());
         assert!(lg.lines(&r1, 1000, (0, 0)).is_empty());
-        // Change the second qword of entry 0 (a status field): within the gap it is coalesced...
-        let mut r2 = resolve(wcm.as_ptr() as usize, &vts()).expect("ok");
-        r2.entries[0].raw.raw[8] ^= 0xFF;
+        // The entry state byte +9 blinks 04 -> 02 (seen in TC-004): within the gap it is coalesced...
+        let mut r2 = resolve(wcm.as_ptr() as usize, &vts(), None).expect("ok");
+        r2.entries[0].raw.raw[9] = 0x02;
         assert!(lg.lines(&r2, 2000, (0, 0)).is_empty());
         // ...and reported (with the count) once the gap has passed.
         let lines = lg.lines(&r2, 6000, (0, 0));
@@ -1985,13 +2168,201 @@ mod tests {
         assert_eq!(t.total_reverts(), 2);
     }
 
+    // ---- T-015: per-player writes, per-player persist, MARK, "this is me" on fake memory ----
+
+    /// Three fake PlayerIns (team 2) in entries 1..=3 of a 4-slot ChrSet; the third has a different
+    /// chr_type so it is suggested as LOCAL.
+    struct Fake {
+        objs: Vec<Vec<u8>>,
+        wcm: Vec<u8>,
+        _entries: Vec<u8>,
+    }
+
+    impl Fake {
+        fn new() -> Fake {
+            let mut objs: Vec<Vec<u8>> = (0..3).map(|_| fake_obj(VT_PLAYER, 2)).collect();
+            for (i, o) in objs.iter_mut().enumerate() {
+                let t: u32 = if i == 2 { 13 } else { 5 };
+                o[CHR_TYPE70..CHR_TYPE70 + 4].copy_from_slice(&t.to_le_bytes());
+            }
+            let ptrs: Vec<u64> = std::iter::once(0)
+                .chain(objs.iter().map(|o| o.as_ptr() as u64))
+                .collect();
+            let entries = entries_with_state(&ptrs, &[]);
+            let (wcm, e) = fake_wcm(4, &entries);
+            Fake {
+                objs,
+                wcm,
+                _entries: e,
+            }
+        }
+
+        fn addr(&self, i: usize) -> usize {
+            self.objs[i].as_ptr() as usize
+        }
+
+        fn team(&self, i: usize) -> u8 {
+            self.objs[i][CHR_TEAM]
+        }
+
+        fn ctl(&self) -> TeamCtl {
+            let mut ctl = TeamCtl::new(&Config::default(), 0, 0);
+            ctl.set_instance(self.wcm.as_ptr() as usize);
+            ctl.vts = vts();
+            ctl
+        }
+    }
+
+    #[test]
+    fn writes_go_to_any_valid_playerins_and_are_gated() {
+        let f = Fake::new();
+        let mut ctl = f.ctl();
+        let (a, b, c) = (f.addr(0), f.addr(1), f.addr(2));
+
+        // A remote row button writes only that player's byte; the selected candidate is untouched.
+        ctl.set_for(a, 29, "overlay");
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 2, 2));
+        assert_eq!(ctl.selected(), 6);
+        assert_eq!(ctl.originals.get(&a), Some(&2));
+        // The global candidate button targets the local player (the suggested third one).
+        ctl.set_and_write(3, "overlay");
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 2, 3));
+        assert_eq!(ctl.originals.get(&c), Some(&2));
+        // Restore per player.
+        ctl.restore_for(a, "overlay");
+        assert_eq!(f.team(0), 2);
+        ctl.restore("overlay");
+        assert_eq!(f.team(2), 2);
+        // Restoring a player that was never written changes nothing.
+        ctl.restore_for(b, "overlay");
+        assert_eq!(f.team(1), 2);
+
+        // A stale / foreign address is refused and nothing is written.
+        let mut other = fake_obj(VT_PLAYER, 7);
+        ctl.set_for(other.as_mut_ptr() as usize, 29, "overlay");
+        assert_eq!(other[CHR_TEAM], 7);
+        ctl.set_for(0, 29, "overlay");
+        ctl.set_for(0x10, 29, "overlay");
+        // Without vtables nothing is written either.
+        ctl.vts = PlayerVtables::default();
+        ctl.set_for(b, 29, "overlay");
+        assert_eq!(f.team(1), 2);
+    }
+
+    #[test]
+    fn this_is_me_is_kept_until_the_worldchrman_changes() {
+        let f = Fake::new();
+        let mut ctl = f.ctl();
+        let (a, c) = (f.addr(0), f.addr(2));
+        let mut snap = Snapshot::default();
+        ctl.fill_snapshot(&mut snap);
+        assert_eq!(snap.local_player, Some(c));
+        assert!(snap.local_basis.starts_with("heuristic: "), "{}", snap.local_basis);
+        assert_eq!(snap.players.len(), 3);
+        assert_eq!(
+            snap.players.iter().map(|p| p.role).collect::<Vec<_>>(),
+            vec![Role::Remote, Role::Remote, Role::Local]
+        );
+
+        ctl.set_local_override(a, "overlay");
+        ctl.next_live = Instant::now();
+        ctl.fill_snapshot(&mut snap);
+        assert_eq!(snap.local_player, Some(a));
+        assert_eq!(snap.local_basis, Basis::Chosen.label());
+        assert!(snap.players[0].chosen && snap.players[0].role == Role::Local);
+        // The global buttons now write to the chosen player.
+        ctl.set_and_write(29, "overlay");
+        assert_eq!((f.team(0), f.team(2)), (29, 2));
+
+        // An address that is not a player is not accepted as "me".
+        ctl.set_local_override(0x1234, "overlay");
+        assert_eq!(ctl.chosen_local, Some(a));
+        ctl.clear_local_override("overlay");
+        assert_eq!(ctl.chosen_local, None);
+        ctl.set_local_override(a, "overlay");
+        // A new WorldChrMan instance clears the choice (and everything else keyed by address).
+        ctl.set_instance(f.wcm.as_ptr() as usize + 8);
+        assert_eq!(ctl.chosen_local, None);
+        assert!(ctl.originals.is_empty());
+    }
+
+    #[test]
+    fn persist_is_per_player() {
+        let f = Fake::new();
+        let mut ctl = f.ctl();
+        let (a, b, c) = (f.addr(0), f.addr(1), f.addr(2));
+
+        // Persist on for a remote row: starts with the selected candidate (nothing written yet).
+        ctl.set_persist_for(a, true, "overlay");
+        assert_eq!(ctl.persist.get(&a).map(|p| p.value), Some(6));
+        // Writing a value to a persisted player updates its persist value.
+        ctl.set_for(a, 29, "overlay");
+        assert_eq!(ctl.persist.get(&a).map(|p| p.value), Some(29));
+        // The local (global) toggle persists the selected candidate for the local player only.
+        ctl.toggle_persist("F7");
+        assert_eq!(ctl.persist.get(&c).map(|p| p.value), Some(6));
+        assert_eq!(ctl.persist.len(), 2);
+        assert!(!ctl.persist.contains_key(&b));
+        assert_eq!(ctl.poll_interval(Duration::from_millis(500)), ctl.persist_every);
+
+        // A tick applies each player's own value to that player alone.
+        f_set(&f, 0, 2); // the game "reverts" a
+        ctl.persist_tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 2, 6));
+        // The game reverts c: counted for c only, re-applied.
+        f_set(&f, 2, 2);
+        ctl.persist_tick();
+        assert_eq!(f.team(2), 6);
+        assert_eq!(ctl.persist[&c].tracker.total_reverts(), 1);
+        assert_eq!(ctl.persist[&a].tracker.total_reverts(), 0, "a: only its first application so far");
+        let mut snap = Snapshot::default();
+        ctl.fill_snapshot(&mut snap);
+        let by_addr = |x: usize| snap.players.iter().find(|p| p.addr == x).cloned().expect("row");
+        assert_eq!(by_addr(a).persist, Some(29));
+        assert_eq!(by_addr(b).persist, None);
+        assert_eq!(by_addr(c).persist, Some(6));
+        assert!(snap.persist, "the global checkbox shows the local player's persist");
+        assert_eq!(snap.reverts_total, 1);
+
+        // Turning one off leaves the other running.
+        ctl.set_persist_for(a, false, "overlay");
+        assert_eq!(ctl.persist.len(), 1);
+        f_set(&f, 0, 2);
+        ctl.persist_tick();
+        assert_eq!(f.team(0), 2, "a is no longer persisted");
+        // A new WorldChrMan instance drops all persist entries.
+        ctl.set_instance(0);
+        assert!(ctl.persist.is_empty());
+        assert_eq!(ctl.poll_interval(Duration::from_millis(500)), Duration::from_millis(500));
+    }
+
+    /// Set a fake player's team byte directly (the "game" changing it).
+    fn f_set(f: &Fake, i: usize, v: u8) {
+        let p = f.addr(i) + CHR_TEAM;
+        // SAFETY: test-only; `p` is inside a Vec owned by `f` that outlives this call.
+        unsafe { *(p as *mut u8) = v };
+    }
+
+    #[test]
+    fn mark_counts_across_sources_and_instance_changes() {
+        let f = Fake::new();
+        let mut ctl = f.ctl();
+        assert_eq!(ctl.marker.count(), 0);
+        ctl.mark(Some("A hits B"));
+        ctl.mark(None);
+        ctl.set_instance(0); // the numbering survives a WorldChrMan change
+        ctl.mark(Some(""));
+        let mut snap = Snapshot::default();
+        ctl.fill_snapshot(&mut snap);
+        assert_eq!(snap.marks, 3);
+    }
+
     #[test]
     fn snapshot_and_commands_on_fake_memory() {
         let mut player = fake_obj(VT_PLAYER, 2);
         let pa = player.as_mut_ptr() as u64;
-        let mut entries = entry_bytes(&[pa, 0]);
-        entries.resize(0x100, 0);
-        let (wcm, _e, _a) = fake_wcm(2, &entries, &[pa]);
+        let entries = entries_with_state(&[pa, 0], &[]);
+        let (wcm, _e) = fake_wcm(2, &entries);
 
         let cfg = Config::default();
         let mut ctl = TeamCtl::new(&cfg, 0, 0);
@@ -2002,6 +2373,7 @@ mod tests {
         assert_eq!((snap.local_player, snap.team_type), (None, None));
         assert!(!snap.vtables_known);
         assert!(snap.note.contains("not live"));
+        assert!(snap.players.is_empty());
         assert_eq!(snap.selected, 6);
         assert_eq!(snap.candidates, crate::config::DEFAULT_CANDIDATES.to_vec());
 
@@ -2016,6 +2388,9 @@ mod tests {
         assert_eq!(snap.team_type, Some(2));
         assert_eq!(snap.original, None);
         assert!(snap.note.is_empty());
+        assert_eq!(snap.players.len(), 1, "a lone PlayerIns is one LOCAL row");
+        assert_eq!(snap.players[0].role, Role::Local);
+        assert_eq!(snap.local_basis, Basis::OnlyPlayer.label());
 
         // Overlay button: select 29 and write it. The byte changes, the original is captured.
         ctl.set_and_write(29, "overlay");
@@ -2027,6 +2402,7 @@ mod tests {
             (snap.team_type, snap.original, snap.selected),
             (Some(29), Some(2), 29)
         );
+        assert_eq!(snap.players[0].original, Some(2));
 
         // A value that is not a candidate is refused and nothing is written.
         ctl.set_and_write(99, "overlay");
