@@ -469,10 +469,9 @@ impl WatchState {
     }
 }
 
-fn watch_line(addr: usize, local: bool, f: Fields, prev: Option<Fields>) -> String {
+fn watch_line(addr: usize, who: &str, f: Fields, prev: Option<Fields>) -> String {
     let mut s = format!(
-        "watch: PlayerIns 0x{addr:X}{} +0x68 id={} +0x70={} +0x74 team_type={}",
-        if local { " [local]" } else { "" },
+        "watch: PlayerIns 0x{addr:X} who={who} +0x68 id={} +0x70={} +0x74 team_type={}",
         f.id,
         f.v70,
         f.team
@@ -1561,7 +1560,7 @@ pub(crate) fn histogram_report(rtti: &Rtti, inst: usize, base: usize) {
         }
     }
     let scanned = objs.len();
-    let resolved = resolve(inst, &vts);
+    let resolved = resolve(inst, &vts, None);
     if let Ok(r) = &resolved {
         for &p in &r.players {
             if seen.insert(p) {
@@ -1606,7 +1605,10 @@ pub(crate) fn histogram_report(rtti: &Rtti, inst: usize, base: usize) {
                 "T-008: F8 local player 0x{l:X}: team_type = {}",
                 mem::read::<u8>(l + CHR_TEAM).map_or("?".to_string(), |v| v.to_string())
             ),
-            None => tracing::info!("T-008: F8 local player not resolved: {}", r.reasoning),
+            None => tracing::info!(
+                "T-008: F8 local player not resolved: {}",
+                r.reasoning()
+            ),
         },
         Err(e) => tracing::info!("T-008: F8 local player not resolved: {e}"),
     }
