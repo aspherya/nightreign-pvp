@@ -25,6 +25,7 @@ Rules:
 When done:
 1. Write the deliverable the card names, concise and organised for a planner to act on, with a short
    "Open questions" list at the end.
-2. Fill in the card's **Result** section and set its status to `review`.
+2. Don't edit `.claude/TASKS.md` or TECHNICAL_NOTES.md; other agents may be editing them at the same time.
+   Opus merges your findings.
 3. Reply with a summary of no more than 10 bullets covering what changed in our understanding, especially
    anything that confirms or contradicts TECHNICAL_NOTES.md.

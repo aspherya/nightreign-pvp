@@ -1,0 +1,26 @@
+[package]
+name = "nrpvp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PvPvE mod for ELDEN RING NIGHTREIGN (me3 native DLL)"
+
+[lib]
+name = "nrpvp"
+crate-type = ["cdylib"]
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+tracing-appender = "0.2"
+
+[dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_LibraryLoader",
+    "Win32_System_ProcessStatus",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+]

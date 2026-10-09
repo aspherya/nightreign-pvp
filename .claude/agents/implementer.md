@@ -25,7 +25,7 @@ Rules:
   clearly which acceptance checks are left for the HUMAN.
 
 When done:
-1. Fill in the card's **Result** section: files changed, what you verified and how, what the HUMAN must
-   test (exact steps), and any follow-ups or risks.
-2. Set the card status to `review`.
-3. Reply with a short summary covering the same points.
+1. Don't edit `.claude/TASKS.md`; other agents may be editing it at the same time. Opus updates the board.
+2. Reply with a **Result** block that Opus can paste into the card: files changed, what you verified and how,
+   the exact steps the HUMAN must run solo to accept, and any follow-ups or risks.
+3. Don't commit or push unless the card says to.

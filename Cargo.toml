@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/nrpvp"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[profile.release]
+opt-level = 2
+debug = "line-tables-only"
+lto = "thin"
+codegen-units = 1
+# Keep unwinding so a panic on the mod thread can be caught and logged instead of aborting the game.
+panic = "unwind"

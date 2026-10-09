@@ -1,0 +1,20 @@
+# me3 profile: loads ONLY nrpvp.dll into ELDEN RING NIGHTREIGN (T-001). SC is not loaded yet (see T-004).
+#
+# Schema source (me3 v0.11.0), checked 2026-10-09:
+#   https://github.com/garyttierney/me3/blob/v0.11.0/docs/configuration-reference.md  (the source of the
+#   me3.help "configuration reference" page; me3.help itself returned 403 to our fetch tool) for
+#   profileVersion / [[supports]] / [[natives]], and docs/user-guide/creating-mod-profiles.md in the same
+#   tag for the "paths are relative to the profile file" rule.
+#   Test-data profile in the repo (crates/mod-protocol/test-data/basic_config.me3.toml) for `optional`.
+#
+# `path` in [[natives]] is relative to THIS file, so ../dist/nrpvp.dll is <repo>/dist/nrpvp.dll.
+# Run scripts/build.ps1 first. The profile deliberately sets no start_online, so me3 keeps its default
+# of blocking the official matchmaking servers.
+
+profileVersion = "v1"
+
+[[supports]]
+game = "nightreign"
+
+[[natives]]
+path = "../dist/nrpvp.dll"

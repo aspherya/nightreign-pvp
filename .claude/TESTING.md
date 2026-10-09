@@ -8,10 +8,14 @@ path (SC launcher or me3 profile)**. Classify each problem as one of: `MOD-DEFEC
 
 | Item | Value |
 |---|---|
-| PC A (host) | Leonardo's PC, Steam ID 76561198342403479. Specs TBD |
-| PC B (client) | TBD (T-000) |
-| Network | TBD (same LAN or internet) |
+| PC A (host) | Leonardo's PC, Steam ID 76561198342403479. Used for all solo testing |
+| PC B (client) | Friend's PC, available **only during scheduled Friend Sessions** (§6) |
+| Network | Internet (Steam P2P via SC) |
 | Pins | see TECHNICAL_NOTES.md §1 |
+
+Running two game instances on one PC was considered and rejected for now. SC needs two real Steam accounts
+over Steam networking, which would mean a VM with GPU passthrough or a second Steam client: too much
+headache for the value.
 
 **Safety checklist before every session:** launch only via `nrsc_launcher.exe` or `scripts/launch.ps1`;
 saves backed up; both PCs on the same SC build and the same nrpvp build.
@@ -20,7 +24,17 @@ saves backed up; both PCs on the same SC build and the same nrpvp build.
 
 ## 2. Test cases
 
-### TC-001 — Join and shared expedition (baseline)
+### TC-000 — Solo SC baseline (HUMAN-solo)
+Preconditions: saves backed up; stock `nrsc_launcher.exe`.
+Steps:
+1. Launch via the SC launcher. Note any SC version text (title screen, menus, popups).
+2. Host an SC session alone. Note every SC-specific menu entry, option, or item in the inventory or shop,
+   especially anything about PvP, friendly fire, teams, or rules.
+3. Play a solo expedition through the first night boss (or ~15 min).
+4. Confirm a `.co2` save appeared in `%APPDATA%\Nightreign\<steamid>\`.
+Expected: normal play. Record the list of SC-specific UI and items found.
+
+### TC-001 — Join and shared expedition (baseline, FS)
 Preconditions: both PCs on the same SC build, launched via the path under test.
 Steps:
 1. A hosts an SC session. B joins.
@@ -57,6 +71,21 @@ revive, and the next day phase (watch the log); does anything crash or disconnec
 After the matrix: if any row gives two-way damage, play 10 minutes of PvPvE and kill B. Check death,
 revive or downed state, and whether the expedition continues for both.
 
+### TC-004 — E-002: team type vs AI hostility (HUMAN-solo)
+Preconditions: T-008 done; me3 launch with SC + nrpvp; solo SC expedition; `nrpvp.log` open in a tail
+window (`Get-Content nrpvp.log -Wait`).
+Steps:
+1. Stand near a group of normal enemies, out of aggro range. Press F8 and record the enemies' team types.
+2. Press F5 (self → `hostile_team_type`). Walk into the group. Record: do they aggro? Do your attacks
+   still damage them? Can you lock on?
+3. Press F6 (restore). Repeat step 2.
+4. With F5 active and persist mode **off**, do each of the following and watch the log for resets: dodge
+   roll, take damage, die and get revived (or the solo equivalent), use the ultimate art, rest or level up
+   at a site of grace, fight the night-boss transition, day change.
+5. Repeat step 4 with persist mode **on** (F7). Note any stutter, crash, or odd AI behaviour.
+6. Optional, if T-007 found other candidate values: repeat steps 2–3 per value.
+Expected: unknown. This is what we're testing. Record the result for every step.
+
 ---
 
 ## 3. Results log
@@ -72,3 +101,19 @@ _None yet._
 ## 5. Regression set
 
 Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once it passes.
+
+---
+
+## 6. Friend Session runbooks
+
+### FS-1 — First two-player session (≈90 min). **Status: draft. Opus finalises it at the readiness gate.**
+Preconditions: both PCs have the same SC build (compare `nrsc.dll` hash), the same `dist/nrpvp.dll` + `nrpvp.toml`
+(zip them from `dist/` for the friend), saves backed up on both, and a voice call for coordination.
+Leonardo hosts.
+1. **TC-001** through the me3 launch path (≈20 min). If me3 fails for the friend, fall back to the stock SC
+   launcher for TC-001/TC-002 and skip TC-003.
+2. **TC-002** friendly-fire probe (≈10 min).
+3. **T-007 FS check:** the partner's team type is visible in the log on both PCs (≈5 min).
+4. **TC-003** E-003 matrix (≈40 min), including the death/revive tail.
+5. Collect `nrpvp.log` from both PCs into `.claude/experiments/FS-1/` (rename to `host.log` / `client.log`).
+

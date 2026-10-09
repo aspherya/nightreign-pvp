@@ -1,7 +1,7 @@
 # nightreign-pvp: agent operating manual
 
 PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The original scope lives in
-[.claude/references/project-skeleton.md](.claude/references/project-skeleton.md). Read it once. These docs refine it:
+[.claude/references/project-skeleton.md](references/project-skeleton.md). Read it once. These docs refine it:
 
 | File | Purpose |
 |---|---|
@@ -16,7 +16,7 @@ PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The or
 - **Opus (planner):** owns ROADMAP.md, TASKS.md, experiment design, RE judgement calls, review of every
   Sonnet deliverable, and moving facts from "hypothesis" to "verified" in TECHNICAL_NOTES.md.
 - **Sonnet (executor):** runs exactly one task card at a time from TASKS.md, via the `implementer` or
-  `researcher` agent in [.claude/agents/](.claude/agents/). It does not re-scope, does not start the next card, and
+  `researcher` agent in [.claude/agents/](agents/). It does not re-scope, does not start the next card, and
   stops and reports when blocked.
 - **Human (Leonardo + test partner):** installs tools, launches the game, runs in-game tests, and reports
   results. Agents cannot play the game. Any acceptance step that needs the game running is a HUMAN step.
@@ -37,6 +37,20 @@ PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The or
    endgame work until ROADMAP.md says that phase is active.
 6. **Stay inside the task card.** When you finish one, update its status in TASKS.md, append findings to the
    right doc, and stop.
+
+## Repo layout
+
+- Planning docs (this file, TASKS.md, …): `.claude/`. Research write-ups: `.claude/research/`.
+  Reverse-engineering notes and CE tables: `.claude/re/`.
+- Code at the repo root: `Cargo.toml`, `crates/nrpvp/`, `profiles/`, `scripts/`.
+- Rust lives in `%USERPROFILE%\.cargo\bin`. If `cargo` isn't on PATH in a shell, call
+  `~/.cargo/bin/cargo.exe` directly.
+
+## Testing constraint
+
+Day to day, **only Leonardo tests, solo, on one PC**. A friend joins only for scheduled **Friend Sessions
+(FS-n)**. Design every card so its acceptance can be checked solo where possible. Anything that needs two
+players goes into the next FS runbook (TESTING.md §6), not into the card's own acceptance.
 
 ## Paths
 

@@ -18,7 +18,29 @@ launcher or this repo's me3 profile. Back up your saves (`%APPDATA%\Nightreign\`
 `.co2` saves.
 
 ## Build and launch
-_Added by T-001 / T-004._
+All commands run from the repo root in PowerShell.
+
+```powershell
+./scripts/build.ps1     # cargo build --release, copies nrpvp.dll (+ .pdb) to dist/
+./scripts/launch.ps1    # me3 launch -g nightreign -p profiles/nrpvp-dev.me3.toml
+```
+
+- `build.ps1` finds `cargo` on PATH or in `%USERPROFILE%\.cargo\bin`. Toolchain: stable MSVC
+  (`rust-toolchain.toml`).
+- `launch.ps1` finds `me3` on PATH or at `Z:\Tools\me3\bin\me3.exe`, and refuses to run if
+  `dist/nrpvp.dll` is missing. It starts the game **without EAC and with official servers blocked**. Never
+  launch the protected exe with mods present, and never go online modded.
+- The profile `profiles/nrpvp-dev.me3.toml` loads only `dist/nrpvp.dll` (no Seamless Co-op until T-004).
+- **Log file:** `dist/nrpvp.log`, next to the DLL (appended across sessions, safe to delete). Expected
+  startup lines:
+  - `nrpvp 0.1.0 starting (T-001 skeleton)`
+  - `unix time <seconds>`
+  - `nightreign.exe: base=0x... size=0x...`
+  - `exe path: Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\nightreign.exe`
+  - `exe FileVersion: 1.3.3.0`
+- Offline checks: `cargo clippy --all-targets`, `cargo test`, `cargo fmt --check`.
+
+_me3 + Seamless Co-op loading: added by T-004._
 
 ## Docs
 - [CLAUDE.md](CLAUDE.md): working rules for AI agents and humans

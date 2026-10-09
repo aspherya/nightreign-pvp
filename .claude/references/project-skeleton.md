@@ -1,7 +1,7 @@
 # Elden Ring Nightreign PvPvE Mod — Project Skeleton
 
 > **Refinements (2026-10-09).** This file is the original scope and stays authoritative for *intent*.
-> Operational detail now lives in the repo-root docs: `CLAUDE.md` (agent rules and roles), `TASKS.md`
+> Operational detail now lives in the docs under `.claude/`: `CLAUDE.md` (agent rules and roles), `TASKS.md`
 > (task cards), `ROADMAP.md`, `TECHNICAL_NOTES.md` (stack decision ADR-001, verified facts),
 > `TESTING.md`, and `FUTURE_CONSIDERATIONS.md`. Clarifications added after review:
 >

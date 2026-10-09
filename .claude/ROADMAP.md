@@ -2,8 +2,9 @@
 
 **Current phase:** Phase 0, Reconnaissance and feasibility
 **Current milestone:** answer H1 (do hostile engine team types give synced PvP over SC?) via E-003.
-**Next step:** T-000 (install rustup, confirm the second PC and Steam account), then T-001, with T-002, T-003, and T-005
-in parallel.
+**Next step:** T-001 (DLL skeleton) plus research T-003, T-005, and T-011 in parallel. Leonardo can run TC-000 (T-002 solo) anytime.
+**Constraint:** solo testing only, day to day. Two-player tests are batched into Friend Session FS-1, which is
+booked once the readiness gate in TASKS.md passes (T-004, T-008, T-012 done).
 **Blockers:** none yet. Open risks are listed below.
 
 ## Phases
