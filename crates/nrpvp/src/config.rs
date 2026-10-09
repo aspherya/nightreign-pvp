@@ -337,7 +337,7 @@ mod tests {
     #[test]
     fn new_keys_parse_and_normalise() {
         let (cfg, w) = parse(
-            "overlay_enabled = false\noverlay_toggle_key = \"home\"\nhotkey_write = \"f10\"\nhotkey_cycle = \"F4\"\nhotkey_restore = \"\"\nhotkey_persist = \"  \"\n",
+            "overlay_enabled = false\noverlay_toggle_key = \"home\"\nhotkey_write = \"f11\"\nhotkey_cycle = \"F4\"\nhotkey_restore = \"\"\nhotkey_persist = \"  \"\n",
         )
         .expect("ok");
         assert!(w.is_empty(), "{w:?}");
@@ -346,7 +346,7 @@ mod tests {
             cfg.binding(Action::ToggleOverlay).map(|k| k.name),
             Some("Home".into())
         );
-        assert_eq!(cfg.binding(Action::Write).map(|k| k.vk), Some(0x79));
+        assert_eq!(cfg.binding(Action::Write).map(|k| k.vk), Some(0x7A));
         assert_eq!(
             cfg.binding(Action::Cycle).map(|k| k.name),
             Some("F4".into())

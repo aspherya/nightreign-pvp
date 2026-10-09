@@ -227,8 +227,14 @@ mod tests {
     fn player_targeted_and_mark_commands_travel_in_order() {
         let s = Shared::new();
         let cmds = vec![
-            Command::SetFor { addr: 0x10, value: 6 },
-            Command::PersistFor { addr: 0x10, on: true },
+            Command::SetFor {
+                addr: 0x10,
+                value: 6,
+            },
+            Command::PersistFor {
+                addr: 0x10,
+                on: true,
+            },
             Command::RestoreFor { addr: 0x20 },
             Command::SetLocalOverride { addr: 0x20 },
             Command::Mark(Some("A hits B".to_string())),

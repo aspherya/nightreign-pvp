@@ -816,9 +816,15 @@ mod command_tests {
             Command::TogglePersist,
             Command::RunDiscovery,
             Command::RunHistogram,
-            Command::SetFor { addr: 0x10, value: 6 },
+            Command::SetFor {
+                addr: 0x10,
+                value: 6,
+            },
             Command::RestoreFor { addr: 0x10 },
-            Command::PersistFor { addr: 0x10, on: true },
+            Command::PersistFor {
+                addr: 0x10,
+                on: true,
+            },
             Command::SetLocalOverride { addr: 0x10 },
             Command::ClearLocalOverride,
             Command::Mark(Some("x".to_string())),

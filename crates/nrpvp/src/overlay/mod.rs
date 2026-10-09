@@ -354,7 +354,10 @@ impl OverlayApp {
         ui.separator();
         ui.text(format!("Players in the ChrSet: {}", s.players.len()));
         if s.players.is_empty() {
-            ui.text_colored(GREY, "  none (WorldChrMan not live, or the ChrSet is empty while loading)");
+            ui.text_colored(
+                GREY,
+                "  none (WorldChrMan not live, or the ChrSet is empty while loading)",
+            );
             return;
         }
         if s.players.len() > 1 && s.local_player.is_none() {
@@ -378,7 +381,9 @@ impl OverlayApp {
         };
         ui.text_colored(colour, &who);
         ui.same_line();
-        let team = row.team.map_or("?".to_string(), |t| format!("{t} ({})", team_name(t)));
+        let team = row
+            .team
+            .map_or("?".to_string(), |t| format!("{t} ({})", team_name(t)));
         ui.text(format!(
             "entry[{}] 0x{:X}  team_type {team}  entry bytes +8/+9: {:02X} {:02X}",
             row.index, row.addr, row.state8, row.state9
@@ -410,7 +415,10 @@ impl OverlayApp {
         for (k, &v) in candidates.iter().enumerate() {
             ui.same_line();
             if ui.button_with_size(format!("{v}##c{k}"), [38.0, 0.0]) {
-                self.send(Command::SetFor { addr: row.addr, value: v });
+                self.send(Command::SetFor {
+                    addr: row.addr,
+                    value: v,
+                });
             }
             if ui.is_item_hovered() {
                 ui.tooltip_text(format!("write {v} ({}) to this player", team_name(v)));
@@ -425,7 +433,10 @@ impl OverlayApp {
         ui.same_line();
         let mut persist = row.persist.is_some();
         if ui.checkbox("Persist", &mut persist) {
-            self.send(Command::PersistFor { addr: row.addr, on: persist });
+            self.send(Command::PersistFor {
+                addr: row.addr,
+                on: persist,
+            });
         }
         id.pop();
     }
@@ -684,7 +695,8 @@ mod tests {
         ctx.io_mut().want_capture_mouse = true;
         assert_eq!(
             app.message_filter(ctx.io()).bits(),
-            (MessageFilter::InputMouse | MessageFilter::InputRaw | MessageFilter::InputKeyboard).bits()
+            (MessageFilter::InputMouse | MessageFilter::InputRaw | MessageFilter::InputKeyboard)
+                .bits()
         );
         ctx.io_mut().want_text_input = false;
         ctx.io_mut().want_capture_mouse = true;

@@ -472,9 +472,7 @@ impl WatchState {
 fn watch_line(addr: usize, who: &str, f: Fields, prev: Option<Fields>) -> String {
     let mut s = format!(
         "watch: PlayerIns 0x{addr:X} who={who} +0x68 id={} +0x70={} +0x74 team_type={}",
-        f.id,
-        f.v70,
-        f.team
+        f.id, f.v70, f.team
     );
     if let Some(p) = prev {
         let _ = write!(s, " (was id={} +0x70={} team_type={})", p.id, p.v70, p.team);
@@ -597,7 +595,8 @@ impl Resolution {
         format!(
             "{} valid PlayerIns in the ChrSet; local = {} ({})",
             self.players.len(),
-            self.local.map_or("NONE".to_string(), |p| format!("0x{p:X}")),
+            self.local
+                .map_or("NONE".to_string(), |p| format!("0x{p:X}")),
             self.basis.label()
         )
     }
@@ -706,7 +705,12 @@ fn read_signals(rc: &mut RegionCache, p: usize, entry: &[u8; ENTRY_SIZE]) -> Vec
     let sess_entry = rc.read::<u64>(p + PLAYER_SESSION_ENTRY);
     vec![
         sig("entry+8", Some(u64::from(entry[8])), false, true),
-        sig("entry+9[ER update_type]", Some(u64::from(entry[9])), false, true),
+        sig(
+            "entry+9[ER update_type]",
+            Some(u64::from(entry[9])),
+            false,
+            true,
+        ),
         sig(
             "chr_type@+0x70[ER +0x68]",
             rc.read::<u32>(p + CHR_TYPE70).map(u64::from),
@@ -1231,9 +1235,9 @@ impl TeamCtl {
                     }
                 }
             }
-            Err(e) => tracing::warn!(
-                "T-008: {src} write who={who} to PlayerIns 0x{addr:X} failed: {e}"
-            ),
+            Err(e) => {
+                tracing::warn!("T-008: {src} write who={who} to PlayerIns 0x{addr:X} failed: {e}")
+            }
         }
     }
 
@@ -1605,10 +1609,7 @@ pub(crate) fn histogram_report(rtti: &Rtti, inst: usize, base: usize) {
                 "T-008: F8 local player 0x{l:X}: team_type = {}",
                 mem::read::<u8>(l + CHR_TEAM).map_or("?".to_string(), |v| v.to_string())
             ),
-            None => tracing::info!(
-                "T-008: F8 local player not resolved: {}",
-                r.reasoning()
-            ),
+            None => tracing::info!("T-008: F8 local player not resolved: {}", r.reasoning()),
         },
         Err(e) => tracing::info!("T-008: F8 local player not resolved: {e}"),
     }
@@ -1761,7 +1762,9 @@ mod tests {
         assert_eq!(w.update(0x10, b), Some(None));
         let line = watch_line(0x10, "REMOTE[2]", b, Some(a));
         assert!(
-            line.contains("who=REMOTE[2]") && line.contains("team_type=6") && line.contains("was id=1")
+            line.contains("who=REMOTE[2]")
+                && line.contains("team_type=6")
+                && line.contains("was id=1")
         );
         assert!(!watch_line(0x10, "LOCAL", b, None).contains("was"));
     }
@@ -1816,10 +1819,7 @@ mod tests {
         assert_eq!(odd_one_out(&v(&[(1, 1), (2, 2), (3, 3)])), None);
         assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 9), (4, 9)])), None);
         // Any unreadable value disables the signal.
-        assert_eq!(
-            odd_one_out(&[(1, Some(5)), (2, None), (3, Some(9))]),
-            None
-        );
+        assert_eq!(odd_one_out(&[(1, Some(5)), (2, None), (3, Some(9))]), None);
         assert_eq!(odd_one_out(&[]), None);
     }
 
@@ -1993,7 +1993,10 @@ mod tests {
         let ev: Vec<&String> = lines.iter().filter(|l| l.contains("evidence")).collect();
         assert_eq!(ev.len(), 1);
         assert!(ev[0].contains("UNVERIFIED") && ev[0].contains("net_authority@+0x1EC"));
-        assert!(ev[0].contains("04 04"), "the raw entry bytes are in the evidence");
+        assert!(
+            ev[0].contains("04 04"),
+            "the raw entry bytes are in the evidence"
+        );
         assert!(lines.iter().any(|l| l.contains("local player = ")));
         assert!(
             !lines.iter().any(|l| l.contains("1C820")),
@@ -2048,7 +2051,10 @@ mod tests {
             vec![(1, Role::Local), (2, Role::Remote), (3, Role::Remote)]
         );
         assert!(rows[0].chosen && !rows[1].chosen);
-        assert_eq!((rows[0].state8, rows[0].state9, rows[0].team), (4, 4, Some(2)));
+        assert_eq!(
+            (rows[0].state8, rows[0].state9, rows[0].team),
+            (4, 4, Some(2))
+        );
 
         // When nothing splits them the players are UNKNOWN, not guessed.
         let mut d = fake_obj(VT_PLAYER, 2);
@@ -2257,7 +2263,11 @@ mod tests {
         let mut snap = Snapshot::default();
         ctl.fill_snapshot(&mut snap);
         assert_eq!(snap.local_player, Some(c));
-        assert!(snap.local_basis.starts_with("heuristic: "), "{}", snap.local_basis);
+        assert!(
+            snap.local_basis.starts_with("heuristic: "),
+            "{}",
+            snap.local_basis
+        );
         assert_eq!(snap.players.len(), 3);
         assert_eq!(
             snap.players.iter().map(|p| p.role).collect::<Vec<_>>(),
@@ -2303,7 +2313,10 @@ mod tests {
         assert_eq!(ctl.persist.get(&c).map(|p| p.value), Some(6));
         assert_eq!(ctl.persist.len(), 2);
         assert!(!ctl.persist.contains_key(&b));
-        assert_eq!(ctl.poll_interval(Duration::from_millis(500)), ctl.persist_every);
+        assert_eq!(
+            ctl.poll_interval(Duration::from_millis(500)),
+            ctl.persist_every
+        );
 
         // A tick applies each player's own value to that player alone.
         f_set(&f, 0, 2); // the game "reverts" a
@@ -2314,14 +2327,27 @@ mod tests {
         ctl.persist_tick();
         assert_eq!(f.team(2), 6);
         assert_eq!(ctl.persist[&c].tracker.total_reverts(), 1);
-        assert_eq!(ctl.persist[&a].tracker.total_reverts(), 0, "a: only its first application so far");
+        assert_eq!(
+            ctl.persist[&a].tracker.total_reverts(),
+            0,
+            "a: only its first application so far"
+        );
         let mut snap = Snapshot::default();
         ctl.fill_snapshot(&mut snap);
-        let by_addr = |x: usize| snap.players.iter().find(|p| p.addr == x).cloned().expect("row");
+        let by_addr = |x: usize| {
+            snap.players
+                .iter()
+                .find(|p| p.addr == x)
+                .cloned()
+                .expect("row")
+        };
         assert_eq!(by_addr(a).persist, Some(29));
         assert_eq!(by_addr(b).persist, None);
         assert_eq!(by_addr(c).persist, Some(6));
-        assert!(snap.persist, "the global checkbox shows the local player's persist");
+        assert!(
+            snap.persist,
+            "the global checkbox shows the local player's persist"
+        );
         assert_eq!(snap.reverts_total, 1);
 
         // Turning one off leaves the other running.
@@ -2333,7 +2359,10 @@ mod tests {
         // A new WorldChrMan instance drops all persist entries.
         ctl.set_instance(0);
         assert!(ctl.persist.is_empty());
-        assert_eq!(ctl.poll_interval(Duration::from_millis(500)), Duration::from_millis(500));
+        assert_eq!(
+            ctl.poll_interval(Duration::from_millis(500)),
+            Duration::from_millis(500)
+        );
     }
 
     /// Set a fake player's team byte directly (the "game" changing it).
