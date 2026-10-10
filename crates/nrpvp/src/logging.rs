@@ -32,6 +32,10 @@ const STAMP_LEN: usize = 19;
 
 /// What `init` set up, for the startup banner.
 pub(crate) struct LogSetup {
+    /// Directory holding `nrpvp.log` and `logs/` (the DLL dir, or `<log_dir>/<tag>`).
+    pub(crate) log_dir: PathBuf,
+    /// Why a configured `log_dir` was not used (logged by the banner), if so.
+    pub(crate) fallback_note: Option<String>,
     /// The per-session file, or `None` when only `nrpvp.log` is being written.
     pub(crate) session_path: Option<PathBuf>,
 }
@@ -138,6 +142,53 @@ pub(crate) fn prune_sessions(dir: &Path, keep: usize) -> usize {
         .count()
 }
 
+/// T-018: instance tag = the DLL's parent folder name (e.g. `Instance0`) reduced to `[A-Za-z0-9_-]`;
+/// every other character becomes `_`. An empty name gives `instance`.
+pub(crate) fn instance_tag(dll_dir: &Path) -> String {
+    let raw = dll_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let tag: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if tag.is_empty() {
+        "instance".to_string()
+    } else {
+        tag
+    }
+}
+
+/// T-018: where the logs go. `log_dir` empty/None, not absolute, or not creatable: the DLL dir (with a
+/// note for the latter two). Otherwise `<log_dir>/<tag>`.
+pub(crate) fn resolve_dir(dll_dir: &Path, log_dir: Option<&str>) -> (PathBuf, Option<String>) {
+    let Some(configured) = log_dir.map(str::trim).filter(|s| !s.is_empty()) else {
+        return (dll_dir.to_path_buf(), None);
+    };
+    let base = Path::new(configured);
+    if !base.is_absolute() {
+        return (
+            dll_dir.to_path_buf(),
+            Some(format!("log_dir {configured:?} is not an absolute path")),
+        );
+    }
+    let target = base.join(instance_tag(dll_dir));
+    match std::fs::create_dir_all(&target) {
+        Ok(()) => (target, None),
+        Err(e) => (
+            dll_dir.to_path_buf(),
+            Some(format!("could not create {}: {e}", target.display())),
+        ),
+    }
+}
+
 fn open_session_file(dir: &Path, unix_secs: u64) -> io::Result<(PathBuf, File)> {
     let logs = dir.join(SESSION_DIR_NAME);
     std::fs::create_dir_all(&logs)?;
@@ -146,19 +197,31 @@ fn open_session_file(dir: &Path, unix_secs: u64) -> io::Result<(PathBuf, File)> 
     Ok((path, file))
 }
 
-pub(crate) fn init(dir: &Path) -> Result<LogSetup, String> {
+/// `log_dir` is the raw `log_dir` setting (see `config::peek_log_dir`); `None` = next to the DLL.
+pub(crate) fn init(dll_dir: &Path, log_dir: Option<&str>) -> Result<LogSetup, String> {
+    let (mut dir, mut fallback_note) = resolve_dir(dll_dir, log_dir);
     // Mirror file: truncated, always the current session.
-    let main = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(dir.join(LOG_FILE_NAME))
-        .map_err(|e| e.to_string())?;
+    let open_main = |d: &Path| {
+        OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(d.join(LOG_FILE_NAME))
+    };
+    let main = match open_main(&dir) {
+        Ok(f) => f,
+        Err(e) if dir != dll_dir => {
+            fallback_note = Some(format!("could not open {}: {e}", dir.display()));
+            dir = dll_dir.to_path_buf();
+            open_main(&dir).map_err(|e| e.to_string())?
+        }
+        Err(e) => return Err(e.to_string()),
+    };
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let (session_path, session, session_err) = match open_session_file(dir, now) {
+    let (session_path, session, session_err) = match open_session_file(&dir, now) {
         Ok((p, f)) => (Some(p), Some(Mutex::new(f)), None),
         Err(e) => (None, None, Some(e)),
     };
@@ -203,7 +266,11 @@ pub(crate) fn init(dir: &Path) -> Result<LogSetup, String> {
         tracing::error!("panic: {info}");
         default_hook(info);
     }));
-    Ok(LogSetup { session_path })
+    Ok(LogSetup {
+        log_dir: dir,
+        fallback_note,
+        session_path,
+    })
 }
 
 #[cfg(test)]
@@ -221,7 +288,7 @@ mod tests {
             "stale line from a previous session\n",
         )
         .expect("seed");
-        let setup = init(&dir).expect("global subscriber installs once");
+        let setup = init(&dir, None).expect("global subscriber installs once");
         assert!(setup.session_path.is_some());
         tracing::info!("logging-test-marker-info");
         tracing::debug!("logging-test-marker-debug-must-be-filtered");
@@ -245,6 +312,38 @@ mod tests {
         assert!(line.contains("INFO") && !line.contains('\n'), "{line}");
         assert!(!lines.iter().any(|l| l.contains("must-be-filtered")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn instance_tag_is_sanitised() {
+        assert_eq!(instance_tag(Path::new("x/Instance0")), "Instance0");
+        assert_eq!(instance_tag(Path::new("x/My Inst.1")), "My_Inst_1");
+        assert_eq!(instance_tag(Path::new("a-b_C9")), "a-b_C9");
+        assert_eq!(instance_tag(Path::new("")), "instance");
+        assert_eq!(instance_tag(Path::new("/")), "instance");
+    }
+
+    #[test]
+    fn resolve_dir_uses_tag_and_falls_back() {
+        let root = std::env::temp_dir().join(format!("nrpvp-resolve-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dll = root.join("Instance3");
+        let out = root.join("out");
+        assert_eq!(resolve_dir(&dll, None), (dll.clone(), None));
+        assert_eq!(resolve_dir(&dll, Some("  ")), (dll.clone(), None));
+        let (d, n) = resolve_dir(&dll, out.to_str());
+        assert_eq!(d, out.join("Instance3"));
+        assert!(n.is_none() && d.is_dir());
+        let (d, n) = resolve_dir(&dll, Some("relative/dir"));
+        assert_eq!(d, dll);
+        assert!(n.expect("note").contains("absolute"));
+        // A file in the way makes create_dir_all fail.
+        std::fs::write(root.join("blocker"), "x").expect("file");
+        let blocked = root.join("blocker");
+        let (d, n) = resolve_dir(&dll, blocked.to_str());
+        assert_eq!(d, dll);
+        assert!(n.is_some());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

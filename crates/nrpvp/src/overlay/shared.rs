@@ -18,6 +18,10 @@ pub(crate) const MAX_QUEUED_COMMANDS: usize = 64;
 /// snapshot; the main loop re-validates them against a fresh ChrSet resolve before touching anything.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Command {
+    /// FS-0: write this value to every PlayerIns of the ChrSet (this client's copies).
+    SetAll(u8),
+    /// FS-0: restore every PlayerIns that has a captured original.
+    RestoreAll,
     /// Select this team candidate and write it to the local player.
     Set(u8),
     /// Restore the original value captured before the first write (local player).

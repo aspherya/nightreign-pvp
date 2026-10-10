@@ -288,7 +288,7 @@ the latest one for quick tailing, and only the newest 30 session logs are kept. 
 `.claude/experiments/logs/` (committed) by Opus when it reviews a test.
 
 ### T-015 — FS-1 tooling: all-players panel, remote writes, MARK notes
-Owner: SONNET/implementer → HUMAN-solo | Status: in-progress | Depends on: T-013 | Phase: 0
+Owner: SONNET/implementer → HUMAN-solo | Status: review (code done 2026-10-09, 118 tests, 1 known flaky logging test; first in-game check in FS-0) | Depends on: T-013 | Phase: 0
 Goal: make FS-1 runnable and self-documenting. Each client sees every player in the session and can change any player's *local copy*
 of team_type, which is how we test whether hostility is decided on the attacker's side, the victim's side, or both.
 Steps:
@@ -306,7 +306,7 @@ Acceptance: build, clippy, and tests clean. **HUMAN-solo:** the panel lists 1 pl
 Remote rows can only be verified in FS-1.
 
 ### T-016 — Friend kit (packaging for the FS-1 partner)
-Owner: SONNET/implementer | Status: in-progress | Phase: 0
+Owner: SONNET/implementer | Status: review (done 2026-10-09: dry-run verified; nrpvp.toml is not shipped (the DLL generates it); repackage after each rebuild) | Phase: 0
 Goal: the partner can install and launch our exact build with minimal steps and no repo or Rust toolchain.
 Steps: `scripts/package-friend.ps1` builds `dist/friend-kit.zip` containing `nrpvp.dll`, the default `nrpvp.toml`, a me3 profile
 template, `launch-friend.ps1`, and `README-FRIEND.md`. The launcher finds the Nightreign game folder (Steam `libraryfolders.vdf`, with a prompt as fallback),
@@ -315,3 +315,19 @@ and runs `me3 launch`. The README covers: install me3 (the same version as ours)
 how to send logs back (`logs\` folder).
 Acceptance: the zip builds; the launcher's path detection is unit-tested where possible (a PowerShell function tested on a fake vdf), and a
 dry-run mode prints the profile and the command without launching.
+
+### T-017 — FS-0: local dual-instance dry run of FS-1 (Nucleus Co-op)
+Owner: HUMAN-solo (OPUS designs and analyses) | Status: run 1 PASS (reported) 2026-10-09; repeat with logs after T-018 | Depends on: T-015 | Phase: 0
+Goal: run TC-001/TC-002/TC-003 between two real game clients on Leonardo's PC, so the friend session doesn't wait on an available partner.
+Setup: Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (Goldberg ColdClientLoader → nrsc_launcher.exe; `coldloader.dll` loads
+the DLLs in `dlllist.txt`). `scripts/deploy-nucleus.ps1` copies dist\nrpvp.dll and nrpvp.toml there and appends nrpvp.dll (`-Remove` undoes it). Each instance logs to
+`D:\Programs\Nucleus\content\ELDEN RING NIGHTREIGN\Instance<N>\nrpvp.log` and `logs\`. **Collect logs before relaunching Nucleus** (it rebuilds the instance folders).
+Caveats: emulated Steam (Goldberg LAN) instead of real Steam P2P, ~0 latency, shared input. FS-1 with the friend remains the final confirmation.
+
+### T-018 — Logs survive Nucleus (FS-0 evidence)
+Owner: SONNET/implementer | Status: todo | Phase: 0
+Goal: Nucleus deletes `content\...\Instance<N>\` on close, which lost the FS-0 logs. Add config `log_dir` (absolute path; default = DLL dir).
+When set, logs go to `<log_dir>\<instance tag>\` where the tag is derived from the DLL's parent folder name (e.g. `Instance0`). `deploy-nucleus.ps1`
+sets `log_dir = "<repo>\dist\nucleus-logs"`. Logging is initialised before the config today: read just `log_dir` first, or move the init; keep
+the fallback to the DLL dir on any error.
+Also: investigate why the overlay draws no frames under Nucleus (hooks apply, but there's never a "context initialised" line). Report findings only; don't fix.

@@ -19,6 +19,9 @@ pub(crate) const DEFAULT_CANDIDATES: [u8; 7] = [6, 29, 3, 16, 13, 2, 1];
 pub(crate) const DEFAULT_PERSIST_MS: u64 = 50;
 pub(crate) const DEFAULT_WATCH_MS: u64 = 1000;
 pub(crate) const DEFAULT_OVERLAY_ENABLED: bool = true;
+/// Pause between the game window appearing and installing the D3D12 hooks (FS-0: Nucleus ProtoInput injects around then).
+pub(crate) const DEFAULT_OVERLAY_DELAY_MS: u64 = 2000;
+const OVERLAY_DELAY_MS_RANGE: (u64, u64) = (0, 600_000);
 /// T-013 defaults. F4 is deliberately absent: Seamless Co-op binds it to its pause (TC-004 run 1).
 pub(crate) const DEFAULT_OVERLAY_TOGGLE: &str = "Insert";
 pub(crate) const DEFAULT_HOTKEY_WRITE: &str = "F5";
@@ -30,6 +33,8 @@ pub(crate) const DEFAULT_HOTKEY_DISCOVERY: &str = "F9";
 pub(crate) const DEFAULT_HOTKEY_CYCLE: &str = "";
 /// T-015: numbered MARK line in the log.
 pub(crate) const DEFAULT_HOTKEY_MARK: &str = "F10";
+pub(crate) const DEFAULT_HOTKEY_WRITE_ALL: &str = "F11";
+pub(crate) const DEFAULT_HOTKEY_RESTORE_ALL: &str = "F12";
 
 /// Sanity bounds so a typo cannot spin a thread or silence the watcher.
 const PERSIST_MS_RANGE: (u64, u64) = (10, 5000);
@@ -51,6 +56,15 @@ watch_interval_ms = 1000
 # In-game debug overlay (ImGui via hudhook, Direct3D 12). false = no overlay; the hotkeys below still work.
 overlay_enabled = true
 
+# Wait this long after the game window appears before hooking Direct3D 12 (0..600000 ms). Raise it (e.g. 60000) under
+# Nucleus Co-op so ProtoInput injects first.
+overlay_install_delay_ms = 2000
+
+# T-018: absolute directory for the logs (default = next to the DLL). Logs go to <log_dir>\\<DLL folder name>\\nrpvp.log
+# and ...\\logs\\. Use a TOML single-quoted string so backslashes stay literal. Nucleus deletes its Instance<N> folders
+# on close; point this somewhere permanent. Falls back to the DLL folder if unusable. Read before logging starts.
+# log_dir = 'C:\\some\\folder'
+
 # Show/hide the overlay. The overlay starts visible. Key names: F1..F24, A..Z, 0..9, Numpad0..Numpad9,
 # Insert, Delete, Home, End, PageUp, PageDown, Pause, ScrollLock. \"\" = unbound.
 overlay_toggle_key = \"Insert\"
@@ -64,6 +78,8 @@ hotkey_histogram = \"F8\"   # log a team_type histogram
 hotkey_discovery = \"F9\"   # run the character discovery
 hotkey_cycle = \"\"         # select the next candidate (unbound; use the overlay buttons)
 hotkey_mark = \"F10\"       # log a numbered MARK line (T-015); the overlay has a text box for annotated marks
+hotkey_write_all = \"F11\"   # FS-0: write the selected candidate to EVERY player (this client's copies)
+hotkey_restore_all = \"F12\" # FS-0: restore every player
 ";
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -73,7 +89,10 @@ pub(crate) struct Config {
     pub persist_interval_ms: u64,
     pub watch_interval_ms: u64,
     pub overlay_enabled: bool,
+    pub overlay_install_delay_ms: u64,
     pub overlay_toggle_key: String,
+    /// T-018: absolute log directory; empty = next to the DLL.
+    pub log_dir: String,
     pub hotkey_write: String,
     pub hotkey_restore: String,
     pub hotkey_persist: String,
@@ -81,6 +100,8 @@ pub(crate) struct Config {
     pub hotkey_discovery: String,
     pub hotkey_cycle: String,
     pub hotkey_mark: String,
+    pub hotkey_write_all: String,
+    pub hotkey_restore_all: String,
 }
 
 impl Default for Config {
@@ -90,7 +111,9 @@ impl Default for Config {
             persist_interval_ms: DEFAULT_PERSIST_MS,
             watch_interval_ms: DEFAULT_WATCH_MS,
             overlay_enabled: DEFAULT_OVERLAY_ENABLED,
+            overlay_install_delay_ms: DEFAULT_OVERLAY_DELAY_MS,
             overlay_toggle_key: DEFAULT_OVERLAY_TOGGLE.to_string(),
+            log_dir: String::new(),
             hotkey_write: DEFAULT_HOTKEY_WRITE.to_string(),
             hotkey_restore: DEFAULT_HOTKEY_RESTORE.to_string(),
             hotkey_persist: DEFAULT_HOTKEY_PERSIST.to_string(),
@@ -98,6 +121,8 @@ impl Default for Config {
             hotkey_discovery: DEFAULT_HOTKEY_DISCOVERY.to_string(),
             hotkey_cycle: DEFAULT_HOTKEY_CYCLE.to_string(),
             hotkey_mark: DEFAULT_HOTKEY_MARK.to_string(),
+            hotkey_write_all: DEFAULT_HOTKEY_WRITE_ALL.to_string(),
+            hotkey_restore_all: DEFAULT_HOTKEY_RESTORE_ALL.to_string(),
         }
     }
 }
@@ -114,6 +139,8 @@ impl Config {
             Action::Cycle => &self.hotkey_cycle,
             Action::ToggleOverlay => &self.overlay_toggle_key,
             Action::Mark => &self.hotkey_mark,
+            Action::WriteAll => &self.hotkey_write_all,
+            Action::RestoreAll => &self.hotkey_restore_all,
         }
     }
 
@@ -148,6 +175,8 @@ impl Config {
             one("cycle", Action::Cycle),
             one("overlay-toggle", Action::ToggleOverlay),
             one("mark", Action::Mark),
+            one("write_all", Action::WriteAll),
+            one("restore_all", Action::RestoreAll),
         ]
         .join(" ")
     }
@@ -179,6 +208,18 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         &mut cfg.watch_interval_ms,
         WATCH_MS_RANGE,
     );
+    clamp(
+        "overlay_install_delay_ms",
+        &mut cfg.overlay_install_delay_ms,
+        OVERLAY_DELAY_MS_RANGE,
+    );
+
+    if !cfg.log_dir.trim().is_empty() && !Path::new(cfg.log_dir.trim()).is_absolute() {
+        warnings.push(format!(
+            "log_dir = {:?} is not an absolute path; logging next to the DLL",
+            cfg.log_dir
+        ));
+    }
 
     let mut key = |name: &str, v: &mut String, default: &str| {
         if v.trim().is_empty() {
@@ -223,6 +264,16 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
     );
     key("hotkey_cycle", &mut cfg.hotkey_cycle, DEFAULT_HOTKEY_CYCLE);
     key("hotkey_mark", &mut cfg.hotkey_mark, DEFAULT_HOTKEY_MARK);
+    key(
+        "hotkey_write_all",
+        &mut cfg.hotkey_write_all,
+        DEFAULT_HOTKEY_WRITE_ALL,
+    );
+    key(
+        "hotkey_restore_all",
+        &mut cfg.hotkey_restore_all,
+        DEFAULT_HOTKEY_RESTORE_ALL,
+    );
 
     // Two actions on one key both fire; that is allowed but almost certainly a mistake.
     let bound = cfg.bindings();
@@ -237,6 +288,22 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         }
     }
     Ok((cfg, warnings))
+}
+
+/// T-018: the raw `log_dir` from `<dir>/nrpvp.toml`, read before logging exists. Any problem (no file,
+/// bad TOML, wrong type) gives `None` (= log next to the DLL); `load` reports parse errors later.
+pub(crate) fn peek_log_dir(dir: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(dir.join(FILE_NAME)).ok()?;
+    parse_log_dir(&text)
+}
+
+fn parse_log_dir(text: &str) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Peek {
+        log_dir: Option<String>,
+    }
+    let p: Peek = toml::from_str(text).ok()?;
+    p.log_dir.filter(|s| !s.trim().is_empty())
 }
 
 /// Load `<dir>/nrpvp.toml`, creating it with defaults if it does not exist. Never fails.
@@ -278,11 +345,12 @@ pub(crate) fn load(dir: &Path) -> Config {
         }
     };
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} keys: {}",
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} log_dir={:?} keys: {}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
         cfg.overlay_enabled,
+        cfg.log_dir,
         cfg.describe_bindings()
     );
     cfg
@@ -322,7 +390,7 @@ mod tests {
         let f4 = hotkey::parse_key("F4").expect("F4 parses").vk;
         assert!(c.bindings().iter().all(|(_, k)| k.vk != f4));
         // Cycle is unbound; the other seven actions are bound.
-        assert_eq!(c.bindings().len(), 7);
+        assert_eq!(c.bindings().len(), 9);
         assert!(c.binding(Action::Cycle).is_none());
         assert_eq!(
             c.binding(Action::ToggleOverlay).map(|k| (k.vk, k.name)),
@@ -330,14 +398,14 @@ mod tests {
         );
         assert_eq!(
             c.describe_bindings(),
-            "write=F5 restore=F6 persist=F7 histogram=F8 discovery=F9 cycle=- overlay-toggle=Insert mark=F10"
+            "write=F5 restore=F6 persist=F7 histogram=F8 discovery=F9 cycle=- overlay-toggle=Insert mark=F10 write_all=F11 restore_all=F12"
         );
     }
 
     #[test]
     fn new_keys_parse_and_normalise() {
         let (cfg, w) = parse(
-            "overlay_enabled = false\noverlay_toggle_key = \"home\"\nhotkey_write = \"f11\"\nhotkey_cycle = \"F4\"\nhotkey_restore = \"\"\nhotkey_persist = \"  \"\n",
+            "overlay_enabled = false\noverlay_toggle_key = \"home\"\nhotkey_write = \"f11\"\nhotkey_write_all = \"f13\"\nhotkey_cycle = \"F4\"\nhotkey_restore = \"\"\nhotkey_persist = \"  \"\n",
         )
         .expect("ok");
         assert!(w.is_empty(), "{w:?}");
@@ -384,6 +452,29 @@ mod tests {
     fn non_string_key_values_are_errors() {
         assert!(parse("hotkey_write = 5").is_err());
         assert!(parse("overlay_enabled = \"yes\"").is_err());
+    }
+
+    #[test]
+    fn log_dir_parses_and_peeks() {
+        assert_eq!(Config::default().log_dir, "");
+        let (cfg, w) = parse("log_dir = 'D:\\repo\\dist\\nucleus-logs'\n").expect("ok");
+        assert_eq!(cfg.log_dir, "D:\\repo\\dist\\nucleus-logs");
+        assert!(w.is_empty(), "{w:?}");
+        // The peek ignores type errors in other keys (the full parse reports them later).
+        assert_eq!(
+            parse_log_dir("overlay_enabled = \"junk\"\nlog_dir = 'D:\\x'\n"),
+            Some("D:\\x".to_string())
+        );
+        assert_eq!(
+            parse_log_dir("team_candidates = [1]\nlog_dir = 'D:\\x'\n"),
+            Some("D:\\x".to_string())
+        );
+        assert_eq!(parse_log_dir("log_dir = \"\"\n"), None);
+        assert_eq!(parse_log_dir("log_dir = 5"), None);
+        assert_eq!(parse_log_dir("not toml"), None);
+        assert_eq!(parse_log_dir(""), None);
+        let (_, w) = parse("log_dir = 'rel\\dir'\n").expect("ok");
+        assert_eq!(w.len(), 1, "{w:?}");
     }
 
     #[test]

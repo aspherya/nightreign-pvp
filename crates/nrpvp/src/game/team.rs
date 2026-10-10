@@ -1241,6 +1241,28 @@ impl TeamCtl {
         }
     }
 
+    /// FS-0 hotkey: write `v` to every valid PlayerIns of the current ChrSet (local and remote copies).
+    pub(crate) fn set_all(&mut self, v: u8, src: &str) {
+        let Some(res) = self.resolve_for(src) else {
+            return;
+        };
+        for addr in res.players.clone() {
+            let who = res.who(addr).unwrap_or_else(|| "UNKNOWN".to_string());
+            self.write_to(addr, &who, v, src);
+        }
+    }
+
+    /// FS-0 hotkey: restore every PlayerIns of the current ChrSet that has a captured original.
+    pub(crate) fn restore_all(&mut self, src: &str) {
+        let Some(res) = self.resolve_for(src) else {
+            return;
+        };
+        for addr in res.players.clone() {
+            let who = res.who(addr).unwrap_or_else(|| "UNKNOWN".to_string());
+            self.restore_at(addr, &who, src);
+        }
+    }
+
     /// Restore the local player's captured original.
     pub(crate) fn restore(&mut self, src: &str) {
         let Some((res, local)) = self.local_or_log(src) else {

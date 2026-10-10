@@ -45,6 +45,8 @@ mostly confirms it holds across a whole session.
 
 ## Completed work
 
+- 2026-10-09: **FS-0 PASS (reported):** two real SC clients (Nucleus) fought each other and enemies with team 29 set via nrpvp. H1 holds locally: no networking changes needed. Pending: the per-step authority matrix with logs, death/revive in PvP, and FS-1 over a real network.
+
 - 2026-10-09: **H1 prerequisite proven solo:** ChrIns+0x74 controls hostility in NR (TC-004 run 2). The PvPvE candidate value is 29 (Indiscriminate), tested in FS-1.
 - 2026-10-09: SC+me3 launch path, singleton discovery, RTTI, local-player resolution, and the gated team write all verified.
 

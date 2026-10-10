@@ -556,6 +556,8 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
         Action::Histogram => Some(Command::RunHistogram),
         Action::Discovery => Some(Command::RunDiscovery),
         Action::Mark => Some(Command::Mark(None)),
+        Action::WriteAll => Some(Command::SetAll(team.selected())),
+        Action::RestoreAll => Some(Command::RestoreAll),
         Action::Cycle | Action::ToggleOverlay => None,
     }
 }
@@ -572,6 +574,8 @@ fn run_command(
     match cmd {
         Command::Set(v) => team.set_and_write(v, src),
         Command::Restore => team.restore(src),
+        Command::SetAll(v) => team.set_all(v, src),
+        Command::RestoreAll => team.restore_all(src),
         Command::TogglePersist => team.toggle_persist(src),
         Command::SetFor { addr, value } => team.set_for(addr, value, src),
         Command::RestoreFor { addr } => team.restore_for(addr, src),

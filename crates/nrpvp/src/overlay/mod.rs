@@ -44,8 +44,6 @@ use shared::{team_name, Command, PlayerRow, Role, Shared, Snapshot};
 /// How long to wait for the game window before giving up on the overlay.
 const WINDOW_WAIT: Duration = Duration::from_secs(600);
 const WINDOW_POLL: Duration = Duration::from_millis(500);
-/// Extra pause after the window appears, so the game has started creating its swap chain.
-const SETTLE: Duration = Duration::from_secs(2);
 /// A top-level window smaller than this is not the game's main window.
 const MIN_WINDOW: (i32, i32) = (320, 240);
 /// Candidate buttons per row.
@@ -58,11 +56,11 @@ const AMBER: [f32; 4] = [0.95, 0.75, 0.25, 1.0];
 const GREY: [f32; 4] = [0.60, 0.60, 0.60, 1.0];
 
 /// Start the install thread. Returns immediately; never fails the caller.
-pub(crate) fn spawn(shared: Arc<Shared>, toggle_name: Option<String>) {
+pub(crate) fn spawn(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
     let r = std::thread::Builder::new()
         .name("nrpvp-overlay".into())
         .spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name)));
+            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name, settle)));
             if result.is_err() {
                 tracing::error!(
                     "overlay: install thread panicked; continuing without an overlay (hotkeys still work)"
@@ -76,7 +74,7 @@ pub(crate) fn spawn(shared: Arc<Shared>, toggle_name: Option<String>) {
     }
 }
 
-fn run(shared: Arc<Shared>, toggle_name: Option<String>) {
+fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
     let t0 = Instant::now();
     if !wait_for_game_window() {
         tracing::warn!(
@@ -86,11 +84,11 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>) {
         return;
     }
     tracing::info!(
-        "overlay: game window found after {} ms; installing the Direct3D 12 hooks in {} s",
+        "overlay: game window found after {} ms; installing the Direct3D 12 hooks in {} ms (overlay_install_delay_ms)",
         t0.elapsed().as_millis(),
-        SETTLE.as_secs()
+        settle.as_millis()
     );
-    std::thread::sleep(SETTLE);
+    std::thread::sleep(settle);
     match install(shared, toggle_name) {
         Ok(()) => tracing::info!(
             "overlay: hudhook DX12 hooks applied (the panel appears with the first presented frame; visible at start)"

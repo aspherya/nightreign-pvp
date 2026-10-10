@@ -38,9 +38,13 @@ pub(crate) enum Action {
     ToggleOverlay,
     /// T-015: log a numbered `MARK #n: (hotkey)` line.
     Mark,
+    /// FS-0: write the selected candidate to every player.
+    WriteAll,
+    /// FS-0: restore every player.
+    RestoreAll,
 }
 
-pub(crate) const ALL_ACTIONS: [Action; 8] = [
+pub(crate) const ALL_ACTIONS: [Action; 10] = [
     Action::Write,
     Action::Restore,
     Action::Persist,
@@ -49,6 +53,8 @@ pub(crate) const ALL_ACTIONS: [Action; 8] = [
     Action::Cycle,
     Action::ToggleOverlay,
     Action::Mark,
+    Action::WriteAll,
+    Action::RestoreAll,
 ];
 
 impl Action {

@@ -13,9 +13,7 @@ path (SC launcher or me3 profile)**. Classify each problem as one of: `MOD-DEFEC
 | Network | Internet (Steam P2P via SC) |
 | Pins | see TECHNICAL_NOTES.md §1 |
 
-Running two game instances on one PC was considered and rejected for now. SC needs two real Steam accounts
-over Steam networking, which would mean a VM with GPU passthrough or a second Steam client: too much
-headache for the value.
+Two instances on one PC **work via Nucleus Co-op** (Goldberg-emulated Steam, SC loaded in both): this is FS-0 (TASKS T-017), a local dry run. Real-network confirmation is still FS-1.
 
 **Safety checklist before every session:** launch only via `nrsc_launcher.exe` or `scripts/launch.ps1`;
 saves backed up; both PCs on the same SC build and the same nrpvp build.
@@ -118,6 +116,11 @@ Expected: unknown. This is what we're testing. Record the result for every step.
 ---
 
 ## 3. Results log
+
+### 2026-10-09 — FS-0 (Nucleus Co-op, 2 instances on Leonardo's PC, Goldberg-emulated Steam + SC v1.1.3 + nrpvp with F11 = all players → 29): **PASS (reported)**
+The two players could fight each other **and** enemies (PvPvE) in the same expedition. Per-step matrix details (which client must hold the
+flag) were not recorded, and the logs were lost because Nucleus deletes the instance folders on close (fixed by T-018). The overlay did not render under Nucleus (hooks applied, no frames); hotkeys worked.
+Pinned issue: the Nucleus handler's `dlllist.txt` must not end with a newline, or Nucleus fails with WaitForSingleObject 258.
 
 ### 2026-10-09 — TC-004 run 1 (Leonardo solo, SC profile)
 Only value **29** was tested (the instructions wrongly said to press F4 first; selection starts at 6). Write and restore worked; no visible

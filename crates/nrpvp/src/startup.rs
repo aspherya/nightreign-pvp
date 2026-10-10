@@ -14,7 +14,7 @@ pub(crate) fn run() {
             // Without our own directory there is nowhere sensible to put the log; bail quietly.
             None => return,
         };
-        let setup = match logging::init(&dll_dir) {
+        let setup = match logging::init(&dll_dir, config::peek_log_dir(&dll_dir).as_deref()) {
             Ok(s) => s,
             Err(_) => return,
         };
@@ -33,6 +33,7 @@ pub(crate) fn run() {
                 overlay::spawn(
                     std::sync::Arc::clone(&shared),
                     cfg.binding(Action::ToggleOverlay).map(|k| k.name),
+                    std::time::Duration::from_millis(cfg.overlay_install_delay_ms),
                 );
                 Some(shared)
             } else {
@@ -55,6 +56,14 @@ fn banner(setup: &logging::LogSetup) -> Option<sysinfo::GameModule> {
         env!("CARGO_PKG_VERSION")
     );
     tracing::info!("unix time {}", sysinfo::unix_time_secs());
+    tracing::info!(
+        "log dir: {} (nrpvp.log + {}/)",
+        setup.log_dir.display(),
+        logging::SESSION_DIR_NAME
+    );
+    if let Some(note) = &setup.fallback_note {
+        tracing::warn!("T-018: {note}; logging next to the DLL instead");
+    }
     match &setup.session_path {
         Some(p) => tracing::info!("session log: {}", p.display()),
         None => tracing::info!(
