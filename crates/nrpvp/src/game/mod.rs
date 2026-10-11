@@ -12,14 +12,21 @@
 //! are executed here, on the main loop thread, by [`run_command`]; the overlay's render thread never touches
 //! game memory. After each tick the loop publishes a [`Snapshot`] for the overlay.
 
+pub(crate) mod combat_state;
 pub(crate) mod discover;
+pub(crate) mod downed;
 pub(crate) mod image;
+pub(crate) mod mark_dump;
 pub(crate) mod mem;
+pub(crate) mod poswrite;
 pub(crate) mod probe2;
+pub(crate) mod probe_down;
 pub(crate) mod probe_pos;
+pub(crate) mod probe_scan;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
 pub(crate) mod team;
+pub(crate) mod wide_scan;
 
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -333,9 +340,12 @@ fn watch(
         size,
         seq: 0,
     };
+    // T-035: combat-state tracker and the rival revive rule run in both modes; the timer scan thread is dev + probes only.
+    let mut combat = Some(combat_state::CombatCtl::new(cfg, base, size));
     // Player mode never builds the probes (config::finalize also forces `probes = false` there).
     let mut probes = (cfg.dev_mode && cfg.probes).then(|| probe2::Probes::new(cfg, base, size));
     let mut auto_deferred_logged = false;
+    let mut class_names_set = false;
     // WorldChrMan instance we last scheduled/ran an automatic discovery for (0 = none/null).
     let mut last_wcm_inst: usize = 0;
     let mut auto_due: Option<Instant> = None;
@@ -503,6 +513,7 @@ fn watch(
             match hotkey_command(*action, &team) {
                 Some(cmd) => run_command(cmd, &key.name, &mut team, &mut disc, wcm_inst),
                 None if *action == Action::Cycle => team.cycle(),
+                None if *action == Action::DownedCycle => team.cycle_downed(),
                 None => {}
             }
         }
@@ -510,6 +521,14 @@ fn watch(
         if let Some(ui) = ui.as_ref().filter(|_| cfg.dev_mode) {
             for cmd in ui.drain() {
                 run_command(cmd, "overlay", &mut team, &mut disc, wcm_inst);
+            }
+        }
+        // T-032: a MARK this tick starts the dump job (dev mode only; `take_new_mark` is always None in the player build) and
+        // the downed-state change tracker's 2 s window.
+        if let Some(n) = team.take_new_mark() {
+            start_mark_dump(n, &mut team, &mut disc, wcm_inst);
+            if let Some(p) = probes.as_mut() {
+                p.on_mark(n);
             }
         }
         team.tick();
@@ -552,6 +571,26 @@ fn watch(
             }
         }
 
+        // T-032: the position scan report labels pointee vtables with RTTI class names, once the RTTI is available (never
+        // blocks on the worker's lock).
+        if !class_names_set {
+            if let Some(p) = probes.as_mut() {
+                if let Ok(st) = disc.state.try_lock() {
+                    if st.rtti.stats.classes_with_vtable > 0 {
+                        p.set_class_names(Arc::new(st.rtti.vtable_names()));
+                        class_names_set = true;
+                    }
+                }
+            }
+        }
+        // T-033: RTTI for the combat tracker (never blocks on the worker's lock).
+        if let Some(c) = combat.as_mut().filter(|c| c.needs_rtti()) {
+            if let Ok(st) = disc.state.try_lock() {
+                if st.rtti.stats.classes_with_vtable > 0 {
+                    c.set_rtti(&st.rtti);
+                }
+            }
+        }
         // T-027/T-028: read-only probes, only in the developer build with `probes = true`.
         if let Some(p) = probes.as_mut() {
             let targets = if wcm_live {
@@ -561,6 +600,15 @@ fn watch(
             };
             p.tick(&all, wcm_inst, &targets);
         }
+        // T-035 (both modes): tracker and rival revive rule; the timer scan runs on its own thread (dev + probes).
+        if let Some(c) = combat.as_mut() {
+            let subjects = if wcm_live {
+                team.combat_subjects()
+            } else {
+                Vec::new()
+            };
+            c.tick(subjects, &all);
+        }
         if let Some(ui) = &ui {
             let mut snap = Snapshot {
                 wcm_instance: wcm_inst,
@@ -568,6 +616,10 @@ fn watch(
                 ..Snapshot::default()
             };
             team.fill_snapshot(&mut snap);
+            if let Some(c) = combat.as_ref().filter(|_| cfg.dev_mode) {
+                snap.combat_lines = c.overlay_lines();
+                snap.revive_text = c.revive_text();
+            }
             if let Some(p) = &probes {
                 snap.probes_enabled = true;
                 snap.probe_lines = p.lines();
@@ -590,6 +642,29 @@ fn watch(
         } else {
             WAIT_POLL
         });
+    }
+}
+
+/// T-032: start the MARK dump job on the discovery worker, or say why not. Dev mode only (the caller only gets a mark number
+/// there). Reads a fresh quiet resolve of the players on this thread; the worker does the dumping.
+fn start_mark_dump(mark: u32, team: &mut team::TeamCtl, disc: &mut Discovery, wcm_inst: usize) {
+    if wcm_inst == 0 {
+        tracing::info!("T-032 DUMP mark=#{mark} skipped: WorldChrMan is not live");
+        return;
+    }
+    let targets = team.dump_targets();
+    if targets.is_empty() {
+        tracing::info!("T-032 DUMP mark=#{mark} skipped: no players resolved");
+        return;
+    }
+    let (base, size) = (disc.base, disc.size);
+    if let Err(ms) = disc.start_job(
+        "T-032 mark dump",
+        Box::new(move |rtti, _seq| mark_dump::run(rtti, mark, &targets, base, size)),
+    ) {
+        tracing::info!(
+            "T-032 DUMP mark=#{mark} skipped: discovery/scan worker busy (running {ms} ms)"
+        );
     }
 }
 
@@ -616,7 +691,10 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
         Action::Mark => Some(Command::Mark(None)),
         Action::WriteAll => Some(Command::SetAll(team.selected())),
         Action::RestoreAll => Some(Command::RestoreAll),
-        Action::Cycle | Action::ToggleOverlay => None,
+        Action::PosCycle => Some(Command::PosCycle),
+        Action::PosSave => Some(Command::PosSave),
+        Action::PosWrite => Some(Command::PosWrite),
+        Action::Cycle | Action::ToggleOverlay | Action::DownedCycle => None,
     }
 }
 
@@ -640,6 +718,9 @@ fn run_command(
         Command::PersistFor { addr, on } => team.set_persist_for(addr, on, src),
         Command::SetPvpve(on) => team.set_pvpve(on, src),
         Command::Mark(text) => team.mark(text.as_deref()),
+        Command::PosCycle => team.pos_cycle(),
+        Command::PosSave => team.pos_save(src),
+        Command::PosWrite => team.pos_write(src),
         Command::RunDiscovery => {
             if wcm_live {
                 if let Err(ms) = disc.start(wcm_inst, src) {
@@ -862,6 +943,19 @@ mod command_tests {
             Some(Command::Mark(None))
         );
         assert_eq!(hotkey_command(Action::Cycle, &team), None);
+        assert_eq!(hotkey_command(Action::DownedCycle, &team), None);
+        assert_eq!(
+            hotkey_command(Action::PosCycle, &team),
+            Some(Command::PosCycle)
+        );
+        assert_eq!(
+            hotkey_command(Action::PosSave, &team),
+            Some(Command::PosSave)
+        );
+        assert_eq!(
+            hotkey_command(Action::PosWrite, &team),
+            Some(Command::PosWrite)
+        );
         assert_eq!(hotkey_command(Action::ToggleOverlay, &team), None);
     }
 

@@ -1,0 +1,21 @@
+16:24:29.207 DOWN detected: downed=1 bar=240.00 clock=14.21 pause=0.00 downs=3
+16:24:34.168 before write: downed=1 bar=240.00 clock=10.37 pause=0.00 downs=3
+poke Instance0 0x7FF4A9250B3C: 0xFFFFFFFF (f32 NaN) -> wrote 0x00000000 (f32 0) -> readback 0x00000000 (f32 0)
+poke Instance0 0x7FF4A9250B38: 0xFFFFFFFF (f32 NaN) -> wrote 0x40000000 (f32 2) -> readback 0x40000000 (f32 2)
+16:24:35.333 downed=1 bar=240.00 clock=9.49 pause=0.00 downs=3
+16:24:36.078 downed=1 bar=240.00 clock=8.99 pause=0.00 downs=3
+16:24:36.758 downed=1 bar=240.00 clock=8.44 pause=0.00 downs=3
+16:24:37.449 downed=1 bar=240.00 clock=7.94 pause=0.00 downs=3
+16:24:38.367 downed=1 bar=240.00 clock=7.04 pause=0.00 downs=3
+16:24:39.239 downed=1 bar=240.00 clock=6.45 pause=0.00 downs=3
+16:24:39.996 downed=1 bar=240.00 clock=5.90 pause=0.00 downs=3
+16:24:40.616 downed=1 bar=240.00 clock=5.30 pause=0.00 downs=3
+16:24:41.277 downed=1 bar=240.00 clock=4.70 pause=0.00 downs=3
+16:24:41.945 downed=1 bar=240.00 clock=3.92 pause=0.00 downs=3
+16:24:43.204 downed=1 bar=240.00 clock=3.07 pause=0.00 downs=3
+16:24:44.838 downed=1 bar=240.00 clock=2.67 pause=0.00 downs=3
+16:24:45.467 downed=1 bar=240.00 clock=2.07 pause=0.00 downs=3
+16:24:46.046 downed=1 bar=240.00 clock=1.33 pause=0.00 downs=3
+16:24:46.760 downed=1 bar=240.00 clock=0.60 pause=0.00 downs=3
+16:24:47.400 downed=1 bar=240.00 clock=0.02 pause=0.00 downs=3
+16:24:48.082 end: downed=0 bar=0.00 clock=0.00 pause=0.00 downs=3

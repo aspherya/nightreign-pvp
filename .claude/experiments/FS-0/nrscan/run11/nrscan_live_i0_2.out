@@ -1,0 +1,18 @@
+nrscan clock: Instance0 pid 28932 (F32, range [0.2, 20], tolerance 0.25, interval 700 ms)
+waiting for LOCAL DOWN in C:\Users\Leonardo\source\repos\nightreign-pvp\dist\nucleus-logs\Instance0\nrpvp.log (Ctrl+C to abort) ...
+LOCAL DOWN seen: scanning
+2909 committed private RW region(s), 11259 MB total
+--near-mb 256: 4 anchor(s), 2 region piece(s) covering 660 MB
+pass 1: F32 in [0.2, 20] over 2 regions (660 MB)
+pass 1 done: 0.77s, 660 MB read (853 MB/s), 7499650 candidates
+pass 2: 472 candidates
+pass 3: 110 candidates
+pass 4: 37 candidates
+pass 5: 14 candidates
+pass 6: 4 candidates
+pass 7: 4 candidates
+pass 8: 0 candidates
+scan ended 6.8s after start
+pass 1: 0.77s (853 MB/s); candidate counts per pass: [7499650, 472, 110, 37, 14, 4, 4, 0]; final range [0.2, 20]
+0 survivor(s)
+report written to C:\Users\Leonardo\source\repos\nightreign-pvp\dist\nrscan\clock_20261011T160106Z.txt

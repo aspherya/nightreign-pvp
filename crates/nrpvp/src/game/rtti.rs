@@ -119,6 +119,14 @@ impl Rtti {
         self.by_vtable.get(&vt).copied()
     }
 
+    /// T-032: every known vtable VA with its readable class name (labels for the dev dumps and the position scan).
+    pub(crate) fn vtable_names(&self) -> HashMap<usize, String> {
+        self.by_vtable
+            .iter()
+            .map(|(&vt, &c)| (vt, self.name(c)))
+            .collect()
+    }
+
     /// Derives from (or is) `ChrIns`.
     pub(crate) fn is_chr(&self, class: usize) -> bool {
         self.chr.get(class).copied().unwrap_or(false)

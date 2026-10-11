@@ -5,10 +5,12 @@ PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The or
 
 | File | Purpose |
 |---|---|
+| [STATUS.md](STATUS.md) | **Read first.** Current state, what is deployed, next human tasks, traps, decisions |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | **The plan for scope v2 (Battle Royale):** features, milestones M1–M8, spikes, risks |
 | [ROADMAP.md](ROADMAP.md) | Phases, current milestone, acceptance criteria, blockers |
 | [TASKS.md](TASKS.md) | Task board: the unit of work for agents. **Start here.** |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Stack decision, verified facts, hypotheses, RE findings |
+| [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we have found**, what it holds, how it behaves, and how it was confirmed |
 | [TESTING.md](TESTING.md) | Test environment, test cases, results log |
 | [FUTURE_CONSIDERATIONS.md](FUTURE_CONSIDERATIONS.md) | Deferred ideas. Never implement from here without a task. |
 

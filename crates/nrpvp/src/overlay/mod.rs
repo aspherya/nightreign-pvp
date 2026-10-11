@@ -344,6 +344,35 @@ impl OverlayApp {
         if !s.roster_warning.is_empty() {
             ui.text_colored(RED, format!("Rosters: {}", s.roster_warning));
         }
+        ui.text_colored(
+            GREY,
+            format!(
+                "Downed-rival value (F8 cycles): {} - INERT, the downed marker is unknown",
+                if s.downed_rival_team == 0 {
+                    "off".to_string()
+                } else {
+                    format!(
+                        "team {} ({})",
+                        s.downed_rival_team,
+                        team_name(s.downed_rival_team)
+                    )
+                }
+            ),
+        );
+        ui.text_colored(
+            AMBER,
+            format!(
+                "Snap-back test (F9 select, F7 save, F6 write): {}, saved: {}",
+                s.pos_selected,
+                if s.pos_saved { "yes" } else { "no" }
+            ),
+        );
+        if !s.revive_text.is_empty() {
+            ui.text_colored(AMBER, &s.revive_text);
+            for l in &s.combat_lines {
+                ui.text(l);
+            }
+        }
         if s.persist {
             ui.text_colored(GREEN, "Persist: ON");
         } else {
@@ -734,6 +763,11 @@ mod tests {
             pvpve_scheme: "rivals".to_string(),
             team_size: 1,
             roster_warning: String::new(),
+            downed_rival_team: 6,
+            pos_selected: "PlayerIns+0x6D0 (2/6)".to_string(),
+            pos_saved: true,
+            combat_lines: vec!["LOCAL[0] 0x6001.. downs=1 hp=0 DOWNED".to_string()],
+            revive_text: "Rival revive: redown, applied 0x".to_string(),
             probes_enabled: true,
             probe_lines: vec![
                 "clock hint: 07:00:00 mult 1 [plausible]".to_string(),

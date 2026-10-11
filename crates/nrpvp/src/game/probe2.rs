@@ -26,7 +26,9 @@ use std::time::{Duration, Instant};
 
 use super::discover::{hex_lines, is_ptr};
 use super::mem::{va_rva, RegionCache};
+use super::probe_down::DownWatch;
 use super::probe_pos::{PosProbe, Target};
+use super::probe_scan::PosScan;
 use super::singletons::Found;
 use crate::config::Config;
 
@@ -757,6 +759,9 @@ pub(crate) struct Probes {
     view: Vec<String>,
     // position (T-028 read-only part)
     pos: PosProbe,
+    // T-031: downed-state log and position scan
+    down: DownWatch,
+    scan: PosScan,
     // clock
     clock_inst: usize,
     clock_prev: Option<ClockSample>,
@@ -776,7 +781,7 @@ impl Probes {
     pub(crate) fn new(cfg: &Config, base: usize, size: usize) -> Self {
         if cfg.probes {
             tracing::info!(
-                "{TAG}: probes ENABLED (interval {} ms): world clock, event flags, PlayerGameData candidates, player positions (T-028). ER-layout hypotheses, read-only; nothing logged under this tag is verified",
+                "{TAG}: probes ENABLED (interval {} ms): world clock, event flags, PlayerGameData candidates, player positions (T-028), downed-state log and position scan (T-031). ER-layout hypotheses, read-only; nothing logged under this tag is verified",
                 cfg.probe_interval_ms
             );
         }
@@ -789,6 +794,8 @@ impl Probes {
             sing: BTreeMap::new(),
             view: Vec::new(),
             pos: PosProbe::new(base, size),
+            down: DownWatch::new(),
+            scan: PosScan::new(base, size),
             clock_inst: 0,
             clock_prev: None,
             clock_last_log: Instant::now(),
@@ -814,6 +821,21 @@ impl Probes {
         v
     }
 
+    /// T-032: RTTI class names (vtable VA -> name) for the position scan report.
+    pub(crate) fn set_class_names(
+        &mut self,
+        names: std::sync::Arc<std::collections::HashMap<usize, String>>,
+    ) {
+        self.scan.set_class_names(names);
+    }
+
+    /// T-032: a MARK was logged: the downed-state tracker runs its 2 s before/after window around it.
+    pub(crate) fn on_mark(&mut self, mark: u32) {
+        if self.enabled {
+            self.down.request_mark(mark);
+        }
+    }
+
     /// The slow probes (clock, flags, PlayerGameData) are due.
     fn slow_due(&self) -> bool {
         self.enabled && self.last_tick.is_none_or(|t| t.elapsed() >= self.interval)
@@ -826,6 +848,8 @@ impl Probes {
             return;
         }
         self.pos.tick(wcm, targets);
+        self.down.tick(wcm, targets);
+        self.scan.tick(wcm, targets);
         if !self.slow_due() {
             return;
         }
@@ -1553,6 +1577,7 @@ mod tests {
             &[Target {
                 index: 0,
                 addr: 0x1234,
+                entry_addr: 0,
                 local: true,
             }],
         );
@@ -1573,6 +1598,7 @@ mod tests {
             &[Target {
                 index: 0,
                 addr: 0x20,
+                entry_addr: 0,
                 local: true,
             }],
         );

@@ -188,3 +188,88 @@ run `launch-friend.ps1 -DryRun` and send Leonardo the printed nrsc.dll hash. Leo
 4. **TC-003** rows 0–4 + row 4 tail. (45 min)
 5. Quit. Both zip their kit or `dist` `logs\` folder; Leonardo copies both into `.claude/experiments/FS-1/` (`host/`, `client/`). (5 min)
 **Stop rules:** a crash or disconnect → note the time and MARK, relaunch, continue from the same row. Two crashes on the same row → skip it and move on.
+
+### 2026-10-10 — T-029/T-030 player zip, Leonardo solo: **PASS**
+Installed from `dist\NightreignPvP.zip` by the txt guide; `nrpvp_launcher.exe` started the game (bundled me3 with `-e`); the BATTLE ROYALE badge
+showed top-right and changed to "Team 1 - 0 rivals" in a Solo Mission; sites of grace and item pickups work (local player stays on team 2).
+Two-player check pending (Nucleus next, friend later).
+
+### 2026-10-11 — FS-0 run 5 (Nucleus, 2 instances, dev build with scheme "rivals", team_size 1, probes on). Logs: `.claude/experiments/FS-0/run5_*`
+**PvP: PASS.** No keys pressed. Each client wrote 29 once, only to its copy of the other player (`pvpve team write who=REMOTE[1] … 2 -> 29`,
+write #1 on both); local players stayed on 2. Reported: both could fight and down each other; sites of grace and levelling work.
+**Defect vs scope:** rivals can **revive** each other (attacking a downed rival fills the revive gauge). Under the old "all 29" scheme they could not.
+**Log findings:** per-player ids are session slot numbers (0x6001, 0x6002, and 0x6003 after a rejoin), so they are not always 1..N but still order
+consistently; ChrSet entry byte +9 went 04→02→04 for ~5 s for one player near the end, seen on both clients (candidate "downed" flag, unconfirmed);
+`CSEventFlagMan` ER-layout structural checks ALL PASS; position probe: **ER physics chain does not hold on NR** (modules pointer at +0x190 is
+readable but +0x68 is not); floats that look like coordinates sit around PlayerIns+0x6C0..0x6D8. No Roundtable freeze.
+
+### 2026-10-11 — FS-0 run 6 (Nucleus, T-031 build). Logs: `.claude/experiments/FS-0/run6_*`
+**Downed experiment: not exercised.** F8 cycled 0→6→14→30→2 on both clients, but no `downed rival` line was ever logged: the trigger (ChrSet
+entry byte +9 == 2) never fired during several downs and revives. **Entry byte +9 is not the downed marker** (retracts the earlier candidate).
+Reported: rivals could still down, kill, and revive each other with every value (expected, since nothing was written).
+**Position scan: useful.** Smooth f32 triples while moving (incl. the hawk flight): `PlayerIns+0x6C0` (x,y,z,1.0) and a second vector at
+`+0x6D0`; `[PlayerIns+0x60]+0x1EC` (pointee vtable exe+0x2C0A898); `[PlayerIns+0x6B0]+0x17C` and `+0x18C` (vtable exe+0x2C8FD20);
+`[PlayerIns+0x5F0]+0x64`. Which one is authoritative (moves the player when written) is UNKNOWN → T-032.
+
+### 2026-10-11 — FS-0 run 7 (Nucleus, T-032 MARK dumps; Part 1 only). Logs: `.claude/experiments/FS-0/run7_*`
+Sequence: both standing (marks 1–3 on Instance0), player 0x6001 downed by 0x6002 (mark 4), revived (5), downed again (6), bled out / respawned (7, 8).
+Diffing the PlayerIns dumps of the victim, on its own client and on the rival's client:
+- **Downed marker: `PlayerIns+0x710` == 1** while downed, 0 otherwise; also `+0x1F9` bit 4 (0x10). Identical on both clients for both downs.
+- **Down counter: `PlayerIns+0x730`** = 0, then 1 after the first down, 2 after the second; same on both clients.
+- **team_type does not change when downed** (stays 2 locally / 29 on the rival's copy).
+- **Last-hit-by: `PlayerIns+0x1A0`** (and `+0x198`, which clears later) holds the attacker's handle, i.e. the 8 bytes at the attacker's `ChrIns+0x08`
+  (host `0xFFFFFFFF10C00000`, joiner `0xFFFFFFFF10C00001`). Seen on the victim's own client only (0xFF… / 0 on the rival's copy).
+- **PlayerGameData: `PlayerIns+0x5A0`** → object with RTTI class `CS::PlayerGameData` (vtable exe+0x2BE6E28); **HP = u32 at +0x10** (240 standing,
+  0 downed, 120 right after a revive = 50%); mirrored at `PlayerIns+0xBA0`. Same offset as ER's PlayerGameData.
+- ChrSet entry byte +9 stayed 04 throughout (confirms it is not a downed marker).
+Part 2 (snap-back position test) not run yet.
+
+### 2026-10-11 — FS-0 run 8 (Nucleus, T-033 build). Logs: `.claude/experiments/FS-0/run8_*`
+**Tracker: PASS.** DOWN/UP transitions for 0x6002 logged on both clients at matching times (downs 1, 2, 3; hp 0 / 120); the victim's client
+classified the last attacker as RIVAL id 0x6001 (handle 0xFFFFFFFF10C00001) every time.
+**Finisher (hp0): fired once, no effect.** `T-033 FINISHER hp 120 -> 0 (readback 120)`; +100 ms…+2 s still hp=120, downed=0. So
+`PlayerGameData+0x10` is a **mirror** of HP that the game rewrites, not the authoritative value. Other places that held the same HP pattern in run 7:
+`PlayerIns+0xBA0` and `[PlayerIns+0xB78]+0x70`.
+**Timer scan:** no countdown found in PlayerIns or its one-level pointees over a 26 s downed window (only up-counters: +1.0/s floats at
+`[PlayerIns+0x5A8]+0x1C8` and `[PlayerIns+0x760]+0xE4`; a frame counter at `PlayerIns+0x560`). Snap-back test not run.
+
+### 2026-10-11 — FS-0 run 9 (Nucleus, T-034 build). Logs: `.claude/experiments/FS-0/run9_*`
+**Authoritative HP found: `[PlayerIns+0xB78]+0x70` (u32).** Writing 0 there on a rival-completed revive held (readback 0); `PlayerIns+0xBA0`
+and `PlayerGameData+0x10` already read 0 a moment later (mirrors). **Effect: the player is downed again at once** (downs stays capped at 3),
+not killed; reported by Leonardo as "got up but got downed again instantly". Fired twice (04:57:46, 04:58:11), same result.
+**Death signature:** leaving the downed state with hp=0, then "HP restored" to full ~6 s later = bled out and respawned (04:56:57 after 16.9 s
+untouched; 04:58:28, 15.6 s after a re-down). A revive leaves with hp = 50%. **Each re-down restarts the bleed-out clock** (~13–17 s).
+**Wide timer scan: failed for performance** (passes took 520–920 ms instead of 250 ms, ≤ 10 samples per window, no ranking; it also delayed the
+main loop). Bleed-out timer still unlocated.
+
+### 2026-10-12 — FS-0 run 10 (Nucleus, external scanner `nrscan clock`). Output: `.claude/experiments/FS-0/nrscan/run10_clock_instance0.out`
+Tool fixes during the session: a full pass over ~7 GB took 16 s (too slow), and regions > 1 GB were skipped although the game heap holding
+PlayerIns is one ~1.1–1.2 GB private RW region. With `--near-mb 256` (653 MB around the PlayerIns addresses) pass 1 took 0.70 s.
+**Result (one untouched bleed-out, Instance0 LOCAL, 15.2 s scan window):** 8,200,440 candidates → 2 survivors, both f32 counting **up** at
+1.0/s: 2.815 at +0.71 s … 16.962 at +14.78 s (so ≈ 0 about 2 s before the scan started, ≈ 17.4 at death). Addresses that run:
+0x7FF43A4444E4 and 0x7FF43A445BDC (0x16F8 apart, values a constant 0.019 apart). The first lies at +0x2B4 of an object at 0x7FF43A444230 that
+many pointers reference; no path from PlayerIns or a named singleton was found. **Unknown whether it is the bleed-out clock or a co-running
+timer (animation, HUD).** Next: write test (add seconds while downed, measure the time of death).
+
+### 2026-10-12 — FS-0 runs 11–13 (Nucleus, `nrscan clock`, read-only). Outputs: `.claude/experiments/FS-0/nrscan/run11`, `run12`
+- Run 12 (one untouched bleed-out, f32 mode, 1028 MB near the player, 15.9 s): 87 survivors, all f32 counting up at 1.0/s but already at 9–19
+  when the down happened; classes seen on holders: `CS::CSPhysSysIns` → `CS::HitIns`. **No value started at the down.** The count-up pair from
+  run 10 did not reappear, so it was not the bleed-out clock (retracted).
+- Run 13 (one untouched bleed-out, u32 mode, range 1–60000, scales ×1/×30/×60/×1000): 32,272,345 candidates → 0 after 6.3 s.
+- Run 11 (several downs with hits): inconclusive (the filter drops any value that pauses).
+**Conclusion: the bleed-out clock is not an f32 or u32 that changes at 1/s, 30/s, 60/s or 1000/s within ~256 MB of PlayerIns.** Not searched:
+a normalised fraction (1 → 0 over ~15 s), other rates, memory farther from the player. Search stopped at Leonardo's request (no new tooling).
+
+### 2026-10-12 — FS-0 run 14 (Nucleus, live reads and writes with `nrscan peek`/`poke`). Outputs: `.claude/experiments/FS-0/nrscan/run14`
+**The near-death block is in PlayerIns, next to the downed flag** (first seen in the run-7 MARK dumps; confirmed live on Instance0):
+- `PlayerIns+0x710` u8 state: 0 = normal, **1 = downed**, 2 = getting up after a revive (≈3.5 s).
+- `PlayerIns+0x714` f32 **revive bar, amount left**: 40 / 90 / 240 at the 1st / 2nd / 3rd down; each hit subtracts (240 → 229 after one hit); 0 → revived.
+- `PlayerIns+0x718` f32 **bleed-out clock, seconds left**: starts ≈ 14.9, counts down in real time; **death exactly at 0** (watched 14.21 → 0.02 → dead).
+- `PlayerIns+0x71C` f32 **pause timer**: set to ≈ 3.4–3.5 on a hit and counts down; while > 0 the clock does not move.
+- `PlayerIns+0x720` f32: down-level decay timer (−1 before the first down; 180 → counts down while up; frozen while downed).
+- `PlayerIns+0x730` = number of downs (already known).
+**Clock write: works.** At 16:26:01 the clock was set from 9.97 to 2.0 (`poke`, readback 2.0); it kept counting (1.65, 1.00, 0.20) and the
+player died at 16:26:04.9, 8 s after the down instead of ≈15.
+Not yet tested: writing the bar and the pause timer (same block, same kind of write). A first attempt wrote to +0x728/+0x72C by mistake
+(two 0xFFFFFFFF words; the game had reset them by the next check; no effect seen).
+Why the scans missed it: the clock pauses on hits and the bar counts **down** from its start value, not up from zero.

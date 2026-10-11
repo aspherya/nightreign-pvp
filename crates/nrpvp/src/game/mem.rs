@@ -1,5 +1,6 @@
-//! Guarded access to process memory. Reads are everywhere; the ONLY write in the whole project is
-//! [`write_u8`] (T-008), and its single caller is `team::write_team_type`, which gates it.
+//! Guarded access to process memory. Reads are everywhere; the only writes in the whole project are
+//! [`write_u8`] (T-008, caller `team::write_team_type`) and [`write_bytes`] (T-032 dev-only snap-back test,
+//! caller `poswrite`, LOCAL player only); each caller gates what may be written.
 //!
 //! Every read first asks `VirtualQuery` whether the whole range is committed and readable (no
 //! `PAGE_NOACCESS`, no `PAGE_GUARD`), so a stale or garbage pointer yields `None` instead of an access
@@ -213,7 +214,7 @@ pub(crate) fn protect_writable(protect: u32) -> bool {
 }
 
 /// Store ONE byte at `addr` after checking, with `VirtualQuery`, that the page is committed and writable.
-/// This is the only memory write in the project (T-008). No hooks, no page-protection changes.
+/// Used by the T-008 team_type write. No hooks, no page-protection changes.
 ///
 /// SAFETY / policy: the caller decides *what* may be written (`team::write_team_type` only calls this for
 /// `PlayerIns`+0x74, TECHNICAL_NOTES.md section 4, NR 1.3.3.0, after a vtable check). This function only
@@ -221,6 +222,15 @@ pub(crate) fn protect_writable(protect: u32) -> bool {
 /// or garbage address. Residual risk: the page could be freed between the query and the store (TOCTOU),
 /// same class as the guarded reads; the store is a single byte via `write_volatile`.
 pub(crate) fn write_u8(addr: usize, value: u8) -> Result<(), &'static str> {
+    check_writable(addr, 1)?;
+    // SAFETY: the byte at `addr` was just verified to lie in a committed, writable, non-guard page (see
+    // the doc comment for the policy and the TOCTOU note). A u8 store has no alignment requirement.
+    unsafe { ptr::write_volatile(addr as *mut u8, value) };
+    Ok(())
+}
+
+/// `VirtualQuery` check that `[addr, addr+len)` lies inside ONE committed, plain-writable, non-guard run of pages.
+fn check_writable(addr: usize, len: usize) -> Result<(), &'static str> {
     if addr < MIN_VALID_ADDR {
         return Err("address below the valid user range");
     }
@@ -237,7 +247,8 @@ pub(crate) fn write_u8(addr: usize, value: u8) -> Result<(), &'static str> {
         return Err("VirtualQuery failed");
     }
     let base = mbi.BaseAddress as usize;
-    if base > addr || base.saturating_add(mbi.RegionSize) <= addr {
+    let end = base.saturating_add(mbi.RegionSize);
+    if base > addr || end <= addr {
         return Err("VirtualQuery returned a region that does not contain the address");
     }
     if mbi.State != MEM_COMMIT {
@@ -246,9 +257,29 @@ pub(crate) fn write_u8(addr: usize, value: u8) -> Result<(), &'static str> {
     if !protect_writable(mbi.Protect.0) {
         return Err("page is not plain writable (read-only, guard, no-access or copy-on-write)");
     }
-    // SAFETY: the byte at `addr` was just verified to lie in a committed, writable, non-guard page (see
-    // the doc comment for the policy and the TOCTOU note). A u8 store has no alignment requirement.
-    unsafe { ptr::write_volatile(addr as *mut u8, value) };
+    if addr.saturating_add(len) > end {
+        return Err("the range runs past the end of the writable region");
+    }
+    Ok(())
+}
+
+/// Largest store [`write_bytes`] accepts.
+pub(crate) const MAX_WRITE_BYTES: usize = 16;
+
+/// T-032 (dev only): store 1..=[`MAX_WRITE_BYTES`] bytes at `addr` after the same `VirtualQuery` check as
+/// [`write_u8`], applied to the whole range (one committed, plain-writable, non-guard run). Same TOCTOU
+/// residual risk. The caller (`poswrite`) decides what may be written: the LOCAL player's position candidate
+/// only, after a PlayerIns vtable re-check. Bytes are stored one at a time with `write_volatile`.
+pub(crate) fn write_bytes(addr: usize, data: &[u8]) -> Result<(), &'static str> {
+    if data.is_empty() || data.len() > MAX_WRITE_BYTES {
+        return Err("write length must be 1..=16 bytes");
+    }
+    check_writable(addr, data.len())?;
+    for (i, &b) in data.iter().enumerate() {
+        // SAFETY: [addr, addr+len) was just verified to lie inside one committed, writable, non-guard run (see
+        // the doc comment); a u8 store has no alignment requirement.
+        unsafe { ptr::write_volatile((addr + i) as *mut u8, b) };
+    }
     Ok(())
 }
 
@@ -345,6 +376,25 @@ mod tests {
         assert!(!protect_writable(PAGE_READWRITE.0 | PAGE_GUARD.0));
         assert!(!protect_writable(PAGE_NOACCESS.0));
         assert!(!protect_writable(0));
+    }
+
+    #[test]
+    fn write_bytes_stores_up_to_16_bytes_and_rejects_bad_input() {
+        let mut v = vec![0x11u8; 32];
+        let a = v.as_mut_ptr() as usize;
+        assert_eq!(
+            write_bytes(a + 4, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+            Ok(())
+        );
+        assert_eq!(&v[4..16], &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        assert!(v[..4].iter().chain(&v[16..]).all(|&b| b == 0x11));
+        assert!(write_bytes(a, &[]).is_err());
+        assert!(write_bytes(a, &[0u8; 17]).is_err());
+        assert_eq!(write_bytes(a, &[0u8; 16]), Ok(()));
+        assert!(write_bytes(0, &[1]).is_err());
+        assert!(write_bytes(0x10, &[1, 2]).is_err());
+        let ro: &'static [u8] = b"read-only literal";
+        assert!(write_bytes(ro.as_ptr() as usize, &[1, 2, 3]).is_err());
     }
 
     #[test]

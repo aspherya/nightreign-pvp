@@ -42,6 +42,12 @@ pub(crate) enum Command {
     SetPvpve(bool),
     /// T-015: log `MARK #n: <text>`; `None` = from the hotkey.
     Mark(Option<String>),
+    /// T-032 (dev only): select the next snap-back position candidate.
+    PosCycle,
+    /// T-032 (dev only): save the local player's values of every position candidate.
+    PosSave,
+    /// T-032 (dev only): write the saved values into the selected candidate, local player only.
+    PosWrite,
 }
 
 /// Name of a known `team_type` value (Smithbox NR TEAM_TYPE enum, TECHNICAL_NOTES.md section 4; the
@@ -220,6 +226,14 @@ pub(crate) struct Snapshot {
     pub pvpve_scheme: String,
     pub team_size: u8,
     pub roster_warning: String,
+    /// T-031/T-032: downed-rival experiment value (0 = off); INERT since T-032 (the downed marker is unknown).
+    pub downed_rival_team: u8,
+    /// T-032 (dev only): selected snap-back position candidate `"text (i/n)"` (empty in the player build) and whether values are saved.
+    pub pos_selected: String,
+    pub pos_saved: bool,
+    /// T-033 (dev only): one compact combat-state line per player, and the rival revive status text (empty in the player build).
+    pub combat_lines: Vec<String>,
+    pub revive_text: String,
     /// T-027: read-only probes are enabled (`probes = true`).
     pub probes_enabled: bool,
     /// T-027: the latest probe candidates, one plain line each (all UNVERIFIED).
@@ -401,6 +415,11 @@ mod tests {
             pvpve_scheme: "rivals".to_string(),
             team_size: 2,
             roster_warning: String::new(),
+            downed_rival_team: 6,
+            pos_selected: "PlayerIns+0x6D0 (2/6)".to_string(),
+            pos_saved: true,
+            combat_lines: vec!["LOCAL[0] 0x6001.. downs=1 hp=0 DOWNED".to_string()],
+            revive_text: "Rival revive: redown, applied 0x".to_string(),
             probes_enabled: true,
             probe_lines: vec!["clock hint: 07:00:00 mult 1 [plausible]".to_string()],
         };

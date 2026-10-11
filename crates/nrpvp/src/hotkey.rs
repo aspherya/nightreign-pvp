@@ -42,9 +42,17 @@ pub(crate) enum Action {
     WriteAll,
     /// FS-0: restore every player.
     RestoreAll,
+    /// T-031: select the next `downed_rival_team` candidate (dev mode).
+    DownedCycle,
+    /// T-032: select the next snap-back position candidate (dev mode).
+    PosCycle,
+    /// T-032: save the local player's current values of every position candidate (dev mode).
+    PosSave,
+    /// T-032: write the saved values into the selected position candidate, local player only (dev mode).
+    PosWrite,
 }
 
-pub(crate) const ALL_ACTIONS: [Action; 10] = [
+pub(crate) const ALL_ACTIONS: [Action; 14] = [
     Action::Write,
     Action::Restore,
     Action::Persist,
@@ -55,6 +63,10 @@ pub(crate) const ALL_ACTIONS: [Action; 10] = [
     Action::Mark,
     Action::WriteAll,
     Action::RestoreAll,
+    Action::DownedCycle,
+    Action::PosCycle,
+    Action::PosSave,
+    Action::PosWrite,
 ];
 
 impl Action {

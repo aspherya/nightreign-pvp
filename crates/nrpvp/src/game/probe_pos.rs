@@ -288,11 +288,13 @@ pub(crate) fn read_sample(rc: &mut RegionCache, player: usize, cands: &[PhysCand
 pub(crate) struct Target {
     pub index: usize,
     pub addr: usize,
+    /// Address of this player's 16-byte ChrSet entry (0 = unknown); T-031 re-reads it fresh.
+    pub entry_addr: usize,
     pub local: bool,
 }
 
 impl Target {
-    fn label(&self) -> String {
+    pub(crate) fn label(&self) -> String {
         if self.local {
             format!("LOCAL[{}]", self.index)
         } else {
@@ -656,11 +658,13 @@ mod tests {
             Target {
                 index: 0,
                 addr: 0x20,
+                entry_addr: 0,
                 local: true,
             },
             Target {
                 index: 1,
                 addr: 0x30,
+                entry_addr: 0,
                 local: false,
             },
         ];
@@ -684,6 +688,7 @@ mod tests {
         let t = [Target {
             index: 0,
             addr: a.addr(PLAYER),
+            entry_addr: 0,
             local: true,
         }];
         p.tick(0x1000_0000, &t);

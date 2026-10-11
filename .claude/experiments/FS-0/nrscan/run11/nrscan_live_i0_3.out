@@ -1,0 +1,6 @@
+nrscan clock: Instance0 pid 28932 (F32, range [0.2, 20], tolerance 0.25, interval 700 ms)
+waiting for LOCAL DOWN in C:\Users\Leonardo\source\repos\nightreign-pvp\dist\nucleus-logs\Instance0\nrpvp.log (Ctrl+C to abort) ...
+  still waiting (20 s)
+  still waiting (40 s)
+  still waiting (60 s)
+  still waiting (80 s)

@@ -391,7 +391,7 @@ Goal: find team_type values A and B such that A is hostile to B and to enemies, 
   frozen at match start (no late joiners).
 
 ### T-026 — Relative teams scheme ("rivals only") + roster wiring
-Owner: SONNET/implementer → HUMAN (Nucleus) | Status: review (code done 2026-10-10, 174 tests; deployed to Nucleus, host config, and friend kit; HUMAN Nucleus check pending) | Phase: M2 → v1
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: **done** (2026-10-11: FS-0 run 5 PASS for free-for-all; open defect: rivals can revive each other → T-031)
 Goal: each client leaves itself and its allies at the vanilla value and writes the hostile value only to rivals. Config: `pvpve_scheme =
 "rivals"` (new default when `pvpve = true`) or `"all"` (today's behaviour), `team_size` (default 1 = free-for-all). Rosters from
 `rules::teams` using the per-player id at ChrIns+0x78. The overlay shows each player's team and ALLY/RIVAL. Acceptance (HUMAN, Nucleus 2
@@ -437,3 +437,78 @@ How the Roundtable expedition-type menu (Solo Mission / Up to 6 players under SC
 how SC renames its entries (locale json keys `MODMESSAGE_YUINEXUSBEGIN*`), whether mods have added entries to FromSoftware menus (ER/NR
 examples), and how every client would learn the chosen mode. Rank routes from cheapest (relabel an entry under our launcher) to a true third entry.
 → `.claude/research/S7-mode-menu.md`
+
+### T-031 — Downed-state and position discovery (dev probes) + rival-revive experiment switch
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: review (built and deployed to Nucleus 2026-10-11; 232+3 tests; HUMAN session pending) | Feeds: F10 (ally-only revive), F3 (spawns)
+(a) Downed detection: log, at 100 ms while any value changes, every player's ChrSet entry bytes +8/+9, team_type, and HP candidates, so one
+session with a few downs and revives shows which field marks "downed". (b) Experiment switch `downed_rival_team` (dev only, default off): while a
+rival's entry +9 == 2, write this value to that rival's copy and put 29 back afterwards, to find a value that stops rival revives.
+(c) Position discovery by movement: the ER chain failed; scan PlayerIns (first 0x1000 bytes) and objects one pointer away for f32 triples that
+change smoothly while the player walks; log ranked candidates. Read-only except (b).
+
+### T-032 — Find the downed marker (MARK dumps) and the writable position (snap-back test)
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: part (a) **done** (run 7: downed marker, attacker handle, HP found); part (c) snap-back still pending | Feeds: F10, F3. Dev mode only.
+(a) F10 MARK additionally dumps, for every ChrSet player, PlayerIns+0..0x1000 and the first 0x200 bytes of its one-level pointees (compact hex,
+with pointee vtable RVA and RTTI class name). Protocol: MARK twice with the rival standing, twice with the rival downed; Opus diffs.
+(b) RTTI class names next to every pointee vtable in the POSSCAN output.
+(c) Snap-back test: a list of position candidates (from FS-0 run 6); F9 selects the next candidate, F7 saves the local player's current values
+of all candidates, F6 writes the saved value into the selected candidate only. First new write kind since team_type: dev only, LOCAL player
+only, 12 bytes, pointee re-validated by vtable before each write, every write logged.
+
+### T-033 — Finishing blow: rival completes the revive meter → death (PROJECT_PLAN §11)
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: tracker **done** (run 8 PASS); finisher via PlayerGameData HP has no effect (mirror) → T-034 | Feeds: F10
+Verified inputs (FS-0 run 7): downed = PlayerIns+0x710; downs = +0x730; last attacker handle = +0x1A0 (victim's client); handle = ChrIns+0x08;
+PlayerGameData = [PlayerIns+0x5A0], HP at +0x10. Unknown: how to turn a revive into a death.
+(1) State tracker (both modes later; dev first): per player, log down / up / respawn transitions with the last attacker classified as ALLY, RIVAL,
+or OTHER. (2) Downed-timer scan (dev, read-only): while the LOCAL player is downed, rank f32/u32 values in PlayerIns and its pointees that count
+down in real time. (3) Finisher experiment (dev switch): when the LOCAL player is revived and the last attacker is a rival, write HP = 0 and log
+what the game does next (re-downed with a higher down count, or dead).
+
+### T-034 — Finishing blow, round 2: authoritative HP and the bleed-out timer
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: **done** (run 9: authoritative HP found; HP 0 = re-down, not death; wide scan too slow → T-035) | Feeds: F10. Dev mode only.
+(1) Finisher modes (F5 cycles): `hp0-all` writes u32 0 to all three HP locations seen in run 7 (PlayerGameData+0x10, PlayerIns+0xBA0,
+[PlayerIns+0xB78]+0x70), each validated; log readbacks and the state at +100 ms … +5 s. Also `hp0-downed`: the same write while the LOCAL
+player is still downed and a rival hits (to see whether a downed player can be killed that way).
+(2) Wide timer scan while LOCAL is downed: PlayerIns two levels deep and the first 0x2000 bytes of every live singleton; rank values counting
+down (or up) at a steady real-time rate that started at the DOWN transition, and values that jump when a hit lands (the revive meter).
+
+### T-035 — Rival revive rule v1 in the player build + fast bleed-out timer scan
+Owner: SONNET/implementer → HUMAN | Status: review (built 2026-10-12: rule v1 in both modes, fast scan; 269+3 tests; deployed to Nucleus, player zip rebuilt; HUMAN session pending) | Feeds: F10
+(1) **Rule v1 (player and dev mode, always on):** on the LOCAL player's revive (downed 1→0 with hp > 0) whose last attacker is a RIVAL, write
+u32 0 to the authoritative HP `[PlayerIns+0xB78]+0x70` once, so the player is downed again instead of revived; allies revive as in vanilla.
+Verified offsets only (FS-0 runs 7–9). The badge shows nothing new. Remove the hp0/hp0-all/hp0-downed experiment modes.
+(2) **Fast timer scan (dev, read-only):** the wide scan took ~800 ms per pass. Rewrite the sampler to copy each region with one guarded bulk
+read, drop the all-singletons sweep to a short list plus PlayerIns two levels deep, and keep every pass under 50 ms; run it off the main loop.
+Goal: locate the bleed-out clock (≈ 15 s) and the revive meter, so a rival-completed meter can end the clock at once (instant death).
+
+### T-036 — Free-for-all: HP 0 = death (no downed state) via the in-memory near-death params
+Owner: SONNET/implementer → HUMAN | Status: in-progress | Feeds: F9/F10. Requested by Leonardo 2026-10-12.
+(1) Param access (read-only first): locate `GAME_SYSTEM_COMMON_PARAM_ST` in memory through the param repository singleton (ER layout in
+fromsoftware-rs as a hint; field offsets from the NR param struct); validate by `required_revive_progress_level1/2/3` == 40/90/240; log every
+near-death/revive field. (2) Rule: when `team_size == 1`, write 0 to the near-death duration fields on this client (both modes), re-checking
+periodically whether something restores them; when `team_size >= 2`, leave them alone. Dev key to toggle for A/B testing.
+Acceptance (HUMAN, Nucleus or friend): in free-for-all a player at 0 HP dies and respawns immediately on both screens; no revive is possible.
+
+### T-037 — nrscan: external memory scanner for the bleed-out clock and the revive bar
+Owner: SONNET/implementer → OPUS runs it during a HUMAN Nucleus session | Status: review (built 2026-10-12: dist
+rscan.exe; self-tests pass; live run pending) | Feeds: F10 (PROJECT_PLAN §11)
+Why: three in-mod scans failed (narrow regions, slow passes) and a manual Cheat Engine search is too slow for a 15 s bleed-out (2.5 billion
+candidates). Design: a separate CLI (`crates/nrscan`, read-only, ReadProcessMemory from outside the game; no mod change). It tails the target
+instance's nrpvp log for `T-033 STATE who=LOCAL … DOWN` / `UP`, then scans committed private read-write memory for f32 in a plausible range and
+keeps the values whose change matches elapsed time; survivors are tracked until the player leaves the downed state; a second mode tracks
+values that step when hits land. Finally it explains each surviving address relative to the PlayerIns and singleton addresses in the log
+(containing region, pointers to it, offsets).
+
+### T-038 — nrscan round 2: write test, object identification, route search, fast bar scan
+Owner: SONNET/implementer → OPUS runs it with the HUMAN | Status: review (built 2026-10-12: class names, route search, clock write test, fast bar scan, peek/poke; 26 tests; live runs pending) | Feeds: F10 (PROJECT_PLAN §11)
+Approach agreed with Leonardo 2026-10-12: finish the investigation with the external scanner (candidates **and** confirmations) before any
+further mod changes. Questions: (1) is the count-up f32 from run 10 the bleed-out clock (write test); (2) where is the revive bar; (3) is the
+clock writable both ways; (4) can the bar be restored after a hit; (5) which object holds each value (RTTI class) and what stable route
+leads to it from PlayerIns / WorldChrMan.
+
+### T-039 — Downed rule (Leonardo's design): rival hits shorten the bleed-out and never move the revive bar
+Owner: SONNET/implementer → HUMAN | Status: review (coded 2026-10-12, 278 tests; deployed to Nucleus, dist and the player zip; HUMAN smoke test pending: STATUS.md §3 Task A) | Feeds: F10. Inputs verified in FS-0 run 14 (TECHNICAL_NOTES §4).
+On the LOCAL player's own client, while `PlayerIns+0x710 == 1`: when the bar (`+0x714`) drops and the last attacker (`+0x1A0`) is a RIVAL →
+write the bar back to its value before the hit, subtract `rival_hit_seconds` (default 3.0) from the clock (`+0x718`, floor 0.05), and set the
+pause timer (`+0x71C`) to 0. Hits by ALLY/SELF/OTHER: untouched. Replaces rule v1 (re-down on a rival revive), which stays only as a safety net
+if a rival's hit ever completes the bar before the mod reacts. Both modes; no keys; remove nothing else.

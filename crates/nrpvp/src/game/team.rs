@@ -25,7 +25,9 @@ use std::fmt::Write as _;
 use std::time::{Duration, Instant};
 
 use super::discover::{self, is_ptr, Budgets};
+use super::downed::DownedCycle;
 use super::mem::{self, va_rva, RegionCache};
+use super::poswrite::{self, PosTest, RealMem};
 use super::rtti::Rtti;
 use crate::config::{Config, Scheme};
 use crate::mark::Marker;
@@ -1053,6 +1055,15 @@ pub(crate) struct TeamCtl {
     /// T-013: last quiet resolve for the overlay snapshot (refreshed at most every [`LIVE_REFRESH`]).
     live: LiveView,
     next_live: Instant,
+    /// T-031 (dev only): `downed_rival_team` and its cycle list (current 0 = off). INERT since T-032: the downed marker is
+    /// unknown, so nothing is written from it.
+    downed_cycle: DownedCycle,
+    /// T-032: the last MARK number not yet handed to the main loop (which starts the dump job and the change tracker).
+    new_mark: Option<u32>,
+    /// T-032 (dev only): snap-back test candidates, selection and saved values.
+    pos: PosTest,
+    /// T-032: pending follow-up value logs after an F6 write: (due, label, PlayerIns).
+    pos_follow: Vec<(Instant, &'static str, usize)>,
 }
 
 /// What the overlay shows about the players, from a quiet (non-logging) resolve.
@@ -1065,6 +1076,8 @@ struct LiveView {
     /// How the local player was decided (empty when there is none).
     basis: String,
     rows: Vec<PlayerRow>,
+    /// T-031: address of the ChrSet entries array (for the probes' fresh entry reads).
+    entries_ptr: usize,
     /// T-026: why the rosters fell back to free-for-all (empty when they did not).
     roster_warning: String,
 }
@@ -1093,6 +1106,29 @@ impl TeamCtl {
             );
         } else {
             tracing::info!("T-020: PvPvE mode is OFF (set pvpve = true in nrpvp.toml to enable)");
+        }
+        if cfg.dev_mode {
+            tracing::info!(
+                "T-032: downed marker UNKNOWN (ChrSet entry byte +9 was disproven by FS-0 run 6): downed_rival_team = {} and its cycle {:?} (hotkey {}) are INERT, nothing is written from them",
+                cfg.downed_rival_team,
+                cfg.downed_rival_candidates,
+                cfg.binding(crate::hotkey::Action::DownedCycle)
+                    .map_or("-".to_string(), |k| k.name)
+            );
+            let (_, warnings) = poswrite::parse_list(&cfg.pos_candidates);
+            for w in warnings {
+                tracing::warn!("T-032: {w}");
+            }
+            tracing::info!(
+                "T-032 POS: snap-back test (dev only, LOCAL player only, 12 bytes): {} candidate(s); hotkeys cycle={} save={} write={}",
+                poswrite::parse_list(&cfg.pos_candidates).0.len(),
+                cfg.binding(crate::hotkey::Action::PosCycle)
+                    .map_or("-".to_string(), |k| k.name),
+                cfg.binding(crate::hotkey::Action::PosSave)
+                    .map_or("-".to_string(), |k| k.name),
+                cfg.binding(crate::hotkey::Action::PosWrite)
+                    .map_or("-".to_string(), |k| k.name)
+            );
         }
         let now = Instant::now();
         TeamCtl {
@@ -1131,6 +1167,17 @@ impl TeamCtl {
             next_persist: now,
             live: LiveView::default(),
             next_live: now,
+            downed_cycle: DownedCycle::new(
+                if cfg.dev_mode {
+                    cfg.downed_rival_team
+                } else {
+                    0
+                },
+                &cfg.downed_rival_candidates,
+            ),
+            new_mark: None,
+            pos: PosTest::new(&poswrite::parse_list(&cfg.pos_candidates).0, base, size),
+            pos_follow: Vec::new(),
         }
     }
 
@@ -1196,6 +1243,9 @@ impl TeamCtl {
         self.last_written.clear();
         self.persist.clear();
         self.pvpve_written.clear();
+        // T-032: saved positions belong to the old PlayerIns objects.
+        self.pos.forget();
+        self.pos_follow.clear();
         self.last_roster_key = None;
         self.last_player_count = None;
         self.next_watch = Instant::now();
@@ -1269,6 +1319,134 @@ impl TeamCtl {
     /// The candidate the write hotkey applies.
     pub(crate) fn selected(&self) -> u8 {
         self.cycler.current()
+    }
+
+    /// T-031 (dev only): the `downed_rival_team` experiment value now in force (0 = off).
+    #[cfg(test)]
+    pub(crate) fn downed_value(&self) -> u8 {
+        self.downed_cycle.current()
+    }
+
+    /// T-031 hotkey (dev mode only): select the next `downed_rival_team` candidate.
+    pub(crate) fn cycle_downed(&mut self) {
+        if !self.dev {
+            return;
+        }
+        let v = self.downed_cycle.next();
+        let pos = self
+            .downed_cycle
+            .position()
+            .map_or(String::new(), |(i, n)| format!(" ({i}/{n})"));
+        tracing::info!(
+            "T-032: downed_rival_team = {v}{pos}{}; INERT: the downed marker is unknown, nothing is written from this value",
+            if v == 0 { " (off)" } else { "" }
+        );
+    }
+
+    /// T-032 (dev only): select the next snap-back position candidate (F9).
+    pub(crate) fn pos_cycle(&mut self) {
+        if !self.dev {
+            return;
+        }
+        let line = self.pos.cycle();
+        tracing::info!("{line}");
+    }
+
+    /// The local PlayerIns, freshly resolved (ChrSet entry[0] rule, PlayerIns vtable check). Quiet resolve; logs only failures.
+    fn fresh_local(&mut self, src: &str) -> Option<usize> {
+        if self.inst == 0 || self.vts.is_empty() {
+            tracing::info!(
+                "T-032 POS: {src} ignored, WorldChrMan or the PlayerIns vtables are not known yet"
+            );
+            return None;
+        }
+        let res = match resolve(self.inst, &self.vts) {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("T-032 POS: {src} ignored, could not resolve the players: {e}");
+                return None;
+            }
+        };
+        let Some(local) = res.local else {
+            tracing::warn!(
+                "T-032 POS: {src} ignored: no local player ({})",
+                res.reasoning()
+            );
+            return None;
+        };
+        // Re-check the vtable of the object right now (resolve() already required it; this guards the window since).
+        let vt_ok =
+            is_ptr(local) && mem::read::<usize>(local).is_some_and(|vt| self.vts.contains(vt));
+        if !vt_ok {
+            tracing::warn!(
+                "T-032 POS: {src} ignored: 0x{local:X} no longer has a PlayerIns vtable"
+            );
+            return None;
+        }
+        Some(local)
+    }
+
+    /// T-032 (dev only): save the LOCAL player's current 12 bytes of every candidate (F7).
+    pub(crate) fn pos_save(&mut self, src: &str) {
+        if !self.dev {
+            return;
+        }
+        let Some(local) = self.fresh_local(src) else {
+            return;
+        };
+        tracing::info!("T-032 POS: {src} save for LOCAL PlayerIns 0x{local:X}");
+        for l in self.pos.save(&RealMem, local) {
+            tracing::info!("{l}");
+        }
+    }
+
+    /// T-032 (dev only): write the saved 12 bytes into the SELECTED candidate of the LOCAL player (F6), then schedule the
+    /// +100 ms / +500 ms / +2 s value logs.
+    pub(crate) fn pos_write(&mut self, src: &str) {
+        if !self.dev {
+            return;
+        }
+        let Some(local) = self.fresh_local(src) else {
+            return;
+        };
+        tracing::info!("{}", self.pos.values_line(&RealMem, local, "before write"));
+        match self.pos.write(&mut RealMem, local) {
+            Ok(r) => {
+                tracing::info!("{} ({src})", r.line());
+                let now = Instant::now();
+                self.pos_follow = poswrite::FOLLOW_MS
+                    .iter()
+                    .zip(["+100ms", "+500ms", "+2s"])
+                    .map(|(&ms, label)| (now + Duration::from_millis(ms), label, local))
+                    .collect();
+            }
+            Err(e) => tracing::warn!("T-032 POS: {src} write refused: {e}"),
+        }
+    }
+
+    /// T-032: log every candidate's value for the pending follow-ups that are due. Read-only.
+    fn pos_follow_tick(&mut self) {
+        if self.pos_follow.is_empty() {
+            return;
+        }
+        let now = Instant::now();
+        let (due, rest): (Vec<_>, Vec<_>) = self
+            .pos_follow
+            .drain(..)
+            .partition(|(when, _, _)| now >= *when);
+        self.pos_follow = rest;
+        for (_, label, player) in due {
+            tracing::info!("{}", self.pos.values_line(&RealMem, player, label));
+        }
+    }
+
+    /// T-032: the selected snap-back candidate (`"text (i/n)"`) and whether values are saved, for the dev overlay line.
+    fn pos_overlay(&self) -> (String, bool) {
+        let (i, n) = self.pos.position();
+        (
+            format!("{} ({i}/{n})", self.pos.selected_text()),
+            self.pos.has_saved(),
+        )
     }
 
     /// Cycle hotkey (unbound by default): select the next candidate.
@@ -1579,6 +1757,20 @@ impl TeamCtl {
     pub(crate) fn mark(&mut self, text: Option<&str>) {
         let line = self.marker.next_line(text);
         tracing::info!("{line}");
+        self.new_mark = Some(self.marker.count());
+    }
+
+    /// T-032: the number of a MARK logged since the last call (the main loop then starts the dump job and the change tracker).
+    /// Always `None` in the player build.
+    pub(crate) fn take_new_mark(&mut self) -> Option<u32> {
+        let m = self.new_mark.take();
+        m.filter(|_| self.dev)
+    }
+
+    /// T-032: dump targets for a MARK: a fresh quiet resolve of every PlayerIns of the ChrSet (local flagged).
+    pub(crate) fn dump_targets(&mut self) -> Vec<super::probe_pos::Target> {
+        self.next_live = Instant::now();
+        self.probe_targets()
     }
 
     /// Fill the team part of the overlay snapshot (T-013, T-015). Runs on the main loop thread: the only
@@ -1621,6 +1813,12 @@ impl TeamCtl {
         s.pvpve_scheme = self.pvpve_scheme.label().to_string();
         s.team_size = u8::try_from(self.team_size).unwrap_or(u8::MAX);
         s.roster_warning = self.live.roster_warning.clone();
+        s.downed_rival_team = self.downed_cycle.current();
+        if self.dev {
+            let (sel, saved) = self.pos_overlay();
+            s.pos_selected = sel;
+            s.pos_saved = saved;
+        }
         s.players = self
             .live
             .rows
@@ -1651,7 +1849,38 @@ impl TeamCtl {
             .map(|r| super::probe_pos::Target {
                 index: r.index,
                 addr: r.addr,
+                entry_addr: if self.live.entries_ptr == 0 {
+                    0
+                } else {
+                    self.live.entries_ptr + r.index * ENTRY_SIZE
+                },
                 local: r.role == Role::Local,
+            })
+            .collect()
+    }
+
+    /// T-033/T-035 (both modes): every PlayerIns of the ChrSet with its id and relation to LOCAL, from the same quiet resolve that
+    /// feeds the overlay (refreshed at most every [`LIVE_REFRESH`]). Read-only.
+    pub(crate) fn combat_subjects(&mut self) -> Vec<super::combat_state::Subject> {
+        if Instant::now() >= self.next_live {
+            self.next_live = Instant::now() + LIVE_REFRESH;
+            self.refresh_live();
+        }
+        self.live
+            .rows
+            .iter()
+            .map(|r| super::combat_state::Subject {
+                addr: r.addr,
+                label: super::probe_pos::Target {
+                    index: r.index,
+                    addr: r.addr,
+                    entry_addr: 0,
+                    local: r.role == Role::Local,
+                }
+                .label(),
+                local: r.role == Role::Local,
+                id: r.id,
+                relation: r.relation,
             })
             .collect()
     }
@@ -1696,6 +1925,7 @@ impl TeamCtl {
             Ok(r) => {
                 // Read-only, VirtualQuery-guarded (mem::read). Offset VERIFIED on NR 1.3.3.0 by
                 // T-007a; see TECHNICAL_NOTES section 4.
+                self.live.entries_ptr = r.entries_ptr;
                 self.live.rows = r.rows(&mut |a| mem::read::<u8>(a + CHR_TEAM));
                 let view = self.view_for(&r);
                 self.note_roster(&view);
@@ -1731,6 +1961,9 @@ impl TeamCtl {
         if !self.persist.is_empty() && now >= self.next_persist {
             self.next_persist = now + self.persist_every;
             self.persist_tick();
+        }
+        if self.dev {
+            self.pos_follow_tick();
         }
         if self.pvpve_enabled && self.pvpve_running && now >= self.next_pvpve {
             self.next_pvpve = now + self.pvpve_every;
@@ -3155,5 +3388,143 @@ mod tests {
         let mut ctl = f.ctl_with(&rivals_cfg(2));
         ctl.pvpve_tick();
         assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 29, 29));
+    }
+
+    // ---- T-032: inert downed switch, MARK events, snap-back test on fake memory ----
+
+    fn dev_cfg() -> Config {
+        Config {
+            dev_mode: true,
+            ..Config::default()
+        }
+    }
+
+    fn put3(f: &mut Fake, i: usize, off: usize, v: [f32; 3]) {
+        for (k, x) in v.iter().enumerate() {
+            f.objs[i][off + k * 4..off + k * 4 + 4].copy_from_slice(&x.to_le_bytes());
+        }
+    }
+
+    fn get3(f: &Fake, i: usize, off: usize) -> [f32; 3] {
+        let b = &f.objs[i][off..off + 12];
+        let g = |k: usize| f32::from_le_bytes([b[k], b[k + 1], b[k + 2], b[k + 3]]);
+        [g(0), g(4), g(8)]
+    }
+
+    #[test]
+    fn the_downed_experiment_value_is_inert_even_with_entry_byte_9_equal_2() {
+        let mut f = Fake::new();
+        set_id(&mut f, 2, 1);
+        set_id(&mut f, 0, 2);
+        set_id(&mut f, 1, 3);
+        let mut cfg = rivals_cfg(1);
+        cfg.downed_rival_team = 6;
+        let mut ctl = f.ctl_with(&cfg);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(0), f.team(1)), (29, 29));
+        // Every entry byte +9 is 2 ("downed" under the disproven hypothesis): the tick writes nothing but the pvpve value.
+        for e in 1..=3 {
+            f._entries[e * ENTRY_SIZE + 9] = 2;
+        }
+        ctl.tick();
+        ctl.pvpve_tick();
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 29, 29));
+        // F8 still cycles the (unused) value.
+        assert_eq!(ctl.downed_value(), 6);
+        ctl.cycle_downed();
+        assert_eq!(ctl.downed_value(), 14);
+        assert_eq!((f.team(0), f.team(1)), (29, 29));
+    }
+
+    #[test]
+    fn a_mark_raises_one_event_in_dev_mode_and_none_in_the_player_build() {
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&dev_cfg());
+        assert_eq!(ctl.take_new_mark(), None);
+        ctl.mark(Some("A downs B"));
+        ctl.mark(None);
+        // Two marks before the loop looked: it sees the newest number once.
+        assert_eq!(ctl.take_new_mark(), Some(2));
+        assert_eq!(ctl.take_new_mark(), None);
+        // dump_targets lists every ChrSet player with the first entry flagged local.
+        let t = ctl.dump_targets();
+        assert_eq!(t.len(), 3);
+        assert!(t[0].local && !t[1].local && !t[2].local);
+        assert_eq!(t[0].addr, f.addr(2));
+        let mut p = f.ctl_with(&Config::default());
+        p.mark(Some("x"));
+        assert_eq!(p.take_new_mark(), None);
+    }
+
+    #[test]
+    fn snap_back_writes_only_the_selected_candidate_of_the_local_player() {
+        let mut f = Fake::new();
+        // LOCAL is objs[2]; give every object a position at 0x6C0 and 0x6D0.
+        for i in 0..3 {
+            put3(&mut f, i, 0x6C0, [10.0 + i as f32, 0.0, 0.0]);
+            put3(&mut f, i, 0x6D0, [20.0 + i as f32, 0.0, 0.0]);
+        }
+        let mut ctl = f.ctl_with(&dev_cfg());
+        // Nothing saved yet: F6 does nothing.
+        ctl.pos_write("F6");
+        assert_eq!(get3(&f, 2, 0x6C0), [12.0, 0.0, 0.0]);
+        ctl.pos_save("F7");
+        assert!(ctl.pos_overlay().1);
+        for i in 0..3 {
+            put3(&mut f, i, 0x6C0, [100.0 + i as f32, 1.0, 1.0]);
+            put3(&mut f, i, 0x6D0, [200.0 + i as f32, 1.0, 1.0]);
+        }
+        // Candidate 1 (PlayerIns+0x6C0) is written on the LOCAL player only; 0x6D0 is not.
+        ctl.pos_write("F6");
+        assert_eq!(get3(&f, 2, 0x6C0), [12.0, 0.0, 0.0]);
+        assert_eq!(get3(&f, 2, 0x6D0), [202.0, 1.0, 1.0]);
+        for i in 0..2 {
+            assert_eq!(get3(&f, i, 0x6C0), [100.0 + i as f32, 1.0, 1.0]);
+        }
+        assert_eq!(ctl.pos_follow.len(), 3);
+        // F9 selects the second candidate; F6 writes it.
+        ctl.pos_cycle();
+        ctl.pos_write("F6");
+        assert_eq!(get3(&f, 2, 0x6D0), [22.0, 0.0, 0.0]);
+        // The follow-ups only read.
+        for e in ctl.pos_follow.iter_mut() {
+            e.0 = Instant::now();
+        }
+        ctl.pos_follow_tick();
+        assert!(ctl.pos_follow.is_empty());
+        // A new WorldChrMan instance forgets the saved values and the pending follow-ups.
+        ctl.set_instance(0);
+        assert!(!ctl.pos_overlay().1);
+        assert!(ctl.pos_follow.is_empty());
+    }
+
+    #[test]
+    fn snap_back_is_refused_without_vtables_and_absent_in_the_player_build() {
+        let mut f = Fake::new();
+        put3(&mut f, 2, 0x6C0, [1.0, 2.0, 3.0]);
+        // Player build: every call is a no-op.
+        let mut p = f.ctl_with(&Config::default());
+        p.pos_save("F7");
+        put3(&mut f, 2, 0x6C0, [9.0, 9.0, 9.0]);
+        p.pos_write("F6");
+        p.pos_cycle();
+        assert_eq!(get3(&f, 2, 0x6C0), [9.0, 9.0, 9.0]);
+        assert!(!p.pos_overlay().1);
+        assert!(p.pos_follow.is_empty());
+        let mut snap = Snapshot::default();
+        p.fill_snapshot(&mut snap);
+        assert!(snap.pos_selected.is_empty() && !snap.pos_saved);
+        // Dev build, but the PlayerIns vtable check fails (no vtables known): nothing is saved or written.
+        let mut d = f.ctl_with(&dev_cfg());
+        d.vts = PlayerVtables::default();
+        d.pos_save("F7");
+        assert!(!d.pos_overlay().1);
+        // The object's vtable changed after the resolve: refused by the re-check.
+        let mut d = f.ctl_with(&dev_cfg());
+        d.pos_save("F7");
+        assert!(d.pos_overlay().1);
+        f.objs[2][..8].copy_from_slice(&(VT_ENEMY as u64).to_le_bytes());
+        d.pos_write("F6");
+        assert_eq!(get3(&f, 2, 0x6C0), [9.0, 9.0, 9.0]);
     }
 }

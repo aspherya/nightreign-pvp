@@ -28,11 +28,22 @@ pub(crate) const DEFAULT_OVERLAY_DELAY_MS: u64 = 2000;
 const OVERLAY_DELAY_MS_RANGE: (u64, u64) = (0, 600_000);
 /// T-013 defaults. F4 is deliberately absent: Seamless Co-op binds it to its pause (TC-004 run 1).
 pub(crate) const DEFAULT_OVERLAY_TOGGLE: &str = "Insert";
-pub(crate) const DEFAULT_HOTKEY_WRITE: &str = "F5";
-pub(crate) const DEFAULT_HOTKEY_RESTORE: &str = "F6";
-pub(crate) const DEFAULT_HOTKEY_PERSIST: &str = "F7";
-pub(crate) const DEFAULT_HOTKEY_HISTOGRAM: &str = "F8";
-pub(crate) const DEFAULT_HOTKEY_DISCOVERY: &str = "F9";
+/// T-032: F5/F6/F7 are free for the snap-back test; the team write/restore/persist actions keep their overlay buttons.
+pub(crate) const DEFAULT_HOTKEY_WRITE: &str = "";
+pub(crate) const DEFAULT_HOTKEY_RESTORE: &str = "";
+pub(crate) const DEFAULT_HOTKEY_PERSIST: &str = "";
+/// T-031: F8 now cycles `downed_rival_team`; the histogram hotkey is unbound by default (the overlay button remains).
+pub(crate) const DEFAULT_HOTKEY_HISTOGRAM: &str = "";
+/// T-031: cycle `downed_rival_team` through `downed_rival_candidates` (dev mode only).
+pub(crate) const DEFAULT_HOTKEY_DOWNED_CYCLE: &str = "F8";
+/// T-031: `downed_rival_team` cycle list (0 = off).
+pub(crate) const DEFAULT_DOWNED_CANDIDATES: [u8; 5] = [0, 6, 14, 30, 2];
+/// T-032: F9 now selects the snap-back candidate; the discovery overlay button remains.
+pub(crate) const DEFAULT_HOTKEY_DISCOVERY: &str = "";
+/// T-032 snap-back test keys (dev mode only).
+pub(crate) const DEFAULT_HOTKEY_POS_CYCLE: &str = "F9";
+pub(crate) const DEFAULT_HOTKEY_POS_SAVE: &str = "F7";
+pub(crate) const DEFAULT_HOTKEY_POS_WRITE: &str = "F6";
 /// Cycling the selection is done with the overlay buttons; this hotkey is unbound by default.
 pub(crate) const DEFAULT_HOTKEY_CYCLE: &str = "";
 /// T-015: numbered MARK line in the log.
@@ -93,6 +104,26 @@ auto_team_all = 0
 probes = false
 probe_interval_ms = 1000
 
+# T-031 experiment value (dev mode only). INERT since T-032: the downed marker is unknown (ChrSet entry byte +9 was disproven by
+# FS-0 run 6), so nothing is written from it. hotkey_downed_cycle still steps through downed_rival_candidates (0 = off).
+downed_rival_team = 0
+downed_rival_candidates = [0, 6, 14, 30, 2]
+
+# T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF or [PlayerIns+0xPTR]+0xOFF
+# (3 x f32 each). hotkey_pos_cycle selects one, hotkey_pos_save saves the local player's values of ALL candidates,
+# hotkey_pos_write writes the saved 12 bytes into the SELECTED candidate only and logs every candidate after 100 ms, 500 ms and 2 s.
+# Invalid entries are skipped with a warning.
+pos_candidates = [\"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
+
+# T-035 rival revive rule (dev mode only; the player build always uses \"redown\"): when a RIVAL completes the revive meter of
+# the LOCAL player, the player is downed again at once (HP written to 0) instead of being revived; allies revive as in vanilla.
+# \"vanilla\" turns the rule off (dev mode only), for comparison tests.
+rival_revive = \"redown\"
+
+# T-039 downed rule (both modes, always on): while the LOCAL player is downed, a hit by a RIVAL never advances the revive bar and
+# takes this many seconds (0.5..15) off the bleed-out clock. Hits by allies / yourself / the environment are left alone.
+rival_hit_seconds = 3.0
+
 # T-018: absolute directory for the logs (default = next to the DLL). Logs go to <log_dir>\\<DLL folder name>\\nrpvp.log
 # and ...\\logs\\. Use a TOML single-quoted string so backslashes stay literal. Nucleus deletes its Instance<N> folders
 # on close; point this somewhere permanent. Falls back to the DLL folder if unusable. Read before logging starts.
@@ -104,18 +135,22 @@ overlay_toggle_key = \"Insert\"
 
 # Fallback hotkeys (only count while the game window is in the foreground). \"\" = unbound.
 # F4 is not used by default because Seamless Co-op binds it to pause.
-hotkey_write = \"F5\"       # write the selected candidate to the local player
-hotkey_restore = \"F6\"     # restore the original value
-hotkey_persist = \"F7\"     # persist mode on/off
-hotkey_histogram = \"F8\"   # log a team_type histogram
-hotkey_discovery = \"F9\"   # run the character discovery
+hotkey_write = \"\"         # write the selected team candidate to the local player (unbound since T-032; the overlay has buttons)
+hotkey_restore = \"\"       # restore the original value (unbound since T-032)
+hotkey_persist = \"\"       # persist mode on/off (unbound since T-032)
+hotkey_histogram = \"\"     # log a team_type histogram (unbound since T-031; the overlay has a button)
+hotkey_downed_cycle = \"F8\" # T-031: next downed_rival_team candidate (inert since T-032)
+hotkey_discovery = \"\"     # run the character discovery (unbound since T-032; the overlay has a button)
+hotkey_pos_cycle = \"F9\"   # T-032: select the next snap-back position candidate
+hotkey_pos_save = \"F7\"    # T-032: save the local player's current values of every position candidate
+hotkey_pos_write = \"F6\"   # T-032: write the saved values into the selected candidate (local player only)
 hotkey_cycle = \"\"         # select the next candidate (unbound; use the overlay buttons)
 hotkey_mark = \"F10\"       # log a numbered MARK line (T-015); the overlay has a text box for annotated marks
 hotkey_write_all = \"F11\"   # FS-0: write the selected candidate to EVERY player (this client's copies)
 hotkey_restore_all = \"F12\" # FS-0: restore every player
 ";
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
     /// T-030: developer mode. false (default) = player build: no hotkeys, PvPvE forced on with the rivals scheme, no
@@ -140,6 +175,17 @@ pub(crate) struct Config {
     pub probes: bool,
     /// T-027: probe period in milliseconds (100..=60000).
     pub probe_interval_ms: u64,
+    /// T-031 (dev only): team value written to a downed rival's copy; 0 = off.
+    pub downed_rival_team: u8,
+    /// T-031: values the downed-cycle hotkey steps through (0 = off).
+    pub downed_rival_candidates: Vec<u8>,
+    /// T-032 (dev only): snap-back position candidates, `PlayerIns+0xOFF` or `[PlayerIns+0xPTR]+0xOFF`.
+    pub pos_candidates: Vec<String>,
+    /// T-035: `"redown"` (default) or `"vanilla"` (normalised in `parse`; read it through [`Config::revive_policy`]). The player
+    /// build always uses `"redown"`.
+    pub rival_revive: String,
+    /// T-039: seconds a rival hit takes off a downed LOCAL player's bleed-out clock (clamped to 0.5..=15.0 in `parse`).
+    pub rival_hit_seconds: f32,
     pub overlay_toggle_key: String,
     /// T-018: absolute log directory; empty = next to the DLL.
     pub log_dir: String,
@@ -147,7 +193,11 @@ pub(crate) struct Config {
     pub hotkey_restore: String,
     pub hotkey_persist: String,
     pub hotkey_histogram: String,
+    pub hotkey_downed_cycle: String,
     pub hotkey_discovery: String,
+    pub hotkey_pos_cycle: String,
+    pub hotkey_pos_save: String,
+    pub hotkey_pos_write: String,
     pub hotkey_cycle: String,
     pub hotkey_mark: String,
     pub hotkey_write_all: String,
@@ -171,13 +221,22 @@ impl Default for Config {
             auto_team_all: 0,
             probes: false,
             probe_interval_ms: DEFAULT_PROBE_INTERVAL_MS,
+            downed_rival_team: 0,
+            downed_rival_candidates: DEFAULT_DOWNED_CANDIDATES.to_vec(),
+            pos_candidates: crate::game::poswrite::default_candidates(),
+            rival_revive: REVIVE_REDOWN.to_string(),
+            rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
             overlay_toggle_key: DEFAULT_OVERLAY_TOGGLE.to_string(),
             log_dir: String::new(),
             hotkey_write: DEFAULT_HOTKEY_WRITE.to_string(),
             hotkey_restore: DEFAULT_HOTKEY_RESTORE.to_string(),
             hotkey_persist: DEFAULT_HOTKEY_PERSIST.to_string(),
             hotkey_histogram: DEFAULT_HOTKEY_HISTOGRAM.to_string(),
+            hotkey_downed_cycle: DEFAULT_HOTKEY_DOWNED_CYCLE.to_string(),
             hotkey_discovery: DEFAULT_HOTKEY_DISCOVERY.to_string(),
+            hotkey_pos_cycle: DEFAULT_HOTKEY_POS_CYCLE.to_string(),
+            hotkey_pos_save: DEFAULT_HOTKEY_POS_SAVE.to_string(),
+            hotkey_pos_write: DEFAULT_HOTKEY_POS_WRITE.to_string(),
             hotkey_cycle: DEFAULT_HOTKEY_CYCLE.to_string(),
             hotkey_mark: DEFAULT_HOTKEY_MARK.to_string(),
             hotkey_write_all: DEFAULT_HOTKEY_WRITE_ALL.to_string(),
@@ -205,11 +264,23 @@ impl Scheme {
 }
 
 const SCHEME_RIVALS: &str = "rivals";
+/// T-035: `rival_revive` values.
+const REVIVE_REDOWN: &str = "redown";
+const REVIVE_VANILLA: &str = "vanilla";
 const SCHEME_ALL: &str = "all";
 const DEFAULT_TEAM_SIZE: u64 = 1;
 const TEAM_SIZE_RANGE: (u64, u64) = (1, 3);
 
 impl Config {
+    /// T-035: the rival revive policy. Always `Redown` outside dev mode.
+    pub(crate) fn revive_policy(&self) -> crate::game::combat_state::RevivePolicy {
+        if self.dev_mode && self.rival_revive == REVIVE_VANILLA {
+            crate::game::combat_state::RevivePolicy::Vanilla
+        } else {
+            crate::game::combat_state::RevivePolicy::Redown
+        }
+    }
+
     /// T-026: the scheme (an unknown text, only possible on an unvalidated `Config`, means rivals).
     pub(crate) fn scheme(&self) -> Scheme {
         if self.pvpve_scheme == SCHEME_ALL {
@@ -231,6 +302,10 @@ impl Config {
             Action::Restore => &self.hotkey_restore,
             Action::Persist => &self.hotkey_persist,
             Action::Histogram => &self.hotkey_histogram,
+            Action::DownedCycle => &self.hotkey_downed_cycle,
+            Action::PosCycle => &self.hotkey_pos_cycle,
+            Action::PosSave => &self.hotkey_pos_save,
+            Action::PosWrite => &self.hotkey_pos_write,
             Action::Discovery => &self.hotkey_discovery,
             Action::Cycle => &self.hotkey_cycle,
             Action::ToggleOverlay => &self.overlay_toggle_key,
@@ -275,7 +350,11 @@ impl Config {
             one("restore", Action::Restore),
             one("persist", Action::Persist),
             one("histogram", Action::Histogram),
+            one("downed_cycle", Action::DownedCycle),
             one("discovery", Action::Discovery),
+            one("pos_cycle", Action::PosCycle),
+            one("pos_save", Action::PosSave),
+            one("pos_write", Action::PosWrite),
             one("cycle", Action::Cycle),
             one("overlay-toggle", Action::ToggleOverlay),
             one("mark", Action::Mark),
@@ -309,6 +388,16 @@ fn enforce_player_mode(
     cfg.pvpve = true;
     cfg.pvpve_scheme = SCHEME_RIVALS.to_string();
     cfg.probes = false;
+    // T-031: the rival-revive experiment is a developer tool.
+    cfg.downed_rival_team = 0;
+    // T-035: the rival revive rule is always on.
+    if cfg.rival_revive == REVIVE_VANILLA {
+        warnings.push(
+            "rival_revive = \"vanilla\" is ignored: the player build always uses \"redown\""
+                .to_string(),
+        );
+    }
+    cfg.rival_revive = REVIVE_REDOWN.to_string();
 }
 
 /// What the file set explicitly (before defaults and the alias): `pvpve = false`, `pvpve_scheme = "all"`.
@@ -370,6 +459,63 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         &mut cfg.probe_interval_ms,
         PROBE_INTERVAL_MS_RANGE,
     );
+    if cfg.downed_rival_candidates.is_empty() {
+        warnings.push("downed_rival_candidates is empty; using the defaults".to_string());
+        cfg.downed_rival_candidates = DEFAULT_DOWNED_CANDIDATES.to_vec();
+    }
+    // T-032: position candidates; invalid entries are skipped with a warning, an empty result uses the defaults.
+    {
+        let (valid, mut w) = crate::game::poswrite::parse_list(&cfg.pos_candidates);
+        warnings.append(&mut w);
+        if valid.is_empty() {
+            warnings.push("pos_candidates has no valid entry; using the defaults".to_string());
+            cfg.pos_candidates = crate::game::poswrite::default_candidates();
+        } else {
+            cfg.pos_candidates = valid.iter().map(|c| c.text()).collect();
+        }
+    }
+    // T-035: the rival revive policy.
+    {
+        let f = cfg.rival_revive.trim().to_ascii_lowercase();
+        if f == REVIVE_REDOWN || f == REVIVE_VANILLA {
+            cfg.rival_revive = f;
+        } else {
+            warnings.push(format!(
+                "rival_revive = {:?} is not \"redown\" or \"vanilla\"; using \"{REVIVE_REDOWN}\"",
+                cfg.rival_revive
+            ));
+            cfg.rival_revive = REVIVE_REDOWN.to_string();
+        }
+    }
+    // T-039: rival_hit_seconds.
+    {
+        let (lo, hi) = crate::game::combat_state::RIVAL_HIT_SECONDS_RANGE;
+        let v = cfg.rival_hit_seconds;
+        if !v.is_finite() {
+            warnings
+                .push("rival_hit_seconds is not a finite number; using the default".to_string());
+            cfg.rival_hit_seconds = crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS;
+        } else if !(lo..=hi).contains(&v) {
+            cfg.rival_hit_seconds = v.clamp(lo, hi);
+            warnings.push(format!(
+                "rival_hit_seconds = {v} is outside {lo}..={hi}; using {}",
+                cfg.rival_hit_seconds
+            ));
+        }
+    }
+    // T-035: the T-033/T-034 finisher experiment is gone; its keys are ignored (one line).
+    if let Ok(t) = toml::from_str::<toml::Table>(text) {
+        let old: Vec<&str> = ["finisher", "hotkey_finisher"]
+            .into_iter()
+            .filter(|k| t.contains_key(*k))
+            .collect();
+        if !old.is_empty() {
+            warnings.push(format!(
+                "{} no longer exist(s) (the finisher experiment was replaced by the always-on rival revive rule, T-035); ignored",
+                old.join(" / ")
+            ));
+        }
+    }
     let scheme = cfg.pvpve_scheme.trim().to_ascii_lowercase();
     if scheme == SCHEME_RIVALS || scheme == SCHEME_ALL {
         cfg.pvpve_scheme = scheme;
@@ -454,9 +600,29 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         DEFAULT_HOTKEY_HISTOGRAM,
     );
     key(
+        "hotkey_downed_cycle",
+        &mut cfg.hotkey_downed_cycle,
+        DEFAULT_HOTKEY_DOWNED_CYCLE,
+    );
+    key(
         "hotkey_discovery",
         &mut cfg.hotkey_discovery,
         DEFAULT_HOTKEY_DISCOVERY,
+    );
+    key(
+        "hotkey_pos_cycle",
+        &mut cfg.hotkey_pos_cycle,
+        DEFAULT_HOTKEY_POS_CYCLE,
+    );
+    key(
+        "hotkey_pos_save",
+        &mut cfg.hotkey_pos_save,
+        DEFAULT_HOTKEY_POS_SAVE,
+    );
+    key(
+        "hotkey_pos_write",
+        &mut cfg.hotkey_pos_write,
+        DEFAULT_HOTKEY_POS_WRITE,
     );
     key("hotkey_cycle", &mut cfg.hotkey_cycle, DEFAULT_HOTKEY_CYCLE);
     key("hotkey_mark", &mut cfg.hotkey_mark, DEFAULT_HOTKEY_MARK);
@@ -580,6 +746,7 @@ pub(crate) fn load(dir: &Path) -> Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::combat_state::RevivePolicy;
 
     /// What a player-mode parse of an empty file gives.
     fn player_default() -> Config {
@@ -627,13 +794,13 @@ mod tests {
                 c.hotkey_cycle.as_str(),
                 c.hotkey_mark.as_str(),
             ),
-            ("F5", "F6", "F7", "F8", "F9", "", "F10")
+            ("", "", "", "", "", "", "F10")
         );
         // F4 (Seamless Co-op pause) is bound to nothing by default.
         let f4 = hotkey::parse_key("F4").expect("F4 parses").vk;
         assert!(c.bindings().iter().all(|(_, k)| k.vk != f4));
         // Cycle is unbound; the other seven actions are bound.
-        assert_eq!(c.bindings().len(), 9);
+        assert_eq!(c.bindings().len(), 8);
         assert!(c.binding(Action::Cycle).is_none());
         assert_eq!(
             c.binding(Action::ToggleOverlay).map(|k| (k.vk, k.name)),
@@ -641,7 +808,7 @@ mod tests {
         );
         assert_eq!(
             c.describe_bindings(),
-            "write=F5 restore=F6 persist=F7 histogram=F8 discovery=F9 cycle=- overlay-toggle=Insert mark=F10 write_all=F11 restore_all=F12"
+            "write=- restore=- persist=- histogram=- downed_cycle=F8 discovery=- pos_cycle=F9 pos_save=F7 pos_write=F6 cycle=- overlay-toggle=Insert mark=F10 write_all=F11 restore_all=F12"
         );
     }
 
@@ -667,8 +834,10 @@ mod tests {
         assert_eq!(cfg.binding(Action::Persist), None);
         assert_eq!(cfg.hotkey_persist, "");
         // Untouched keys keep their defaults.
-        assert_eq!(cfg.hotkey_histogram, "F8");
-        assert_eq!(cfg.hotkey_discovery, "F9");
+        assert_eq!(cfg.hotkey_histogram, "");
+        assert_eq!(cfg.hotkey_downed_cycle, "F8");
+        assert_eq!(cfg.hotkey_discovery, "");
+        assert_eq!(cfg.hotkey_pos_cycle, "F9");
     }
 
     #[test]
@@ -679,7 +848,7 @@ mod tests {
         .expect("ok");
         assert_eq!(w.len(), 3, "{w:?}");
         assert_eq!(cfg.overlay_toggle_key, "Insert");
-        assert_eq!(cfg.hotkey_write, "F5");
+        assert_eq!(cfg.hotkey_write, ""); // T-032: its default is unbound
         assert_eq!(cfg.hotkey_cycle, ""); // its default is unbound
         assert!(w[0].contains("overlay_toggle_key") && w[0].contains("Esc"));
     }
@@ -688,7 +857,7 @@ mod tests {
     fn two_actions_on_one_key_warn() {
         let (_, w) = parse_dev("hotkey_write = \"F6\"\n").expect("ok"); // restore is F6 too
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("Write") && w[0].contains("Restore") && w[0].contains("F6"));
+        assert!(w[0].contains("Write") && w[0].contains("PosWrite") && w[0].contains("F6"));
     }
 
     #[test]
@@ -917,7 +1086,7 @@ probes = true
         .expect("ok");
         assert!(!cfg.pvpve && cfg.scheme() == Scheme::All && cfg.probes);
         assert!(w.is_empty(), "{w:?}");
-        assert_eq!(cfg.bindings().len(), 9);
+        assert_eq!(cfg.bindings().len(), 8);
     }
 
     #[test]
@@ -931,5 +1100,161 @@ probes = true
         // Second load reads it back.
         assert_eq!(load(&dir), player_default());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn t031_downed_keys_defaults_and_player_mode() {
+        let c = dev_default();
+        assert_eq!(c.downed_rival_team, 0);
+        assert_eq!(c.downed_rival_candidates, vec![0, 6, 14, 30, 2]);
+        assert_eq!(c.hotkey_downed_cycle, "F8");
+        assert_eq!(c.hotkey_histogram, "");
+        assert_eq!(
+            c.binding(Action::DownedCycle).map(|k| k.name),
+            Some("F8".into())
+        );
+        assert!(c.binding(Action::Histogram).is_none());
+        let (cfg, w) = parse_dev(
+            "downed_rival_team = 14
+downed_rival_candidates = [0, 5]
+hotkey_downed_cycle = \"F2\"
+",
+        )
+        .expect("ok");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(
+            (cfg.downed_rival_team, cfg.downed_rival_candidates.clone()),
+            (14, vec![0, 5])
+        );
+        assert_eq!(
+            cfg.binding(Action::DownedCycle).map(|k| k.name),
+            Some("F2".into())
+        );
+        let (cfg, w) = parse_dev(
+            "downed_rival_candidates = []
+hotkey_downed_cycle = \"nope\"
+",
+        )
+        .expect("ok");
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert_eq!(cfg.downed_rival_candidates, vec![0, 6, 14, 30, 2]);
+        assert_eq!(cfg.hotkey_downed_cycle, "F8");
+        // The player build forces the experiment off and binds no key.
+        let (cfg, _) = parse(
+            "downed_rival_team = 6
+",
+        )
+        .expect("ok");
+        assert_eq!(cfg.downed_rival_team, 0);
+        assert!(cfg.binding(Action::DownedCycle).is_none());
+        assert!(parse("downed_rival_team = 300").is_err());
+    }
+
+    #[test]
+    fn t039_rival_hit_seconds_default_parse_and_clamp() {
+        assert_eq!(dev_default().rival_hit_seconds, 3.0);
+        for dev in [true, false] {
+            let pre = if dev { "dev_mode = true\n" } else { "" };
+            let run = |t: &str| parse(&format!("{pre}{t}")).expect("ok");
+            let (c, w) = run("rival_hit_seconds = 5.5\n");
+            assert_eq!(c.rival_hit_seconds, 5.5);
+            assert!(w.is_empty(), "{w:?}");
+            let (c, w) = run("rival_hit_seconds = 4\n");
+            assert_eq!(c.rival_hit_seconds, 4.0);
+            assert!(w.is_empty(), "{w:?}");
+            let (c, w) = run("rival_hit_seconds = 0.1\n");
+            assert_eq!(c.rival_hit_seconds, 0.5);
+            assert_eq!(w.len(), 1, "{w:?}");
+            let (c, w) = run("rival_hit_seconds = 99.0\n");
+            assert_eq!(c.rival_hit_seconds, 15.0);
+            assert_eq!(w.len(), 1, "{w:?}");
+            let (c, w) = run("rival_hit_seconds = nan\n");
+            assert_eq!(c.rival_hit_seconds, 3.0);
+            assert_eq!(w.len(), 1, "{w:?}");
+        }
+        assert!(parse("rival_hit_seconds = \"x\"").is_err());
+    }
+
+    #[test]
+    fn t035_rival_revive_policy_and_removed_finisher_keys() {
+        // Default: redown, in both modes.
+        assert_eq!(dev_default().rival_revive, "redown");
+        assert_eq!(dev_default().revive_policy(), RevivePolicy::Redown);
+        assert_eq!(player_default().revive_policy(), RevivePolicy::Redown);
+        // Dev mode honours "vanilla" (any case) and rejects other text with one warning.
+        let (cfg, w) = parse_dev("rival_revive = \"Vanilla\"\n").expect("ok");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(cfg.revive_policy(), RevivePolicy::Vanilla);
+        let (cfg, w) = parse_dev("rival_revive = \"kill\"\n").expect("ok");
+        assert_eq!(cfg.revive_policy(), RevivePolicy::Redown);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(parse("rival_revive = 3").is_err());
+        // The player build ignores "vanilla" (with a line) and stays on redown.
+        let (cfg, w) = parse("rival_revive = \"vanilla\"\n").expect("ok");
+        assert_eq!(cfg.revive_policy(), RevivePolicy::Redown);
+        assert_eq!(cfg.rival_revive, "redown");
+        assert!(w.iter().any(|x| x.contains("vanilla")), "{w:?}");
+        // The old finisher keys are ignored with exactly one line, in both modes, and no key is bound for them.
+        for dev in [true, false] {
+            let text = "finisher = \"hp0-all\"\nhotkey_finisher = \"F5\"\n";
+            let (_, w) = if dev { parse_dev(text) } else { parse(text) }.expect("ok");
+            let old: Vec<&String> = w.iter().filter(|x| x.contains("finisher")).collect();
+            assert_eq!(old.len(), 1, "{w:?}");
+        }
+        let (_, w) = parse_dev("probes = false\n").expect("ok");
+        assert!(w.iter().all(|x| !x.contains("finisher")), "{w:?}");
+    }
+
+    #[test]
+    fn t032_snap_back_keys_candidates_and_player_mode() {
+        let c = dev_default();
+        assert_eq!(
+            c.pos_candidates,
+            vec![
+                "PlayerIns+0x6C0",
+                "PlayerIns+0x6D0",
+                "[PlayerIns+0x60]+0x1EC",
+                "[PlayerIns+0x6B0]+0x17C",
+                "[PlayerIns+0x6B0]+0x18C",
+                "[PlayerIns+0x5F0]+0x64"
+            ]
+        );
+        for (a, key) in [
+            (Action::PosCycle, "F9"),
+            (Action::PosSave, "F7"),
+            (Action::PosWrite, "F6"),
+        ] {
+            assert_eq!(c.binding(a).map(|k| k.name), Some(key.into()), "{a:?}");
+        }
+        // The old team write / restore / persist / discovery keys are free.
+        for a in [
+            Action::Write,
+            Action::Restore,
+            Action::Persist,
+            Action::Discovery,
+        ] {
+            assert!(c.binding(a).is_none(), "{a:?}");
+        }
+        // Invalid entries are skipped with a warning; spacing and case are normalised.
+        let (cfg, w) = parse_dev(
+            "pos_candidates = [\"playerins + 0x10\", \"nonsense\", \"[PlayerIns+0x60]+0x1EC\", \"PlayerIns+0x10\"]
+",
+        )
+        .expect("ok");
+        assert_eq!(
+            cfg.pos_candidates,
+            vec!["PlayerIns+0x10", "[PlayerIns+0x60]+0x1EC"]
+        );
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w[0].contains("nonsense") && w[1].contains("duplicate"));
+        // Nothing valid: the defaults, with a warning.
+        let (cfg, w) = parse_dev("pos_candidates = [\"x\"]\n").expect("ok");
+        assert_eq!(cfg.pos_candidates, dev_default().pos_candidates);
+        assert_eq!(w.len(), 2, "{w:?}");
+        // Player mode: no keys at all.
+        let p = player_default();
+        for a in [Action::PosCycle, Action::PosSave, Action::PosWrite] {
+            assert!(p.binding(a).is_none());
+        }
     }
 }

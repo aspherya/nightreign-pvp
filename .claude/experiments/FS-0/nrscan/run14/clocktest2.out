@@ -1,0 +1,8 @@
+16:25:57.055 DOWN detected: downed=1 bar=240.00 clock=14.42 pause=0.00 downs=3
+16:26:01.626 before write: downed=1 bar=240.00 clock=10.12 pause=0.00 downs=3
+poke Instance0 0x7FF4A9250B28: 0x411F7B98 (f32 9.967674) -> wrote 0x40000000 (f32 2) -> readback 0x40000000 (f32 2)
+16:26:02.400 downed=1 bar=240.00 clock=1.65 pause=0.00 downs=3
+16:26:03.342 downed=1 bar=240.00 clock=1.00 pause=0.00 downs=3
+16:26:04.280 downed=1 bar=240.00 clock=0.20 pause=0.00 downs=3
+16:26:04.964 downed=0 bar=0.00 clock=0.00 pause=0.00 downs=3
+16:26:05.683 end: downed=0 bar=0.00 clock=0.00 pause=0.00 downs=3

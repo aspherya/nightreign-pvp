@@ -140,3 +140,26 @@ Memos: `research/S1-player-cap.md` … `S5-death-respawn.md`. Everything below i
 
 After v1, in order: M3 death rules (keep level, protection) → M4 inventory drop → M5 no-boss nights → M6 finale → M7 spawns → M8 product.
 The data needed by M3 and M4 is the same (where level, runes, and inventory live), so one discovery task feeds both.
+
+## 11. Downed players: design decision (Leonardo's idea, adopted 2026-10-11)
+
+A downed player keeps the vanilla revive meter and anyone can hit them. **Who lands the hit that completes the meter decides:** a teammate →
+the player revives (vanilla); a rival → the player **dies** (finishing blow). Both sides can be filling the same meter at once; the completing
+hit wins, so there is no tie rule. This replaces the earlier goal "rival hits must not count on a downed player".
+Needs, all `[UNKNOWN]` on NR: (1) a downed marker (T-032 dumps); (2) the attacker of the completing hit, decided on the victim's own client
+(`[LEAD]` ER's ChrIns keeps a last-hit-by handle); (3) a way to turn that revive into a death (`[LEAD]` EMEVD `Force Character Death`
+2004[4]; setting HP to 0 may only re-down the player). Fallback if (3) is impossible: rival hits do not count and the timer decides.
+
+**§11 update (2026-10-11, after FS-0 run 9 and Leonardo's refinement).** Target design: a downed player bleeds out on the vanilla clock;
+**every hit by a rival shortens that clock** (hits by teammates fill the revive meter as in vanilla), so rivals finish a downed player faster and
+the body is a race between the clock and the meter. Needs the bleed-out clock located and writable `[UNKNOWN]` (T-035 fast scan).
+Interim rule v1, shipping now: when a rival's hit completes the revive meter, the victim's client sets HP to 0 again (verified: re-downed at
+once), so a rival can never revive; the player dies when the bleed-out (≈15 s, restarting on each down) runs out.
+
+**§11 status (2026-10-12, updated after FS-0 run 14).** The clock and the bar are located (PlayerIns+0x718 and +0x714, with the pause timer at +0x71C) and the clock is writable. Leonardo's target rule is buildable on the victim's own client: on a hit whose attacker is a RIVAL, restore the bar to its value before the hit, subtract a chunk from the clock, and clear the pause; hits by teammates are left alone.
+
+**§11 update 2 (2026-10-12, Leonardo): free-for-all has no downed state.** With `team_size = 1`, a player whose HP reaches 0 must die and
+respawn at once: no bleed-out, no revive. Route `[LEAD]`: set the game's own near-death duration to 0 in the in-memory param table
+(`GAME_SYSTEM_COMMON_PARAM_ST`: `near_death_grace_period_timer_default`, `boss_arena_near_death_duration`; validate the row by
+`required_revive_progress_level1/2/3` = 40/90/240) on every client. Team modes (team_size ≥ 2) keep the vanilla bleed-out; the "rival hits
+shorten the clock" idea applies there and is deferred to team play. Rule v1 (re-down on a rival revive) stays as the team-mode fallback.
