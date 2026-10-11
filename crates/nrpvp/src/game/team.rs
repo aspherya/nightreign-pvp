@@ -9,9 +9,12 @@
 //! - WorldChrMan+0x1C820 is NOT a player pointer (it held UTF-16 text, TC-004 run 3). T-015 removed the old
 //!   rule that used it.
 //!
-//! T-015 (FS-1 tooling): every valid PlayerIns can be read and written, local or remote. Which one is
-//! LOCAL is decided by [`decide_local`]: the only PlayerIns, else a *suggestion* from an UNVERIFIED
-//! signal that splits one-vs-rest, else UNKNOWN; the HUMAN can always override ("this is me").
+//! T-015 (FS-1 tooling): every valid PlayerIns can be read and written, local or remote. T-020: the LOCAL one is
+//! the first valid PlayerIns in ChrSet entry order ([`decide_local`]), VERIFIED on every client in FS-0 and FS-1
+//! (TECHNICAL_NOTES §4); the other signals below are logged as evidence only.
+//!
+//! T-020 PvPvE mode: every `pvpve_interval_ms`, every ChrSet player whose team_type is the expedition default (2)
+//! gets `pvpve_team` written, using the same gated 1-byte write as the hotkeys. Nothing else is ever overwritten.
 //!
 //! The write (hotkeys, overlay, persist) is the only memory write in the project. It is a single u8 store,
 //! only at `PlayerIns`+0x74, only after the object's vtable was re-read and matched a PlayerIns-derived
@@ -24,9 +27,10 @@ use std::time::{Duration, Instant};
 use super::discover::{self, is_ptr, Budgets};
 use super::mem::{self, va_rva, RegionCache};
 use super::rtti::Rtti;
-use crate::config::Config;
+use crate::config::{Config, Scheme};
 use crate::mark::Marker;
-use crate::overlay::shared::{PlayerRow, Role, Snapshot};
+use crate::overlay::shared::{PlayerRow, PvpveState, Relation, Role, Snapshot};
+use crate::rules::teams::{assign_teams, PlayerId};
 
 // ---- offsets: VERIFIED on NR 1.3.3.0 by T-007a; see TECHNICAL_NOTES §4 ----
 /// WorldChrMan -> inline ChrSet.
@@ -42,7 +46,7 @@ const CHR_ID: usize = 0x68;
 const CHR_TYPE70: usize = 0x70;
 /// ChrIns+0x74: team_type (u8).
 pub(crate) const CHR_TEAM: usize = 0x74;
-// ---- UNVERIFIED local/remote candidates (T-015): ER offsets from .claude/re/er-reference.md plus NR's
+// ---- Local/remote evidence, log only (T-015; the rule is entry[0], T-020): ER offsets from .claude/re/er-reference.md plus NR's
 // verified +8 shift for the ChrIns head. Read-only evidence for the log; nothing here is a fact yet. ----
 /// ER ChrIns+0x70 `p2p_entity_handle` (8 bytes) -> NR +0x78.
 const CHR_P2P_HANDLE: usize = 0x78;
@@ -57,7 +61,7 @@ const MAX_CAPACITY: u32 = 16;
 /// PlayerIns vtable seen by T-007a (only used for a sanity log against the RTTI result).
 const PLAYER_VTABLE_RVA: usize = 0x2C307F8;
 
-/// ChrSet change lines are coalesced to at most one burst per this long.
+/// ChrSet change lines are coalesced to at most one burst per this long (a state byte in the entry can blink).
 const RESOLVE_LOG_MIN_GAP_MS: u64 = 5000;
 /// Persist summary period.
 const PERSIST_SUMMARY_MS: u64 = 1000;
@@ -120,8 +124,8 @@ pub(crate) fn parse_entries(buf: &[u8], capacity: usize) -> Vec<RawEntry> {
     out
 }
 
-/// One observed value that might tell the local PlayerIns from a remote one. **UNVERIFIED**: the names
-/// carry the ER offset the idea came from.
+/// One observed value logged as evidence about a PlayerIns. The names carry the ER offset the idea came from.
+/// Since T-020 these are log-only: the local player is decided by the entry[0] rule, not by a signal.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Signal {
     pub name: &'static str,
@@ -129,8 +133,6 @@ pub(crate) struct Signal {
     pub value: Option<u64>,
     /// Shown as hex in the log.
     pub hex: bool,
-    /// May take part in the one-vs-rest suggestion. Log-only signals (raw handles and pointers) do not.
-    pub decisive: bool,
 }
 
 impl Signal {
@@ -143,7 +145,7 @@ impl Signal {
     }
 }
 
-/// A valid PlayerIns of the ChrSet with its candidate signals.
+/// A valid PlayerIns of the ChrSet with its evidence signals.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PlayerProbe {
     pub addr: usize,
@@ -152,44 +154,13 @@ pub(crate) struct PlayerProbe {
     pub signals: Vec<Signal>,
 }
 
-/// If exactly one of the `vals` differs from all the others, and the others all agree, return that one.
-/// Needs at least three players: with two, "one vs the rest" cannot say which of them is the odd one.
-/// Any unreadable value disables the signal.
-pub(crate) fn odd_one_out(vals: &[(usize, Option<u64>)]) -> Option<usize> {
-    if vals.len() < 3 {
-        return None;
-    }
-    let mut groups: Vec<(u64, Vec<usize>)> = Vec::new();
-    for &(addr, v) in vals {
-        let v = v?;
-        match groups.iter_mut().find(|g| g.0 == v) {
-            Some(g) => g.1.push(addr),
-            None => groups.push((v, vec![addr])),
-        }
-    }
-    if groups.len() != 2 {
-        return None;
-    }
-    let singles: Vec<&(u64, Vec<usize>)> = groups.iter().filter(|g| g.1.len() == 1).collect();
-    match singles.as_slice() {
-        [one] => Some(one.1[0]),
-        _ => None,
-    }
-}
-
 /// How the local player was decided.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Basis {
     /// No PlayerIns at all.
     NoPlayers,
-    /// Exactly one PlayerIns in the ChrSet.
-    OnlyPlayer,
-    /// The HUMAN pressed "this is me".
-    Chosen,
-    /// Suggestion from these UNVERIFIED signals.
-    Heuristic(String),
-    /// Several PlayerIns and no way to tell; the string says why.
-    Unknown(String),
+    /// The first valid PlayerIns in ChrSet entry order.
+    FirstEntry,
 }
 
 impl Basis {
@@ -197,10 +168,7 @@ impl Basis {
     pub(crate) fn label(&self) -> String {
         match self {
             Basis::NoPlayers => "no PlayerIns".to_string(),
-            Basis::OnlyPlayer => "only PlayerIns in the ChrSet".to_string(),
-            Basis::Chosen => "chosen by you (this is me)".to_string(),
-            Basis::Heuristic(s) => format!("heuristic: {s}"),
-            Basis::Unknown(why) => format!("UNKNOWN: {why}"),
+            Basis::FirstEntry => "first PlayerIns in the ChrSet (entry[0] rule)".to_string(),
         }
     }
 }
@@ -211,92 +179,27 @@ pub(crate) struct Decision {
     pub basis: Basis,
 }
 
-/// Decide which valid PlayerIns is "local" (T-015). In order:
-/// 1. no PlayerIns: none;
-/// 2. the HUMAN's "this is me" choice, if that address is still one of the players;
-/// 3. exactly one PlayerIns: it is local;
-/// 4. a *suggestion*: every decisive signal that splits the players exactly one-vs-rest (three or more
-///    players) names its odd one out; if at least one does and they all name the same player, that player
-///    is suggested, tagged with the signals;
-/// 5. otherwise UNKNOWN and nobody is local.
-pub(crate) fn decide_local(probes: &[PlayerProbe], chosen: Option<usize>) -> Decision {
-    if probes.is_empty() {
-        return Decision {
+/// The local PlayerIns is the first valid PlayerIns in ChrSet entry order; every other one is REMOTE.
+/// [VERIFIED: FS-0 (Nucleus) and FS-1 (two PCs, real Steam), 2026-10-10, 2 players; see TECHNICAL_NOTES §4.
+/// HYPOTHESIS beyond 2 players.]
+pub(crate) fn decide_local(probes: &[PlayerProbe]) -> Decision {
+    match probes.first() {
+        None => Decision {
             local: None,
             basis: Basis::NoPlayers,
-        };
-    }
-    if let Some(c) = chosen.filter(|c| probes.iter().any(|p| p.addr == *c)) {
-        return Decision {
-            local: Some(c),
-            basis: Basis::Chosen,
-        };
-    }
-    if let [p] = probes {
-        return Decision {
+        },
+        Some(p) => Decision {
             local: Some(p.addr),
-            basis: Basis::OnlyPlayer,
-        };
-    }
-    if probes.len() < 3 {
-        return Decision {
-            local: None,
-            basis: Basis::Unknown(format!(
-                "{} PlayerIns; a signal that differs cannot say which of two is local (use \"this is me\")",
-                probes.len()
-            )),
-        };
-    }
-    // Signals are positional: probe[0].signals[k] is the same signal as probe[1].signals[k].
-    let n_sig = probes.iter().map(|p| p.signals.len()).min().unwrap_or(0);
-    let mut hits: Vec<(&'static str, usize)> = Vec::new();
-    for k in 0..n_sig {
-        if !probes[0].signals[k].decisive {
-            continue;
-        }
-        let vals: Vec<(usize, Option<u64>)> = probes
-            .iter()
-            .map(|p| (p.addr, p.signals[k].value))
-            .collect();
-        if let Some(odd) = odd_one_out(&vals) {
-            hits.push((probes[0].signals[k].name, odd));
-        }
-    }
-    let Some(&(_, first)) = hits.first() else {
-        return Decision {
-            local: None,
-            basis: Basis::Unknown(
-                "no candidate signal splits the players one-vs-rest (use \"this is me\")"
-                    .to_string(),
-            ),
-        };
-    };
-    if hits.iter().any(|&(_, a)| a != first) {
-        let list: Vec<String> = hits
-            .iter()
-            .map(|&(n, a)| format!("{n} -> 0x{a:X}"))
-            .collect();
-        return Decision {
-            local: None,
-            basis: Basis::Unknown(format!(
-                "candidate signals disagree ({}); use \"this is me\"",
-                list.join(", ")
-            )),
-        };
-    }
-    let names: Vec<&str> = hits.iter().map(|&(n, _)| n).collect();
-    Decision {
-        local: Some(first),
-        basis: Basis::Heuristic(names.join(", ")),
+            basis: Basis::FirstEntry,
+        },
     }
 }
 
-/// `LOCAL`, `REMOTE[i]` or `UNKNOWN[i]` (`i` = ChrSet entry index), the `who=` field of every write line.
+/// `LOCAL` or `REMOTE[i]` (`i` = ChrSet entry index), the `who=` field of every write line.
 pub(crate) fn who_label(role: Role, index: usize) -> String {
     match role {
         Role::Local => "LOCAL".to_string(),
         Role::Remote => format!("REMOTE[{index}]"),
-        Role::Unknown => format!("UNKNOWN[{index}]"),
     }
 }
 
@@ -562,8 +465,10 @@ pub(crate) struct Entry {
     pub kind: EntryKind,
 }
 
-/// What makes two resolutions "the same" for logging: raw entries, candidate signal values, chosen local.
-type ResolveKey = (Vec<[u8; ENTRY_SIZE]>, Vec<Vec<Option<u64>>>, Option<usize>);
+/// What makes two resolutions "the same" for logging: the raw ChrSet entry bytes and the player set. The evidence
+/// signals are deliberately NOT part of it: `session_entry_ptr` changes on every read (FS-1 logs), so including it
+/// re-logged the whole block every 5 s with identical entry bytes.
+type ResolveKey = (Vec<[u8; ENTRY_SIZE]>, Vec<usize>);
 
 pub(crate) struct Resolution {
     pub chrset: usize,
@@ -572,7 +477,7 @@ pub(crate) struct Resolution {
     pub entries: Vec<Entry>,
     /// Distinct valid PlayerIns of the ChrSet, entry order.
     pub players: Vec<usize>,
-    /// The same players with their candidate signals (T-015 evidence).
+    /// The same players with their evidence signals (log only).
     pub probes: Vec<PlayerProbe>,
     pub local: Option<usize>,
     pub basis: Basis,
@@ -582,11 +487,7 @@ impl Resolution {
     fn key(&self) -> ResolveKey {
         (
             self.entries.iter().map(|e| e.raw.raw).collect(),
-            self.probes
-                .iter()
-                .map(|p| p.signals.iter().map(|s| s.value).collect())
-                .collect(),
-            self.local,
+            self.players.clone(),
         )
     }
 
@@ -606,29 +507,23 @@ impl Resolution {
         self.probes.iter().find(|p| p.addr == addr).map(|p| p.index)
     }
 
-    /// Local, remote or unknown role of a PlayerIns of this ChrSet.
+    /// Local or remote role of a PlayerIns of this ChrSet.
     pub(crate) fn role_of(&self, addr: usize) -> Role {
         if self.local == Some(addr) {
             Role::Local
-        } else if self.local.is_some() {
-            Role::Remote
         } else {
-            Role::Unknown
+            Role::Remote
         }
     }
 
-    /// `LOCAL` / `REMOTE[i]` / `UNKNOWN[i]` for the log; `None` if `addr` is not a PlayerIns of the ChrSet.
+    /// `LOCAL` / `REMOTE[i]` for the log; `None` if `addr` is not a PlayerIns of the ChrSet.
     pub(crate) fn who(&self, addr: usize) -> Option<String> {
         let index = self.index_of(addr)?;
         Some(who_label(self.role_of(addr), index))
     }
 
     /// Overlay rows, one per valid PlayerIns. `team` reads the live team_type of an address.
-    fn rows(
-        &self,
-        chosen: Option<usize>,
-        team: &mut dyn FnMut(usize) -> Option<u8>,
-    ) -> Vec<PlayerRow> {
+    fn rows(&self, team: &mut dyn FnMut(usize) -> Option<u8>) -> Vec<PlayerRow> {
         let mut rows = Vec::new();
         for p in &self.probes {
             let Some(e) = self.entries.get(p.index) else {
@@ -642,9 +537,7 @@ impl Resolution {
                 basis: match role {
                     Role::Local => self.basis.label(),
                     Role::Remote => "not the local player".to_string(),
-                    Role::Unknown => self.basis.label(),
                 },
-                chosen: chosen == Some(p.addr),
                 team: team(p.addr),
                 state8: e.raw.raw[8],
                 state9: e.raw.raw[9],
@@ -652,6 +545,9 @@ impl Resolution {
                 persist: None,
                 reverts_last_sec: 0,
                 reverts_total: 0,
+                id: None,
+                team_no: None,
+                relation: None,
             });
         }
         rows
@@ -692,68 +588,50 @@ fn is_player_obj(rc: &mut RegionCache, vts: &PlayerVtables, p: usize) -> bool {
     is_ptr(p) && rc.read::<usize>(p).is_some_and(|vt| vts.contains(vt))
 }
 
-/// The candidate signals of one PlayerIns. **UNVERIFIED** (ER offsets shifted by NR's +8, see the consts);
+/// The evidence signals of one PlayerIns (log only since T-020). ER offsets shifted by NR's +8, see the consts;
 /// reads are VirtualQuery-guarded and an unreadable value is recorded as `None`.
 fn read_signals(rc: &mut RegionCache, p: usize, entry: &[u8; ENTRY_SIZE]) -> Vec<Signal> {
-    let sig = |name, value, hex, decisive| Signal {
-        name,
-        value,
-        hex,
-        decisive,
-    };
+    let sig = |name, value, hex| Signal { name, value, hex };
     let holder = rc.read::<u64>(p + PLAYER_SESSION_HOLDER);
     let sess_entry = rc.read::<u64>(p + PLAYER_SESSION_ENTRY);
     vec![
-        sig("entry+8", Some(u64::from(entry[8])), false, true),
-        sig(
-            "entry+9[ER update_type]",
-            Some(u64::from(entry[9])),
-            false,
-            true,
-        ),
+        sig("entry+8", Some(u64::from(entry[8])), false),
+        sig("entry+9[ER update_type]", Some(u64::from(entry[9])), false),
         sig(
             "chr_type@+0x70[ER +0x68]",
             rc.read::<u32>(p + CHR_TYPE70).map(u64::from),
             false,
-            true,
         ),
         sig(
             "net_authority@+0x1EC[ER +0x1E4]",
             rc.read::<u32>(p + CHR_NET_AUTHORITY).map(u64::from),
             false,
-            true,
         ),
         sig(
             "session_holder_set@+0x5A0[ER +0x598]",
             holder.map(|v| u64::from(v != 0)),
             false,
-            true,
         ),
         sig(
             "session_entry_set@+0x6C0[ER +0x6B8]",
             sess_entry.map(|v| u64::from(v != 0)),
             false,
-            true,
         ),
+        // ChrIns+0x78 is a per-player id, identical on all clients [VERIFIED: FS-0/FS-1 2026-10-10].
         sig(
             "p2p_handle@+0x78[ER +0x70]",
             rc.read::<u64>(p + CHR_P2P_HANDLE),
             true,
-            false,
         ),
-        sig("session_holder_ptr", holder, true, false),
-        sig("session_entry_ptr", sess_entry, true, false),
+        sig("session_holder_ptr", holder, true),
+        // Changes on every read (an obfuscated value); never part of the "did the ChrSet change" comparison.
+        sig("session_entry_ptr", sess_entry, true),
     ]
 }
 
-/// Resolve the ChrSet and decide the local PlayerIns from a WorldChrMan instance. `chosen` is the HUMAN's
-/// "this is me" address, if any. Re-run whenever needed: WorldChrMan is re-created on area change.
+/// Resolve the ChrSet and decide the local PlayerIns (entry[0] rule) from a WorldChrMan instance. Re-run whenever needed: WorldChrMan is re-created on area change.
 /// Read-only.
-pub(crate) fn resolve(
-    wcm: usize,
-    vts: &PlayerVtables,
-    chosen: Option<usize>,
-) -> Result<Resolution, ResolveError> {
+pub(crate) fn resolve(wcm: usize, vts: &PlayerVtables) -> Result<Resolution, ResolveError> {
     let mut rc = RegionCache::new();
     // SAFETY-ish: all reads are VirtualQuery-guarded; offsets VERIFIED on NR 1.3.3.0 by T-007a (§4).
     let chrset = wcm + WCM_CHRSET;
@@ -797,7 +675,7 @@ pub(crate) fn resolve(
         entries.push(Entry { raw, kind });
     }
 
-    let Decision { local, basis } = decide_local(&probes, chosen);
+    let Decision { local, basis } = decide_local(&probes);
     Ok(Resolution {
         chrset,
         capacity,
@@ -869,11 +747,11 @@ impl ResolveLog {
                 }
             ));
         }
-        // T-015 evidence for telling local from remote. UNVERIFIED: ER offsets with NR's +8 shift.
+        // Evidence only (T-015): the local player is the first PlayerIns, VERIFIED FS-0/FS-1 2026-10-10.
         for p in &res.probes {
             let sigs: Vec<String> = p.signals.iter().map(Signal::text).collect();
             out.push(format!(
-                "team:   evidence PlayerIns 0x{:X} entry[{}] raw={} [UNVERIFIED local/remote candidates, ER offsets + NR shift]: {}",
+                "team:   evidence PlayerIns 0x{:X} entry[{}] raw={} [evidence only; ER offsets + NR shift]: {}",
                 p.addr,
                 p.index,
                 res.entries
@@ -881,6 +759,14 @@ impl ResolveLog {
                     .map_or("?".to_string(), |e| hex16(&e.raw.raw)),
                 sigs.join(" ")
             ));
+        }
+        if let Some(p) = res.probes.first() {
+            if p.index != 0 {
+                out.push(format!(
+                    "team: WARNING: the first valid PlayerIns is at entry[{}], not entry[0]; the entry[0] rule was verified with the local player in entry[0]",
+                    p.index
+                ));
+            }
         }
         out.push(format!("team: local player = {}", res.reasoning()));
         out
@@ -932,8 +818,170 @@ fn read_fields(rc: &mut RegionCache, p: usize) -> Option<Fields> {
 }
 
 // ---------------------------------------------------------------------------------------------------
+// T-026: rosters and the "rivals only" plan (pure logic, no game memory)
+// ---------------------------------------------------------------------------------------------------
+
+/// What the rosters say about the players of the current ChrSet (keyed by PlayerIns address).
+#[derive(Debug, Default)]
+pub(crate) struct RosterView {
+    pub(crate) relation: HashMap<usize, Relation>,
+    pub(crate) team_no: HashMap<usize, u8>,
+    pub(crate) ids: HashMap<usize, Option<u64>>,
+    /// Set when the ids were unusable and the view fell back to "everyone except LOCAL is a rival".
+    pub(crate) warning: Option<String>,
+    /// `teams: team 0 = [0x6001FFFFFFFF(LOCAL)], team 1 = [0x6002FFFFFFFF]` (or the warning text).
+    pub(crate) summary: String,
+    /// Sorted (id, is_local) pairs: the view is re-logged only when this changes.
+    pub(crate) key: Vec<(Option<u64>, bool)>,
+}
+
+/// An id of 0 is treated as unreadable: it is what an unfilled object would hold (every observed id is
+/// non-zero, TECHNICAL_NOTES §4); failing open on it is the conservative choice.
+fn usable_id(id: Option<u64>) -> Option<u64> {
+    id.filter(|&v| v != 0)
+}
+
+/// Build the view for `players` (address, id read from ChrIns+0x78) with `local` the LOCAL PlayerIns.
+/// Rosters come from `assign_teams` over the ids, so every client computes the same ones. If any id is
+/// unreadable or two players share an id, nothing can be trusted: everyone except LOCAL is a rival
+/// (fail open to free-for-all) and `warning` says why.
+pub(crate) fn build_view(
+    players: &[(usize, Option<u64>)],
+    local: Option<usize>,
+    team_size: usize,
+) -> RosterView {
+    let mut view = RosterView::default();
+    for &(a, id) in players {
+        view.ids.insert(a, usable_id(id));
+    }
+    let mut key: Vec<(Option<u64>, bool)> = players
+        .iter()
+        .map(|&(a, id)| (usable_id(id), Some(a) == local))
+        .collect();
+    key.sort();
+    view.key = key;
+    let readable: Vec<u64> = players
+        .iter()
+        .filter_map(|&(_, id)| usable_id(id))
+        .collect();
+    let mut dedup = readable.clone();
+    dedup.sort_unstable();
+    dedup.dedup();
+    let problem = if readable.len() != players.len() {
+        Some("a player id (ChrIns+0x78) is unreadable".to_string())
+    } else if dedup.len() != readable.len() {
+        Some("two players share the same id".to_string())
+    } else {
+        None
+    };
+    if let Some(p) = problem {
+        for &(a, _) in players {
+            if local.is_some() {
+                let rel = if Some(a) == local {
+                    Relation::Local
+                } else {
+                    Relation::Rival
+                };
+                view.relation.insert(a, rel);
+            }
+        }
+        let msg = format!("{p}; treating everyone except LOCAL as a rival (free-for-all)");
+        view.summary = format!("teams: WARNING {msg}");
+        view.warning = Some(msg);
+        return view;
+    }
+    let ids: Vec<PlayerId> = readable.iter().map(|&v| PlayerId(v)).collect();
+    let rosters = assign_teams(&ids, team_size);
+    let local_id = local
+        .and_then(|l| players.iter().find(|(a, _)| *a == l))
+        .and_then(|&(_, id)| usable_id(id))
+        .map(PlayerId);
+    for &(a, id) in players {
+        let Some(pid) = usable_id(id).map(PlayerId) else {
+            continue;
+        };
+        if let Some(t) = rosters.team_of(pid) {
+            view.team_no.insert(a, t.0);
+        }
+        if let Some(l) = local_id {
+            let rel = if pid == l {
+                Relation::Local
+            } else if rosters.are_allies(l, pid) {
+                Relation::Ally
+            } else {
+                Relation::Rival
+            };
+            view.relation.insert(a, rel);
+        }
+    }
+    let parts: Vec<String> = rosters
+        .teams()
+        .map(|(t, members)| {
+            let m: Vec<String> = members
+                .iter()
+                .map(|p| {
+                    if Some(*p) == local_id {
+                        format!("0x{:X}(LOCAL)", p.0)
+                    } else {
+                        format!("0x{:X}", p.0)
+                    }
+                })
+                .collect();
+            format!("team {} = [{}]", t.0, m.join(", "))
+        })
+        .collect();
+    view.summary = format!("teams: {}", parts.join(", "));
+    view
+}
+
+/// One PvPvE pass, decided: which PlayerIns get `pvpve_team` and which previously written ones are restored.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct PvpvePlan {
+    pub(crate) writes: Vec<usize>,
+    /// Previously written players that are no longer rivals; the executor restores each one's captured
+    /// original if its value is still `pvpve_team`, and forgets it either way.
+    pub(crate) restores: Vec<usize>,
+}
+
+/// `players` = (address, live team_type). Scheme "all": every player at 2 is written (T-020, unchanged).
+/// Scheme "rivals": only rivals of the local player at 2 are written; LOCAL, allies and players with no
+/// known relation (no local player) are never written.
+pub(crate) fn plan_pvpve(
+    scheme: Scheme,
+    view: &RosterView,
+    players: &[(usize, Option<u8>)],
+    written: &HashSet<usize>,
+) -> PvpvePlan {
+    let mut plan = PvpvePlan::default();
+    for &(a, cur) in players {
+        let wants = cur.is_some_and(pvpve_wants_write);
+        match scheme {
+            Scheme::All => {
+                if wants {
+                    plan.writes.push(a);
+                }
+            }
+            Scheme::Rivals => {
+                let rival = view.relation.get(&a) == Some(&Relation::Rival);
+                if rival && wants {
+                    plan.writes.push(a);
+                } else if !rival && written.contains(&a) {
+                    plan.restores.push(a);
+                }
+            }
+        }
+    }
+    plan
+}
+
+// ---------------------------------------------------------------------------------------------------
 // Controller driven from the main loop
 // ---------------------------------------------------------------------------------------------------
+
+/// T-020: true if the PvPvE mode should overwrite this live team_type (only the expedition default).
+pub(crate) fn pvpve_wants_write(current: u8) -> bool {
+    current == PVPVE_FROM
+}
 
 /// Persist state of one player (T-015: persist is per player).
 struct PersistEntry {
@@ -944,7 +992,42 @@ struct PersistEntry {
     first_logged: bool,
 }
 
+/// The team_type players have during an expedition [VERIFIED: TC-004 runs, FS-0]; the PvPvE mode only replaces this value.
+const PVPVE_FROM: u8 = 2;
+
+/// After this many automatic writes only every [`PVPVE_LOG_EVERY`]th one is logged, so a game that keeps flipping the
+/// value back cannot flood the log (the overlay counter and the heartbeat still count all of them).
+const PVPVE_LOG_ALL_UP_TO: u64 = 200;
+const PVPVE_LOG_EVERY: u64 = 50;
+/// T-030 (player build): the first writes logged one by one, then a summary line this often.
+const PLAYER_LOG_FIRST: u64 = 20;
+const PLAYER_SUMMARY_EVERY: Duration = Duration::from_secs(60);
+
 pub(crate) struct TeamCtl {
+    /// T-020: `pvpve` from the config. When false the mode is OFF and cannot be switched on at runtime.
+    pvpve_enabled: bool,
+    /// T-030: developer mode. Off = player build: the PvPvE mode cannot be paused or resumed and the per-player watcher
+    /// stays quiet; automatic writes are logged for the first [`PLAYER_LOG_FIRST`] then summarised once a minute.
+    dev: bool,
+    /// T-030 (player build): when the last once-a-minute write summary was logged, and the write count then.
+    last_summary: Option<Instant>,
+    /// Running (true) or paused by F12 / the overlay checkbox (false). Only meaningful when `pvpve_enabled`.
+    pvpve_running: bool,
+    pvpve_scheme: Scheme,
+    team_size: usize,
+    /// T-026 (rivals scheme): players this client wrote `pvpve_team` to and has not restored yet.
+    pvpve_written: HashSet<usize>,
+    /// T-026: key of the roster view last logged (log once per change).
+    last_roster_key: Option<Vec<(Option<u64>, bool)>>,
+    pvpve_team: u8,
+    pvpve_every: Duration,
+    next_pvpve: Instant,
+    /// Successful automatic writes this session.
+    pvpve_writes: u64,
+    /// Rate limit for the write-failure line (reuses the persist tracker.s limiter).
+    pvpve_fail_log: PersistTracker,
+    /// Valid PlayerIns count seen by the last resolve of the watcher / PvPvE tick (None = never resolved).
+    last_player_count: Option<usize>,
     base: usize,
     size: usize,
     watch_every: Duration,
@@ -965,8 +1048,6 @@ pub(crate) struct TeamCtl {
     last_written: HashMap<usize, u8>,
     /// Persist set: PlayerIns address -> value (T-015).
     persist: BTreeMap<usize, PersistEntry>,
-    /// The HUMAN's "this is me" PlayerIns, kept until the WorldChrMan instance changes (T-015).
-    chosen_local: Option<usize>,
     marker: Marker,
     next_persist: Instant,
     /// T-013: last quiet resolve for the overlay snapshot (refreshed at most every [`LIVE_REFRESH`]).
@@ -984,6 +1065,8 @@ struct LiveView {
     /// How the local player was decided (empty when there is none).
     basis: String,
     rows: Vec<PlayerRow>,
+    /// T-026: why the rosters fell back to free-for-all (empty when they did not).
+    roster_warning: String,
 }
 
 impl TeamCtl {
@@ -995,6 +1078,22 @@ impl TeamCtl {
             cycler.current(),
             cfg.describe_bindings()
         );
+        if cfg.pvpve {
+            tracing::info!(
+                "T-020: PvPvE mode ON{}: every {} ms, players with team_type {PVPVE_FROM} get {}; T-026 scheme = {}, team_size = {}",
+                if cfg.dev_mode {
+                    " (F12 pauses, F11 resumes, or use the overlay checkbox)"
+                } else {
+                    " (player build: always on)"
+                },
+                cfg.pvpve_interval_ms,
+                cfg.pvpve_team,
+                cfg.scheme().label(),
+                cfg.team_size_usize()
+            );
+        } else {
+            tracing::info!("T-020: PvPvE mode is OFF (set pvpve = true in nrpvp.toml to enable)");
+        }
         let now = Instant::now();
         TeamCtl {
             base,
@@ -1007,6 +1106,20 @@ impl TeamCtl {
             vts_logged: false,
             inst: 0,
             announced: false,
+            pvpve_enabled: cfg.pvpve,
+            dev: cfg.dev_mode,
+            last_summary: None,
+            pvpve_running: cfg.pvpve,
+            pvpve_scheme: cfg.scheme(),
+            team_size: cfg.team_size_usize(),
+            pvpve_written: HashSet::new(),
+            last_roster_key: None,
+            pvpve_team: cfg.pvpve_team,
+            pvpve_every: Duration::from_millis(cfg.pvpve_interval_ms),
+            next_pvpve: now,
+            pvpve_writes: 0,
+            pvpve_fail_log: PersistTracker::new(),
+            last_player_count: None,
             log: ResolveLog::default(),
             watch: WatchState::default(),
             next_watch: now,
@@ -1014,7 +1127,6 @@ impl TeamCtl {
             originals: HashMap::new(),
             last_written: HashMap::new(),
             persist: BTreeMap::new(),
-            chosen_local: None,
             marker: Marker::default(),
             next_persist: now,
             live: LiveView::default(),
@@ -1071,27 +1183,28 @@ impl TeamCtl {
         self.live = LiveView::default();
         self.next_live = Instant::now();
         // PlayerIns objects are re-created with the WorldChrMan; addresses could be reused for other
-        // values, so everything keyed by address is forgotten: originals, written values, persist entries
-        // and the "this is me" choice.
-        if !self.originals.is_empty() || !self.persist.is_empty() || self.chosen_local.is_some() {
+        // values, so everything keyed by address is forgotten: originals, written values and persist entries.
+        // The PvPvE running/paused state and its write counter belong to the session and are kept.
+        if !self.originals.is_empty() || !self.persist.is_empty() {
             tracing::info!(
-                "T-008: WorldChrMan instance changed; forgetting {} captured original team value(s), {} persist entr(y/ies) and the \"this is me\" choice ({})",
+                "T-008: WorldChrMan instance changed; forgetting {} captured original team value(s) and {} persist entr(y/ies)",
                 self.originals.len(),
-                self.persist.len(),
-                self.chosen_local
-                    .map_or("none".to_string(), |a| format!("0x{a:X}"))
+                self.persist.len()
             );
         }
         self.originals.clear();
         self.last_written.clear();
         self.persist.clear();
-        self.chosen_local = None;
+        self.pvpve_written.clear();
+        self.last_roster_key = None;
+        self.last_player_count = None;
         self.next_watch = Instant::now();
+        self.next_pvpve = Instant::now();
     }
 
     /// Resolve and log errors only when they change (the watcher calls this every second).
     fn resolve_logged(&mut self, quiet_repeat: bool) -> Option<Resolution> {
-        match resolve(self.inst, &self.vts, self.chosen_local) {
+        match resolve(self.inst, &self.vts) {
             Ok(r) => {
                 self.last_err = None;
                 Some(r)
@@ -1131,7 +1244,7 @@ impl TeamCtl {
             Some(p) => Some((res, p)),
             None => {
                 tracing::warn!(
-                    "T-008: {src} ignored: no local player ({}); use a row button or \"this is me\"",
+                    "T-008: {src} ignored: no local player ({}); use a row button",
                     res.reasoning()
                 );
                 None
@@ -1200,14 +1313,42 @@ impl TeamCtl {
         self.write_to(addr, &who, v, src);
     }
 
-    /// The write itself plus its log line, original capture and persist-value follow-up. `who` is the
-    /// `LOCAL` / `REMOTE[i]` label.
-    fn write_to(&mut self, addr: usize, who: &str, v: u8, src: &str) {
-        match write_team_type(addr, v, &self.vts) {
-            Ok(w) => {
-                let first = !self.originals.contains_key(&addr);
-                let orig = *self.originals.entry(addr).or_insert(w.old);
-                self.last_written.insert(addr, v);
+    /// The gated write plus its bookkeeping (original capture, last-written value, persist-value follow-up), without
+    /// the log line. `Ok((write, first, original))`: `first` = this was the first write to `addr`, `original` = the
+    /// value captured before it.
+    fn apply_write(
+        &mut self,
+        addr: usize,
+        who: &str,
+        v: u8,
+    ) -> Result<(WriteOk, bool, u8), String> {
+        let w = write_team_type(addr, v, &self.vts)?;
+        let first = !self.originals.contains_key(&addr);
+        let orig = *self.originals.entry(addr).or_insert(w.old);
+        self.last_written.insert(addr, v);
+        if w.readback != v {
+            tracing::warn!(
+                "T-008: who={who} readback {} != written {v}; the game changed it immediately or the store did not stick",
+                w.readback
+            );
+        }
+        // A player in persist mode keeps the newest value written to it.
+        if let Some(p) = self.persist.get_mut(&addr) {
+            if p.value != v {
+                tracing::info!(
+                    "T-008: who={who} persist value for 0x{addr:X} is now {v} (was {})",
+                    p.value
+                );
+                p.value = v;
+            }
+        }
+        Ok((w, first, orig))
+    }
+
+    /// The write itself plus its log line. `who` is the `LOCAL` / `REMOTE[i]` label. Returns true on success.
+    fn write_to(&mut self, addr: usize, who: &str, v: u8, src: &str) -> bool {
+        match self.apply_write(addr, who, v) {
+            Ok((w, first, orig)) => {
                 tracing::info!(
                     "T-008: {src} team write who={who} PlayerIns 0x{addr:X} +0x74: {} -> {v} (readback {}){}",
                     w.old,
@@ -1218,47 +1359,37 @@ impl TeamCtl {
                         format!("; original is {orig}")
                     }
                 );
-                if w.readback != v {
-                    tracing::warn!(
-                        "T-008: who={who} readback {} != written {v}; the game changed it immediately or the store did not stick",
-                        w.readback
-                    );
-                }
-                // A player in persist mode keeps the newest value written to it.
-                if let Some(p) = self.persist.get_mut(&addr) {
-                    if p.value != v {
-                        tracing::info!(
-                            "T-008: who={who} persist value for 0x{addr:X} is now {v} (was {})",
-                            p.value
-                        );
-                        p.value = v;
-                    }
-                }
+                true
             }
             Err(e) => {
-                tracing::warn!("T-008: {src} write who={who} to PlayerIns 0x{addr:X} failed: {e}")
+                tracing::warn!("T-008: {src} write who={who} to PlayerIns 0x{addr:X} failed: {e}");
+                false
             }
         }
     }
 
-    /// FS-0 hotkey: write `v` to every valid PlayerIns of the current ChrSet (local and remote copies).
+    /// FS-0 hotkey: write `v` to every valid PlayerIns of the current ChrSet (local and remote copies). Also resumes the
+    /// PvPvE mode if it is paused.
     pub(crate) fn set_all(&mut self, v: u8, src: &str) {
+        self.set_pvpve(true, src);
         let Some(res) = self.resolve_for(src) else {
             return;
         };
         for addr in res.players.clone() {
-            let who = res.who(addr).unwrap_or_else(|| "UNKNOWN".to_string());
+            let who = res.who(addr).unwrap_or_else(|| "?".to_string());
             self.write_to(addr, &who, v, src);
         }
     }
 
-    /// FS-0 hotkey: restore every PlayerIns of the current ChrSet that has a captured original.
+    /// FS-0 hotkey: restore every PlayerIns of the current ChrSet that has a captured original. Also pauses the PvPvE
+    /// mode, otherwise it would write the value straight back.
     pub(crate) fn restore_all(&mut self, src: &str) {
+        self.set_pvpve(false, src);
         let Some(res) = self.resolve_for(src) else {
             return;
         };
         for addr in res.players.clone() {
-            let who = res.who(addr).unwrap_or_else(|| "UNKNOWN".to_string());
+            let who = res.who(addr).unwrap_or_else(|| "?".to_string());
             self.restore_at(addr, &who, src);
         }
     }
@@ -1352,23 +1483,96 @@ impl TeamCtl {
         }
     }
 
-    /// T-015: the HUMAN says `addr` is the local player. Kept until the WorldChrMan instance changes.
-    pub(crate) fn set_local_override(&mut self, addr: usize, src: &str) {
-        let Some((_res, who)) = self.target_or_log(addr, src) else {
-            return;
-        };
-        self.chosen_local = Some(addr);
-        self.next_live = Instant::now();
-        tracing::info!(
-            "T-008: {src}: you chose PlayerIns 0x{addr:X} (was {who}) as the local player for this session"
-        );
+    /// T-020: current state of the PvPvE mode.
+    pub(crate) fn pvpve_state(&self) -> PvpveState {
+        match (self.pvpve_enabled, self.pvpve_running) {
+            (false, _) => PvpveState::Off,
+            (true, true) => PvpveState::On,
+            (true, false) => PvpveState::Paused,
+        }
     }
 
-    pub(crate) fn clear_local_override(&mut self, src: &str) {
-        if self.chosen_local.take().is_some() {
-            self.next_live = Instant::now();
-            tracing::info!("T-008: {src}: cleared the \"this is me\" choice");
+    /// Resume (`on`) or pause the PvPvE mode (overlay checkbox, F11/F12). Does nothing, and says so, when the mode is
+    /// off in the config.
+    pub(crate) fn set_pvpve(&mut self, on: bool, src: &str) {
+        // T-030: no pause/resume in the player build, whatever asks for it.
+        if !self.dev {
+            return;
         }
+        if !self.pvpve_enabled {
+            tracing::info!(
+                "T-020: {src}: PvPvE mode is OFF in the config (pvpve = false); ignored"
+            );
+            return;
+        }
+        if self.pvpve_running == on {
+            return;
+        }
+        self.pvpve_running = on;
+        self.next_pvpve = Instant::now();
+        tracing::info!(
+            "T-020: {src}: PvPvE mode {} ({} automatic write(s) so far)",
+            if on { "resumed" } else { "paused" },
+            self.pvpve_writes
+        );
+        if !on {
+            self.restore_written(src);
+        }
+    }
+
+    /// T-026: put back the captured original of every player the rivals tick wrote (pause, roster change).
+    /// A player whose value is no longer `pvpve_team` was changed by someone else and is left alone.
+    fn restore_written(&mut self, src: &str) {
+        let addrs: Vec<usize> = self.pvpve_written.drain().collect();
+        for addr in addrs {
+            self.restore_written_one(addr, src);
+        }
+    }
+
+    fn restore_written_one(&mut self, addr: usize, src: &str) {
+        self.pvpve_written.remove(&addr);
+        let Some(&orig) = self.originals.get(&addr) else {
+            return;
+        };
+        // Guarded read; offset VERIFIED on NR 1.3.3.0 (TECHNICAL_NOTES §4).
+        if mem::read::<u8>(addr + CHR_TEAM) != Some(self.pvpve_team) {
+            return;
+        }
+        match write_team_type(addr, orig, &self.vts) {
+            Ok(w) => tracing::info!(
+                "T-026: {src}: restored PlayerIns 0x{addr:X} +0x74: {} -> {orig} (readback {})",
+                w.old,
+                w.readback
+            ),
+            Err(e) => tracing::warn!("T-026: {src}: restore of PlayerIns 0x{addr:X} failed: {e}"),
+        }
+    }
+
+    /// Automatic writes this session.
+    #[cfg(test)]
+    pub(crate) fn pvpve_writes(&self) -> u64 {
+        self.pvpve_writes
+    }
+
+    /// `ON (team 29, 12 writes)` for the heartbeat line.
+    pub(crate) fn pvpve_summary(&self) -> String {
+        match self.pvpve_state() {
+            PvpveState::Off => "OFF".to_string(),
+            s => format!(
+                "{} (team {}, {} writes, scheme {}, team_size {})",
+                s.label(),
+                self.pvpve_team,
+                self.pvpve_writes,
+                self.pvpve_scheme.label(),
+                self.team_size
+            ),
+        }
+    }
+
+    /// Players seen by the last resolve, for the heartbeat line.
+    pub(crate) fn player_count_text(&self) -> String {
+        self.last_player_count
+            .map_or("?".to_string(), |n| n.to_string())
     }
 
     /// T-015: `MARK #n: <text>` (`None` = hotkey). Needs no game memory.
@@ -1411,6 +1615,12 @@ impl TeamCtl {
             .map(|p| p.tracker.total_reverts())
             .sum();
         s.marks = self.marker.count();
+        s.pvpve = self.pvpve_state();
+        s.pvpve_team = self.pvpve_team;
+        s.pvpve_writes = self.pvpve_writes;
+        s.pvpve_scheme = self.pvpve_scheme.label().to_string();
+        s.team_size = u8::try_from(self.team_size).unwrap_or(u8::MAX);
+        s.roster_warning = self.live.roster_warning.clone();
         s.players = self
             .live
             .rows
@@ -1428,6 +1638,49 @@ impl TeamCtl {
             .collect();
     }
 
+    /// T-028 probes: every PlayerIns of the ChrSet (local flagged), from the quiet resolve that also feeds the
+    /// overlay (refreshed at most every [`LIVE_REFRESH`]). Read-only.
+    pub(crate) fn probe_targets(&mut self) -> Vec<super::probe_pos::Target> {
+        if Instant::now() >= self.next_live {
+            self.next_live = Instant::now() + LIVE_REFRESH;
+            self.refresh_live();
+        }
+        self.live
+            .rows
+            .iter()
+            .map(|r| super::probe_pos::Target {
+                index: r.index,
+                addr: r.addr,
+                local: r.role == Role::Local,
+            })
+            .collect()
+    }
+
+    /// T-026: read every player's id and build the roster view (quiet).
+    fn view_for(&self, res: &Resolution) -> RosterView {
+        let players: Vec<(usize, Option<u64>)> = res
+            .players
+            .iter()
+            // Guarded read (VirtualQuery). ChrIns+0x78 is a per-player id identical on all clients:
+            // VERIFIED on NR 1.3.3.0 by FS-0/FS-1 for 2 players, see TECHNICAL_NOTES §4.
+            .map(|&p| (p, mem::read::<u64>(p + CHR_P2P_HANDLE)))
+            .collect();
+        build_view(&players, res.local, self.team_size)
+    }
+
+    /// T-026: log the rosters once per change of the player set.
+    fn note_roster(&mut self, view: &RosterView) {
+        if self.last_roster_key.as_ref() == Some(&view.key) {
+            return;
+        }
+        self.last_roster_key = Some(view.key.clone());
+        if view.warning.is_some() {
+            tracing::warn!("{}", view.summary);
+        } else {
+            tracing::info!("{}", view.summary);
+        }
+    }
+
     /// Quiet resolve of the players and their live team_type (no logging; the watcher logs changes).
     fn refresh_live(&mut self) {
         self.live = LiveView::default();
@@ -1439,11 +1692,19 @@ impl TeamCtl {
             self.live.note = "PlayerIns vtables unknown (RTTI not recovered yet)".to_string();
             return;
         }
-        match resolve(self.inst, &self.vts, self.chosen_local) {
+        match resolve(self.inst, &self.vts) {
             Ok(r) => {
                 // Read-only, VirtualQuery-guarded (mem::read). Offset VERIFIED on NR 1.3.3.0 by
                 // T-007a; see TECHNICAL_NOTES section 4.
-                self.live.rows = r.rows(self.chosen_local, &mut |a| mem::read::<u8>(a + CHR_TEAM));
+                self.live.rows = r.rows(&mut |a| mem::read::<u8>(a + CHR_TEAM));
+                let view = self.view_for(&r);
+                self.note_roster(&view);
+                for row in &mut self.live.rows {
+                    row.id = view.ids.get(&row.addr).copied().flatten();
+                    row.team_no = view.team_no.get(&row.addr).copied();
+                    row.relation = view.relation.get(&row.addr).copied();
+                }
+                self.live.roster_warning = view.warning.clone().unwrap_or_default();
                 match r.local {
                     Some(l) => {
                         self.live.local = Some(l);
@@ -1471,15 +1732,23 @@ impl TeamCtl {
             self.next_persist = now + self.persist_every;
             self.persist_tick();
         }
+        if self.pvpve_enabled && self.pvpve_running && now >= self.next_pvpve {
+            self.next_pvpve = now + self.pvpve_every;
+            self.pvpve_tick();
+        }
     }
 
     fn watch_tick(&mut self) {
         let Some(res) = self.resolve_logged(true) else {
             return;
         };
+        self.last_player_count = Some(res.players.len());
         let now_ms = self.now_ms();
-        for l in self.log.lines(&res, now_ms, (self.base, self.size)) {
-            tracing::info!("T-008: {l}");
+        let lines = self.log.lines(&res, now_ms, (self.base, self.size));
+        if self.dev {
+            for l in lines {
+                tracing::info!("T-008: {l}");
+            }
         }
         let mut rc = RegionCache::new();
         for &p in &res.players {
@@ -1487,8 +1756,10 @@ impl TeamCtl {
                 continue;
             };
             if let Some(prev) = self.watch.update(p, f) {
-                let who = res.who(p).unwrap_or_else(|| "?".to_string());
-                tracing::info!("T-008: {}", watch_line(p, &who, f, prev));
+                if self.dev {
+                    let who = res.who(p).unwrap_or_else(|| "?".to_string());
+                    tracing::info!("T-008: {}", watch_line(p, &who, f, prev));
+                }
             }
         }
         if !self.announced {
@@ -1505,10 +1776,81 @@ impl TeamCtl {
         }
     }
 
+    /// T-020/T-026: one PvPvE pass. Scheme "all": every ChrSet player whose live team_type is [`PVPVE_FROM`] gets
+    /// `pvpve_team`. Scheme "rivals": only rivals of the local player do, and players this tick wrote that are no longer
+    /// rivals (roster change) are restored. Every other value (Roundtable 1, anything a manual experiment set) is left
+    /// alone. Quiet resolve: resolve errors are logged (deduplicated) by the watcher. Same gated 1-byte write as the
+    /// hotkeys.
+    fn pvpve_tick(&mut self) {
+        let Ok(res) = resolve(self.inst, &self.vts) else {
+            return;
+        };
+        self.last_player_count = Some(res.players.len());
+        let view = self.view_for(&res);
+        self.note_roster(&view);
+        let live: Vec<(usize, Option<u8>)> = res
+            .players
+            .iter()
+            // Read-only, VirtualQuery-guarded. Offset VERIFIED on NR 1.3.3.0 (TECHNICAL_NOTES §4).
+            .map(|&p| (p, mem::read::<u8>(p + CHR_TEAM)))
+            .collect();
+        let plan = plan_pvpve(self.pvpve_scheme, &view, &live, &self.pvpve_written);
+        for addr in plan.restores {
+            self.restore_written_one(addr, "roster change");
+        }
+        for p in plan.writes {
+            let who = res.who(p).unwrap_or_else(|| "?".to_string());
+            let team = self.pvpve_team;
+            match self.apply_write(p, &who, team) {
+                Ok((w, _first, _orig)) => {
+                    if self.pvpve_scheme == Scheme::Rivals {
+                        self.pvpve_written.insert(p);
+                    }
+                    self.pvpve_writes += 1;
+                    let n = self.pvpve_writes;
+                    if self.should_log_write(n) {
+                        tracing::info!(
+                            "T-020: pvpve team write who={who} PlayerIns 0x{p:X} +0x74: {} -> {team} (readback {}); write #{n}",
+                            w.old,
+                            w.readback
+                        );
+                    }
+                }
+                Err(e) => {
+                    let now_ms = self.now_ms();
+                    if self.pvpve_fail_log.should_log_failure(now_ms) {
+                        tracing::warn!(
+                            "T-020: pvpve team write who={who} to PlayerIns 0x{p:X} failed: {e}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// Whether automatic write number `n` gets its own log line. Dev: the first [`PVPVE_LOG_ALL_UP_TO`], then every
+    /// [`PVPVE_LOG_EVERY`]th. Player build (T-030): the first [`PLAYER_LOG_FIRST`], then one summary line a minute.
+    fn should_log_write(&mut self, n: u64) -> bool {
+        if self.dev {
+            return n <= PVPVE_LOG_ALL_UP_TO || n.is_multiple_of(PVPVE_LOG_EVERY);
+        }
+        if n <= PLAYER_LOG_FIRST {
+            return true;
+        }
+        let due = self
+            .last_summary
+            .is_none_or(|t| t.elapsed() >= PLAYER_SUMMARY_EVERY);
+        if due {
+            self.last_summary = Some(Instant::now());
+            tracing::info!("T-020: pvpve summary: {n} automatic team write(s) so far");
+        }
+        false
+    }
+
     fn persist_tick(&mut self) {
         let now_ms = self.now_ms();
         // Quiet resolve: errors are already logged (deduplicated) by the watcher.
-        let Ok(res) = resolve(self.inst, &self.vts, self.chosen_local) else {
+        let Ok(res) = resolve(self.inst, &self.vts) else {
             return;
         };
         for (&addr, entry) in self.persist.iter_mut() {
@@ -1586,7 +1928,7 @@ pub(crate) fn histogram_report(rtti: &Rtti, inst: usize, base: usize) {
         }
     }
     let scanned = objs.len();
-    let resolved = resolve(inst, &vts, None);
+    let resolved = resolve(inst, &vts);
     if let Ok(r) = &resolved {
         for &p in &r.players {
             if seen.insert(p) {
@@ -1807,11 +2149,11 @@ mod tests {
         assert_eq!(fmt_counts(&BTreeMap::new()), "");
     }
 
-    // ---- T-015: the local-player decision on synthetic multi-player data ----
+    // ---- T-020: the entry[0] local-player rule on synthetic multi-player data ----
 
-    /// A probe with the given decisive signal values (names are positional stand-ins).
+    /// A probe at the given ChrSet entry index with arbitrary evidence values.
     fn probe(addr: usize, index: usize, vals: &[u64]) -> PlayerProbe {
-        const NAMES: [&str; 4] = ["sigA", "sigB", "sigC", "sigD"];
+        const NAMES: [&str; 3] = ["sigA", "sigB", "sigC"];
         PlayerProbe {
             addr,
             index,
@@ -1822,117 +2164,45 @@ mod tests {
                     name: NAMES[i],
                     value: Some(v),
                     hex: false,
-                    decisive: true,
                 })
                 .collect(),
         }
     }
 
     #[test]
-    fn odd_one_out_needs_three_players_and_an_exact_one_vs_rest_split() {
-        let v = |a: &[(usize, u64)]| a.iter().map(|&(x, y)| (x, Some(y))).collect::<Vec<_>>();
-        // Exactly one differs, the rest agree.
-        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 9)])), Some(3));
-        assert_eq!(odd_one_out(&v(&[(1, 9), (2, 5), (3, 5), (4, 5)])), Some(1));
-        // Two players: cannot tell which is the odd one.
-        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 9)])), None);
-        // All equal, all distinct, or a 2-vs-2 split: no single odd one.
-        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 5)])), None);
-        assert_eq!(odd_one_out(&v(&[(1, 1), (2, 2), (3, 3)])), None);
-        assert_eq!(odd_one_out(&v(&[(1, 5), (2, 5), (3, 9), (4, 9)])), None);
-        // Any unreadable value disables the signal.
-        assert_eq!(odd_one_out(&[(1, Some(5)), (2, None), (3, Some(9))]), None);
-        assert_eq!(odd_one_out(&[]), None);
-    }
-
-    #[test]
-    fn local_decision_with_zero_one_and_two_players() {
-        let d = decide_local(&[], None);
+    fn local_is_the_first_valid_playerins_whatever_the_evidence_says() {
+        let d = decide_local(&[]);
         assert_eq!((d.local, &d.basis), (None, &Basis::NoPlayers));
 
-        // Exactly one PlayerIns is LOCAL, whatever its signals say.
-        let d = decide_local(&[probe(0x100, 3, &[1, 2])], None);
-        assert_eq!((d.local, &d.basis), (Some(0x100), &Basis::OnlyPlayer));
+        // One player: local.
+        let d = decide_local(&[probe(0x100, 3, &[1, 2])]);
+        assert_eq!((d.local, &d.basis), (Some(0x100), &Basis::FirstEntry));
 
-        // Two players: UNKNOWN, even if a signal differs; the HUMAN's choice resolves it.
-        let two = [probe(0x100, 0, &[1]), probe(0x200, 1, &[2])];
-        let d = decide_local(&two, None);
-        assert_eq!(d.local, None);
-        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("this is me")));
-        let d = decide_local(&two, Some(0x200));
-        assert_eq!((d.local, &d.basis), (Some(0x200), &Basis::Chosen));
-    }
-
-    #[test]
-    fn local_decision_suggests_the_odd_one_out_of_three_or_more() {
-        // sigA splits C from A and B; sigB is the same everywhere.
+        // Two, three and four players: always the first in entry order; the signals are irrelevant (here the
+        // third player is the "odd one out" on sigA, which the old heuristic would have picked).
         let ps = [
             probe(0xA, 0, &[5, 7]),
             probe(0xB, 1, &[5, 7]),
             probe(0xC, 2, &[9, 7]),
+            probe(0xD, 3, &[5, 7]),
         ];
-        let d = decide_local(&ps, None);
-        assert_eq!(d.local, Some(0xC));
-        assert_eq!(d.basis, Basis::Heuristic("sigA".to_string()));
-        assert_eq!(d.basis.label(), "heuristic: sigA");
-
-        // Two signals pointing at the same player are both named.
-        let ps = [
-            probe(0xA, 0, &[5, 1]),
-            probe(0xB, 1, &[5, 1]),
-            probe(0xC, 2, &[9, 0]),
-        ];
-        let d = decide_local(&ps, None);
-        assert_eq!(d.local, Some(0xC));
-        assert_eq!(d.basis, Basis::Heuristic("sigA, sigB".to_string()));
-
-        // Signals that point at different players disagree: no suggestion.
-        let ps = [
-            probe(0xA, 0, &[9, 1]),
-            probe(0xB, 1, &[5, 0]),
-            probe(0xC, 2, &[5, 1]),
-        ];
-        let d = decide_local(&ps, None);
-        assert_eq!(d.local, None);
-        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("disagree")));
-
-        // No signal splits one-vs-rest (all distinct / all equal): UNKNOWN.
-        let ps = [
-            probe(0xA, 0, &[1, 4]),
-            probe(0xB, 1, &[2, 4]),
-            probe(0xC, 2, &[3, 4]),
-        ];
-        let d = decide_local(&ps, None);
-        assert_eq!(d.local, None);
-        assert!(matches!(d.basis, Basis::Unknown(ref w) if w.contains("no candidate signal")));
-        // The HUMAN's choice beats any suggestion.
-        let ps = [
-            probe(0xA, 0, &[5]),
-            probe(0xB, 1, &[5]),
-            probe(0xC, 2, &[9]),
-        ];
-        let d = decide_local(&ps, Some(0xA));
-        assert_eq!((d.local, &d.basis), (Some(0xA), &Basis::Chosen));
-        // A stale choice (not one of the players) is ignored.
-        let d = decide_local(&ps, Some(0xDEAD));
-        assert_eq!(d.local, Some(0xC));
-        // Log-only signals never decide.
-        let mut ps = [
-            probe(0xA, 0, &[5]),
-            probe(0xB, 1, &[5]),
-            probe(0xC, 2, &[9]),
-        ];
-        for p in &mut ps {
-            p.signals[0].decisive = false;
+        for n in 2..=4 {
+            let d = decide_local(&ps[..n]);
+            assert_eq!((d.local, &d.basis), (Some(0xA), &Basis::FirstEntry), "{n}");
         }
-        assert_eq!(decide_local(&ps, None).local, None);
+        // Index gaps do not matter: the first valid player is local even if it is not at entry 0.
+        let d = decide_local(&[probe(0xB, 2, &[1]), probe(0xA, 4, &[1])]);
+        assert_eq!(d.local, Some(0xB));
+        assert_eq!(
+            Basis::FirstEntry.label(),
+            "first PlayerIns in the ChrSet (entry[0] rule)"
+        );
     }
 
     #[test]
     fn who_labels() {
         assert_eq!(who_label(Role::Local, 2), "LOCAL");
         assert_eq!(who_label(Role::Remote, 3), "REMOTE[3]");
-        assert_eq!(who_label(Role::Unknown, 0), "UNKNOWN[0]");
     }
 
     // ---- resolve() and the gated write on fake memory ----
@@ -1985,7 +2255,7 @@ mod tests {
         let pa = player.as_ptr() as u64;
         let entries = entries_with_state(&[0, pa, enemy.as_ptr() as u64, 0, 0, 0], &[]);
         let (wcm, _e) = fake_wcm(6, &entries);
-        let r = resolve(wcm.as_ptr() as usize, &vts(), None).expect("resolves");
+        let r = resolve(wcm.as_ptr() as usize, &vts()).expect("resolves");
         assert_eq!(r.capacity, 6);
         assert_eq!(r.entries.len(), 6);
         let kinds: Vec<EntryKind> = r.entries.iter().map(|e| e.kind).collect();
@@ -2003,7 +2273,7 @@ mod tests {
         assert_eq!(r.players, vec![pa as usize]);
         // The only PlayerIns is LOCAL; its ChrSet entry index is 1.
         assert_eq!(r.local, Some(pa as usize));
-        assert_eq!(r.basis, Basis::OnlyPlayer);
+        assert_eq!(r.basis, Basis::FirstEntry);
         assert_eq!(r.who(pa as usize).as_deref(), Some("LOCAL"));
         assert_eq!(r.who(enemy.as_ptr() as usize), None);
 
@@ -2011,10 +2281,16 @@ mod tests {
         // unchanged.
         let mut lg = ResolveLog::default();
         let lines = lg.lines(&r, 0, (0, 0));
-        assert_eq!(lines.iter().filter(|l| l.contains("entry[")).count(), 6 + 1);
+        assert_eq!(
+            lines
+                .iter()
+                .filter(|l| l.starts_with("team:   entry["))
+                .count(),
+            6
+        );
         let ev: Vec<&String> = lines.iter().filter(|l| l.contains("evidence")).collect();
         assert_eq!(ev.len(), 1);
-        assert!(ev[0].contains("UNVERIFIED") && ev[0].contains("net_authority@+0x1EC"));
+        assert!(ev[0].contains("evidence only") && ev[0].contains("net_authority@+0x1EC"));
         assert!(
             ev[0].contains("04 04"),
             "the raw entry bytes are in the evidence"
@@ -2028,8 +2304,9 @@ mod tests {
     }
 
     #[test]
-    fn resolve_with_several_players_suggests_chooses_and_labels_rows() {
-        // Three PlayerIns; the third has a different chr_type (+0x70), the others share one.
+    fn resolve_with_several_players_uses_entry_order_and_labels_rows() {
+        // Three PlayerIns in entries 1..=3 (entry 0 empty); the third has a different chr_type (+0x70), which
+        // the old heuristic would have picked. The rule is the first valid PlayerIns, whatever the evidence says.
         let mut a = fake_obj(VT_PLAYER, 2);
         let mut b = fake_obj(VT_PLAYER, 2);
         let mut c = fake_obj(VT_PLAYER, 2);
@@ -2042,76 +2319,77 @@ mod tests {
             b.as_ptr() as usize,
             c.as_ptr() as usize,
         );
-        // Entry 0 is empty so the ChrSet indices are 1, 2, 3.
         let entries = entries_with_state(&[0, pa as u64, pb as u64, pc as u64], &[]);
         let (wcm, _e) = fake_wcm(4, &entries);
         let w = wcm.as_ptr() as usize;
 
-        let r = resolve(w, &vts(), None).expect("resolves");
+        let r = resolve(w, &vts()).expect("resolves");
         assert_eq!(r.players, vec![pa, pb, pc]);
-        assert_eq!(r.local, Some(pc), "the odd one out is suggested");
-        assert_eq!(
-            r.basis,
-            Basis::Heuristic("chr_type@+0x70[ER +0x68]".to_string())
-        );
-        assert_eq!(r.who(pc).as_deref(), Some("LOCAL"));
-        assert_eq!(r.who(pa).as_deref(), Some("REMOTE[1]"));
+        assert_eq!(r.local, Some(pa), "the first valid PlayerIns is local");
+        assert_eq!(r.basis, Basis::FirstEntry);
+        assert_eq!(r.who(pa).as_deref(), Some("LOCAL"));
         assert_eq!(r.who(pb).as_deref(), Some("REMOTE[2]"));
-        assert_eq!(r.role_of(pa), Role::Remote);
-
-        // The HUMAN overrides the suggestion.
-        let r = resolve(w, &vts(), Some(pa)).expect("resolves");
-        assert_eq!(r.local, Some(pa));
-        assert_eq!(r.basis, Basis::Chosen);
         assert_eq!(r.who(pc).as_deref(), Some("REMOTE[3]"));
-        let rows = r.rows(Some(pa), &mut |addr| {
-            Some(unsafe { *((addr + CHR_TEAM) as *const u8) })
-        });
-        assert_eq!(rows.len(), 3);
+        assert_eq!(r.role_of(pb), Role::Remote);
+        let rows = r.rows(&mut |addr| Some(unsafe { *((addr + CHR_TEAM) as *const u8) }));
         assert_eq!(
             rows.iter().map(|x| (x.index, x.role)).collect::<Vec<_>>(),
             vec![(1, Role::Local), (2, Role::Remote), (3, Role::Remote)]
         );
-        assert!(rows[0].chosen && !rows[1].chosen);
         assert_eq!(
             (rows[0].state8, rows[0].state9, rows[0].team),
             (4, 4, Some(2))
         );
+        assert_eq!(rows[0].basis, Basis::FirstEntry.label());
+        assert_eq!(rows[1].basis, "not the local player");
 
-        // When nothing splits them the players are UNKNOWN, not guessed.
-        let mut d = fake_obj(VT_PLAYER, 2);
-        d[CHR_TYPE70] = 5;
-        let (pa2, pb2, pd) = (pa, pb, d.as_ptr() as usize);
-        // a and b equal (chr_type 5), d also 5: all equal on every signal.
-        let entries = entries_with_state(&[pa2 as u64, pb2 as u64, pd as u64], &[]);
-        let (wcm2, _e2) = fake_wcm(3, &entries);
-        let r = resolve(wcm2.as_ptr() as usize, &vts(), None).expect("resolves");
-        assert_eq!(r.local, None);
-        assert!(matches!(r.basis, Basis::Unknown(_)));
-        assert_eq!(r.who(pa2).as_deref(), Some("UNKNOWN[0]"));
-        assert_eq!(r.role_of(pb2), Role::Unknown);
+        // With the local player in entry[0] (as in the real game) there is no warning; with an empty entry[0]
+        // (above) there is one.
+        let entries0 = entries_with_state(&[pa as u64, pb as u64, pc as u64], &[]);
+        let (wcm0, _e0) = fake_wcm(3, &entries0);
+        let r0 = resolve(wcm0.as_ptr() as usize, &vts()).expect("resolves");
+        assert_eq!(r0.local, Some(pa));
+        assert_eq!(r0.who(pa).as_deref(), Some("LOCAL"));
+        assert_eq!(r0.who(pc).as_deref(), Some("REMOTE[2]"));
+        let mut lg = ResolveLog::default();
+        assert!(!lg
+            .lines(&r0, 0, (0, 0))
+            .iter()
+            .any(|l| l.contains("WARNING")));
+        let mut lg = ResolveLog::default();
+        assert!(lg
+            .lines(&r, 0, (0, 0))
+            .iter()
+            .any(|l| l.contains("WARNING") && l.contains("entry[1]")));
+
+        // Permuting the entries moves the LOCAL role with them.
+        let swapped = entries_with_state(&[pb as u64, pa as u64], &[]);
+        let (wcm2, _e2) = fake_wcm(2, &swapped);
+        let r2 = resolve(wcm2.as_ptr() as usize, &vts()).expect("resolves");
+        assert_eq!(r2.local, Some(pb));
+        assert_eq!(r2.who(pa).as_deref(), Some("REMOTE[1]"));
     }
 
     #[test]
     fn resolve_refuses_bad_capacity_and_pointer() {
         let (wcm, _e) = fake_wcm(0, &[0u8; 0x100]);
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
+            resolve(wcm.as_ptr() as usize, &vts()).err(),
             Some(ResolveError::BadCapacity(0))
         );
         let (wcm, _e) = fake_wcm(17, &[0u8; 0x100]);
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
+            resolve(wcm.as_ptr() as usize, &vts()).err(),
             Some(ResolveError::BadCapacity(17))
         );
         let mut wcm = vec![0u8; 0x1D000];
         wcm[WCM_CHRSET + CHRSET_CAPACITY] = 6; // entries pointer left null
         assert_eq!(
-            resolve(wcm.as_ptr() as usize, &vts(), None).err(),
+            resolve(wcm.as_ptr() as usize, &vts()).err(),
             Some(ResolveError::BadEntriesPtr(0))
         );
         assert_eq!(
-            resolve(0, &vts(), None).err(),
+            resolve(0, &vts()).err(),
             Some(ResolveError::HeaderUnreadable)
         );
     }
@@ -2123,11 +2401,11 @@ mod tests {
         let entries = entries_with_state(&[pa, 0], &[]);
         let (wcm, _e) = fake_wcm(2, &entries);
         let mut lg = ResolveLog::default();
-        let r1 = resolve(wcm.as_ptr() as usize, &vts(), None).expect("ok");
+        let r1 = resolve(wcm.as_ptr() as usize, &vts()).expect("ok");
         assert!(!lg.lines(&r1, 0, (0, 0)).is_empty());
         assert!(lg.lines(&r1, 1000, (0, 0)).is_empty());
         // The entry state byte +9 blinks 04 -> 02 (seen in TC-004): within the gap it is coalesced...
-        let mut r2 = resolve(wcm.as_ptr() as usize, &vts(), None).expect("ok");
+        let mut r2 = resolve(wcm.as_ptr() as usize, &vts()).expect("ok");
         r2.entries[0].raw.raw[9] = 0x02;
         assert!(lg.lines(&r2, 2000, (0, 0)).is_empty());
         // ...and reported (with the count) once the gap has passed.
@@ -2198,8 +2476,8 @@ mod tests {
 
     // ---- T-015: per-player writes, per-player persist, MARK, "this is me" on fake memory ----
 
-    /// Three fake PlayerIns (team 2) in entries 1..=3 of a 4-slot ChrSet; the third has a different
-    /// chr_type so it is suggested as LOCAL.
+    /// Three fake PlayerIns (team 2) in entries 1..=3 of a 4-slot ChrSet, in the order objs[2], objs[0], objs[1].
+    /// The first valid entry (objs[2]) is LOCAL.
     struct Fake {
         objs: Vec<Vec<u8>>,
         wcm: Vec<u8>,
@@ -2213,8 +2491,10 @@ mod tests {
                 let t: u32 = if i == 2 { 13 } else { 5 };
                 o[CHR_TYPE70..CHR_TYPE70 + 4].copy_from_slice(&t.to_le_bytes());
             }
-            let ptrs: Vec<u64> = std::iter::once(0)
-                .chain(objs.iter().map(|o| o.as_ptr() as u64))
+            // Entry order: empty, objs[2], objs[0], objs[1]. The first valid entry (objs[2]) is LOCAL.
+            let ptrs: Vec<u64> = [None, Some(2), Some(0), Some(1)]
+                .iter()
+                .map(|i| i.map_or(0, |i: usize| objs[i].as_ptr() as u64))
                 .collect();
             let entries = entries_with_state(&ptrs, &[]);
             let (wcm, e) = fake_wcm(4, &entries);
@@ -2234,7 +2514,11 @@ mod tests {
         }
 
         fn ctl(&self) -> TeamCtl {
-            let mut ctl = TeamCtl::new(&Config::default(), 0, 0);
+            self.ctl_with(&Config::default())
+        }
+
+        fn ctl_with(&self, cfg: &Config) -> TeamCtl {
+            let mut ctl = TeamCtl::new(cfg, 0, 0);
             ctl.set_instance(self.wcm.as_ptr() as usize);
             ctl.vts = vts();
             ctl
@@ -2278,44 +2562,216 @@ mod tests {
     }
 
     #[test]
-    fn this_is_me_is_kept_until_the_worldchrman_changes() {
+    fn snapshot_marks_the_first_entry_local_and_a_new_instance_forgets_the_rest() {
         let f = Fake::new();
         let mut ctl = f.ctl();
-        let (a, c) = (f.addr(0), f.addr(2));
+        let c = f.addr(2);
         let mut snap = Snapshot::default();
         ctl.fill_snapshot(&mut snap);
+        // `c` sits in the first valid entry, so it is LOCAL (the entry[0] rule), whatever its evidence says.
         assert_eq!(snap.local_player, Some(c));
-        assert!(
-            snap.local_basis.starts_with("heuristic: "),
-            "{}",
-            snap.local_basis
-        );
+        assert_eq!(snap.local_basis, Basis::FirstEntry.label());
         assert_eq!(snap.players.len(), 3);
         assert_eq!(
             snap.players.iter().map(|p| p.role).collect::<Vec<_>>(),
-            vec![Role::Remote, Role::Remote, Role::Local]
+            vec![Role::Local, Role::Remote, Role::Remote]
         );
-
-        ctl.set_local_override(a, "overlay");
-        ctl.next_live = Instant::now();
-        ctl.fill_snapshot(&mut snap);
-        assert_eq!(snap.local_player, Some(a));
-        assert_eq!(snap.local_basis, Basis::Chosen.label());
-        assert!(snap.players[0].chosen && snap.players[0].role == Role::Local);
-        // The global buttons now write to the chosen player.
+        assert_eq!(snap.players[0].addr, c);
+        // The global buttons write to the local player only.
         ctl.set_and_write(29, "overlay");
-        assert_eq!((f.team(0), f.team(2)), (29, 2));
-
-        // An address that is not a player is not accepted as "me".
-        ctl.set_local_override(0x1234, "overlay");
-        assert_eq!(ctl.chosen_local, Some(a));
-        ctl.clear_local_override("overlay");
-        assert_eq!(ctl.chosen_local, None);
-        ctl.set_local_override(a, "overlay");
-        // A new WorldChrMan instance clears the choice (and everything else keyed by address).
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (2, 2, 29));
+        // A new WorldChrMan instance forgets everything keyed by address.
         ctl.set_instance(f.wcm.as_ptr() as usize + 8);
-        assert_eq!(ctl.chosen_local, None);
         assert!(ctl.originals.is_empty());
+    }
+
+    // ---- T-020: the PvPvE mode ----
+
+    fn pvpve_cfg(team: u8) -> Config {
+        Config {
+            dev_mode: true,
+            pvpve: true,
+            pvpve_team: team,
+            pvpve_scheme: "all".to_string(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn pvpve_rewrites_only_team_2_and_counts_the_writes() {
+        assert!(pvpve_wants_write(2));
+        for v in [0u8, 1, 3, 6, 13, 29, 30, 255] {
+            assert!(!pvpve_wants_write(v), "{v}");
+        }
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&pvpve_cfg(29));
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        // Players: 0 = Roundtable (1), 1 = expedition default (2), 2 = already 29 (e.g. set by hand).
+        f_set(&f, 0, 1);
+        f_set(&f, 2, 29);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (1, 29, 29));
+        assert_eq!(ctl.pvpve_writes(), 1);
+        // A second pass has nothing to do.
+        ctl.pvpve_tick();
+        assert_eq!(ctl.pvpve_writes(), 1);
+        // The expedition starts for the Roundtable player too: 1 -> 2 (the game) -> 29 (us).
+        f_set(&f, 0, 2);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+        assert_eq!(ctl.pvpve_writes(), 2);
+        // The original (2) was captured, so F12 can restore it.
+        assert_eq!(ctl.originals.get(&f.addr(0)), Some(&2));
+        // A manual experiment value (6) is never fought.
+        f_set(&f, 1, 6);
+        ctl.pvpve_tick();
+        assert_eq!(f.team(1), 6);
+        assert_eq!(ctl.pvpve_writes(), 2);
+        // Other team values work too.
+        let g = Fake::new();
+        let mut ctl13 = g.ctl_with(&pvpve_cfg(13));
+        ctl13.pvpve_tick();
+        assert_eq!((g.team(0), g.team(1), g.team(2)), (13, 13, 13));
+        assert_eq!(ctl13.pvpve_writes(), 3);
+        assert_eq!(ctl13.player_count_text(), "3");
+    }
+
+    #[test]
+    fn pvpve_runs_from_tick_on_its_own_interval_and_never_when_off() {
+        let f = Fake::new();
+        let mut cfg = pvpve_cfg(29);
+        cfg.pvpve_interval_ms = 5000;
+        let mut ctl = f.ctl_with(&cfg);
+        ctl.tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+        // Not due again for 5 s: a value reset to 2 is left alone by an immediate second tick.
+        f_set(&f, 1, 2);
+        ctl.tick();
+        assert_eq!(f.team(1), 2);
+        ctl.next_pvpve = Instant::now();
+        ctl.tick();
+        assert_eq!(f.team(1), 29);
+
+        // Mode off (the default config): nothing is ever written; the checkbox and F11 cannot turn it on.
+        let g = Fake::new();
+        let mut off = g.ctl();
+        assert_eq!(off.pvpve_state(), PvpveState::Off);
+        off.tick();
+        off.set_pvpve(true, "overlay");
+        off.set_all(2, "F11");
+        assert_eq!(off.pvpve_state(), PvpveState::Off);
+        off.next_pvpve = Instant::now();
+        off.tick();
+        assert_eq!(off.pvpve_writes(), 0);
+        assert_eq!((g.team(0), g.team(1), g.team(2)), (2, 2, 2));
+    }
+
+    #[test]
+    fn pause_and_resume_via_f12_f11_and_the_checkbox() {
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&pvpve_cfg(29));
+        ctl.pvpve_tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+
+        // F12: pauses and restores the captured originals (2); the mode must not write them back.
+        ctl.restore_all("F12");
+        assert_eq!(ctl.pvpve_state(), PvpveState::Paused);
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (2, 2, 2));
+        ctl.next_pvpve = Instant::now();
+        ctl.tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (2, 2, 2));
+        let writes_when_paused = ctl.pvpve_writes();
+
+        // The overlay checkbox resumes it, and the next tick applies again.
+        ctl.set_pvpve(true, "overlay");
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        ctl.tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+        assert_eq!(ctl.pvpve_writes(), writes_when_paused + 3);
+
+        // The checkbox pauses it.
+        ctl.set_pvpve(false, "overlay");
+        f_set(&f, 0, 2);
+        ctl.next_pvpve = Instant::now();
+        ctl.tick();
+        assert_eq!(f.team(0), 2);
+
+        // F11 (write all) resumes the mode and writes its own value to everyone.
+        ctl.set_all(29, "F11");
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+
+        // The state survives a WorldChrMan change; a paused mode stays paused.
+        ctl.set_pvpve(false, "overlay");
+        ctl.set_instance(0);
+        assert_eq!(ctl.pvpve_state(), PvpveState::Paused);
+        let mut snap = Snapshot::default();
+        ctl.fill_snapshot(&mut snap);
+        assert_eq!(
+            (snap.pvpve, snap.pvpve_team, snap.pvpve_writes),
+            (PvpveState::Paused, 29, ctl.pvpve_writes())
+        );
+        assert!(ctl.pvpve_summary().starts_with("PAUSED (team 29,"));
+    }
+
+    #[test]
+    fn the_deprecated_alias_drives_the_same_mode() {
+        let (cfg, _w) =
+            crate::config::parse("dev_mode = true\nauto_team_all = 29\npvpve_scheme = \"all\"\n")
+                .expect("parses");
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&cfg);
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (29, 29, 29));
+    }
+
+    #[test]
+    fn player_mode_cannot_pause_or_resume() {
+        // A player-mode config (parse forces pvpve on, rivals).
+        let (cfg, _w) =
+            crate::config::parse("pvpve = false\npvpve_scheme = \"all\"\n").expect("ok");
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&cfg);
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        ctl.set_pvpve(false, "overlay");
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+        ctl.restore_all("F12");
+        ctl.set_all(6, "F11");
+        assert_eq!(ctl.pvpve_state(), PvpveState::On);
+    }
+
+    #[test]
+    fn pvpve_write_failures_count_as_nothing() {
+        // Without vtables the gate refuses every write: no panic, no count, memory untouched.
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&pvpve_cfg(29));
+        ctl.vts = PlayerVtables::default();
+        ctl.pvpve_tick();
+        assert_eq!(ctl.pvpve_writes(), 0);
+        assert_eq!((f.team(0), f.team(1), f.team(2)), (2, 2, 2));
+    }
+
+    #[test]
+    fn the_resolve_log_ignores_changing_evidence_but_not_changing_entries() {
+        let f = Fake::new();
+        let r1 = resolve(f.wcm.as_ptr() as usize, &vts()).expect("ok");
+        let mut lg = ResolveLog::default();
+        assert!(!lg.lines(&r1, 0, (0, 0)).is_empty());
+        // Same entry bytes and players, but the evidence (e.g. an obfuscated pointer that differs on every read)
+        // changes: nothing is logged, not even after the coalescing gap.
+        let mut r2 = resolve(f.wcm.as_ptr() as usize, &vts()).expect("ok");
+        for p in &mut r2.probes {
+            for s in &mut p.signals {
+                s.value = s.value.map(|v| v ^ 0x1234_5678);
+            }
+        }
+        assert!(lg.lines(&r2, 1000, (0, 0)).is_empty());
+        assert!(lg.lines(&r2, 60_000, (0, 0)).is_empty());
+        // A different player set is a real change.
+        let mut r3 = resolve(f.wcm.as_ptr() as usize, &vts()).expect("ok");
+        r3.players.pop();
+        assert!(!lg.lines(&r3, 120_000, (0, 0)).is_empty());
     }
 
     #[test]
@@ -2441,7 +2897,7 @@ mod tests {
         assert!(snap.note.is_empty());
         assert_eq!(snap.players.len(), 1, "a lone PlayerIns is one LOCAL row");
         assert_eq!(snap.players[0].role, Role::Local);
-        assert_eq!(snap.local_basis, Basis::OnlyPlayer.label());
+        assert_eq!(snap.local_basis, Basis::FirstEntry.label());
 
         // Overlay button: select 29 and write it. The byte changes, the original is captured.
         ctl.set_and_write(29, "overlay");
@@ -2476,5 +2932,228 @@ mod tests {
         ctl.set_instance(0);
         ctl.fill_snapshot(&mut snap);
         assert_eq!((snap.local_player, snap.original), (None, None));
+    }
+
+    // ---- T-026: rosters, the rivals scheme ----
+
+    fn pid(n: u64) -> u64 {
+        ((0x6000 + n) << 32) | 0xFFFF_FFFF
+    }
+
+    type Synth = (Vec<(usize, Option<u64>)>, RosterView);
+
+    /// Synthetic players: address 0x1000 * (i + 1), id = pid(ordinals[i]); local = index `local`.
+    fn synth(ordinals: &[u64], local: usize, size: usize) -> Synth {
+        let players: Vec<(usize, Option<u64>)> = ordinals
+            .iter()
+            .enumerate()
+            .map(|(i, &n)| (0x1000 * (i + 1), Some(pid(n))))
+            .collect();
+        let view = build_view(&players, Some(players[local].0), size);
+        (players, view)
+    }
+
+    /// Plan for synthetic players that all sit at team_type 2 and were never written.
+    fn plan_all_at_2(
+        scheme: Scheme,
+        players: &[(usize, Option<u64>)],
+        view: &RosterView,
+    ) -> PvpvePlan {
+        let live: Vec<(usize, Option<u8>)> = players.iter().map(|&(a, _)| (a, Some(2))).collect();
+        plan_pvpve(scheme, view, &live, &HashSet::new())
+    }
+
+    #[test]
+    fn rivals_scheme_writes_only_rivals_for_every_size_and_count() {
+        for n in [2usize, 3, 4, 6] {
+            for size in 1..=3usize {
+                for local in 0..n {
+                    let ords: Vec<u64> = (1..=n as u64).collect();
+                    let (players, view) = synth(&ords, local, size);
+                    let plan = plan_all_at_2(Scheme::Rivals, &players, &view);
+                    // Ids are sorted ordinals, chunked by size.
+                    let local_team = local / size;
+                    let expect: Vec<usize> = (0..n)
+                        .filter(|i| i / size != local_team)
+                        .map(|i| players[i].0)
+                        .collect();
+                    assert_eq!(plan.writes, expect, "n={n} size={size} local={local}");
+                    assert!(!plan.writes.contains(&players[local].0));
+                    assert!(plan.restores.is_empty());
+                    for (i, &(addr, _)) in players.iter().enumerate() {
+                        let want = if i == local {
+                            Relation::Local
+                        } else if i / size == local_team {
+                            Relation::Ally
+                        } else {
+                            Relation::Rival
+                        };
+                        assert_eq!(view.relation[&addr], want);
+                        assert_eq!(usize::from(view.team_no[&players[i].0]), i / size);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn rivals_scheme_only_writes_value_2_and_never_allies() {
+        // Teams [1,2] [3,4]; local = id 1.
+        let (players, view) = synth(&[1, 2, 3, 4], 0, 2);
+        let live = vec![
+            (players[0].0, Some(2)), // local
+            (players[1].0, Some(2)), // ally
+            (players[2].0, Some(1)), // rival with the Roundtable value
+            (players[3].0, Some(2)), // rival
+        ];
+        let plan = plan_pvpve(Scheme::Rivals, &view, &live, &HashSet::new());
+        assert_eq!(plan.writes, vec![players[3].0]);
+        let live = vec![(players[2].0, None), (players[3].0, Some(29))];
+        let plan = plan_pvpve(Scheme::Rivals, &view, &live, &HashSet::new());
+        assert!(plan.writes.is_empty());
+    }
+
+    #[test]
+    fn a_rival_turning_ally_is_planned_for_restore() {
+        let (players, view) = synth(&[1, 2, 3], 0, 1);
+        let written: HashSet<usize> = [players[1].0, players[2].0].into_iter().collect();
+        let live: Vec<_> = players.iter().map(|&(a, _)| (a, Some(29))).collect();
+        let plan = plan_pvpve(Scheme::Rivals, &view, &live, &written);
+        assert!(plan.restores.is_empty() && plan.writes.is_empty());
+        // Same players with team_size 2: id 2 is now an ally of LOCAL.
+        let (_, view2) = synth(&[1, 2, 3], 0, 2);
+        let plan = plan_pvpve(Scheme::Rivals, &view2, &live, &written);
+        assert_eq!(plan.restores, vec![players[1].0]);
+        assert!(plan.writes.is_empty());
+    }
+
+    #[test]
+    fn scheme_all_is_unchanged_and_ignores_the_rosters() {
+        let (players, view) = synth(&[1, 2, 3, 4], 0, 2);
+        let plan = plan_all_at_2(Scheme::All, &players, &view);
+        assert_eq!(plan.writes, players.iter().map(|p| p.0).collect::<Vec<_>>());
+        let live = vec![(players[0].0, Some(1)), (players[1].0, Some(2))];
+        let written: HashSet<usize> = [players[0].0].into_iter().collect();
+        let plan = plan_pvpve(Scheme::All, &view, &live, &written);
+        assert_eq!(plan.writes, vec![players[1].0]);
+        assert!(plan.restores.is_empty());
+    }
+
+    #[test]
+    fn unreadable_or_duplicate_ids_fail_open_to_free_for_all() {
+        let players = vec![
+            (0x1000, Some(pid(1))),
+            (0x2000, None),
+            (0x3000, Some(pid(3))),
+        ];
+        let view = build_view(&players, Some(0x1000), 2);
+        assert!(view.warning.is_some());
+        assert!(view.summary.starts_with("teams: WARNING"));
+        assert_eq!(view.relation[&0x1000], Relation::Local);
+        assert_eq!(view.relation[&0x2000], Relation::Rival);
+        assert_eq!(view.relation[&0x3000], Relation::Rival);
+        assert!(view.team_no.is_empty());
+        let plan = plan_all_at_2(Scheme::Rivals, &players, &view);
+        assert_eq!(plan.writes, vec![0x2000, 0x3000]);
+
+        let dup = vec![(0x1000, Some(pid(1))), (0x2000, Some(pid(1)))];
+        let view = build_view(&dup, Some(0x1000), 1);
+        assert!(view.warning.as_deref().unwrap_or("").contains("same id"));
+        assert_eq!(view.relation[&0x2000], Relation::Rival);
+
+        // An id of 0 counts as unreadable.
+        let zero = vec![(0x1000, Some(pid(1))), (0x2000, Some(0))];
+        assert!(build_view(&zero, Some(0x1000), 1).warning.is_some());
+
+        // No local player: nobody is written in the rivals scheme.
+        let none = build_view(&dup, None, 1);
+        assert!(plan_all_at_2(Scheme::Rivals, &dup, &none).writes.is_empty());
+    }
+
+    #[test]
+    fn roster_summary_matches_the_log_format_and_key_tracks_changes() {
+        let players = vec![
+            (0x1000, Some(0x6001_FFFF_FFFFu64)),
+            (0x2000, Some(0x6002_FFFF_FFFF)),
+        ];
+        let v = build_view(&players, Some(0x1000), 1);
+        assert_eq!(
+            v.summary,
+            "teams: team 0 = [0x6001FFFFFFFF(LOCAL)], team 1 = [0x6002FFFFFFFF]"
+        );
+        let v2 = build_view(&players, Some(0x1000), 2);
+        assert_eq!(
+            v2.summary,
+            "teams: team 0 = [0x6001FFFFFFFF(LOCAL), 0x6002FFFFFFFF]"
+        );
+        assert_eq!(v.key, build_view(&players, Some(0x1000), 1).key);
+        assert_ne!(v.key, build_view(&players, Some(0x2000), 1).key);
+        assert_eq!(
+            crate::overlay::shared::short_id(Some(0x6001_FFFF_FFFF)),
+            "0x6001.."
+        );
+    }
+
+    /// Set the per-player id of fake object `i`.
+    fn set_id(f: &mut Fake, i: usize, ord: u64) {
+        f.objs[i][CHR_P2P_HANDLE..CHR_P2P_HANDLE + 8].copy_from_slice(&pid(ord).to_le_bytes());
+    }
+
+    fn rivals_cfg(size: u64) -> Config {
+        Config {
+            team_size: size,
+            pvpve_scheme: "rivals".to_string(),
+            ..pvpve_cfg(29)
+        }
+    }
+
+    #[test]
+    fn rivals_tick_on_fake_memory_spares_local_and_allies_and_restores() {
+        // Entry order: objs[2] (LOCAL), objs[0], objs[1].
+        let mut f = Fake::new();
+        set_id(&mut f, 2, 1);
+        set_id(&mut f, 0, 4);
+        set_id(&mut f, 1, 2);
+        // Teams [1,2] [4]: objs[1] is an ally, objs[0] a rival.
+        let mut ctl = f.ctl_with(&rivals_cfg(2));
+        ctl.pvpve_tick();
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 29, 2));
+        assert_eq!(ctl.pvpve_writes(), 1);
+        // Id of objs[1] becomes 7: teams [1,4] [7]; objs[0] is an ally now, objs[1] a rival.
+        set_id(&mut f, 1, 7);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 2, 29));
+        // Pausing restores what the tick wrote.
+        ctl.set_pvpve(false, "test");
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 2, 2));
+        assert!(ctl.pvpve_written.is_empty());
+        // Resuming writes again.
+        ctl.set_pvpve(true, "test");
+        ctl.pvpve_tick();
+        assert_eq!(f.team(1), 29);
+    }
+
+    #[test]
+    fn scheme_all_tick_on_fake_memory_writes_everyone_with_value_2() {
+        let mut f = Fake::new();
+        set_id(&mut f, 2, 1);
+        set_id(&mut f, 0, 2);
+        set_id(&mut f, 1, 3);
+        let mut cfg = rivals_cfg(3);
+        cfg.pvpve_scheme = "all".to_string();
+        let mut ctl = f.ctl_with(&cfg);
+        ctl.pvpve_tick();
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (29, 29, 29));
+        assert_eq!(ctl.pvpve_writes(), 3);
+        assert!(ctl.pvpve_written.is_empty());
+    }
+
+    #[test]
+    fn unreadable_ids_on_fake_memory_write_every_remote_and_not_local() {
+        // All ids are zero, which counts as unreadable.
+        let f = Fake::new();
+        let mut ctl = f.ctl_with(&rivals_cfg(2));
+        ctl.pvpve_tick();
+        assert_eq!((f.team(2), f.team(0), f.team(1)), (2, 29, 29));
     }
 }

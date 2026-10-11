@@ -23,17 +23,23 @@ pub(crate) fn run() {
             let cfg = config::load(&dll_dir);
             // T-013: hotkey polling thread (also delivers the overlay toggle), then the overlay install
             // thread. Both fail safe: the mod carries on without them.
-            hotkey::spawn(cfg.bindings());
-            tracing::info!(
-                "hotkeys: {} (polled every 50 ms; count only while the game window is foreground)",
-                cfg.describe_bindings()
-            );
+            // T-030: the player build has no hotkey thread at all.
+            if cfg.dev_mode {
+                hotkey::spawn(cfg.bindings());
+                tracing::info!(
+                    "hotkeys: {} (polled every 50 ms; count only while the game window is foreground)",
+                    cfg.describe_bindings()
+                );
+            } else {
+                tracing::info!("hotkeys: none (player mode)");
+            }
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();
                 overlay::spawn(
                     std::sync::Arc::clone(&shared),
                     cfg.binding(Action::ToggleOverlay).map(|k| k.name),
                     std::time::Duration::from_millis(cfg.overlay_install_delay_ms),
+                    !cfg.dev_mode,
                 );
                 Some(shared)
             } else {

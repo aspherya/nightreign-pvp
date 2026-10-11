@@ -15,6 +15,8 @@
 pub(crate) mod discover;
 pub(crate) mod image;
 pub(crate) mod mem;
+pub(crate) mod probe2;
+pub(crate) mod probe_pos;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
 pub(crate) mod team;
@@ -50,6 +52,10 @@ const MAX_SECTION_COPY: usize = 0x4000_0000;
 /// After this long without `WorldChrMan` we log a diagnostic dump (polling continues regardless).
 const WAIT_TIMEOUT: Duration = Duration::from_secs(180);
 const PROGRESS_EVERY: Duration = Duration::from_secs(10);
+/// T-019: a main-loop heartbeat line this often, so a stalled loop can be told apart from a frozen game.
+const HEARTBEAT_EVERY: Duration = Duration::from_secs(10);
+/// T-030: heartbeat period in the player build.
+const HEARTBEAT_EVERY_PLAYER: Duration = Duration::from_secs(60);
 /// Scan attempts when the first scans find nothing (e.g. code not yet decrypted).
 const SCAN_ATTEMPTS: usize = 12;
 const SCAN_RETRY: Duration = Duration::from_secs(5);
@@ -102,13 +108,13 @@ pub(crate) fn run(m: &GameModule, cfg: &Config, ui: Option<Arc<Shared>>) {
     );
 
     // T-007a step 1: RTTI from the static image, once. `.rdata` is plain even if code is Arxan-encrypted.
-    let rtti = build_rtti(base, size, &sections);
+    let rtti = build_rtti(base, size, &sections, cfg.dev_mode);
 
     watch(m, cfg, &scan, derived, &sections, rtti, ui);
 }
 
 /// Snapshot the RTTI-bearing data sections and recover classes/vtables. Never panics out of here.
-fn build_rtti(base: usize, size: usize, sections: &[image::Section]) -> Rtti {
+fn build_rtti(base: usize, size: usize, sections: &[image::Section], verbose: bool) -> Rtti {
     let t0 = Instant::now();
     let mut regions = Vec::new();
     let mut missing_total = 0usize;
@@ -151,7 +157,10 @@ fn build_rtti(base: usize, size: usize, sections: &[image::Section]) -> Rtti {
         t0.elapsed().as_millis(),
         missing_total
     );
-    discover::log_rtti(&rtti);
+    // T-030: the class listing is a big dump; the player build skips it.
+    if verbose {
+        discover::log_rtti(&rtti);
+    }
     if rtti.stats.cols_primary == 0 || rtti.chr_class_count() == 0 {
         tracing::warn!(
             "T-007a: RTTI recovery found {} primary COLs and {} ChrIns-derived classes; discovery will use the fallback vtable histogram. Sample TypeDescriptors:",
@@ -226,7 +235,7 @@ impl Discovery {
                         "T-007a: no ChrIns classes yet; re-running RTTI recovery (attempt {}/{RTTI_MAX_ATTEMPTS})",
                         st.attempts
                     );
-                    st.rtti = build_rtti(base, size, &sections);
+                    st.rtti = build_rtti(base, size, &sections, true);
                 }
                 let rtti = &st.rtti;
                 let r = catch_unwind(AssertUnwindSafe(|| job(rtti, seq)));
@@ -324,6 +333,8 @@ fn watch(
         size,
         seq: 0,
     };
+    // Player mode never builds the probes (config::finalize also forces `probes = false` there).
+    let mut probes = (cfg.dev_mode && cfg.probes).then(|| probe2::Probes::new(cfg, base, size));
     let mut auto_deferred_logged = false;
     // WorldChrMan instance we last scheduled/ran an automatic discovery for (0 = none/null).
     let mut last_wcm_inst: usize = 0;
@@ -339,8 +350,19 @@ fn watch(
     let mut wcm_slot: Option<usize> = None;
     let mut last_change_poll = Instant::now() - CHANGE_POLL;
     let mut last_inst: BTreeMap<String, usize> = BTreeMap::new();
+    // T-019 heartbeat: loop iterations, and the slowest iteration (work only, not the sleep) since the last line.
+    let mut ticks: u64 = 0;
+    let mut last_heartbeat = Instant::now();
+    let mut slowest_tick = Duration::ZERO;
+    let heartbeat_every = if cfg.dev_mode {
+        HEARTBEAT_EVERY
+    } else {
+        HEARTBEAT_EVERY_PLAYER
+    };
 
     loop {
+        let tick_started = Instant::now();
+        ticks += 1;
         // 1. Resolve FD4 names once reflection looks initialised (>= 1 FD4 slot non-null on 2
         //    consecutive polls).
         if fd4.is_none() && !fd4_resolve_tried {
@@ -394,7 +416,9 @@ fn watch(
                 "T-006: {TARGET} instance is non-null after {} s",
                 start.elapsed().as_secs()
             );
-            dump(m, &all, "WorldChrMan live");
+            if cfg.dev_mode {
+                dump(m, &all, "WorldChrMan live");
+            }
         }
 
         if !wcm_live && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
@@ -408,7 +432,9 @@ fn watch(
                     format!("{TARGET} is NOT in the discovered map under that name")
                 }
             );
-            dump(m, &all, "timeout");
+            if cfg.dev_mode {
+                dump(m, &all, "timeout");
+            }
             if wcm_slot.is_none() {
                 for f in all
                     .iter()
@@ -424,7 +450,7 @@ fn watch(
         }
 
         // 3. Progress line while waiting.
-        if !wcm_live && last_progress.elapsed() >= PROGRESS_EVERY {
+        if cfg.dev_mode && !wcm_live && last_progress.elapsed() >= PROGRESS_EVERY {
             last_progress = Instant::now();
             let nn = all
                 .iter()
@@ -449,7 +475,8 @@ fn watch(
                     va_rva(wcm_inst, base, size),
                     AUTO_DELAY.as_secs()
                 );
-                auto_due = Some(Instant::now() + AUTO_DELAY);
+                // T-030: no automatic discovery in the player build.
+                auto_due = cfg.dev_mode.then(|| Instant::now() + AUTO_DELAY);
             } else {
                 auto_due = None;
             }
@@ -479,7 +506,8 @@ fn watch(
                 None => {}
             }
         }
-        if let Some(ui) = &ui {
+        // T-030: only the dev panel sends commands; the player badge is read-only.
+        if let Some(ui) = ui.as_ref().filter(|_| cfg.dev_mode) {
             for cmd in ui.drain() {
                 run_command(cmd, "overlay", &mut team, &mut disc, wcm_inst);
             }
@@ -505,7 +533,7 @@ fn watch(
         }
 
         // 5. Singleton instance-change watch (every 2 s) once the target is live.
-        if wcm_live && last_change_poll.elapsed() >= CHANGE_POLL {
+        if cfg.dev_mode && wcm_live && last_change_poll.elapsed() >= CHANGE_POLL {
             last_change_poll = Instant::now();
             for f in &all {
                 let cur = instance_of(f.slot).unwrap_or(0);
@@ -524,7 +552,15 @@ fn watch(
             }
         }
 
-        // T-013: hand the overlay a fresh snapshot (only when something changed).
+        // T-027/T-028: read-only probes, only in the developer build with `probes = true`.
+        if let Some(p) = probes.as_mut() {
+            let targets = if wcm_live {
+                team.probe_targets()
+            } else {
+                Vec::new()
+            };
+            p.tick(&all, wcm_inst, &targets);
+        }
         if let Some(ui) = &ui {
             let mut snap = Snapshot {
                 wcm_instance: wcm_inst,
@@ -532,10 +568,21 @@ fn watch(
                 ..Snapshot::default()
             };
             team.fill_snapshot(&mut snap);
+            if let Some(p) = &probes {
+                snap.probes_enabled = true;
+                snap.probe_lines = p.lines();
+            }
             if last_published.as_ref() != Some(&snap) {
                 ui.publish(snap.clone());
                 last_published = Some(snap);
             }
+        }
+
+        slowest_tick = slowest_tick.max(tick_started.elapsed());
+        if last_heartbeat.elapsed() >= heartbeat_every {
+            last_heartbeat = Instant::now();
+            tracing::info!("{}", heartbeat_line(ticks, wcm_inst, &team, slowest_tick));
+            slowest_tick = Duration::ZERO;
         }
 
         std::thread::sleep(if wcm_live {
@@ -544,6 +591,17 @@ fn watch(
             WAIT_POLL
         });
     }
+}
+
+/// T-019: `heartbeat: tick N, wcm=0x..., players=N, pvpve=ON (team 29, 3 writes), slowest tick ... ms`. If these
+/// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
+fn heartbeat_line(ticks: u64, wcm_inst: usize, team: &team::TeamCtl, slowest: Duration) -> String {
+    format!(
+        "heartbeat: tick {ticks}, wcm=0x{wcm_inst:X}, players={}, pvpve={}, slowest tick since last heartbeat {} ms",
+        team.player_count_text(),
+        team.pvpve_summary(),
+        slowest.as_millis()
+    )
 }
 
 /// The command a hotkey stands for. `Cycle` has none (it only changes the selection) and so is handled by the
@@ -580,8 +638,7 @@ fn run_command(
         Command::SetFor { addr, value } => team.set_for(addr, value, src),
         Command::RestoreFor { addr } => team.restore_for(addr, src),
         Command::PersistFor { addr, on } => team.set_persist_for(addr, on, src),
-        Command::SetLocalOverride { addr } => team.set_local_override(addr, src),
-        Command::ClearLocalOverride => team.clear_local_override(src),
+        Command::SetPvpve(on) => team.set_pvpve(on, src),
         Command::Mark(text) => team.mark(text.as_deref()),
         Command::RunDiscovery => {
             if wcm_live {
@@ -829,8 +886,7 @@ mod command_tests {
                 addr: 0x10,
                 on: true,
             },
-            Command::SetLocalOverride { addr: 0x10 },
-            Command::ClearLocalOverride,
+            Command::SetPvpve(true),
             Command::Mark(Some("x".to_string())),
             Command::Mark(None),
         ] {

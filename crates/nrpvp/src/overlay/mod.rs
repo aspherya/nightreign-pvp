@@ -27,7 +27,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hudhook::hooks::dx12::ImguiDx12Hooks;
-use hudhook::imgui::{Condition, Context, Io, StyleColor, Ui};
+use hudhook::imgui::{Condition, Context, Io, StyleColor, Ui, WindowFlags};
 use hudhook::{Hudhook, ImguiRenderLoop, MessageFilter, RenderContext};
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT};
@@ -39,7 +39,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::hotkey::{self, Action};
 use crate::logring;
-use shared::{team_name, Command, PlayerRow, Role, Shared, Snapshot};
+use shared::{
+    badge_lines, short_id, team_name, Command, PlayerRow, PvpveState, Relation, Role, Shared,
+    Snapshot,
+};
 
 /// How long to wait for the game window before giving up on the overlay.
 const WINDOW_WAIT: Duration = Duration::from_secs(600);
@@ -49,6 +52,9 @@ const MIN_WINDOW: (i32, i32) = (320, 240);
 /// Candidate buttons per row.
 const BUTTONS_PER_ROW: usize = 4;
 
+/// Gap between the badge and the screen corner, in pixels.
+const BADGE_MARGIN: f32 = 16.0;
+
 const GREEN: [f32; 4] = [0.20, 0.55, 0.25, 1.0];
 const GREEN_TEXT: [f32; 4] = [0.45, 0.90, 0.50, 1.0];
 const RED: [f32; 4] = [0.95, 0.35, 0.30, 1.0];
@@ -56,11 +62,16 @@ const AMBER: [f32; 4] = [0.95, 0.75, 0.25, 1.0];
 const GREY: [f32; 4] = [0.60, 0.60, 0.60, 1.0];
 
 /// Start the install thread. Returns immediately; never fails the caller.
-pub(crate) fn spawn(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
+pub(crate) fn spawn(
+    shared: Arc<Shared>,
+    toggle_name: Option<String>,
+    settle: Duration,
+    player: bool,
+) {
     let r = std::thread::Builder::new()
         .name("nrpvp-overlay".into())
         .spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name, settle)));
+            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name, settle, player)));
             if result.is_err() {
                 tracing::error!(
                     "overlay: install thread panicked; continuing without an overlay (hotkeys still work)"
@@ -74,7 +85,7 @@ pub(crate) fn spawn(shared: Arc<Shared>, toggle_name: Option<String>, settle: Du
     }
 }
 
-fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
+fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, player: bool) {
     let t0 = Instant::now();
     if !wait_for_game_window() {
         tracing::warn!(
@@ -89,7 +100,7 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
         settle.as_millis()
     );
     std::thread::sleep(settle);
-    match install(shared, toggle_name) {
+    match install(shared, toggle_name, player) {
         Ok(()) => tracing::info!(
             "overlay: hudhook DX12 hooks applied (the panel appears with the first presented frame; visible at start)"
         ),
@@ -101,8 +112,8 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration) {
 
 /// Apply the hudhook DX12 hooks. Panics inside hudhook (it uses `expect` while creating hooks) become an
 /// `Err` here.
-fn install(shared: Arc<Shared>, toggle_name: Option<String>) -> Result<(), String> {
-    let app = OverlayApp::new(shared, toggle_name);
+fn install(shared: Arc<Shared>, toggle_name: Option<String>, player: bool) -> Result<(), String> {
+    let app = OverlayApp::new(shared, toggle_name, player);
     let applied = catch_unwind(AssertUnwindSafe(|| {
         Hudhook::builder()
             .with::<ImguiDx12Hooks>(app)
@@ -174,6 +185,8 @@ fn os_cursor_showing() -> bool {
 struct OverlayApp {
     shared: Arc<Shared>,
     toggle_name: Option<String>,
+    /// T-030: player build. Draws only the read-only badge; never captures mouse or keyboard; cannot be hidden.
+    player: bool,
     visible: bool,
     /// Set after a panic while drawing: the overlay then stops drawing instead of risking the game.
     broken: bool,
@@ -185,10 +198,11 @@ struct OverlayApp {
 }
 
 impl OverlayApp {
-    fn new(shared: Arc<Shared>, toggle_name: Option<String>) -> Self {
+    fn new(shared: Arc<Shared>, toggle_name: Option<String>, player: bool) -> Self {
         OverlayApp {
             shared,
             toggle_name,
+            player,
             visible: true,
             broken: false,
             snap: Snapshot::default(),
@@ -196,6 +210,32 @@ impl OverlayApp {
             log_lines: Vec::new(),
             mark_text: String::new(),
         }
+    }
+
+    /// T-030: the player badge, a small non-interactive box in the top-right corner (no title bar, no input, no
+    /// saved settings, semi-transparent).
+    fn draw_badge(&mut self, ui: &Ui) {
+        self.snap = self.shared.snapshot();
+        let (l1, l2) = badge_lines(&self.snap);
+        let screen = ui.io().display_size;
+        ui.window("##nrpvp_badge")
+            .flags(
+                WindowFlags::NO_DECORATION
+                    | WindowFlags::NO_INPUTS
+                    | WindowFlags::NO_NAV
+                    | WindowFlags::NO_MOVE
+                    | WindowFlags::NO_SAVED_SETTINGS
+                    | WindowFlags::NO_FOCUS_ON_APPEARING
+                    | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS
+                    | WindowFlags::ALWAYS_AUTO_RESIZE,
+            )
+            .position([screen[0] - BADGE_MARGIN, BADGE_MARGIN], Condition::Always)
+            .position_pivot([1.0, 0.0])
+            .bg_alpha(0.45)
+            .build(|| {
+                ui.text_colored(AMBER, l1);
+                ui.text(l2);
+            });
     }
 
     fn send(&self, c: Command) {
@@ -226,6 +266,7 @@ impl OverlayApp {
                 self.status_block(ui);
                 self.controls(ui);
                 self.players_block(ui);
+                self.probes_block(ui);
                 self.mark_block(ui);
                 self.log_tail(ui);
             });
@@ -279,6 +320,30 @@ impl OverlayApp {
             s.selected,
             team_name(s.selected)
         ));
+        match s.pvpve {
+            PvpveState::On => ui.text_colored(GREEN_TEXT, "PvPvE: ON"),
+            PvpveState::Paused => ui.text_colored(AMBER, "PvPvE: PAUSED"),
+            PvpveState::Off => ui.text_colored(GREY, "PvPvE: OFF"),
+        }
+        ui.same_line();
+        ui.text(format!(
+            "   team value {} ({})   automatic writes this session: {}",
+            s.pvpve_team,
+            team_name(s.pvpve_team),
+            s.pvpve_writes
+        ));
+        ui.text(format!(
+            "Scheme: {}   team_size: {}",
+            if s.pvpve_scheme.is_empty() {
+                "?"
+            } else {
+                &s.pvpve_scheme
+            },
+            s.team_size
+        ));
+        if !s.roster_warning.is_empty() {
+            ui.text_colored(RED, format!("Rosters: {}", s.roster_warning));
+        }
         if s.persist {
             ui.text_colored(GREEN, "Persist: ON");
         } else {
@@ -299,6 +364,17 @@ impl OverlayApp {
     fn controls(&self, ui: &Ui) {
         let s = &self.snap;
         ui.separator();
+        {
+            let _off = ui.begin_disabled(s.pvpve == PvpveState::Off);
+            let mut on = s.pvpve == PvpveState::On;
+            if ui.checkbox("PvPvE mode (rewrite team 2 to the pvpve team)", &mut on) {
+                self.send(Command::SetPvpve(on));
+            }
+        }
+        if s.pvpve == PvpveState::Off {
+            ui.same_line();
+            ui.text_colored(GREY, "off: set pvpve = true in nrpvp.toml");
+        }
         ui.text("Team candidates (click = select and write to the local player; per-player buttons are below)");
         let can_write = s.local_player.is_some();
         {
@@ -358,12 +434,6 @@ impl OverlayApp {
             );
             return;
         }
-        if s.players.len() > 1 && s.local_player.is_none() {
-            ui.text_colored(
-                AMBER,
-                "More than one PlayerIns and the local one is UNKNOWN: press \"This is me\" on your own row.",
-            );
-        }
         for row in &s.players {
             self.player_row(ui, row, &s.candidates);
         }
@@ -375,9 +445,23 @@ impl OverlayApp {
         let (who, colour) = match row.role {
             Role::Local => ("LOCAL".to_string(), GREEN_TEXT),
             Role::Remote => (format!("REMOTE[{}]", row.index), AMBER),
-            Role::Unknown => (format!("UNKNOWN[{}]", row.index), RED),
         };
         ui.text_colored(colour, &who);
+        ui.same_line();
+        let rel_text = row.relation.map_or("?", Relation::label);
+        let rel_colour = match row.relation {
+            Some(Relation::Rival) => RED,
+            Some(_) => GREEN_TEXT,
+            None => GREY,
+        };
+        ui.text_colored(
+            rel_colour,
+            format!(
+                "id {} team {} {rel_text}",
+                short_id(row.id),
+                row.team_no.map_or("?".to_string(), |t| t.to_string())
+            ),
+        );
         ui.same_line();
         let team = row
             .team
@@ -401,17 +485,10 @@ impl OverlayApp {
                 ),
             );
         }
-        if ui.button("This is me") {
-            self.send(Command::SetLocalOverride { addr: row.addr });
-        }
-        if row.chosen {
-            ui.same_line();
-            if ui.button("Clear choice") {
-                self.send(Command::ClearLocalOverride);
-            }
-        }
         for (k, &v) in candidates.iter().enumerate() {
-            ui.same_line();
+            if k > 0 {
+                ui.same_line();
+            }
             if ui.button_with_size(format!("{v}##c{k}"), [38.0, 0.0]) {
                 self.send(Command::SetFor {
                     addr: row.addr,
@@ -437,6 +514,19 @@ impl OverlayApp {
             });
         }
         id.pop();
+    }
+
+    /// T-027: the read-only probe candidates (UNVERIFIED), to compare with the HUD.
+    fn probes_block(&self, ui: &Ui) {
+        ui.separator();
+        ui.text_colored(AMBER, "Probes (UNVERIFIED)");
+        if !self.snap.probes_enabled {
+            ui.text_colored(GREY, "off: set probes = true in nrpvp.toml");
+            return;
+        }
+        for l in &self.snap.probe_lines {
+            ui.text(l);
+        }
     }
 
     /// T-015: the MARK text box (Enter submits) and button. While the box is focused ImGui wants text input
@@ -504,6 +594,11 @@ impl ImguiRenderLoop for OverlayApp {
         ctx: &mut Context,
         _render_context: &'a mut dyn RenderContext,
     ) {
+        if self.player {
+            // The badge cannot be hidden and ImGui never draws a cursor of its own.
+            ctx.io_mut().mouse_draw_cursor = false;
+            return;
+        }
         if hotkey::take(Action::ToggleOverlay) {
             self.visible = !self.visible;
             tracing::info!("overlay: {}", if self.visible { "shown" } else { "hidden" });
@@ -517,13 +612,24 @@ impl ImguiRenderLoop for OverlayApp {
             return;
         }
         // A panic must not unwind into the game's Present call (that would abort the process).
-        if catch_unwind(AssertUnwindSafe(|| self.draw(ui))).is_err() {
+        let drawn = catch_unwind(AssertUnwindSafe(|| {
+            if self.player {
+                self.draw_badge(ui)
+            } else {
+                self.draw(ui)
+            }
+        }));
+        if drawn.is_err() {
             self.broken = true;
             tracing::error!("overlay: panic while drawing; the overlay is disabled until restart");
         }
     }
 
     fn message_filter(&self, io: &Io) -> MessageFilter {
+        // T-030: the player badge never blocks game input.
+        if self.player {
+            return MessageFilter::empty();
+        }
         input_filter(
             self.visible,
             self.broken,
@@ -576,7 +682,6 @@ mod tests {
                     addr: 0x2_0000,
                     role: Role::Local,
                     basis: "only PlayerIns in the ChrSet".to_string(),
-                    chosen: false,
                     team: Some(2),
                     state8: 4,
                     state9: 4,
@@ -584,13 +689,15 @@ mod tests {
                     persist: Some(29),
                     reverts_last_sec: 0,
                     reverts_total: 2,
+                    id: Some(0x6001_FFFF_FFFF),
+                    team_no: Some(0),
+                    relation: Some(Relation::Local),
                 },
                 PlayerRow {
                     index: 3,
                     addr: 0x3_0000,
                     role: Role::Remote,
                     basis: "not the local player".to_string(),
-                    chosen: false,
                     team: None,
                     state8: 4,
                     state9: 2,
@@ -598,13 +705,15 @@ mod tests {
                     persist: None,
                     reverts_last_sec: 0,
                     reverts_total: 0,
+                    id: Some(0x6002_FFFF_FFFF),
+                    team_no: Some(1),
+                    relation: Some(Relation::Rival),
                 },
                 PlayerRow {
                     index: 4,
                     addr: 0x4_0000,
-                    role: Role::Unknown,
+                    role: Role::Remote,
                     basis: "UNKNOWN".to_string(),
-                    chosen: true,
                     team: Some(30),
                     state8: 0,
                     state9: 0,
@@ -612,10 +721,24 @@ mod tests {
                     persist: None,
                     reverts_last_sec: 0,
                     reverts_total: 0,
+                    id: None,
+                    team_no: None,
+                    relation: None,
                 },
             ],
             local_basis: "only PlayerIns in the ChrSet".to_string(),
             marks: 2,
+            pvpve: PvpveState::On,
+            pvpve_team: 29,
+            pvpve_writes: 12,
+            pvpve_scheme: "rivals".to_string(),
+            team_size: 1,
+            roster_warning: String::new(),
+            probes_enabled: true,
+            probe_lines: vec![
+                "clock hint: 07:00:00 mult 1 [plausible]".to_string(),
+                "flags: layout ok; ON: 7500 7501; 0/28 not readable".to_string(),
+            ],
         }
     }
 
@@ -625,7 +748,7 @@ mod tests {
     #[test]
     fn panel_draws_headless_and_the_filter_follows_imgui() {
         let shared = Shared::new();
-        let mut app = OverlayApp::new(Arc::clone(&shared), Some("Insert".to_string()));
+        let mut app = OverlayApp::new(Arc::clone(&shared), Some("Insert".to_string()), false);
         let mut ctx = Context::create();
         ctx.set_ini_filename(None::<std::path::PathBuf>);
         ctx.io_mut().display_size = [1280.0, 720.0];
@@ -703,6 +826,26 @@ mod tests {
         app.visible = true;
         app.broken = true;
         assert_eq!(app.message_filter(ctx.io()).bits(), 0);
+
+        // T-030 player badge: draws, and never blocks input even if ImGui claims mouse and keyboard.
+        let mut badge = OverlayApp::new(Arc::clone(&shared), None, true);
+        shared.publish(snap());
+        ctx.io_mut().want_capture_mouse = true;
+        ctx.io_mut().want_text_input = true;
+        assert_eq!(badge.message_filter(ctx.io()).bits(), 0);
+        // An auto-resizing window only shows from its second frame.
+        for _ in 0..3 {
+            ctx.io_mut().update_delta_time(Duration::from_millis(16));
+            let ui = ctx.frame();
+            badge.draw_badge(ui);
+            let _ = ctx.render();
+        }
+        ctx.io_mut().update_delta_time(Duration::from_millis(16));
+        let ui = ctx.frame();
+        badge.draw_badge(ui);
+        let draw = ctx.render();
+        assert!(draw.total_vtx_count > 0, "badge drew nothing");
+        assert_eq!(badge.snap, snap());
     }
 
     #[test]
@@ -736,6 +879,6 @@ mod tests {
     #[test]
     #[ignore]
     fn hudhook_install_smoke() {
-        install(Shared::new(), None).expect("hooks apply");
+        install(Shared::new(), None, false).expect("hooks apply");
     }
 }

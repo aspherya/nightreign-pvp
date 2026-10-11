@@ -1,0 +1,10 @@
+[package]
+name = "nrpvp-launcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Double-click launcher for the Nightreign PvP mod: starts the game with Seamless Co-op and nrpvp through a bundled me3."
+
+[[bin]]
+name = "nrpvp_launcher"
+path = "src/main.rs"

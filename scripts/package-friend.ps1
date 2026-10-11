@@ -34,8 +34,10 @@ if (Test-Path -LiteralPath $stageRoot) { Remove-Item -LiteralPath $stageRoot -Re
 New-Item -ItemType Directory -Path $stage | Out-Null
 
 Copy-Item -LiteralPath $dll, $pdb -Destination $stage
-# nrpvp.toml is intentionally not shipped: the DLL writes the current default config next to itself on first run
-# (a copy from dist\ may be stale or hold local edits).
+# Ship a minimal config (not a copy of dist\nrpvp.toml, which may hold local edits; the DLL fills in every other key with
+# its default): PvPvE mode on, so each player marks only its rivals hostile by itself (T-020, T-026 "rivals" scheme, free-for-all), and the same candidate order
+# (first = 29) so the F11 write-all fallback also writes 29. Without a config the DLL creates a default with pvpve = false.
+[IO.File]::WriteAllText((Join-Path $stage 'nrpvp.toml'), "dev_mode = true`r`npvpve = true`r`npvpve_scheme = 'rivals'`r`nteam_size = 1`r`npvpve_team = 29`r`nteam_candidates = [29, 6, 3, 16, 13, 2, 1]`r`nprobes = true`r`n", (New-Object Text.UTF8Encoding($false)))
 # Placeholders are replaced with the host's values. UTF-8 with BOM so Windows PowerShell 5.1 reads the .ps1 right.
 $utf8Bom = New-Object System.Text.UTF8Encoding($true)
 foreach ($f in 'launch-friend.ps1', 'README-FRIEND.md') {

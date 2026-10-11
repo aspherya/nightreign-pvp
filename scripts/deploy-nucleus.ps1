@@ -5,6 +5,9 @@
 param(
     [string]$HandlerDir = 'D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN',
     [int]$OverlayDelayMs = 60000,   # FS-0: let Nucleus ProtoInput inject before nrpvp hooks D3D12
+    [bool]$Pvpve = $true,           # T-020: PvPvE mode on in every instance (writes pvpve = true; -Pvpve:$false = off). F12 pauses, F11 resumes
+    [ValidateRange(1,3)][int]$TeamSize = 1,   # T-026: players per team (1 = free-for-all)
+    [ValidateSet('rivals','all')][string]$Scheme = 'rivals',   # T-026: write the hostile team value only to rivals, or to everyone (T-020)
     [switch]$Remove
 )
 $ErrorActionPreference = 'Stop'
@@ -30,11 +33,11 @@ Copy-Item (Join-Path $repo 'dist\nrpvp.pdb') $HandlerDir -Force -ErrorAction Sil
 $toml = Join-Path $repo 'dist\nrpvp.toml'
 if (Test-Path $toml) { Copy-Item $toml $HandlerDir -Force }
 $htoml = Join-Path $HandlerDir 'nrpvp.toml'
-$body = @(if (Test-Path $htoml) { Get-Content $htoml | Where-Object { $_ -notmatch '^\s*(overlay_install_delay_ms|log_dir)\s*=' } })
+$body = @(if (Test-Path $htoml) { Get-Content $htoml | Where-Object { $_ -notmatch '^\s*(dev_mode|overlay_install_delay_ms|log_dir|auto_team_all|pvpve|pvpve_team|pvpve_scheme|team_size)\s*=' } })
 # T-018: logs go outside Nucleus's Instance<N> folders (deleted on close). TOML single-quoted literal = no escapes.
 $logDir = Join-Path $repo 'dist\nucleus-logs'
 New-Item -ItemType Directory -Force $logDir | Out-Null
-Set-Content -Path $htoml -Value ($body + "overlay_install_delay_ms = $OverlayDelayMs" + "log_dir = '$logDir'") -Encoding Ascii
+Set-Content -Path $htoml -Value ($body + "dev_mode = true" + "overlay_install_delay_ms = $OverlayDelayMs" + "log_dir = '$logDir'" + "pvpve = $($Pvpve.ToString().ToLower())" + "pvpve_scheme = '$Scheme'" + "team_size = $TeamSize") -Encoding Ascii
 [IO.File]::WriteAllText($list, (($lines + 'nrpvp.dll') -join "`r`n"))  # no trailing newline (see above)
 Write-Output "Deployed nrpvp.dll ($((Get-Item $dll).LastWriteTime)) to $HandlerDir"
 Get-Content $list

@@ -14,6 +14,7 @@ mod logging;
 mod logring;
 mod mark;
 mod overlay;
+mod rules;
 mod startup;
 mod sysinfo;
 

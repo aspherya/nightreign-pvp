@@ -72,6 +72,20 @@ All commands run from the repo root in PowerShell.
   and `-SelfTest` (tests the `libraryfolders.vdf` parser). It writes `nrpvp-friend.me3.toml` next to itself, so the
   logs (`nrpvp.log`, `logs\`) land in the kit folder.
 
+### PvPvE mode (T-020)
+- Off by default. While on, every client rewrites its own copy of `team_type` for every player whose value is 2 (the
+  expedition default) to `pvpve_team` (29), every `pvpve_interval_ms` (250). Other values (1 in the Roundtable) are never
+  touched. **Every client in the session must run it.**
+- **me3 path (`launch.ps1`):** edit `dist\nrpvp.toml` (created on the first launch) and set `pvpve = true`, then restart
+  the game. The effective values are logged at startup (`T-008: effective config: ... pvpve=true pvpve_team=29`).
+- **Nucleus path:** `scripts\deploy-nucleus.ps1` writes `pvpve = true` (use `-Pvpve:$false` to turn it off). **Friend kit:**
+  `package-friend.ps1` ships `pvpve = true`.
+- F12 (restore all) pauses the mode, F11 (write all) resumes it; the overlay has a "PvPvE mode" checkbox and a status
+  line (`PvPvE: ON/PAUSED/OFF`, team value, automatic writes this session). `auto_team_all = N` still works as a
+  deprecated alias (logs a warning).
+- The local player is the first valid PlayerIns in the ChrSet (entry[0]); there is no "this is me" button any more.
+- `nrpvp.log` has a `heartbeat:` line every 10 s from the main loop (T-019).
+
 ### Troubleshooting me3 + Seamless Co-op
 - **me3 logs:** `%LOCALAPPDATA%\garyttierney\me3\data\logs\<profile name>\<timestamp>.log`, for example
   `...\logs\nrpvp-sc.me3\2026-10-09_15-00-00.log`. Open the newest one. It shows the resolved profile and attach

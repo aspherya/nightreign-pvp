@@ -299,10 +299,17 @@ mod tests {
         assert!(!file.contains("must-be-filtered"));
         assert!(!file.contains("stale line"), "nrpvp.log must be truncated");
 
-        // The same bytes are in this session's file under logs/.
+        // The same event is in this session's file under logs/. Other tests in this process log through the same
+        // global subscriber between the two reads, so compare the marker line, not the whole files.
         let session = std::fs::read_to_string(setup.session_path.expect("session path"))
             .expect("session log");
-        assert_eq!(session, file);
+        let marker_line = |text: &str| {
+            text.lines()
+                .find(|l| l.contains("logging-test-marker-info"))
+                .map(str::to_string)
+        };
+        assert!(marker_line(&session).is_some(), "{session}");
+        assert_eq!(marker_line(&session), marker_line(&file));
 
         let (_, lines) = crate::logring::snapshot();
         let line = lines

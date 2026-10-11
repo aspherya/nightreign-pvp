@@ -255,14 +255,14 @@ Acceptance: build, clippy, and tests clean. **HUMAN-solo:** the overlay toggles,
 Out of scope: anything that isn't a debug tool.
 
 ### T-009 — E-003: the decisive PvP experiment (FS-1)
-Owner: HUMAN + friend (OPUS designs and analyses) | Status: todo | Depends on: FS-1 readiness gate | Phase: 0
+Owner: HUMAN + friend (OPUS designs and analyses) | Status: **done** (2026-10-10: PASS, free-form session; see TESTING.md) | Depends on: FS-1 readiness gate | Phase: 0
 Goal: answer H1 (TECHNICAL_NOTES.md §4). Can SC players damage each other when they have hostile team
 types, and does it stay in sync?
 Steps: run the **FS-1 runbook** (TESTING.md §6): TC-001 → TC-002 → TC-003.
 Acceptance: all three are recorded, with logs from both PCs under `.claude/experiments/FS-1/`.
 
 ### T-010 — Phase 0 feasibility report and go/no-go
-Owner: OPUS | Status: todo | Depends on: T-002, T-003, T-009 | Phase: 0
+Owner: OPUS | Status: **done** (2026-10-10: GO; report in ROADMAP.md) | Depends on: T-002, T-003, T-009 | Phase: 0
 Goal: answer the 8 Phase 0 questions in the skeleton (§7). Choose the Phase 1–2 approach (H1, or A1–A3),
 and write the Phase 1–2 cards.
 Deliverables: the "Phase 0 report" section in ROADMAP.md, an updated ADR log, new cards.
@@ -306,7 +306,7 @@ Acceptance: build, clippy, and tests clean. **HUMAN-solo:** the panel lists 1 pl
 Remote rows can only be verified in FS-1.
 
 ### T-016 — Friend kit (packaging for the FS-1 partner)
-Owner: SONNET/implementer | Status: review (done 2026-10-09: dry-run verified; nrpvp.toml is not shipped (the DLL generates it); repackage after each rebuild) | Phase: 0
+Owner: SONNET/implementer | Status: **done** (worked on the friend's PC in FS-1; now ships nrpvp.toml) | Phase: 0
 Goal: the partner can install and launch our exact build with minimal steps and no repo or Rust toolchain.
 Steps: `scripts/package-friend.ps1` builds `dist/friend-kit.zip` containing `nrpvp.dll`, the default `nrpvp.toml`, a me3 profile
 template, `launch-friend.ps1`, and `README-FRIEND.md`. The launcher finds the Nightreign game folder (Steam `libraryfolders.vdf`, with a prompt as fallback),
@@ -317,7 +317,7 @@ Acceptance: the zip builds; the launcher's path detection is unit-tested where p
 dry-run mode prints the profile and the command without launching.
 
 ### T-017 — FS-0: local dual-instance dry run of FS-1 (Nucleus Co-op)
-Owner: HUMAN-solo (OPUS designs and analyses) | Status: run 1 PASS (reported) 2026-10-09; repeat with logs after T-018 | Depends on: T-015 | Phase: 0
+Owner: HUMAN-solo (OPUS designs and analyses) | Status: **done** (run 4 PASS 2026-10-10, two-way PvP with logs) | Depends on: T-015 | Phase: 0
 Goal: run TC-001/TC-002/TC-003 between two real game clients on Leonardo's PC, so the friend session doesn't wait on an available partner.
 Setup: Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (Goldberg ColdClientLoader → nrsc_launcher.exe; `coldloader.dll` loads
 the DLLs in `dlllist.txt`). `scripts/deploy-nucleus.ps1` copies dist\nrpvp.dll and nrpvp.toml there and appends nrpvp.dll (`-Remove` undoes it). Each instance logs to
@@ -325,9 +325,115 @@ the DLLs in `dlllist.txt`). `scripts/deploy-nucleus.ps1` copies dist\nrpvp.dll a
 Caveats: emulated Steam (Goldberg LAN) instead of real Steam P2P, ~0 latency, shared input. FS-1 with the friend remains the final confirmation.
 
 ### T-018 — Logs survive Nucleus (FS-0 evidence)
-Owner: SONNET/implementer | Status: todo | Phase: 0
+Owner: SONNET/implementer | Status: **done** (2026-10-10: `log_dir` works; logs in dist
+ucleus-logs; the overlay-under-Nucleus investigation was not done) | Phase: 0
 Goal: Nucleus deletes `content\...\Instance<N>\` on close, which lost the FS-0 logs. Add config `log_dir` (absolute path; default = DLL dir).
 When set, logs go to `<log_dir>\<instance tag>\` where the tag is derived from the DLL's parent folder name (e.g. `Instance0`). `deploy-nucleus.ps1`
 sets `log_dir = "<repo>\dist\nucleus-logs"`. Logging is initialised before the config today: read just `log_dir` first, or move the init; keep
 the fallback to the DLL dir on any error.
 Also: investigate why the overlay draws no frames under Nucleus (hooks apply, but there's never a "context initialised" line). Report findings only; don't fix.
+
+---
+
+## Phase 1–2: automatic PvPvE rule for 2 players
+
+### T-019 — Reproduce and fix the auto-apply hang
+Owner: HUMAN-solo (2 min) → SONNET/implementer | Status: ready | Phase: 1-2
+Goal: `auto_team_all = 29` must be safe. In FS-0 run 3 both Nucleus instances hung ~1 s after Roundtable load with it enabled (logs:
+`.claude/experiments/FS-0/run3_hang_*`); nothing was written (team was 1). Not reproduced with it off. It is unknown whether auto-apply caused it.
+Steps: 1. HUMAN: `scripts/deploy-nucleus.ps1` (default AutoTeamAll 29), launch Nucleus, load into Roundtable twice. Hang again → reproducible.
+2. If reproducible: implementer reviews what differs when `auto_value` is Some (watch tick path, config load) and adds per-tick heartbeat logging
+to locate the stall; fix; re-test. If not reproducible in 3 launches: record it as a one-off and keep auto-apply.
+Acceptance: 3 Nucleus launches with auto-apply on reach an expedition and both clients show 29 for both players with no key presses.
+
+### T-020 — Expedition rule v1: automatic, no debug keys
+Owner: SONNET/implementer → HUMAN | Status: review (code done 2026-10-10: `pvpve = true` mode, local = entry[0], "this is me" removed, heartbeat, log-spam fix; 127 tests; grace part deferred; HUMAN checks pending) | Depends on: T-019 | Phase: 1-2
+Goal: with a single config switch (`pvpve = true`), every client applies team 29 to all players whenever an expedition is running and restores
+the original values otherwise. Local player = ChrSet entry[0] (log a warning if the evidence contradicts it). Includes a workaround for sites
+of grace: investigate first (read-only logging of what changes when the player stands at a grace on team 2), then propose; don't guess.
+Acceptance: HUMAN-solo expedition via me3: PvE normal, value applied and restored automatically; grace behaviour documented. Two-client: FS-0.
+
+### T-021 — Team values research (allies not hostile)
+Owner: HUMAN + OPUS (Nucleus) | Status: todo | Depends on: T-020 | Phase: 2
+Goal: find team_type values A and B such that A is hostile to B and to enemies, but A is not hostile to A (needed for 2v2 and up). Test candidates
+3, 13, 16, 9 and others from the enum with the overlay/hotkeys in Nucleus (needs 2 clients; ideally 3 for an ally check, otherwise FS-1).
+
+---
+
+## Scope v2 (Battle Royale): see PROJECT_PLAN.md. Milestones M1–M8, spikes S1–S5.
+
+### M1 — Stable free-for-all
+- **T-019 / T-020** (above): HUMAN checks of `pvpve = true` in Nucleus and with a friend; watch for the Roundtable freeze.
+- **T-022 — Sites of grace on team 29.** Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: T-020 verified.
+  Find out, read-only first, what the grace interaction checks (log the player's state at a grace on team 2 vs 29). Then the smallest fix,
+  e.g. restoring team 2 while the player stands at a grace and no rival is near. Acceptance: level-up at a grace works with `pvpve = true`.
+
+### M2 — Teams
+- **T-021** (above): team-value research, now with 3–4 Nucleus instances if the PC can run them.
+- **T-023 — Team assignment v1.** Owner: SONNET/implementer | Status: todo | Depends on: T-021.
+  Config `team_size`; team = function of the per-player id (`ChrIns+0x78`) so every client computes the same rosters with no messages.
+  Pure-logic module with unit tests; the overlay shows rosters. Acceptance: Nucleus 3+ instances show identical rosters in every log.
+
+### Spikes (SONNET/researcher, read-only, parallel; deliverables in `.claude/research/`)
+- **S1 — Player cap.** Status: **done** (2026-10-10). The cap is SC-side and "soft" (author: could go higher, bugs above 5); slots 4–6 needed repeated fixes; whether the engine caps at 6 is UNKNOWN. Decision: plan for 6; ask the author later. What enforces 6 (SC, engine slots, both); public statements; any route beyond 6. → `S1-player-cap.md`
+- **S2 — Inventory and item drops.** Status: **done** (2026-10-10). NR has a native Discard-to-ground and dropped items are shared (one pickup removes it for everyone); carry limit ~11 items; `MapItemMan` and `CSGaitem` are findable by name; inventory layout and the Discard function are UNKNOWN on NR. Best route: call the native discard per item on a PvP death. First check (no code): can a team-29 player pick up items at all? Nightreign's own drop-for-teammate mechanic; inventory structures (ER layout in
+  fromsoftware-rs as a hint); whether dropped items sync to all players. → `S2-inventory-drops.md`
+- **S3 — Day/night, tide, and bosses.** Status: **done** (2026-10-10). The timeline is an event-script flag chain (7502/7507 = night boss defeated → next day; 7000 = win; 7001 = game over when no player is alive at night); the circle is param-driven; modded regulation + event files run next to SC in other mods (6 Player Fixes); a DLL clock mod exists (Storm Timer). **Flag 7001 must be neutralised before PvP night tests.** Event scripts and flags behind the tide, night bosses, and day change (DarkScript3 /
+  soulsmods data for NR); whether a night can end without its boss. → `S3-match-flow.md`
+- **S4 — Mod-to-mod channel.** Status: **done** (2026-10-10). Recommended: our own Steam Networking Messages on a private channel, addressed by Steam IDs from CSSessionManager (NR offsets UNKNOWN); use raw flat API calls, never `steamworks::Client::init()`; never close sessions. Game-native sync can't carry our data. Experiment E-S4a: hello exchange between two Nucleus instances. Does SC sync event flags; can a DLL use Steam networking messages alongside SC; how other
+  mods that depend on SC share state. → `S4-mod-channel.md`
+- **S5 — Death and respawn.** Status: **done** (2026-10-10). Revive = allies attack the downed player (gauge 40/90/240, params in GAME_SYSTEM_COMMON_PARAM_ST); the level loss is not param-driven (needs a DLL write to PlayerGameData, location UNKNOWN); protection hints: `invincible_timer_for_net_pc` + ER `disabled_hit`; vanilla boss fights already have "no respawn" (reuse for sudden death); **risk: vanilla ends the run when all players are downed at once**. Engine flow downed → dead → respawn; source of the level loss and of the respawn point. → `S5-death-respawn.md`
+
+- **Rules core (pure logic).** Status: **done** (2026-10-10; `crates/nrpvp/src/rules/{teams,matchstate}.rs`, 37 tests; not wired to the game yet).
+  Assumptions to confirm with Leonardo before M6: (1) tie = draw only when the last players die in the same instant, otherwise the first team
+  left standing wins; (2) respawn protection 5 s, ends on attacking; (3) a player dead and waiting to respawn when the arena closes is eliminated;
+  (4) a downed player still counts as alive; (5) leavers drop nothing, and a team whose members all left or were eliminated is out; (6) rosters are
+  frozen at match start (no late joiners).
+
+### T-026 — Relative teams scheme ("rivals only") + roster wiring
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: review (code done 2026-10-10, 174 tests; deployed to Nucleus, host config, and friend kit; HUMAN Nucleus check pending) | Phase: M2 → v1
+Goal: each client leaves itself and its allies at the vanilla value and writes the hostile value only to rivals. Config: `pvpve_scheme =
+"rivals"` (new default when `pvpve = true`) or `"all"` (today's behaviour), `team_size` (default 1 = free-for-all). Rosters from
+`rules::teams` using the per-player id at ChrIns+0x78. The overlay shows each player's team and ALLY/RIVAL. Acceptance (HUMAN, Nucleus 2
+instances, no keys): both can lock on to and damage each other; graces, pickups, and chests work; with `team_size = 2` the two are allies and
+play vanilla co-op (hits do nothing, revive works).
+
+### T-027 — Read-only probes: timeline flags and player data
+Owner: SONNET/implementer → HUMAN-solo | Status: review (probes built 2026-10-10 behind dev_mode+probes: clock, flags, level/runes/HP, position sampling; 204 tests; HUMAN dev-mode run pending) | Depends on: T-026 landed (same files) | Phase: M3–M5 groundwork
+Goal: (a) log the timeline event flags from S3 (7000, 7001, 7500–7523) and the world clock during a solo expedition; (b) locate the player's
+level and rune count (candidate: PlayerIns+0x588 → PlayerGameData, ER layout +8) and log them so the HUMAN can compare with the HUD.
+Read-only, guarded reads, every candidate labelled UNVERIFIED.
+
+### S6 — Team spawn points (spike) + T-028 position probe
+- **S6.** Owner: SONNET/researcher | Status: **done** (2026-10-10). The game has 20 data-driven start points (`SORTIE_STARTING_POINT_ST`: bird route + spawn point entity + grid). ER hint for position: ChrIns+0x190 → +0x68 → +0x70 (x,y,z), plus a block id on PlayerIns; ER tools teleport by writing the physics position and block id. Decision (Opus): T-028 logs position, ground flags, animation id, and the sortie rows; first route = each client moves its own player after landing; second = give each team a different vanilla start row | Feeds: F3 (moved up from M7 at Leonardo's request, 2026-10-10).
+  How the expedition start position is chosen (hawk drop-in, start points per map pattern, event scripts, params), where a character's position
+  lives (ER physics module as a hint), how ER/NR mods teleport players and whether that syncs in co-op, and what lists of safe points the
+  engine has (`CSRespawnPointMan`, graces, map points). → `.claude/research/S6-team-spawns.md`
+- **T-028 — Position probe and self-teleport test.** Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: T-027, S6.
+  Read-only first: log the local player's position candidates and the respawn-point list. Then a debug hotkey that moves the **local** player to a
+  logged point. Acceptance (HUMAN + friend): the move is clean on both screens. Then the rule: on expedition start each team moves to its own point.
+
+### T-029 — Drag-and-drop install (launcher exe + release zip)
+Owner: OPUS (Sonnet agents were rate-limited) → HUMAN | Status: review (built 2026-10-10; never run with the game)
+`crates/nrpvp-launcher` → `nrpvp_launcher.exe` (no console; message boxes for errors): must sit in the game folder; checks nightreign.exe,
+SeamlessCoop\nrsc.dll, NightreignPvP\nrpvp.dll, NightreignPvP\me3\me3.exe; writes `NightreignPvP\nrpvp.me3.toml`; runs the **bundled** me3 0.11.0
+with `launch -g nightreign -e <Game>\nightreign.exe -p <profile>`; me3 output goes to `NightreignPvP\launcher.log`. `scripts/package-release.ps1`
+builds `dist\NightreignPvP.zip` (launcher, mod folder, me3 + its licences, `HOW TO INSTALL.txt`). Logs land in `<Game>\NightreignPvP\logs`.
+Acceptance (HUMAN): install from the zip on Leonardo's PC following only the txt guide; the game starts with SC and the panel; then a friend does the same.
+Open: the exe is unsigned (SmartScreen prompt, possible antivirus flag); `-e` with a bundled me3 is untested in a real launch.
+Interrupted by the rate limit, to restart later: **T-027** (probes; partial `game/probe2.rs` exists, compiles, state unknown) and **S6** (spawn research, nothing delivered).
+
+### T-030 — Player build: PvP always on, no toggles (dev mode for debugging)
+Owner: SONNET/implementer → HUMAN | Status: review (built 2026-10-10: dev_mode split, badge, no keys; 181+3 tests; player zip rebuilt; HUMAN install test pending; probe2.rs unwired) | Requested by Leonardo 2026-10-10: players must not be able to turn PvP off.
+Design: launching with `nrpvp_launcher.exe` **is** the Battle Royale mode. Config `dev_mode` (default false). With dev_mode off: no hotkeys at all,
+no interactive panel, PvPvE forced on with the rivals scheme (a `pvpve = false` in the file is ignored with a log line), no pause/resume, no
+probes, no automatic discovery dumps; a small read-only on-screen badge ("Battle Royale · team N · K rivals"). With dev_mode on: everything as
+today. The player zip ships without dev_mode; `dist\nrpvp.toml`, the Nucleus deploy and the friend kit set `dev_mode = true`.
+Note: turning PvP off locally gives no advantage (a client that doesn't mark rivals can't attack them but can still be attacked), so this is UX, not anti-cheat.
+
+### S7 — "Battle Royale" entry in the expedition menu (spike)
+Owner: SONNET/researcher | Status: **done** (2026-10-10). The table is an ESD talk script (600001000); SC only relabels the 1/2/3-player options; other mods add entries to that talk list and ship menu text next to SC. Decision (Opus): route A now (launcher = mode + on-screen label, T-030); route B later (a "Battle Royale" entry in the table's talk list that sets a flag and opens the stock menu; needs the mod channel so guests learn the host's choice) | Feeds: F15.
+How the Roundtable expedition-type menu (Solo Mission / Up to 6 players under SC) is built: menu and text files (msg FMGs, menu layout),
+how SC renames its entries (locale json keys `MODMESSAGE_YUINEXUSBEGIN*`), whether mods have added entries to FromSoftware menus (ER/NR
+examples), and how every client would learn the chosen mode. Rank routes from cheapest (relabel an entry under our launcher) to a true third entry.
+→ `.claude/research/S7-mode-menu.md`

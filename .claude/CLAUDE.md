@@ -5,6 +5,7 @@ PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The or
 
 | File | Purpose |
 |---|---|
+| [PROJECT_PLAN.md](PROJECT_PLAN.md) | **The plan for scope v2 (Battle Royale):** features, milestones M1–M8, spikes, risks |
 | [ROADMAP.md](ROADMAP.md) | Phases, current milestone, acceptance criteria, blockers |
 | [TASKS.md](TASKS.md) | Task board: the unit of work for agents. **Start here.** |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Stack decision, verified facts, hypotheses, RE findings |

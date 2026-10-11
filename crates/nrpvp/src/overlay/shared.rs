@@ -38,10 +38,8 @@ pub(crate) enum Command {
     RestoreFor { addr: usize },
     /// T-015: persist on/off for this player.
     PersistFor { addr: usize, on: bool },
-    /// T-015: the HUMAN says this PlayerIns is the local player ("this is me"), kept for the session.
-    SetLocalOverride { addr: usize },
-    /// T-015: forget the "this is me" choice.
-    ClearLocalOverride,
+    /// T-020: resume (`true`) or pause (`false`) the PvPvE mode. Ignored when the mode is off in the config.
+    SetPvpve(bool),
     /// T-015: log `MARK #n: <text>`; `None` = from the hotkey.
     Mark(Option<String>),
 }
@@ -60,13 +58,45 @@ pub(crate) fn team_name(v: u8) -> &'static str {
     }
 }
 
-/// Which PlayerIns is local.
+/// Which PlayerIns is local (the first valid one in ChrSet entry order, T-020).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Role {
     Local,
     Remote,
-    /// More than one PlayerIns and nothing tells them apart (and the HUMAN has not chosen).
-    Unknown,
+}
+
+/// T-026: short form of a player id for the overlay: the first four hex digits, `0x6001..`; `?` if unreadable.
+/// (ASCII only: the default ImGui font has no ellipsis glyph.)
+pub(crate) fn short_id(id: Option<u64>) -> String {
+    match id {
+        None => "?".to_string(),
+        Some(v) => {
+            let hex = format!("{v:X}");
+            if hex.len() > 4 {
+                format!("0x{}..", &hex[..4])
+            } else {
+                format!("0x{hex}")
+            }
+        }
+    }
+}
+
+/// T-026: how a player relates to the LOCAL player according to the rosters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Relation {
+    Local,
+    Ally,
+    Rival,
+}
+
+impl Relation {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Relation::Local => "LOCAL",
+            Relation::Ally => "ALLY",
+            Relation::Rival => "RIVAL",
+        }
+    }
 }
 
 /// One PlayerIns of the ChrSet, as plain values.
@@ -76,10 +106,8 @@ pub(crate) struct PlayerRow {
     pub index: usize,
     pub addr: usize,
     pub role: Role,
-    /// Why `role` is what it is ("only PlayerIns", "heuristic: ...", "chosen by you", ...).
+    /// Why `role` is what it is ("first PlayerIns in the ChrSet", "not the local player").
     pub basis: String,
-    /// True if the HUMAN chose this row with "this is me".
-    pub chosen: bool,
     /// Live ChrIns+0x74.
     pub team: Option<u8>,
     /// ChrSet entry bytes +8 and +9 (meaning UNVERIFIED).
@@ -90,7 +118,66 @@ pub(crate) struct PlayerRow {
     /// Persist value, if persist is on for this player.
     pub persist: Option<u8>,
     pub reverts_last_sec: u32,
+    /// T-026: per-player id (ChrIns+0x78), if readable.
+    pub id: Option<u64>,
+    /// T-026: 0-based team number from the rosters (None when the rosters are unavailable).
+    pub team_no: Option<u8>,
+    /// T-026: relation to the local player (None when there is no local player).
+    pub relation: Option<Relation>,
     pub reverts_total: u64,
+}
+
+pub(crate) const BADGE_TITLE: &str = "BATTLE ROYALE";
+pub(crate) const BADGE_WAITING: &str = "waiting for expedition";
+
+/// T-030: the two lines of the player badge. Line 1 is fixed; line 2 is `waiting for expedition` until the local
+/// player is resolved with at least one player row, then `Team N` (1-based, `?` if the rosters are unavailable) and
+/// the rival count.
+pub(crate) fn badge_lines(s: &Snapshot) -> (String, String) {
+    let in_expedition = s.wcm_instance != 0 && s.local_player.is_some() && !s.players.is_empty();
+    if !in_expedition {
+        return (BADGE_TITLE.to_string(), BADGE_WAITING.to_string());
+    }
+    let team = s
+        .players
+        .iter()
+        .find(|p| p.relation == Some(Relation::Local))
+        .and_then(|p| p.team_no)
+        .map_or("?".to_string(), |n| (u32::from(n) + 1).to_string());
+    let rivals = s
+        .players
+        .iter()
+        .filter(|p| p.relation == Some(Relation::Rival))
+        .count();
+    (
+        BADGE_TITLE.to_string(),
+        format!(
+            "Team {team} - {rivals} {}",
+            if rivals == 1 { "rival" } else { "rivals" }
+        ),
+    )
+}
+
+/// T-020: state of the PvPvE mode.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum PvpveState {
+    /// Not enabled in the config (`pvpve = false`).
+    #[default]
+    Off,
+    /// Enabled and applying.
+    On,
+    /// Enabled but paused (F12 or the checkbox).
+    Paused,
+}
+
+impl PvpveState {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            PvpveState::Off => "OFF",
+            PvpveState::On => "ON",
+            PvpveState::Paused => "PAUSED",
+        }
+    }
 }
 
 /// Everything the panel shows, as plain values (no pointers are ever dereferenced from here).
@@ -100,7 +187,7 @@ pub(crate) struct Snapshot {
     pub wcm_instance: usize,
     /// PlayerIns-derived vtables known (RTTI recovered); writes are refused without them.
     pub vtables_known: bool,
-    /// Resolved local PlayerIns address (decided, chosen or suggested).
+    /// Resolved local PlayerIns address (ChrSet entry[0] rule).
     pub local_player: Option<usize>,
     /// Live `team_type` of the local player (ChrIns+0x74), read by the main loop.
     pub team_type: Option<u8>,
@@ -125,6 +212,18 @@ pub(crate) struct Snapshot {
     pub local_basis: String,
     /// T-015: MARK lines logged so far.
     pub marks: u32,
+    /// T-020: PvPvE mode state, its team value and how many automatic writes were made this session.
+    pub pvpve: PvpveState,
+    pub pvpve_team: u8,
+    pub pvpve_writes: u64,
+    /// T-026: scheme label ("rivals" / "all"), team size, and a warning when the rosters fell back to free-for-all.
+    pub pvpve_scheme: String,
+    pub team_size: u8,
+    pub roster_warning: String,
+    /// T-027: read-only probes are enabled (`probes = true`).
+    pub probes_enabled: bool,
+    /// T-027: the latest probe candidates, one plain line each (all UNVERIFIED).
+    pub probe_lines: Vec<String>,
 }
 
 /// Bounded FIFO of commands.
@@ -240,10 +339,9 @@ mod tests {
                 on: true,
             },
             Command::RestoreFor { addr: 0x20 },
-            Command::SetLocalOverride { addr: 0x20 },
             Command::Mark(Some("A hits B".to_string())),
             Command::Mark(None),
-            Command::ClearLocalOverride,
+            Command::SetPvpve(false),
         ];
         for c in &cmds {
             assert!(s.push(c.clone()));
@@ -284,7 +382,6 @@ mod tests {
                 addr: 0x5678,
                 role: Role::Local,
                 basis: "only PlayerIns".to_string(),
-                chosen: false,
                 team: Some(2),
                 state8: 4,
                 state9: 4,
@@ -292,9 +389,20 @@ mod tests {
                 persist: Some(6),
                 reverts_last_sec: 0,
                 reverts_total: 1,
+                id: Some(0x6001_FFFF_FFFF),
+                team_no: Some(0),
+                relation: Some(Relation::Local),
             }],
             local_basis: "only PlayerIns".to_string(),
             marks: 3,
+            pvpve: PvpveState::Paused,
+            pvpve_team: 29,
+            pvpve_writes: 7,
+            pvpve_scheme: "rivals".to_string(),
+            team_size: 2,
+            roster_warning: String::new(),
+            probes_enabled: true,
+            probe_lines: vec!["clock hint: 07:00:00 mult 1 [plausible]".to_string()],
         };
         s.publish(snap.clone());
         assert_eq!(s.snapshot(), snap);
@@ -332,6 +440,54 @@ mod tests {
         assert_eq!(s.drain(), vec![Command::Restore]);
         s.publish(Snapshot::default());
         assert_eq!(s.snapshot(), Snapshot::default());
+    }
+
+    fn row(rel: Relation, team_no: Option<u8>) -> PlayerRow {
+        PlayerRow {
+            index: 0,
+            addr: 0x1000,
+            role: Role::Remote,
+            basis: String::new(),
+            team: Some(2),
+            state8: 0,
+            state9: 0,
+            original: None,
+            persist: None,
+            reverts_last_sec: 0,
+            id: None,
+            team_no,
+            relation: Some(rel),
+            reverts_total: 0,
+        }
+    }
+
+    #[test]
+    fn badge_text_for_the_states() {
+        let mut s = Snapshot::default();
+        let waiting = (BADGE_TITLE.to_string(), BADGE_WAITING.to_string());
+        assert_eq!(badge_lines(&s), waiting);
+        // WorldChrMan live but no local player / no rows yet: still waiting.
+        s.wcm_instance = 0x1234;
+        assert_eq!(badge_lines(&s), waiting);
+        s.local_player = Some(0x1000);
+        assert_eq!(badge_lines(&s), waiting);
+        // Solo in an expedition: team 1, no rivals.
+        s.players = vec![row(Relation::Local, Some(0))];
+        assert_eq!(badge_lines(&s).1, "Team 1 - 0 rivals");
+        // One rival, then three.
+        s.players.push(row(Relation::Rival, Some(1)));
+        assert_eq!(badge_lines(&s).1, "Team 1 - 1 rival");
+        s.players.push(row(Relation::Rival, Some(2)));
+        s.players.push(row(Relation::Rival, Some(3)));
+        s.players.push(row(Relation::Ally, Some(0)));
+        assert_eq!(badge_lines(&s).1, "Team 1 - 3 rivals");
+        assert_eq!(badge_lines(&s).0, "BATTLE ROYALE");
+        // Rosters unavailable: team unknown.
+        s.players = vec![row(Relation::Local, None)];
+        assert_eq!(badge_lines(&s).1, "Team ? - 0 rivals");
+        // Instance gone (leaving the expedition): back to waiting.
+        s.wcm_instance = 0;
+        assert_eq!(badge_lines(&s), waiting);
     }
 
     #[test]

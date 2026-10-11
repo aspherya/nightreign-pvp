@@ -48,3 +48,27 @@ TASKS.md and an active phase in ROADMAP.md.
 
 ## Known side effects to fix later
 - With team_type 29 the player cannot interact with sites of grace (no level-up menu), though passing through still applies the effect. Probably an interaction check on team type. Phase 3 candidate fixes: temporarily restore the team value while near or at a grace, or find the interaction check. (TC-004 run 4, 2026-10-09)
+
+## PvPvE as a selectable expedition mode (idea from Leonardo, 2026-10-10)
+- In Roundtable Hold, next to "Solo Mission" / "Up to 6 players", offer a separate **PvPvE** mode. Picking it makes the mod apply the PvPvE rules
+  (team types and whatever else is needed) when the expedition starts. Normal co-op stays untouched otherwise.
+- To verify later: (a) can we add an entry to the expedition-type menu that SC already modifies (its "Up to 6 players" entry is SC's own), or is a
+  toggle in our own overlay at the Roundtable the cheaper first version; (b) how all clients agree on the mode: each client applies team types locally
+  (FS-0 run 2), so either everyone selects it or the host's choice is propagated, and SC offers no channel for our data;
+  (c) what "the rules" include beyond team types (grace interaction fix, revive rules, team assignment).
+- Phase 4 candidate. Not needed for the Phase 0-2 proofs.
+
+## PvP death rules (observed in FS-0 run 2, 2026-10-10; wanted by Leonardo)
+- Observed: a player killed by another player goes **downed**; the revive bar appears but **no revive was possible**; the player then **respawns
+  near a site of grace**. Probably loses runes and a level, like a normal death (to re-check). The killer gets nothing.
+- **Wanted: the killer can loot the player they killed.** To investigate: what the engine drops on a player death (runes at the death spot?),
+  whether another player can pick that up, and whether a reward can be granted to the killer directly.
+- Also to decide: whether revives between hostile players should be possible at all, and how they work for teammates once teams exist.
+
+## Matchmaking queues (asked by Leonardo, 2026-10-10; M8)
+- Queues = team size: solo (team_size 1, up to 6 players free-for-all), duo (3 teams of 2), trio (2 teams of 3). The mod already takes `team_size`.
+- Finding players: Steam lobby list filtered by our own lobby tags (mod, queue, mod version); join an open one or create and wait; start when
+  full or on a timer. Parties queue together and must stay on one team, so roster building needs party info over the mod channel (S4), not only join order.
+- To verify first: can our DLL tag and search the lobby SC creates and join it cleanly (lobby data is owner-only; SC owns the lobby; we may not
+  modify SC). Fallback: an external service or Discord bot that distributes invites.
+- Blockers: SC's author's consent for public matchmaking; cheating becomes relevant with strangers.
