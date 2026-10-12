@@ -347,14 +347,14 @@ to locate the stall; fix; re-test. If not reproducible in 3 launches: record it 
 Acceptance: 3 Nucleus launches with auto-apply on reach an expedition and both clients show 29 for both players with no key presses.
 
 ### T-020 — Expedition rule v1: automatic, no debug keys
-Owner: SONNET/implementer → HUMAN | Status: review (code done 2026-10-10: `pvpve = true` mode, local = entry[0], "this is me" removed, heartbeat, log-spam fix; 127 tests; grace part deferred; HUMAN checks pending) | Depends on: T-019 | Phase: 1-2
+Owner: SONNET/implementer → HUMAN | Status: **done** (PvP mode proven in Nucleus and over real Steam; superseded in detail by T-026 "rivals only") | Depends on: T-019 | Phase: 1-2
 Goal: with a single config switch (`pvpve = true`), every client applies team 29 to all players whenever an expedition is running and restores
 the original values otherwise. Local player = ChrSet entry[0] (log a warning if the evidence contradicts it). Includes a workaround for sites
 of grace: investigate first (read-only logging of what changes when the player stands at a grace on team 2), then propose; don't guess.
 Acceptance: HUMAN-solo expedition via me3: PvE normal, value applied and restored automatically; grace behaviour documented. Two-client: FS-0.
 
 ### T-021 — Team values research (allies not hostile)
-Owner: HUMAN + OPUS (Nucleus) | Status: todo | Depends on: T-020 | Phase: 2
+Owner: HUMAN + OPUS (Nucleus) | Status: superseded by T-026 (teammates stay on the normal value 2, only rivals get 29; `team_size >= 2` not yet run in the game: STATUS.md Task C) | Depends on: T-020 | Phase: 2
 Goal: find team_type values A and B such that A is hostile to B and to enemies, but A is not hostile to A (needed for 2v2 and up). Test candidates
 3, 13, 16, 9 and others from the enum with the overlay/hotkeys in Nucleus (needs 2 clients; ideally 3 for an ally check, otherwise FS-1).
 
@@ -364,13 +364,13 @@ Goal: find team_type values A and B such that A is hostile to B and to enemies, 
 
 ### M1 — Stable free-for-all
 - **T-019 / T-020** (above): HUMAN checks of `pvpve = true` in Nucleus and with a friend; watch for the Roundtable freeze.
-- **T-022 — Sites of grace on team 29.** Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: T-020 verified.
+- **T-022 — Sites of grace on team 29.** Owner: SONNET/implementer → HUMAN | Status: closed, not needed (T-026: the local player stays on 2, so graces work; confirmed in FS-0 run 5) | Depends on: T-020 verified.
   Find out, read-only first, what the grace interaction checks (log the player's state at a grace on team 2 vs 29). Then the smallest fix,
   e.g. restoring team 2 while the player stands at a grace and no rival is near. Acceptance: level-up at a grace works with `pvpve = true`.
 
 ### M2 — Teams
 - **T-021** (above): team-value research, now with 3–4 Nucleus instances if the PC can run them.
-- **T-023 — Team assignment v1.** Owner: SONNET/implementer | Status: todo | Depends on: T-021.
+- **T-023 — Team assignment v1.** Owner: SONNET/implementer | Status: **done** via T-026 (teams from player ids; only `team_size = 1` has run in the game) | Depends on: T-021.
   Config `team_size`; team = function of the per-player id (`ChrIns+0x78`) so every client computes the same rosters with no messages.
   Pure-logic module with unit tests; the overlay shows rosters. Acceptance: Nucleus 3+ instances show identical rosters in every log.
 
@@ -399,7 +399,7 @@ instances, no keys): both can lock on to and damage each other; graces, pickups,
 play vanilla co-op (hits do nothing, revive works).
 
 ### T-027 — Read-only probes: timeline flags and player data
-Owner: SONNET/implementer → HUMAN-solo | Status: review (probes built 2026-10-10 behind dev_mode+probes: clock, flags, level/runes/HP, position sampling; 204 tests; HUMAN dev-mode run pending) | Depends on: T-026 landed (same files) | Phase: M3–M5 groundwork
+Owner: SONNET/implementer → HUMAN-solo | Status: parked (built; not needed for the downed rule. Keep `probes = false` during rule tests: the probes cost ~0.4 s per main-loop pass, FS-0 run 16) | Depends on: T-026 landed (same files) | Phase: M3–M5 groundwork
 Goal: (a) log the timeline event flags from S3 (7000, 7001, 7500–7523) and the world clock during a solo expedition; (b) locate the player's
 level and rune count (candidate: PlayerIns+0x588 → PlayerGameData, ER layout +8) and log them so the HUMAN can compare with the HUD.
 Read-only, guarded reads, every candidate labelled UNVERIFIED.
@@ -409,12 +409,12 @@ Read-only, guarded reads, every candidate labelled UNVERIFIED.
   How the expedition start position is chosen (hawk drop-in, start points per map pattern, event scripts, params), where a character's position
   lives (ER physics module as a hint), how ER/NR mods teleport players and whether that syncs in co-op, and what lists of safe points the
   engine has (`CSRespawnPointMan`, graces, map points). → `.claude/research/S6-team-spawns.md`
-- **T-028 — Position probe and self-teleport test.** Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: T-027, S6.
+- **T-028 — Position probe and self-teleport test.** Owner: SONNET/implementer → HUMAN | Status: todo (the snap-back test is built, T-032 part c; HUMAN run pending: STATUS.md Task D) | Depends on: T-027, S6.
   Read-only first: log the local player's position candidates and the respawn-point list. Then a debug hotkey that moves the **local** player to a
   logged point. Acceptance (HUMAN + friend): the move is clean on both screens. Then the rule: on expedition start each team moves to its own point.
 
 ### T-029 — Drag-and-drop install (launcher exe + release zip)
-Owner: OPUS (Sonnet agents were rate-limited) → HUMAN | Status: review (built 2026-10-10; never run with the game)
+Owner: OPUS (Sonnet agents were rate-limited) → HUMAN | Status: **done** solo (works on Leonardo's PC; second PC pending: STATUS.md Task B)
 `crates/nrpvp-launcher` → `nrpvp_launcher.exe` (no console; message boxes for errors): must sit in the game folder; checks nightreign.exe,
 SeamlessCoop\nrsc.dll, NightreignPvP\nrpvp.dll, NightreignPvP\me3\me3.exe; writes `NightreignPvP\nrpvp.me3.toml`; runs the **bundled** me3 0.11.0
 with `launch -g nightreign -e <Game>\nightreign.exe -p <profile>`; me3 output goes to `NightreignPvP\launcher.log`. `scripts/package-release.ps1`
@@ -424,7 +424,7 @@ Open: the exe is unsigned (SmartScreen prompt, possible antivirus flag); `-e` wi
 Interrupted by the rate limit, to restart later: **T-027** (probes; partial `game/probe2.rs` exists, compiles, state unknown) and **S6** (spawn research, nothing delivered).
 
 ### T-030 — Player build: PvP always on, no toggles (dev mode for debugging)
-Owner: SONNET/implementer → HUMAN | Status: review (built 2026-10-10: dev_mode split, badge, no keys; 181+3 tests; player zip rebuilt; HUMAN install test pending; probe2.rs unwired) | Requested by Leonardo 2026-10-10: players must not be able to turn PvP off.
+Owner: SONNET/implementer → HUMAN | Status: **done** solo (label, no keys; second PC pending: STATUS.md Task B) | Requested by Leonardo 2026-10-10: players must not be able to turn PvP off.
 Design: launching with `nrpvp_launcher.exe` **is** the Battle Royale mode. Config `dev_mode` (default false). With dev_mode off: no hotkeys at all,
 no interactive panel, PvPvE forced on with the rivals scheme (a `pvpve = false` in the file is ignored with a log line), no pause/resume, no
 probes, no automatic discovery dumps; a small read-only on-screen badge ("Battle Royale · team N · K rivals"). With dev_mode on: everything as
@@ -439,7 +439,7 @@ examples), and how every client would learn the chosen mode. Rank routes from ch
 → `.claude/research/S7-mode-menu.md`
 
 ### T-031 — Downed-state and position discovery (dev probes) + rival-revive experiment switch
-Owner: SONNET/implementer → HUMAN (Nucleus) | Status: review (built and deployed to Nucleus 2026-10-11; 232+3 tests; HUMAN session pending) | Feeds: F10 (ally-only revive), F3 (spawns)
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: closed (downed state found in T-032 run 7; the experiment switch is inert; position part moved to T-032 c) | Feeds: F10 (ally-only revive), F3 (spawns)
 (a) Downed detection: log, at 100 ms while any value changes, every player's ChrSet entry bytes +8/+9, team_type, and HP candidates, so one
 session with a few downs and revives shows which field marks "downed". (b) Experiment switch `downed_rival_team` (dev only, default off): while a
 rival's entry +9 == 2, write this value to that rival's copy and put 29 back afterwards, to find a value that stops rival revives.
@@ -473,7 +473,7 @@ player is still downed and a rival hits (to see whether a downed player can be k
 down (or up) at a steady real-time rate that started at the DOWN transition, and values that jump when a hit lands (the revive meter).
 
 ### T-035 — Rival revive rule v1 in the player build + fast bleed-out timer scan
-Owner: SONNET/implementer → HUMAN | Status: review (built 2026-10-12: rule v1 in both modes, fast scan; 269+3 tests; deployed to Nucleus, player zip rebuilt; HUMAN session pending) | Feeds: F10
+Owner: SONNET/implementer → HUMAN | Status: **done** (rule v1 fired correctly in FS-0 runs 15, 18, 19; it is now the fallback behind T-039) | Feeds: F10
 (1) **Rule v1 (player and dev mode, always on):** on the LOCAL player's revive (downed 1→0 with hp > 0) whose last attacker is a RIVAL, write
 u32 0 to the authoritative HP `[PlayerIns+0xB78]+0x70` once, so the player is downed again instead of revived; allies revive as in vanilla.
 Verified offsets only (FS-0 runs 7–9). The badge shows nothing new. Remove the hp0/hp0-all/hp0-downed experiment modes.
@@ -482,7 +482,7 @@ read, drop the all-singletons sweep to a short list plus PlayerIns two levels de
 Goal: locate the bleed-out clock (≈ 15 s) and the revive meter, so a rival-completed meter can end the clock at once (instant death).
 
 ### T-036 — Free-for-all: HP 0 = death (no downed state) via the in-memory near-death params
-Owner: SONNET/implementer → HUMAN | Status: in-progress | Feeds: F9/F10. Requested by Leonardo 2026-10-12.
+Owner: SONNET/implementer → HUMAN | Status: dropped (decision 2026-10-12: instant death on 0 health rejected, auto-revive items would defeat it; replaced by T-039) | Feeds: F9/F10. Requested by Leonardo 2026-10-12.
 (1) Param access (read-only first): locate `GAME_SYSTEM_COMMON_PARAM_ST` in memory through the param repository singleton (ER layout in
 fromsoftware-rs as a hint; field offsets from the NR param struct); validate by `required_revive_progress_level1/2/3` == 40/90/240; log every
 near-death/revive field. (2) Rule: when `team_size == 1`, write 0 to the near-death duration fields on this client (both modes), re-checking
@@ -490,7 +490,7 @@ periodically whether something restores them; when `team_size >= 2`, leave them 
 Acceptance (HUMAN, Nucleus or friend): in free-for-all a player at 0 HP dies and respawns immediately on both screens; no revive is possible.
 
 ### T-037 — nrscan: external memory scanner for the bleed-out clock and the revive bar
-Owner: SONNET/implementer → OPUS runs it during a HUMAN Nucleus session | Status: review (built 2026-10-12: dist
+Owner: SONNET/implementer → OPUS runs it during a HUMAN Nucleus session | Status: **done** (used live in FS-0 runs 10–14) (built 2026-10-12: dist
 rscan.exe; self-tests pass; live run pending) | Feeds: F10 (PROJECT_PLAN §11)
 Why: three in-mod scans failed (narrow regions, slow passes) and a manual Cheat Engine search is too slow for a 15 s bleed-out (2.5 billion
 candidates). Design: a separate CLI (`crates/nrscan`, read-only, ReadProcessMemory from outside the game; no mod change). It tails the target
@@ -500,15 +500,29 @@ values that step when hits land. Finally it explains each surviving address rela
 (containing region, pointers to it, offsets).
 
 ### T-038 — nrscan round 2: write test, object identification, route search, fast bar scan
-Owner: SONNET/implementer → OPUS runs it with the HUMAN | Status: review (built 2026-10-12: class names, route search, clock write test, fast bar scan, peek/poke; 26 tests; live runs pending) | Feeds: F10 (PROJECT_PLAN §11)
+Owner: SONNET/implementer → OPUS runs it with the HUMAN | Status: **done** (used live in FS-0 run 14) (built 2026-10-12: class names, route search, clock write test, fast bar scan, peek/poke; 26 tests; live runs pending) | Feeds: F10 (PROJECT_PLAN §11)
 Approach agreed with Leonardo 2026-10-12: finish the investigation with the external scanner (candidates **and** confirmations) before any
 further mod changes. Questions: (1) is the count-up f32 from run 10 the bleed-out clock (write test); (2) where is the revive bar; (3) is the
 clock writable both ways; (4) can the bar be restored after a hit; (5) which object holds each value (RTTI class) and what stable route
 leads to it from PlayerIns / WorldChrMan.
 
 ### T-039 — Downed rule (Leonardo's design): rival hits shorten the bleed-out and never move the revive bar
-Owner: SONNET/implementer → HUMAN | Status: review (coded 2026-10-12, 278 tests; deployed to Nucleus, dist and the player zip; HUMAN smoke test pending: STATUS.md §3 Task A) | Feeds: F10. Inputs verified in FS-0 run 14 (TECHNICAL_NOTES §4).
+Owner: SONNET/implementer → HUMAN | Status: **done** for free-for-all (FS-0 runs 15–20, 2026-10-12, TESTING.md §3: rival hits never keep gauge progress on either screen, 3 s off the clock per hit, death after 4–5 hits; 282 tests). Follow-ups in the Result below | Feeds: F10. Inputs verified in FS-0 run 14 (TECHNICAL_NOTES §4).
 On the LOCAL player's own client, while `PlayerIns+0x710 == 1`: when the bar (`+0x714`) drops and the last attacker (`+0x1A0`) is a RIVAL →
 write the bar back to its value before the hit, subtract `rival_hit_seconds` (default 3.0) from the clock (`+0x718`, floor 0.05), and set the
 pause timer (`+0x71C`) to 0. Hits by ALLY/SELF/OTHER: untouched. Replaces rule v1 (re-down on a rival revive), which stays only as a safety net
 if a rival's hit ever completes the bar before the mod reacts. Both modes; no keys; remove nothing else.
+
+**Result (2026-10-12, Opus, FS-0 runs 15–20):** done for free-for-all. What it took beyond the card:
+- Main-loop reads moved from `VirtualQuery` to `ReadProcessMemory` (`mem::read`, `RegionCache::direct`): a pass went from 2–3 s to 1–5 ms.
+- `deploy-nucleus.ps1` writes `probes = false` (the probes still cost ~0.4 s per pass).
+- `Core::remote_step`: each client also restores its copy of a downed rival that has no teammate, so the attacker's gauge is right.
+- `Core::getup_step` (early re-down during the get-up) is built but **off** (`early_redown = false`): never exercised in the game.
+
+Open follow-ups (no card yet; write one when the phase needs it):
+1. **Gauge flicker** (wanted by Leonardo, low priority): a rival hit shows on the gauge for up to one 50 ms pass on both screens. See
+   FUTURE_CONSIDERATIONS.md "Known side effects to fix later".
+2. **One hit that removes the whole bar** (first down, bar 40; runs 18 and 19): the player gets up and rule v1 downs them again 3.7 s
+   later. Accepted by Leonardo 2026-10-12 as long as the player ends up downed again. `early_redown` would close it; untested.
+3. **Teams of 2+:** the attacker-side restore cannot tell a teammate's hit from a rival's on a remote copy (`+0x1A0` is not valid there).
+   Needs a design before STATUS.md Task C.

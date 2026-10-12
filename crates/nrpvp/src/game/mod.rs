@@ -364,6 +364,8 @@ fn watch(
     let mut ticks: u64 = 0;
     let mut last_heartbeat = Instant::now();
     let mut slowest_tick = Duration::ZERO;
+    // Where the slowest iteration spent its time: team controls, combat tracker + downed rule, overlay snapshot.
+    let mut slowest_parts = [Duration::ZERO; 3];
     let heartbeat_every = if cfg.dev_mode {
         HEARTBEAT_EVERY
     } else {
@@ -502,6 +504,7 @@ fn watch(
                 Err(TryLockError::WouldBlock) => {}
             }
         }
+        let team_started = Instant::now();
         team.set_instance(wcm_inst);
         // Hotkey presses and overlay commands, executed in order on this thread. The hotkey flags are
         // always consumed so presses never queue.
@@ -532,6 +535,7 @@ fn watch(
             }
         }
         team.tick();
+        let team_spent = team_started.elapsed();
 
         if wcm_live && auto_due.is_some_and(|d| Instant::now() >= d) {
             match disc.start(wcm_inst, "auto, 10 s after WorldChrMan live/changed") {
@@ -601,6 +605,7 @@ fn watch(
             p.tick(&all, wcm_inst, &targets);
         }
         // T-035 (both modes): tracker and rival revive rule; the timer scan runs on its own thread (dev + probes).
+        let combat_started = Instant::now();
         if let Some(c) = combat.as_mut() {
             let subjects = if wcm_live {
                 team.combat_subjects()
@@ -609,6 +614,8 @@ fn watch(
             };
             c.tick(subjects, &all);
         }
+        let combat_spent = combat_started.elapsed();
+        let snap_started = Instant::now();
         if let Some(ui) = &ui {
             let mut snap = Snapshot {
                 wcm_instance: wcm_inst,
@@ -630,11 +637,19 @@ fn watch(
             }
         }
 
-        slowest_tick = slowest_tick.max(tick_started.elapsed());
+        let spent = tick_started.elapsed();
+        if spent >= slowest_tick {
+            slowest_tick = spent;
+            slowest_parts = [team_spent, combat_spent, snap_started.elapsed()];
+        }
         if last_heartbeat.elapsed() >= heartbeat_every {
             last_heartbeat = Instant::now();
-            tracing::info!("{}", heartbeat_line(ticks, wcm_inst, &team, slowest_tick));
+            tracing::info!(
+                "{}",
+                heartbeat_line(ticks, wcm_inst, &team, slowest_tick, slowest_parts)
+            );
             slowest_tick = Duration::ZERO;
+            slowest_parts = [Duration::ZERO; 3];
         }
 
         std::thread::sleep(if wcm_live {
@@ -670,12 +685,21 @@ fn start_mark_dump(mark: u32, team: &mut team::TeamCtl, disc: &mut Discovery, wc
 
 /// T-019: `heartbeat: tick N, wcm=0x..., players=N, pvpve=ON (team 29, 3 writes), slowest tick ... ms`. If these
 /// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
-fn heartbeat_line(ticks: u64, wcm_inst: usize, team: &team::TeamCtl, slowest: Duration) -> String {
+fn heartbeat_line(
+    ticks: u64,
+    wcm_inst: usize,
+    team: &team::TeamCtl,
+    slowest: Duration,
+    parts: [Duration; 3],
+) -> String {
     format!(
-        "heartbeat: tick {ticks}, wcm=0x{wcm_inst:X}, players={}, pvpve={}, slowest tick since last heartbeat {} ms",
+        "heartbeat: tick {ticks}, wcm=0x{wcm_inst:X}, players={}, pvpve={}, slowest tick since last heartbeat {} ms (team {} ms, combat {} ms, overlay {} ms)",
         team.player_count_text(),
         team.pvpve_summary(),
-        slowest.as_millis()
+        slowest.as_millis(),
+        parts[0].as_millis(),
+        parts[1].as_millis(),
+        parts[2].as_millis()
     )
 }
 

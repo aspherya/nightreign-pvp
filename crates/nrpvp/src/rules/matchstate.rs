@@ -1,12 +1,13 @@
-//! Match state machine for scope v2 (PROJECT_PLAN.md section 4B). No game access, no clocks: time is
-//! passed in as milliseconds by the caller.
+//! Deferred, exploratory match-state model (PROJECT_PLAN.md section 4B). It is not wired into the game
+//! and does not establish accepted product rules. No game access or clocks: time is passed in as
+//! milliseconds by the caller.
 //!
 //! Flow: the caller feeds [`Event`]s with [`MatchState::apply`] (or [`MatchState::apply_batch`] for
 //! events that happened at the same instant) and applies the returned [`Effect`]s to the game. Queries
 //! (`may_respawn`, `is_eliminated`, `alive_teams`, `winner`, `is_protected`) read the current state.
 //!
-//! Rules quoted from `.claude/references/project-scope-v2.md` are marked `SCOPE:`; anything not stated
-//! there is marked `ASSUMPTION:`.
+//! Rules from the earlier design draft are marked `SCOPE:`; anything not stated there is marked
+//! `ASSUMPTION:`. Revisit these rules against scope v3 before integrating this model.
 //!
 //! Core rule, SCOPE: "death before the final closure is a loot setback, not an elimination ... Only the
 //! closing moments of Night 2 determine the ultimate survivor." So dying never eliminates anyone until

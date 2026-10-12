@@ -87,7 +87,12 @@ Seen values: 240 full, 0 while downed, 120 right after a revive (half), full aga
 
 **What writing does (owner's game only):**
 - Clock: setting it to 2.0 while downed made the player die 3 seconds later instead of 10. The game keeps counting from the new value. **Confirmed.**
-- Bar and pause timer: not written on purpose yet. Same block, same kind of value.
+- Bar: writing the pre-hit value back sticks; the next hit subtracts from the restored value (run 15: `bar 58 -> 90 restored`, then 57, 55). **Confirmed.**
+- Pause timer: writing 0 lets the clock run again at once (run 15: the clock kept falling between rival hits). **Confirmed.**
+
+**Remote copies (another player's PlayerIns on my game):** the same block is used. State follows the owner. Bar, clock and pause are
+refreshed only when a hit lands, with the owner's values at that moment; a value the owner writes afterwards is not sent. The copy's
+bar is what the attacker's screen shows. **Confirmed** (run 18). Whether the copy's clock counts down by itself between hits: UNKNOWN.
 
 **How a down ends:**
 - State goes 1 → 0 with health still 0: the player **bled out**. Full health returns about 6 seconds later (respawn).

@@ -2,20 +2,32 @@
 //! [`write_u8`] (T-008, caller `team::write_team_type`) and [`write_bytes`] (T-032 dev-only snap-back test,
 //! caller `poswrite`, LOCAL player only); each caller gates what may be written.
 //!
-//! Every read first asks `VirtualQuery` whether the whole range is committed and readable (no
-//! `PAGE_NOACCESS`, no `PAGE_GUARD`), so a stale or garbage pointer yields `None` instead of an access
-//! violation. Residual risk: the page could be unmapped between the query and the read (a TOCTOU race
-//! with the game's allocator). Reads are tiny and the window is a few instructions wide.
+//! Two kinds of guarded read:
+//! - [`read`] (and [`RegionCache::direct`]), used by everything that runs on the main loop: one
+//!   `ReadProcessMemory` on our own process. The kernel does the copy and fails softly on a stale or garbage
+//!   pointer, so there is no query-then-read race. Its cost does not depend on the size of the region.
+//! - The `VirtualQuery` family ([`readable_len`], [`RegionCache::new`], ...), used at startup and by the
+//!   discovery/probe scans: asks whether the whole range is committed and readable (no `PAGE_NOACCESS`, no
+//!   `PAGE_GUARD`) and then reads directly. Residual risk: the page could be unmapped between the query and the
+//!   read (a TOCTOU race with the game's allocator).
+//!
+//! Why two: until 2026-10-12 every read was `VirtualQuery`-guarded, and in a live expedition the main loop took
+//! 2-3 s per pass instead of a few ms (2026-10-11 Nucleus logs, NR 1.3.3.0), so the 50 ms downed rule reacted
+//! seconds late. [HYPOTHESIS] `VirtualQuery` is the cost: it reports the extent of the run of same-state pages,
+//! which the kernel finds by walking the page tables of the game's multi-gigabyte heap. Do not put a
+//! `VirtualQuery`-guarded read on the main loop.
 
 use std::ffi::c_void;
 use std::mem::size_of;
 use std::ptr;
 
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::System::Memory::{
     VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
     PAGE_EXECUTE_WRITECOPY, PAGE_GUARD, PAGE_NOACCESS, PAGE_READONLY, PAGE_READWRITE,
     PAGE_WRITECOPY,
 };
+use windows::Win32::System::Threading::GetCurrentProcess;
 
 /// Addresses below this are never mapped user memory on Windows (null page and the 64 KiB reserve).
 const MIN_VALID_ADDR: usize = 0x1_0000;
@@ -91,11 +103,23 @@ pub(crate) struct RegionCache {
     pub queries: usize,
     /// Guarded reads answered (cache hit or miss).
     pub lookups: usize,
+    /// See [`RegionCache::direct`].
+    direct: bool,
 }
 
 impl RegionCache {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    /// For main-loop callers: [`read`](Self::read) and [`read_prefix`](Self::read_prefix) go through
+    /// `ReadProcessMemory` (see the module doc) and nothing is cached. `read_prefix` falls back to the
+    /// `VirtualQuery` path only when the whole range could not be copied.
+    pub(crate) fn direct() -> Self {
+        RegionCache {
+            direct: true,
+            ..Self::default()
+        }
     }
 
     /// Index of the cached run containing `addr`.
@@ -149,6 +173,10 @@ impl RegionCache {
 
     /// Cached counterpart of [`read`].
     pub(crate) fn read<T: Copy>(&mut self, addr: usize) -> Option<T> {
+        if self.direct {
+            self.lookups += 1;
+            return read(addr);
+        }
         let size = size_of::<T>();
         if self.readable_len(addr, size) < size {
             return None;
@@ -160,6 +188,13 @@ impl RegionCache {
 
     /// Cached counterpart of [`read_prefix`].
     pub(crate) fn read_prefix(&mut self, addr: usize, max: usize) -> Vec<u8> {
+        if self.direct {
+            let mut out = vec![0u8; max];
+            if copy_out(addr, &mut out) {
+                self.lookups += 1;
+                return out;
+            }
+        }
         let n = self.readable_len(addr, max);
         if n == 0 {
             return Vec::new();
@@ -170,15 +205,39 @@ impl RegionCache {
     }
 }
 
-/// Read a `T` from `addr` if the whole `T` is readable, else `None`.
+/// Copy `out.len()` bytes at `addr` into `out` with one `ReadProcessMemory` on our own process. False (and `out`
+/// unspecified) unless every byte was copied: an unmapped, no-access or guard page fails the call instead of faulting.
+fn copy_out(addr: usize, out: &mut [u8]) -> bool {
+    if addr < MIN_VALID_ADDR || out.is_empty() {
+        return false;
+    }
+    let mut got = 0usize;
+    // SAFETY: `out` is a valid buffer of the length passed; the kernel validates the source range and reports a
+    // failure for anything it cannot read. The pseudo-handle from GetCurrentProcess needs no closing.
+    let ok = unsafe {
+        ReadProcessMemory(
+            GetCurrentProcess(),
+            addr as *const c_void,
+            out.as_mut_ptr().cast(),
+            out.len(),
+            Some(&mut got),
+        )
+    };
+    ok.is_ok() && got == out.len()
+}
+
+/// Read a `T` from `addr` if the whole `T` is readable, else `None`. One `ReadProcessMemory`; see the module doc.
+/// Only for plain-data `T` (integers, byte arrays), for which any bit pattern is valid.
 pub(crate) fn read<T: Copy>(addr: usize) -> Option<T> {
-    let size = size_of::<T>();
-    if readable_len(addr, size) < size {
+    let mut v = std::mem::MaybeUninit::<T>::uninit();
+    // SAFETY: the slice covers exactly the storage of `v`, which is only read back after `copy_out` filled all of it.
+    let buf =
+        unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr().cast::<u8>(), size_of::<T>()) };
+    if !copy_out(addr, buf) {
         return None;
     }
-    // SAFETY: the range [addr, addr+size) was just verified committed and readable; `read_unaligned`
-    // because game structures are not guaranteed to be aligned for `T` at arbitrary offsets.
-    Some(unsafe { ptr::read_unaligned(addr as *const T) })
+    // SAFETY: every byte of `v` was written by `copy_out`; `T` is plain data (see the doc comment).
+    Some(unsafe { v.assume_init() })
 }
 
 /// Borrow `len` bytes at `addr` as a slice, if the whole range is readable.
@@ -483,6 +542,21 @@ mod tests {
         assert_eq!(c.queries, q);
         // Sorted and disjoint.
         assert!(c.regions.windows(2).all(|w| w[0].1 <= w[1].0));
+    }
+
+    #[test]
+    fn direct_region_cache_reads_without_queries() {
+        let v: Vec<u8> = (0..=255u8).cycle().take(0x3000).collect();
+        let a = v.as_ptr() as usize;
+        let mut c = RegionCache::direct();
+        assert_eq!(c.read_prefix(a, 0x3000), v);
+        assert_eq!(c.read::<u8>(a + 7), Some(7));
+        assert_eq!(c.read::<u32>(a), Some(0x0302_0100));
+        assert_eq!(c.queries, 0);
+        assert_eq!(c.read::<u64>(0), None);
+        assert_eq!(c.read::<u64>(0x7FFF_FFFF_FFF0), None);
+        assert!(c.read_prefix(0x7FFF_FFFF_0000, 64).is_empty());
+        assert!(c.read_prefix(0, 64).is_empty());
     }
 
     #[test]

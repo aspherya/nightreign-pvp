@@ -273,3 +273,45 @@ player died at 16:26:04.9, 8 s after the down instead of ≈15.
 Not yet tested: writing the bar and the pause timer (same block, same kind of write). A first attempt wrote to +0x728/+0x72C by mistake
 (two 0xFFFFFFFF words; the game had reset them by the next check; no effect seen).
 Why the scans missed it: the clock pauses on hits and the bar counts **down** from its start value, not up from zero.
+
+### 2026-10-11 — FS-0 run 15 (Nucleus, 2 instances, T-039 downed-rule build of 13:33, team_size 1). Logs: `.claude/experiments/FS-0/run15_*`: **PARTIAL**
+- PvP, downing and finishing a downed rival work. Leonardo: some rival hits still moved the purple bar and a rival could sometimes revive.
+- Log evidence: the rule fired (`rule: rival hit on downed LOCAL`, 20 times on Instance0), but late. Heartbeats show the main loop taking
+  2–3 s per pass with 2 players in an expedition (`slowest tick` 1928–3085 ms; 12–22 ms at the title screen), not the intended 50 ms.
+  Several hits landed between two passes: `bar 3 -> 40 restored`, `bar 12 -> 90 restored`. On each instance's first down (bar 40) the
+  bar was completed before the next pass; rule v1 then downed the player again 5–8 s later (it only sees the revive after the 3.5 s
+  get-up, state 2 → 0).
+- The writes themselves work: bar restore sticks, clock −3 s per hit, pause cleared, death after 4 hits. [VERIFIED]
+- Cause of the slow loop: [HYPOTHESIS] each `VirtualQuery`-guarded read costs about 10 ms inside the game's heap (roughly 0.35 s for the
+  ~25 reads between the combat tick and the heartbeat line). The loop has been this slow in every Nucleus log since 2026-10-11 03:03.
+- Fix built 2026-10-12 01:32 local: main-loop reads use `ReadProcessMemory` on our own process (`mem::read`, `RegionCache::direct`);
+  the heartbeat line now also shows where the slowest pass went (`team / combat / overlay`). Not yet run in the game.
+
+### 2026-10-12 — FS-0 runs 16–18 (Nucleus, 2 instances, team_size 1; builds of 01:32 and 01:57). Logs: `.claude/experiments/FS-0/run18_*` (16 and 17 not kept)
+- Run 16 (01:32 build, handler still had `probes = true`): team/combat/overlay parts of the loop 0 ms, whole pass still 0.4–1 s. The
+  probes were the rest. Confirms the `VirtualQuery` cost. [VERIFIED]
+- Run 17 (`probes = false`): pass time 1–3 ms (median), max 95 ms. Every rival hit undone within 50 ms on the owner's game.
+  Leonardo: only the FIRST hit on a downed player still shows on the gauge.
+- Run 18 (01:57 build with `T-039 BLOCK` lines): Leonardo: it shows on the **attacker's** screen only. The log explains it: the
+  remote copy of the downed player holds the same block (+0x710/+0x714/+0x718/+0x71C) and is refreshed only when a hit lands, with
+  the owner's values at that moment (`bar 40 -> 3 (clock 12.677819)` on the copy; the owner logged the same clock). It never
+  receives the owner's restore, so it stays at the first hit's value; later hits bring nearly the same value. [VERIFIED]
+- Also in run 18: one hit removed the whole first-down bar (40 → 0, state 2 at 05:04:28.9). Rule v1 downed the player again 3.7 s
+  later (at state 2 → 0, hp 120). The single-hit gap is real at this damage level (hits removed 37–38 of 40).
+- Fix built after run 18: each game also restores bar/clock/pause on its copy of a downed rival that has no teammate in the session
+  (`Core::remote_step`). Not yet run in the game.
+
+### 2026-10-12 — FS-0 run 19 (Nucleus, 2 instances, team_size 1, 02:10 build). Logs: `.claude/experiments/FS-0/run19_*`: **PASS**
+- Attacker-side gauge fix works: `rule: rival hit on downed REMOTE[1] (display copy)` for every hit on both instances, same values as
+  the owner's line. Leonardo: only a brief flicker on both screens. Pass time 2–5 ms median. [VERIFIED]
+- The single-hit gap again, same place as run 18: first down (bar 40), hits removed 37, 38, then the third hit of the chain removed
+  all 40 (state 1 → 2 at 05:15:38.3). Rule v1 downed the player again at 05:15:42.0 (hp 120 → 0), 3.7 s later. Leonardo: "revived
+  but died right after". Reproducible with that weapon's third hit.
+- Built after run 19, Nucleus only (the player zip stays on the 02:10 build): `Core::getup_step` makes rule v1's store as soon as
+  the get-up starts (state 2) when the last attacker is a rival. EXPERIMENT, effect in the game UNKNOWN.
+
+### 2026-10-12 — FS-0 run 20 (Nucleus, 2 instances, team_size 1, 02:20 build with the early re-down on). Logs: `.claude/experiments/FS-0/run20_*`: **PASS (rule), early re-down not exercised**
+- Six downs, every rival hit undone on both instances, death after 3–4 hits; one untouched down bled out in 15 s. Pass time 1 ms median.
+- No hit completed the bar this time, so `getup_step` never ran. Its effect in the game is still UNKNOWN; it was switched off
+  (`early_redown = false`) in the final build of 02:31, which is what Nucleus, `dist\nrpvp.dll` and the player zip now hold.
+- Leonardo accepts the current behaviour: a brief gauge flicker per hit, and a player who gets up after a full-bar hit is downed again.

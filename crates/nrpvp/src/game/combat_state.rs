@@ -236,6 +236,8 @@ pub(crate) struct Subject {
     pub local: bool,
     pub id: Option<u64>,
     pub relation: Option<Relation>,
+    /// Roster team number (None when the rosters are unknown).
+    pub team_no: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -602,6 +604,16 @@ pub(crate) struct Core {
     hit_seconds: f32,
     dn: Option<DownedMem>,
     downed_line: Option<String>,
+    /// Dev: last logged (state byte, revive bar) per tracked player, see [`Core::watch_block`].
+    block_watch: HashMap<usize, (u8, f32)>,
+    /// Downed solo rivals (remote copies): the bar value before any hit, see [`Core::remote_step`].
+    remote_bars: HashMap<usize, f32>,
+    /// Try the re-down as soon as a rival's hit starts LOCAL's get-up (state 2) instead of waiting for state 0, see
+    /// [`Core::getup_step`]. EXPERIMENT, off: the effect of the store during state 2 is UNKNOWN (FS-0 run 20 never reached a get-up).
+    pub(crate) early_redown: bool,
+    /// Nothing (more) to do for a get-up: no down was seen before it, the store was made, or the reviver is not a rival.
+    getup_done: bool,
+    getup_gate_logged: bool,
     last_dn_log_ms: Option<u64>,
     /// Rule writes made this session.
     pub(crate) fired: u32,
@@ -622,6 +634,11 @@ impl Core {
             hit_seconds: DEFAULT_RIVAL_HIT_SECONDS,
             dn: None,
             downed_line: None,
+            block_watch: HashMap::new(),
+            remote_bars: HashMap::new(),
+            early_redown: false,
+            getup_done: true,
+            getup_gate_logged: false,
             last_dn_log_ms: None,
             fired: 0,
         }
@@ -672,6 +689,10 @@ impl Core {
             }
         }
         lines.extend(self.downed_step(now_ms, subjects, mem));
+        lines.extend(self.remote_step(subjects, mem));
+        if self.dev {
+            lines.extend(self.watch_block(subjects, mem));
+        }
         if self.probes {
             self.scan_step(now_ms, scan);
         }
@@ -697,9 +718,19 @@ impl Core {
             self.dn = None;
             return Vec::new();
         };
-        if mem.read_u8(addr + OFF_DOWNED) != Some(1) {
+        let state = mem.read_u8(addr + OFF_DOWNED);
+        // A get-up is only acted on when it follows a down that was seen here.
+        if state != Some(2) {
+            self.getup_done = state != Some(1);
+            self.getup_gate_logged = false;
+        }
+        if state != Some(1) {
             self.dn = None;
-            return Vec::new();
+            return if state == Some(2) {
+                self.getup_step(now_ms, addr, subjects, mem)
+            } else {
+                Vec::new()
+            };
         }
         let (Some(bar), Some(clock), Some(pause)) = (
             read_f32(mem, addr + OFF_REVIVE_BAR),
@@ -760,6 +791,151 @@ impl Core {
             st.bar_before = bar;
         }
         self.dn = Some(st);
+        lines
+    }
+
+    /// LOCAL is getting up (state byte 2, about 3.5 s) because the revive bar was completed. If the last attacker is a RIVAL (one
+    /// hit removed the whole bar before the downed rule could undo it; seen in FS-0 runs 18 and 19), make rule v1's store now
+    /// instead of at state 0, through the same gates ([`Core::try_rule`]). Retried every call while the HP gate fails; rule v1 at
+    /// the UP transition stays as the fallback. EXPERIMENT: what the game does with health 0 during state 2 is UNKNOWN.
+    fn getup_step(
+        &mut self,
+        now_ms: u64,
+        addr: usize,
+        subjects: &[Subject],
+        mem: &mut dyn CombatMem,
+    ) -> Vec<String> {
+        if !self.early_redown || self.getup_done || self.policy != RevivePolicy::Redown {
+            return Vec::new();
+        }
+        let infos = player_infos(mem, subjects);
+        let raw = [OFF_LAST_ATTACKER, OFF_CUR_ATTACKER]
+            .into_iter()
+            .filter_map(|o| mem.read_u64(addr + o))
+            .find(|&h| valid_handle(h));
+        if classify(raw, &infos).kind != AttackerKind::Rival {
+            self.getup_done = true;
+            return Vec::new();
+        }
+        match self.try_rule(addr, mem) {
+            Ok((before, back)) => {
+                self.getup_done = true;
+                if self.may_log(now_ms) {
+                    vec![format!(
+                        "rule: rival completed the revive meter of LOCAL; health set to 0 during the get-up (hp {before} -> 0, readback {})",
+                        opt(back)
+                    )]
+                } else {
+                    Vec::new()
+                }
+            }
+            Err(why) => {
+                if self.dev && !self.getup_gate_logged {
+                    self.getup_gate_logged = true;
+                    vec![format!(
+                        "rule: LOCAL is getting up after a rival's hit; nothing written yet: {why}"
+                    )]
+                } else {
+                    Vec::new()
+                }
+            }
+        }
+    }
+
+    /// The display half of the downed rule, every call. A remote copy holds the same block as the owner (+0x710 state, +0x714
+    /// bar, +0x718 clock, +0x71C pause) but it is only refreshed when a hit lands, with the owner's values at that moment
+    /// [VERIFIED on NR 1.3.3.0 by FS-0 run 18, re/MEMORY_MAP.md section 6]. The owner's client then undoes a rival's hit, which
+    /// this copy never hears about, so the gauge on this screen kept the first hit. Here the same three stores are made on the
+    /// copy. A copy does not say who hit (its +0x1A0 is not valid), so this is limited to a downed RIVAL with no teammate in the
+    /// session: every hit on such a player comes from a rival of theirs.
+    fn remote_step(&mut self, subjects: &[Subject], mem: &mut dyn CombatMem) -> Vec<String> {
+        let solo_rival = |s: &Subject| {
+            !s.local
+                && s.relation == Some(Relation::Rival)
+                && s.team_no.is_some()
+                && !subjects
+                    .iter()
+                    .any(|o| o.addr != s.addr && o.team_no == s.team_no)
+        };
+        let mut seen = HashSet::new();
+        let mut lines = Vec::new();
+        for s in subjects.iter().filter(|s| solo_rival(s)) {
+            if !mem.is_player(s.addr) || mem.read_u8(s.addr + OFF_DOWNED) != Some(1) {
+                continue;
+            }
+            let (Some(bar), Some(clock), Some(pause)) = (
+                read_f32(mem, s.addr + OFF_REVIVE_BAR),
+                read_f32(mem, s.addr + OFF_BLEED_CLOCK),
+                read_f32(mem, s.addr + OFF_PAUSE),
+            ) else {
+                continue;
+            };
+            if !bar.is_finite() {
+                continue;
+            }
+            seen.insert(s.addr);
+            let before = *self.remote_bars.entry(s.addr).or_insert(bar);
+            if before - bar <= BAR_HIT_EPS {
+                // Never lowered: the value at the start of the down stays the reference.
+                self.remote_bars.insert(s.addr, before.max(bar));
+                continue;
+            }
+            match self.restore_after_rival_hit(s.addr, before, bar, clock, pause, mem) {
+                Ok(new_clock) => {
+                    if self.dev {
+                        lines.push(format!(
+                            "rule: rival hit on downed {} (display copy): bar {bar} -> {before} restored, clock {clock} -> {new_clock}, pause {pause} -> 0",
+                            s.label
+                        ));
+                    }
+                }
+                Err(why) => {
+                    if self.dev {
+                        lines.push(format!(
+                            "rule: rival hit on downed {} (display copy) but nothing was written: {why}",
+                            s.label
+                        ));
+                    }
+                    self.remote_bars.insert(s.addr, bar);
+                }
+            }
+        }
+        self.remote_bars.retain(|a, _| seen.contains(a));
+        lines
+    }
+
+    /// Dev, read-only, every call: one line whenever a tracked player's state byte or revive bar changes while the block is in
+    /// use, for LOCAL (read after the rule, so a rival hit that was undone does not show) and for the remote copies. Purpose:
+    /// find out what the copy of a downed rival holds on the attacker's client (UNKNOWN as of 2026-10-12).
+    fn watch_block(&mut self, subjects: &[Subject], mem: &dyn CombatMem) -> Vec<String> {
+        self.block_watch
+            .retain(|a, _| subjects.iter().any(|s| s.addr == *a));
+        let mut lines = Vec::new();
+        for s in subjects.iter().filter(|s| mem.is_player(s.addr)) {
+            let (Some(state), Some(bar), Some(clock), Some(pause)) = (
+                mem.read_u8(s.addr + OFF_DOWNED),
+                read_f32(mem, s.addr + OFF_REVIVE_BAR),
+                read_f32(mem, s.addr + OFF_BLEED_CLOCK),
+                read_f32(mem, s.addr + OFF_PAUSE),
+            ) else {
+                continue;
+            };
+            let prev = self.block_watch.insert(s.addr, (state, bar));
+            let changed = match prev {
+                Some((ps, pb)) => {
+                    ps != state || (pb - bar).abs() > BAR_HIT_EPS || pb.is_nan() != bar.is_nan()
+                }
+                // First sight: only worth a line if the block is in use.
+                None => state != 0,
+            };
+            if changed {
+                let was = prev.map_or("?".to_string(), |(ps, pb)| format!("state {ps}, bar {pb}"));
+                lines.push(format!(
+                    "T-039 BLOCK who={} {was} -> state {state}, bar {bar} (clock {clock}, pause {pause})",
+                    s.label
+                ));
+            }
+        }
         lines
     }
 
@@ -1155,6 +1331,7 @@ mod tests {
                 local: true,
                 id: Some(0x6001),
                 relation: Some(Relation::Local),
+                team_no: Some(0),
             },
             Subject {
                 addr: P1,
@@ -1162,6 +1339,7 @@ mod tests {
                 local: false,
                 id: Some(0x6002),
                 relation: Some(Relation::Rival),
+                team_no: Some(1),
             },
             Subject {
                 addr: P2,
@@ -1169,6 +1347,7 @@ mod tests {
                 local: false,
                 id: Some(0x6003),
                 relation: Some(Relation::Ally),
+                team_no: Some(0),
             },
         ]
     }
@@ -1836,6 +2015,7 @@ mod tests {
     fn rule_v1_still_fires_when_a_rival_completes_the_bar() {
         let mut f = world();
         let mut c = Core::new(false, false, RevivePolicy::Redown);
+        c.early_redown = false;
         let mut s = NullSink;
         c.step(0, &subjects(), &mut f, &mut s);
         f.hp3(P0, G0, 0);
@@ -1858,6 +2038,96 @@ mod tests {
         assert_eq!(f.writes.len(), w + 1);
         assert_eq!(f.writes[w].0, auth_addr(G0));
         assert_eq!(rule_lines(&l).len(), 1, "{l:?}");
+    }
+
+    #[test]
+    fn a_rival_completing_the_bar_is_answered_during_the_get_up_and_a_teammate_is_not() {
+        for (attacker, expect) in [(H1, 1usize), (H2, 0)] {
+            let mut f = world();
+            let mut c = Core::new(true, false, RevivePolicy::Redown);
+            c.early_redown = true;
+            let mut s = NullSink;
+            c.step(0, &subjects(), &mut f, &mut s);
+            f.hp3(P0, G0, 0);
+            down_local(&mut f, 40.0, 10.0, 0.0);
+            f.attacker(P0, attacker);
+            c.step(100, &subjects(), &mut f, &mut s);
+            // One hit completes the bar: state 2, HP not granted yet.
+            f.set(P0 + OFF_DOWNED, &[2]);
+            setf(&mut f, P0 + OFF_REVIVE_BAR, 0.0);
+            let l = c.step(150, &subjects(), &mut f, &mut s);
+            assert!(f.writes.is_empty(), "hp 0: gate holds");
+            assert_eq!(rule_lines(&l).len(), expect, "{l:?}");
+            // HP arrives: one store to the authoritative HP, once.
+            f.hp3(P0, G0, 120);
+            let l = c.step(200, &subjects(), &mut f, &mut s);
+            c.step(250, &subjects(), &mut f, &mut s);
+            assert_eq!(f.writes.len(), expect, "attacker {attacker:X}");
+            if expect == 1 {
+                assert_eq!(f.writes[0], (auth_addr(G0), vec![0, 0, 0, 0]));
+                assert!(rule_lines(&l)[0].contains("during the get-up"), "{l:?}");
+            }
+        }
+    }
+
+    /// The remote copy at `p` goes down (bar/clock as the owner sent them) and is then hit.
+    fn remote_down_and_hit(f: &mut Fake, c: &mut Core, subs: &[Subject], p: usize) {
+        let mut s = NullSink;
+        c.step(0, subs, f, &mut s);
+        f.downed(p, 1, true);
+        setf(f, p + OFF_REVIVE_BAR, 40.0);
+        setf(f, p + OFF_BLEED_CLOCK, 15.0);
+        setf(f, p + OFF_PAUSE, 0.0);
+        c.step(50, subs, f, &mut s);
+        assert!(f.writes.is_empty());
+        setf(f, p + OFF_REVIVE_BAR, 3.0);
+        setf(f, p + OFF_BLEED_CLOCK, 12.5);
+        setf(f, p + OFF_PAUSE, 3.48);
+    }
+
+    #[test]
+    fn a_hit_on_a_downed_solo_rival_is_undone_on_the_display_copy_too() {
+        for dev in [true, false] {
+            let mut f = world();
+            let mut c = Core::new(dev, false, RevivePolicy::Redown);
+            let subs = subjects();
+            remote_down_and_hit(&mut f, &mut c, &subs, P1);
+            let l = c.step(100, &subs, &mut f, &mut NullSink);
+            assert_eq!(getf(&f, P1 + OFF_REVIVE_BAR), 40.0);
+            assert!((getf(&f, P1 + OFF_BLEED_CLOCK) - 9.5).abs() < 1e-4);
+            assert_eq!(getf(&f, P1 + OFF_PAUSE), 0.0);
+            assert_eq!(f.writes.len(), 3);
+            let n = l.iter().filter(|x| x.contains("(display copy)")).count();
+            assert_eq!(n, usize::from(dev), "{l:?}");
+            // A second hit is measured against the same full bar.
+            setf(&mut f, P1 + OFF_REVIVE_BAR, 2.0);
+            c.step(150, &subs, &mut f, &mut NullSink);
+            assert_eq!(getf(&f, P1 + OFF_REVIVE_BAR), 40.0);
+            assert_eq!(f.writes.len(), 6);
+        }
+    }
+
+    #[test]
+    fn display_copies_of_allies_and_of_rivals_with_a_teammate_are_left_alone() {
+        // An ally of LOCAL.
+        let mut f = world();
+        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let subs = subjects();
+        remote_down_and_hit(&mut f, &mut c, &subs, P2);
+        c.step(100, &subs, &mut f, &mut NullSink);
+        assert!(f.writes.is_empty());
+        // Two rivals on one team: the copy cannot tell a teammate's hit from a rival's. Unknown rosters: the same.
+        for team in [Some(1), None] {
+            let mut f = world();
+            let mut c = Core::new(true, false, RevivePolicy::Redown);
+            let mut subs = subjects();
+            subs[1].team_no = team;
+            subs[2].team_no = team;
+            subs[2].relation = Some(Relation::Rival);
+            remote_down_and_hit(&mut f, &mut c, &subs, P1);
+            c.step(100, &subs, &mut f, &mut NullSink);
+            assert!(f.writes.is_empty(), "team {team:?}");
+        }
     }
 
     #[test]

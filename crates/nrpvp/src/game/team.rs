@@ -634,7 +634,7 @@ fn read_signals(rc: &mut RegionCache, p: usize, entry: &[u8; ENTRY_SIZE]) -> Vec
 /// Resolve the ChrSet and decide the local PlayerIns (entry[0] rule) from a WorldChrMan instance. Re-run whenever needed: WorldChrMan is re-created on area change.
 /// Read-only.
 pub(crate) fn resolve(wcm: usize, vts: &PlayerVtables) -> Result<Resolution, ResolveError> {
-    let mut rc = RegionCache::new();
+    let mut rc = RegionCache::direct();
     // SAFETY-ish: all reads are VirtualQuery-guarded; offsets VERIFIED on NR 1.3.3.0 by T-007a (§4).
     let chrset = wcm + WCM_CHRSET;
     let hdr = rc.read_prefix(chrset, CHRSET_ENTRIES + 8);
@@ -1881,6 +1881,7 @@ impl TeamCtl {
                 local: r.role == Role::Local,
                 id: r.id,
                 relation: r.relation,
+                team_no: r.team_no,
             })
             .collect()
     }
@@ -1983,7 +1984,7 @@ impl TeamCtl {
                 tracing::info!("T-008: {l}");
             }
         }
-        let mut rc = RegionCache::new();
+        let mut rc = RegionCache::direct();
         for &p in &res.players {
             let Some(f) = read_fields(&mut rc, p) else {
                 continue;

@@ -6,7 +6,8 @@ traps we already fell into. Details live in the other docs; this file points to 
 | Doc | Use it for |
 |---|---|
 | `re/MEMORY_MAP.md` | Every memory location found, with behaviour and proof |
-| `PROJECT_PLAN.md` | The Battle Royale plan (scope v2), milestones, §11 = the downed-player design |
+| `re/PROJECT_SCOPE.md` | Canonical product intent and scope boundaries |
+| `PROJECT_PLAN.md` | Detailed feature feasibility/milestone plan; §11 records downed-player design decisions |
 | `TESTING.md` §3 | The result of every test session, newest last |
 | `TASKS.md` | Task cards and their state |
 | `TECHNICAL_NOTES.md` | Stack, Seamless Co-op facts, verified engine facts |
@@ -24,12 +25,12 @@ traps we already fell into. Details live in the other docs; this file points to 
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader) | **Works** on Leonardo's PC. Not yet tried on a second PC |
 | Player build: PvP always on, no keys, small "BATTLE ROYALE" label | **Works** (solo check) |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
-| **Downed rule (Leonardo's design): a rival's hit restores the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Built 2026-10-12, 278 tests pass, deployed. NOT yet run in the game** |
+| **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. Teams of 2+ not run; the attacker's screen is not handled there yet |
 
-Everything else in scope v2 is not started: separate spawns, keeping level on death, inventory drop, no-boss nights, final arena,
+Most later Battle Royale mechanics are not started: separate spawns, keeping level on death, inventory drop, no-boss nights, final arena,
 sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and §9.
 
-## 2. What is deployed where (all the same build, 2026-10-12 13:33 local)
+## 2. What is deployed where (all the same build, 2026-10-12 02:31 local)
 
 | Place | Mode | Settings |
 |---|---|---|
@@ -41,15 +42,7 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 
 ## 3. Next human tasks, in order
 
-### Task A: smoke-test the downed rule (Nucleus, 2 instances, ~10 min)
-1. Launch both instances from Nucleus, join the same expedition, daytime, away from enemies.
-2. A downs B.
-3. A hits B slowly, one hit every 2 seconds.
-4. Expected: **the purple bar does not fill** (it may flicker for a split second per hit), and **B dies after about 4–5 hits**, well before 15 seconds.
-5. Also do one untouched down: B should bleed out in the normal ~15 seconds.
-6. Close the games, then tell Claude what happened. Logs: `dist\nucleus-logs\Instance0` and `Instance1` (look for `rule: rival hit on downed LOCAL`).
-
-If the bar still fills: the write to the bar or the pause timer is not sticking (only the clock write was proven). Say so; that is the first thing to check.
+### Task A: done (downed rule, free-for-all). Results: `TESTING.md` §3, FS-0 runs 15–20
 
 ### Task B: play with a friend on the player zip
 1. Send `dist\NightreignPvP.zip`. They follow `HOW TO INSTALL.txt` inside it (drag two things into the game folder, double-click the launcher).
@@ -67,9 +60,15 @@ Also the first test of: teammates can't hurt each other, teammate revive works, 
 Never run. Developer build in Nucleus: stand still, **F7** (save spot), walk ~20 m, **F6** (try to return), note the result, **F9** (next
 candidate), repeat for 6 candidates. Tell Claude which one snapped the player back and what the other screen showed.
 
-## 4. Next building work (after Task A passes)
+## 4. Next building work
 
-1. Tune `rival_hit_seconds` (default 3.0) from play feel. Make the check faster if the bar flicker is visible.
+1. Tune `rival_hit_seconds` (default 3.0) from play feel.
+   Accepted for now (Leonardo, 2026-10-12): a single rival hit that removes the whole bar (first down, bar 40; runs 18 and 19) lets the
+   player get up; rule v1 downs them again 3.7 s later. `Core::getup_step` would do it at once but is **off** (`early_redown = false`):
+   never exercised in the game, effect UNKNOWN.
+   Gauge flicker (up to 50 ms per rival hit, both screens): improvement ideas in `FUTURE_CONSIDERATIONS.md`, "Known side effects".
+   Attacker-side gauge with teams of 2+: a copy cannot tell who hit, so `remote_step` only acts for a downed rival with no teammate.
+   With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved (Task C will show it).
 2. Separate team spawns: needs Task D, then "move each team to its own point after landing" (`research/S6-team-spawns.md`).
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
@@ -102,14 +101,18 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
 - **Double-check offsets before any write.** On 2026-10-12 a test wrote to `+0x728/+0x72C` instead of `+0x718/+0x71C` by mistake (no lasting effect).
 - **Setting health to 0 does not kill** in a multiplayer session; it downs. Death is the bleed-out clock reaching 0.
 - **Elden Ring layouts are hints only.** Several were wrong in Nightreign (list in `re/MEMORY_MAP.md` §9).
+- **No `VirtualQuery`-guarded reads on the main loop.** They made each pass take 2–3 s in an expedition (run 15). Use `mem::read` or
+  `RegionCache::direct()` there; `RegionCache::new()` is for the discovery and probe scans. The heartbeat line shows the pass time.
+- **Keep `probes = false` for rule tests.** The probes still use the slow reads and cost about 0.4 s per pass. Until 2026-10-12 the
+  Nucleus handler had `probes = true` (copied from `dist\nrpvp.toml`); `deploy-nucleus.ps1` now writes `probes = false` unless `-Probes $true`.
 - **Sonnet agents can be cut off by usage limits mid-task.** Check `cargo build` and `git status` before trusting the tree; the task card says what was intended.
 
 ## 7. Repository state
 
-- Last commit: `64ed3ac`. **About 30 files are changed or new since then and not committed**, including `crates/nrscan`, `crates/nrpvp-launcher`,
-  the downed rule, the scripts, and these docs. Leonardo commits; nothing was committed by Claude.
+- Last commit: `1a85f31`. **The 2026-10-12 work is not committed**: the read speed fix, attacker-side gauge restore, deploy script,
+  and these docs. Leonardo commits; nothing was committed by Claude.
 - `scripts/package-friend.ps1` and `scripts/friend-kit/` were deleted (by Leonardo); `package-release.ps1` replaces them.
-- Tests: `cargo test` → 278 pass in `nrpvp`, 26 in `nrscan`, 3 in the launcher.
+- Tests: `cargo test` → 282 pass in `nrpvp`, 26 in `nrscan`, 3 in the launcher.
 - Pins: game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0.
 
 ## 8. Decisions made (so they are not re-argued)

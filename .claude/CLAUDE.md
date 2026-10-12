@@ -1,12 +1,12 @@
 # nightreign-pvp: agent operating manual
 
-PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). The original scope lives in
-[.claude/references/project-skeleton.md](references/project-skeleton.md). Read it once. These docs refine it:
+PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). Product scope lives in
+[re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). Read only when product intent or scope boundaries matter; do not load the entire documentation tree by default. These docs serve distinct operational roles:
 
 | File | Purpose |
 |---|---|
 | [STATUS.md](STATUS.md) | **Read first.** Current state, what is deployed, next human tasks, traps, decisions |
-| [PROJECT_PLAN.md](PROJECT_PLAN.md) | **The plan for scope v2 (Battle Royale):** features, milestones M1–M8, spikes, risks |
+| [PROJECT_PLAN.md](PROJECT_PLAN.md) | Detailed feature feasibility and milestone plan; subordinate to project scope and current ROADMAP/TASKS |
 | [ROADMAP.md](ROADMAP.md) | Phases, current milestone, acceptance criteria, blockers |
 | [TASKS.md](TASKS.md) | Task board: the unit of work for agents. **Start here.** |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Stack decision, verified facts, hypotheses, RE findings |

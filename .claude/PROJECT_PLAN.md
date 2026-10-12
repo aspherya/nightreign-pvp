@@ -1,8 +1,6 @@
-# Project Plan: Nightreign Battle Royale PvP Mod (scope v2)
+# Project Plan: Nightreign Battle Royale PvP Mod
 
-Source of intent: [references/project-scope-v2.md](references/project-scope-v2.md). It supersedes the gameplay vision in
-`project-skeleton.md` §3 (two days and two nights, no Night 1 boss, full inventory drop on death, respawns until the final arena closes).
-The engineering rules in the skeleton and in CLAUDE.md still apply: evidence over assumptions, smallest change that proves the point.
+Product intent and scope boundaries: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). This document preserves the detailed feature breakdown and feasibility planning; it is subordinate to project scope and the current ROADMAP/TASKS. Treat proposed mechanics and feasibility routes here as planning until supported by current evidence and an active task.
 
 Written 2026-10-10, after Phase 0. Tags: `[PROVEN]` tested by us · `[LEAD]` evidence it may work, untested · `[UNKNOWN]` needs a spike.
 
@@ -24,9 +22,9 @@ Written 2026-10-10, after Phase 0. Tags: `[PROVEN]` tested by us · `[LEAD]` evi
 
 Each row says what the game or our tests already give us, and what has to be found out or built.
 
-| # | Scope v2 feature | What we have | What's missing | Risk |
+| # | Scope v3 feature | What we have | What's missing | Risk |
 |---|---|---|---|---|
-| F1 | 18 players, 6 teams of 3 | SC supports 6 players, reported shaky at 5–6. The engine's player list has 6 slots under SC | Anything above 6 needs changes inside SC or the engine's player slots. We can't change SC | **Very high.** See §3 |
+| F1 | Public solo/duo/trio queues, initially up to 6 players | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
 | F2 | Teams: allies can't hurt each other, rivals can | 29 is free-for-all | Team values or a hostility hook `[UNKNOWN]`; all clients agreeing on teams `[LEAD: derive from the per-player id]` | High |
 | F3 | Teams spawn at different positions | Nothing | How spawn points are chosen `[UNKNOWN]` | Medium |
 | F4 | PvP active immediately, PvE continues | `[PROVEN]` | Automatic rule verified in-game; sites of grace broken on 29 | Low |
@@ -43,17 +41,11 @@ Each row says what the game or our tests already give us, and what has to be fou
 | F15 | Mode selection in Roundtable Hold | SC already edits that menu | Our own menu entry or a panel toggle; all clients agreeing on the mode | Medium |
 | F16 | Install and launch for normal players | Friend kit with a script | A launcher; permission from SC's author before any public release | Medium |
 
-## 3. The player-count problem (decide early)
+## 3. Public queues and initial player cap
 
-Scope v2 asks for 18 players. Today's ceiling is **6**, and it isn't ours to raise: the limit lives in Seamless Co-op (closed source, terms forbid
-modifying it) and in the engine's player slots.
+The product target is public solo/duo/trio matchmaking. The initial capacity target is **6 players**: up to six solo players, three duos, or two trios. Private SC sessions and Nucleus are the current development test path, not the intended public product.
 
-**Plan:** build every system for *N teams of M players* with no hard-coded counts, and target **6 players** for the prototype: 2 teams of 3 or
-3 teams of 2. Treat 18 as a stretch goal with two possible routes, both investigated in spike S1 before any work is spent on them:
-1. Ask SC's author whether larger lobbies are possible or planned (he removed the original cap himself).
-2. Find out what the engine does beyond 6 player slots. This is deep reverse engineering with no guarantee.
-
-Everything else in this plan works the same at 6 or 18.
+SC and the engine currently constrain the session to six players. Do not spend effort on more than six without new evidence and an explicit scope decision. Public matchmaking is not implemented, and access to SC's lobby, queue discovery, party membership, and match start remains unresolved. Investigate these when the roadmap activates matchmaking; do not assume SC exposes a public API or that its lobby can be reused without permission.
 
 ## 4. Two cross-cutting pieces
 
@@ -78,8 +70,8 @@ de-risks the rest.
 | **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree |
 | **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights |
 | **M6 Finale** | Sudden death, eliminations, win detection, winner's choice | F11, F12, F13 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable |
-| **M7 Scale and spawns** | Separate team spawns; 6 players stable; the 18-player question answered | F1, F3 | 6 real players complete a match |
-| **M8 Product** | Mode selection, launcher, permission, release | F15, F16 | A new player installs and joins a match from the README alone |
+| **M7 Scale and spawns** | Separate team spawns; validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
+| **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players |
 
 M1 and M2 are next. M3–M6 can only be ordered after their spikes, because each could turn out trivial (the game already does it) or very hard.
 
@@ -104,13 +96,13 @@ Unchanged: Opus plans and reviews, Sonnet executes one card at a time, humans ru
 
 ## 8. Biggest risks
 
-1. **18 players may be impossible** without SC's author. Mitigation: design for N, target 6, ask early.
+1. **Public matchmaking may not be accessible through SC's lobby.** Mitigation: investigate a compatible lobby-discovery and mod-to-mod Steam channel before committing to queue architecture; do not modify SC.
 2. **Inventory drop (F8)** is the scope's central mechanic and the least understood. Mitigation: spike S2 before promising it; fallback designs
    (drop runes and consumables only; or the killer receives a reward directly).
 3. **Controlling the expedition's script (F5, F7, F13)** may need modified event files, which SC may check or overwrite. Mitigation: spike S3 and S4.
 4. **Agreement between clients** on match state. Mitigation: derive from synced game state first.
 5. **Game or SC updates** break offsets. Mitigation: discovery by names and patterns, version pins, a startup check.
-6. **Permission**: SC's terms and its author's stance on PvP. Mitigation: contact before any public release; private testing is unaffected.
+6. **Permission and public operation:** SC's terms and the author's stance may constrain a public PvP product; public play also introduces disconnect and abuse requirements. Resolve these before public launch; private development tests are unaffected.
 
 ---
 

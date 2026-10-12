@@ -1,7 +1,8 @@
 # Future Considerations
 
-Planning notes only. Nothing here is a commitment. Nothing here gets implemented without a task card in
-TASKS.md and an active phase in ROADMAP.md.
+Planning notes for work whose implementation is deferred. Public matchmaking is a core product goal in
+[re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md); this file records its open feasibility and product
+questions. Nothing here gets implemented without a task card in TASKS.md and an active phase in ROADMAP.md.
 
 ## Final-day team brawl (Phase 5)
 - Flow: surviving teams enter the final day → team-vs-team fight → the winning team chooses **Challenge
@@ -47,6 +48,11 @@ TASKS.md and an active phase in ROADMAP.md.
 - Before any public release, contact Yui (SC author) about a PvP mod that requires SC. SC terms forbid bundling or modifying it, and the author worries about takedowns and vanilla-matchmaking exposure. Users would install SC themselves from Nexus.
 
 ## Known side effects to fix later
+- **Downed gauge flicker on a rival hit (2026-10-12, Leonardo: fine for now, improve later).** The game applies the hit to the gauge, then
+  the mod puts it back on its next 50 ms pass, on the downed player's game and on the attacker's. Ideas, none tested: (a) run only the
+  downed check on a faster pass (5–10 ms); (b) stop the hit from reaching the gauge at all by hooking the function that applies revive
+  damage and skipping it for rivals (needs that function found first; it would also close the "one hit removes the whole bar" gap and
+  the teams-of-2+ attacker-screen gap, because nothing would need undoing).
 - With team_type 29 the player cannot interact with sites of grace (no level-up menu), though passing through still applies the effect. Probably an interaction check on team type. Phase 3 candidate fixes: temporarily restore the team value while near or at a grace, or find the interaction check. (TC-004 run 4, 2026-10-09)
 
 ## PvPvE as a selectable expedition mode (idea from Leonardo, 2026-10-10)
@@ -65,10 +71,10 @@ TASKS.md and an active phase in ROADMAP.md.
   whether another player can pick that up, and whether a reward can be granted to the killer directly.
 - Also to decide: whether revives between hostile players should be possible at all, and how they work for teammates once teams exist.
 
-## Matchmaking queues (asked by Leonardo, 2026-10-10; M8)
-- Queues = team size: solo (team_size 1, up to 6 players free-for-all), duo (3 teams of 2), trio (2 teams of 3). The mod already takes `team_size`.
+## Public matchmaking queues (product requirement; implementation deferred to M8)
+- Queues = team size: solo (up to 6 solo players, all rivals), duo (up to 3 teams of 2), trio (up to 2 teams of 3). The mod already takes `team_size`, but queueing and party formation are not implemented.
 - Finding players: Steam lobby list filtered by our own lobby tags (mod, queue, mod version); join an open one or create and wait; start when
   full or on a timer. Parties queue together and must stay on one team, so roster building needs party info over the mod channel (S4), not only join order.
 - To verify first: can our DLL tag and search the lobby SC creates and join it cleanly (lobby data is owner-only; SC owns the lobby; we may not
   modify SC). Fallback: an external service or Discord bot that distributes invites.
-- Blockers: SC's author's consent for public matchmaking; cheating becomes relevant with strangers.
+- Blockers: viable lobby discovery / queue transport, reliable team agreement, SC compatibility and permission for a public product; public play also requires basic handling for disconnects and abuse.
