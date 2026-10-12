@@ -189,6 +189,57 @@ run `launch-friend.ps1 -DryRun` and send Leonardo the printed nrsc.dll hash. Leo
 5. Quit. Both zip their kit or `dist` `logs\` folder; Leonardo copies both into `.claude/experiments/FS-1/` (`host/`, `client/`). (5 min)
 **Stop rules:** a crash or disconnect → note the time and MARK, relaunch, continue from the same row. Two crashes on the same row → skip it and move on.
 
+### FS-MM1 — Matchmaking, two PCs, real Steam (≈90 min). **Status: draft. Ready once MM-3 is built (it is) and the friend has the mmtest zip.**
+Tests MM-2 (queue) and MM-3 (get into the host's Seamless Co-op lobby). Needs Steam on both PCs, both logged in as different accounts, no Nucleus.
+**Before:** both unpack `dist\NightreignPvP-mmtest.zip` into the game folder (like the player zip) and start with `nrpvp_launcher.exe`. Both back up
+`%APPDATA%\Nightreign\<steamid>\`. Never go online with EAC: the launcher already avoids it. The overlay (Insert hides it) has the buttons. Keep
+voice chat open. Leonardo = host for steps 0, 1 and 3; for step 2 whoever the overlay says is host ("MATCH READY host=...").
+The status line is the first line under the buttons. Write down every line you see and the time (the logs have it too).
+
+**0. Baseline: normal Seamless Co-op, no queue buttons (10 min).**
+Press nothing in the Queue block. Leonardo: Matchmaking Settings > Invite Members, invite the friend. Friend: accept the Steam invite (Shift+Tab).
+Leonardo starts a short expedition ("Up to 6 players"). Both walk around 2 minutes, then quit the expedition back to the Roundtable.
+Write down: did the friend get into the lobby; any dialog on either side. Look at the logs afterwards for `GameLobbyJoinRequested_t`,
+`LobbyInvite_t`, `LobbyEnter_t` and the `mm_join: lobby ... [SC lobby (A)]` / `[game lobby (B ...)]` lines: they show which lobby each player was in
+before, during and after the expedition started.
+
+**1. Scenario 2: friends already in the same lobby, Queue Duo (15 min).**
+Both back at the Roundtable. Leonardo invites the friend the normal way again; friend accepts. Leonardo (the leader) presses **Queue Duo** (F2).
+Friend does NOT press anything. Expected: friend's overlay says `Queue: duo ...` by itself (log `following party leader`); both reach `MATCH READY`,
+then `ALL PRESENT - waiting for the host to start` on one PC and `ALL PRESENT 2/2 - host: start the expedition` on the other, within about 5 s,
+with no invite and no link. Host starts the expedition. Check: the two players are teammates (cannot hurt each other, team labels in the overlay
+show the same team). Quit to the Roundtable. Write down: the status lines, how long it took, team labels. Back at the Roundtable the status should go
+to `Queue: idle` within ~10 s (or press **Leave queue**).
+
+**2. Scenario 1: fresh launch, both Queue Solo (20 min).**
+Both quit the game completely and start it again. Do NOT invite anyone. Get to the Roundtable, wait ~1 minute. Both press **Queue Solo** (F1) within 10 s of each other.
+Expected: `MATCH READY host=<name>`. The host's overlay then says `host has no Seamless Co-op lobby yet: open Matchmaking Settings > Invite Members and invite <name>`.
+Host: open Matchmaking Settings > Invite Members and just open it (do not invite anybody). Write down whether the line changes without you doing more.
+If it does not, send one normal invite to the other player. The moment the host has a lobby the host's mod invites the other player by itself and the other
+overlay says `host invited you: accept the Steam invite (Shift+Tab)`. Other player: accept it. Expected: both see `ALL PRESENT`. Host starts the expedition.
+Check: the two are rivals (can hurt each other, different team labels). Write down: the exact status lines in order, what the host had to do to get a lobby, whether the
+accept dialog appeared by itself, any error dialog (for example "host is not using seamless co-op" or "version does not match"). Quit to the Roundtable
+(status goes idle within ~10 s, or press Leave queue).
+
+**3. The manual method buttons, one at a time (30 min).** Only available once the overlay shows the `Join methods` row. For each try: BOTH start from a state where the
+joiner is NOT in the host's lobby (repeat step 2 up to `MATCH READY` with `mm_join_auto = "none"`: host edits `nrpvp.toml` in `NightreignPvP\` before launch, and
+opens Invite Members once so the lobby exists; the joiner does not accept any invite). Press ONE button, wait 20 s, write down what happened, then leave the queue on both PCs and
+start the next try from scratch.
+- **(a) link: SKIP in this first session** (Opus, 2026-10-12). If Steam did not route the link to the running game it would start the normal,
+  EAC-protected game from Steam. The mods would not be loaded in that copy, but the project rule is never to start the protected game
+  with mod files present. Run (a) only after the baseline log shows how Steam delivers a join to the running game, and only if Opus says so.
+- **(c) direct JoinLobby** (joiner presses): joins or not; does the joiner's game react?
+- **(d) unlock: Public** (host presses), then the joiner presses **(c)** (not (a), see above). Afterwards the host presses **relock: Private**. Repeat with **unlock: Invisible**.
+  The host must write down whether Seamless Co-op still works after (invites, expedition start) and restart the game after this step.
+- **(b) invite / re-invite** (host presses): the joiner sees the Steam invite; accept it.
+Write down for each: which button, what the status line said before and after, any message on screen.
+
+**4. Optional: not friends on Steam (15 min).** Unfriend each other on Steam. Repeat step 2 and, if it fails, step 3 (c) with the host first pressing (d).
+Write down which of the invite, the link and the direct join still work between non-friends.
+
+**Stop rules:** a crash or freeze: note the time, relaunch, continue from the same step. Seamless Co-op breaks (cannot invite or start): restart both games and tell Leonardo before going on.
+**When done:** quit both games and send both `logs` folders (`NightreignPvP\logs` on each PC) to Leonardo. He copies them into `.claude/experiments/FS-MM1/` (`host/`, `client/`).
+
 ### 2026-10-10 — T-029/T-030 player zip, Leonardo solo: **PASS**
 Installed from `dist\NightreignPvP.zip` by the txt guide; `nrpvp_launcher.exe` started the game (bundled me3 with `-e`); the BATTLE ROYALE badge
 showed top-right and changed to "Team 1 - 0 rivals" in a Solo Mission; sites of grace and item pickups work (local player stays on team 2).

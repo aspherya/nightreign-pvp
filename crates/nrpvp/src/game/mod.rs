@@ -718,6 +718,10 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
         Action::PosCycle => Some(Command::PosCycle),
         Action::PosSave => Some(Command::PosSave),
         Action::PosWrite => Some(Command::PosWrite),
+        Action::MmSolo => Some(Command::MmQueue(crate::mm::Mode::Solo)),
+        Action::MmDuo => Some(Command::MmQueue(crate::mm::Mode::Duo)),
+        Action::MmSquad => Some(Command::MmQueue(crate::mm::Mode::Squad)),
+        Action::MmLeave => Some(Command::MmLeave),
         Action::Cycle | Action::ToggleOverlay | Action::DownedCycle => None,
     }
 }
@@ -745,6 +749,22 @@ fn run_command(
         Command::PosCycle => team.pos_cycle(),
         Command::PosSave => team.pos_save(src),
         Command::PosWrite => team.pos_write(src),
+        // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
+        Command::MmQueue(mode) => {
+            if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
+                tracing::info!("mm_queue: {src}: queue {} not sent (queue feature off or command queue full)", mode.label());
+            }
+        }
+        Command::MmJoin(j) => {
+            if !crate::mm::send(crate::mm::Cmd::Join(j)) {
+                tracing::info!("mm_join: {src}: {j:?} not sent (queue feature off or command queue full)");
+            }
+        }
+        Command::MmLeave => {
+            if !crate::mm::send(crate::mm::Cmd::Leave) {
+                tracing::info!("mm_queue: {src}: leave not sent (queue feature off or command queue full)");
+            }
+        }
         Command::RunDiscovery => {
             if wcm_live {
                 if let Err(ms) = disc.start(wcm_inst, src) {

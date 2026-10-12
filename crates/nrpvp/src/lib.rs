@@ -13,9 +13,11 @@ mod hotkey;
 mod logging;
 mod logring;
 mod mark;
+mod mm;
 mod overlay;
 mod rules;
 mod startup;
+mod steam;
 mod sysinfo;
 
 use std::ffi::c_void;

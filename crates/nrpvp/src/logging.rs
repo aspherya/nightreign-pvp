@@ -292,6 +292,9 @@ mod tests {
         assert!(setup.session_path.is_some());
         tracing::info!("logging-test-marker-info");
         tracing::debug!("logging-test-marker-debug-must-be-filtered");
+        // Snapshot the ring right away: other tests in this process log through the same global subscriber, and a burst of more
+        // than RING_CAPACITY lines (the MM-3 gate tests) between the emit and a later read would push the marker out.
+        let (_, ring_lines) = crate::logring::snapshot();
 
         let file = std::fs::read_to_string(dir.join(LOG_FILE_NAME)).expect("log file");
         assert!(file.contains("logging-test-marker-info"), "{file}");
@@ -311,13 +314,12 @@ mod tests {
         assert!(marker_line(&session).is_some(), "{session}");
         assert_eq!(marker_line(&session), marker_line(&file));
 
-        let (_, lines) = crate::logring::snapshot();
-        let line = lines
+        let line = ring_lines
             .iter()
             .find(|l| l.contains("logging-test-marker-info"))
             .expect("ring has the event");
         assert!(line.contains("INFO") && !line.contains('\n'), "{line}");
-        assert!(!lines.iter().any(|l| l.contains("must-be-filtered")));
+        assert!(!ring_lines.iter().any(|l| l.contains("must-be-filtered")));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

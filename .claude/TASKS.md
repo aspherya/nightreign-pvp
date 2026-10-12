@@ -533,7 +533,7 @@ Decision (Opus, 2026-10-12): Steam queue lobby + join the host's SC lobby; no se
 Cards run in order. MM-1 and MM-2 are developer-build only and change nothing in the player zip.
 
 ### MM-1 — Steam access probe: flat interfaces and SC's lobby id
-Owner: SONNET/implementer → HUMAN-solo | Status: todo | Settles: S9 U1, U2
+Owner: SONNET/implementer → HUMAN-solo | Status: **done** (2026-10-12, solo run, log `experiments/MM-1/2026-10-12_mm_probe_solo.log`; findings in S9 §5a) | Settles: S9 U1, U2
 Dev build only, behind `probes`-style switch `mm_probe = true`. New module `crates/nrpvp/src/steam/` (raw externs to the loaded
 `steam_api64.dll` via `GetProcAddress`; never Init / ManualDispatch / Shutdown; no `steamworks` crate).
 1. Log whether each accessor resolves and returns non-null: `SteamAPI_SteamMatchmaking_v009`, `SteamAPI_SteamUtils_v010` (or the version
@@ -544,33 +544,79 @@ Dev build only, behind `probes`-style switch `mm_probe = true`. New module `crat
 Acceptance (HUMAN-solo, `scripts\launch.ps1`): launch, reach the Roundtable, open Matchmaking Settings, open Invite Members, close it,
 start and finish/quit a solo expedition. Send the log. Game and SC must behave normally throughout.
 Stop and report if any accessor is null or registering a listener breaks SC (no invites, no lobby).
+Result (implementer): config `mm_probe` (dev only, forced off in player mode), `crates/nrpvp/src/steam/{mod,callback,probe}.rs`, thread spawned from
+`startup.rs` only when `dev_mode && mm_probe`; `dist\nrpvp.toml` has `mm_probe = true`. Build OK, 293 tests pass (was 282), clippy clean.
+Ids/layouts (500+4/5/6/13, 300+33/37, pack 8, struct sizes 24/24/32/16/16/264) and flat signatures verified from SDK headers bundled by steamworks-rs.
+UNKNOWN: MSVC slot order of the two `Run` overloads (both slots point at one function, so it does not matter). Log lines: `grep mm_probe nrpvp.log`.
 
-### MM-2 — Queue lobby in Nucleus
-Owner: SONNET/implementer → HUMAN (Nucleus) | Status: todo | Depends: MM-1 | Settles: S9 U3
-Worker thread + state machine `Idle → Searching → InQueue → MatchReady` in `crates/nrpvp/src/mm/` (pure logic unit-tested, Steam behind
-a trait). Create/search/join an Invisible lobby with the S9 §6 tags; call results polled via `IsAPICallCompleted`/`GetAPICallResult`;
-duplicate-lobby rule (higher id yields). Dev overlay/hotkey: queue Solo, leave queue. Log roster on `MatchReady`. No SC join yet.
-Acceptance: 3 Nucleus instances queue within 10 s of each other → all three logs show the same queue lobby id and the same 3-member
-roster, one owner; leaving and re-queueing works; an SC co-op session between the instances still works afterwards.
-Before building: check which Goldberg build the handler ships (S4 §6 q6); if it lacks lobbies, report instead of working around it.
+### MM-2 — Queue lobby (Solo / Duo / Squad) with hotkeys and overlay
+Owner: SONNET/implementer → HUMAN + friend (real Steam, 2 PCs) | Status: **built, awaiting friend run** (2026-10-12) | Depends: MM-1 | Settles: S9 U3
+Dev mode only, switch `mm_queue = true`. Reuse `crates/nrpvp/src/steam/`; add the write-side calls there, each documented.
+1. Pure state machine in `crates/nrpvp/src/mm/` (unit-tested, Steam behind a trait): `Idle → Searching → InQueue → MatchReady`,
+   plus `Leave`. A ticket is `(mode, party)`: Solo = 1 player; Duo/Squad = the local player's current SC party (see 4).
+2. Steam side on its own worker thread (never the game loop): `RequestLobbyList` with string filters `nrpvp=1`, `mode`, `proto`,
+   `game`, `sc`, distance filter worldwide; `JoinLobby` if one has room for the whole ticket, else `CreateLobby(Invisible, 6)` +
+   `SetLobbyData`. Call results polled with `ISteamUtils::IsAPICallCompleted` / `GetAPICallResult` (no manual dispatch).
+   Duplicate-lobby rule: the owner of the higher lobby id leaves and joins the lower. Heartbeat re-search every few seconds.
+3. `MatchReady` when the lobby holds `mm_match_players` players (config, default 2 for tests; 6 later) made of complete tickets.
+   The owner then sets `SetLobbyJoinable(false)` and writes `state=go`, `host=<owner steam id>`, `roster=<steam id:party,...>`.
+   Every member logs the same roster line. Nothing joins SC yet (that is MM-3).
+4. Party for Duo/Squad: members of the SC lobby the local player is in (lobby with `nrsc_lobby_type` data seen by the MM-1 listener).
+   The party leader (that lobby's owner) queues; it writes `nrpvp_q=<queue lobby id>` with `SetLobbyMemberData` on the SC lobby and
+   the other members' mods read it and join the same queue lobby with the same `party` value. Member data is per member and is
+   not SC's data; never call `SetLobbyData` on SC's lobby.
+5. Mode sets the team rule at runtime: Solo → team size 1, Duo → 2, Squad → 3, overriding `team_size` from the file for that
+   match only (find where `team_size` reaches `rules::teams::assign_teams` and add a runtime override).
+6. Controls: hotkeys (Nucleus has no overlay) and overlay buttons: queue Solo / Duo / Squad, leave queue. Overlay line:
+   "Queue: solo 1/2 searching" → "MATCH READY host=<name or id>".
+Safety guard (S9 §2): refuse to queue unless `nrsc.dll` is loaded and no EasyAntiCheat module is loaded in the process; log why.
+Acceptance (REAL Steam, Leonardo + friend, 2 PCs, `scripts\package-release.ps1 -MatchmakingTest` zip, `mm_match_players = 2`; Nucleus dropped):
+Scenario 1: both press Queue Solo (overlay button; F1 backup) within ~10 s → both logs show the same queue lobby id, one owner/host, the same
+`roster=` and `MATCH READY`; leave (Leave queue / F5) + re-queue works; both pressing at the same moment converges to one lobby (log shows
+`duplicate lobby ... dissolving`); an SC co-op session between the two still works afterwards. Scenario 2: Leonardo invites the friend the
+normal Seamless Co-op way, the leader presses Queue Duo → the friend's mod follows via `nrpvp_q` (log `following party leader`), both in one
+queue lobby with the same party, `team size override = 2`. If a Steam call fails (lobby search, call-result polling, CreateLobby with SC's
+lobbies already open), report exactly which `mm_queue:` line says so instead of working around it.
+Result (implementer, 2026-10-12): `crates/nrpvp/src/mm/{mod,machine,proto,guard,worker}.rs`, `steam/queue.rs` (write side behind `QueueLobby`/`JoinTarget`/`ScLobby`
+types), config `mm_queue` / `mm_match_players` / `hotkey_mm_*` (F1 Solo, F2 Duo, F3 Squad, F5 Leave; bound only when `mm_queue`), overlay block, `Command::MmQueue/MmLeave`,
+team-size override (`mm::effective_team_size`, read by `TeamCtl::team_size_now`), `package-release.ps1 -MatchmakingTest` -> `dist\NightreignPvP-mmtest.zip`.
+Build OK, 324 tests pass in `nrpvp` (was 293), clippy clean. All 18 Steam exports present in the game's `steam_api64.dll`. UNKNOWN: whether the game's
+callback pump consumes call results before our poll (log says so if a handle is "unknown to Steam"); whether Steam allows our Invisible lobby next to SC's two lobbies.
 
-### MM-3 — The gate: enter the host's SC lobby without a manual invite
-Owner: SONNET/implementer → HUMAN + friend (next FS) | Status: todo | Depends: MM-1 | Settles: S9 U4, U5
-Dev build: host's overlay shows its SC lobby id (from MM-1) and a "copy join code" button; joiner's overlay takes a pasted code and
-tries, one button each: (a) `steam://joinlobby/2622380/<lobby>/<host>` via ShellExecute; (b) host-side button `InviteUserToLobby`;
-(c) `JoinLobby` from our DLL. Every attempt and every lobby event is logged.
-FS runbook (goes into TESTING.md §6): try (a), (b), (c) as friends; then remove each other from Steam friends and repeat. Record for
-each: did the joiner appear in the host's Roundtable, could the expedition start, any SC error text.
-Outcome decides v1: (a) works for non-friends → fully automatic; only (b) → one click per joiner; none → stop, see S9 §5.
+### MM-3 — The gate: enter the host's SC lobby (friend session build)
+Owner: SONNET/implementer → HUMAN + friend | Status: **built, awaiting friend run** (2026-10-12) | Depends: MM-2 | Settles: S9 U4, U5, §5a unknowns
+Facts from MM-1 (S9 §5a): SC's lobby A is locked and is created by the invite flow; a second lobby B appears at expedition start.
+Build (dev mode, `mm_join = true`), on top of the MM-2 `MatchReady` state:
+1. Host side: if an SC lobby (data `nrsc_lobby_type`) is known → write its id into the queue lobby (`sc_lobby=`). If none → overlay
+   says so ("open Invite Members once") and keeps checking.
+2. Join methods, each a separate dev button and each logged with every lobby event that follows, on both PCs:
+   (b) host: `InviteUserToLobby(sc_lobby, joiner)`; joiner accepts in the Steam overlay.
+   (a) joiner: open `steam://joinlobby/2622380/<sc_lobby>/<host>` (only after checking `ISteamUtils::GetAppID() == 2622380`
+       and that the Steam overlay is enabled for this process, so Steam cannot start a second, vanilla copy of the game).
+   (b+a) host invites, joiner's mod opens the link itself (no click).
+   (d) host: `SetLobbyType` to unlock lobby A, then (a). Changes a Steam setting on SC's lobby at runtime; logged, dev only.
+   (c) joiner: `JoinLobby(sc_lobby)` from our DLL. Last, least likely.
+3. Log on both sides, always: the full MM-1 event stream, so a **normal manual invite** (baseline, run first) shows which callback
+   the joiner receives and which lobby (A or B) each player ends up in.
+4. `scripts\package-release.ps1 -Dev` (or a sibling script): a friend zip with dev mode, `mm_probe`, `mm_queue`, `mm_join` on.
+FS runbook → TESTING.md §6. Scenario 1: both queue Solo, same match, rivals. Scenario 2: Leonardo invites the friend the normal
+way, leader queues Duo with `mm_match_players = 2`, both land as teammates. Then repeat the join methods after unfriending.
+Result (implementer, 2026-10-12): built, awaiting friend run (FS-MM1, TESTING.md §6). Config `mm_join` (default false, dev + `mm_queue` only, forced off in the player build)
+and `mm_join_auto` = `invite` (default) | `invite+link` | `link` | `none`. New: `mm/join.rs` (URL, link guard, auto mode, phase), `mm/machine/gate.rs` (the gate on `MatchReady`),
+`steam/queue.rs` (`InviteUserToLobby`, `SetLobbyType`, `GetAppID`, `IsOverlayEnabled`, `PublishedScLobby`, `ScType`, `ShellExecuteW` link), `LobbyInvite_t` listener and per-lobby
+membership lines (`mm_join: lobby ...`) in `steam/probe.rs`, overlay row of buttons (a) (b) (c) (d) + relock. Friend zip `dist\NightreignPvP-mmtest.zip` and `dist\nrpvp.toml` set `mm_join = true`.
+Build OK, 351 tests pass (was 324), clippy clean. With `mm_join = false` a ready match behaves as in MM-2 (tested: no writes at all). Match end: Leave, or team_type 1 after having seen 2 for 5 s.
+UNKNOWN (the session answers them): which lobby (A or B) joiners end up in; whether Steam accepts invite/link/JoinLobby/SetLobbyType on SC's locked lobby; what `GameLobbyJoinRequested_t` /
+`LobbyInvite_t` an invited player's game receives; whether SC's lobby A exists for a host that has not opened Invite Members.
 
-### MM-4 — Solo queue end to end
-Owner: SONNET/implementer → HUMAN | Status: blocked on MM-2, MM-3 | Feeds: F1, F15
-S9 §6 steps 1–9 with the join method MM-3 selected. Player-build UI: one overlay button "Solo Battle Royale" at the Roundtable, queue
-counter, "match found", host prompt. Safety guard (S9 §2): no queueing unless `nrsc.dll` is loaded and no EAC module is.
-Acceptance: Nucleus cannot do the SC join if it needed `steam://`; then Nucleus covers steps 1–5 and a Friend Session covers 6–9.
+### MM-4 — Solo queue end to end, player build
+Owner: SONNET/implementer → HUMAN | Status: blocked on MM-3 | Feeds: F1, F15
+S9 §6 steps 1–9 with the join method MM-3 selected, no dev buttons: one choice at the Roundtable, queue counter, "match found",
+host prompt.
 
 ### MM-5 — Table entry "Battle Royale" (S7 route B) replaces the overlay button
 Owner: OPUS to card in detail | Status: later
 
-### MM-6 — Duo and Squad: party tickets and Steam ID → expedition player
+### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
 Owner: OPUS to card in detail | Status: later | Settles: S9 U7
+With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapped to expedition players on every client.

@@ -48,6 +48,12 @@ pub(crate) enum Command {
     PosSave,
     /// T-032 (dev only): write the saved values into the selected candidate, local player only.
     PosWrite,
+    /// MM-2 (dev only, `mm_queue`): queue for a match in this mode. The main loop only forwards it to the Steam worker thread.
+    MmQueue(crate::mm::Mode),
+    /// MM-2 (dev only): leave the queue / the ready match.
+    MmLeave,
+    /// MM-3 (dev only, `mm_join`): one join-method attempt (buttons (a) (b) (c) (d)).
+    MmJoin(crate::mm::join::JoinCmd),
 }
 
 /// Name of a known `team_type` value (Smithbox NR TEAM_TYPE enum, TECHNICAL_NOTES.md section 4; the

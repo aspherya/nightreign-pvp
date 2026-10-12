@@ -33,6 +33,22 @@ pub(crate) fn run() {
             } else {
                 tracing::info!("hotkeys: none (player mode)");
             }
+            // MM-1: read/listen-only Steam probe, MM-2: the queue worker. One Steam thread serves both (one listener registration).
+            // Developer mode only; the player build forces both switches off.
+            let queue = (cfg.dev_mode && cfg.mm_queue).then(|| {
+                crate::mm::enable();
+                crate::mm::worker::Setup {
+                    need: u32::try_from(cfg.mm_match_players).unwrap_or(2),
+                    join: cfg.mm_join,
+                    join_auto: cfg.join_auto(),
+                    // The game build string the banner logs (exe FileVersion); TODO MM-4: a sturdier build id if needed.
+                    game: m.file_version.clone().unwrap_or_else(|| crate::mm::worker::GAME_UNKNOWN.to_string()),
+                }
+            });
+            if cfg.dev_mode && (cfg.mm_probe || cfg.mm_queue || cfg.mm_join) {
+                // MM-3: `mm_join` or `mm_probe` also turn on the evidence logging (per-lobby membership lines) even without the queue worker.
+                crate::steam::probe::spawn(queue, cfg.mm_join || cfg.mm_probe);
+            }
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();
                 overlay::spawn(

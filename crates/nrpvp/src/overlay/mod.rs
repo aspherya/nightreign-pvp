@@ -265,6 +265,7 @@ impl OverlayApp {
             .build(|| {
                 self.status_block(ui);
                 self.controls(ui);
+                self.mm_block(ui);
                 self.players_block(ui);
                 self.probes_block(ui);
                 self.mark_block(ui);
@@ -448,6 +449,81 @@ impl OverlayApp {
                 GREY,
                 "Candidate and Restore buttons need a resolved local player.",
             );
+        }
+    }
+
+    /// MM-2: the matchmaking queue line and buttons (only when `mm_queue = true`). The buttons send `Command`s; the status is the
+    /// plain value the Steam worker thread published.
+    fn mm_block(&self, ui: &Ui) {
+        if !crate::mm::enabled() {
+            return;
+        }
+        let st = crate::mm::status();
+        ui.separator();
+        let line = if st.line.is_empty() { "Queue: starting (waiting for Steam)".to_string() } else { st.line.clone() };
+        let colour = if line.starts_with("MATCH READY") || line.starts_with("ALL PRESENT") {
+            GREEN_TEXT
+        } else if line.contains("REFUSED") || line.contains("failed") {
+            RED
+        } else if st.active {
+            AMBER
+        } else {
+            GREY
+        };
+        ui.text_colored(colour, line);
+        {
+            let _off = ui.begin_disabled(st.active);
+            if ui.button("Queue Solo") {
+                self.send(Command::MmQueue(crate::mm::Mode::Solo));
+            }
+            ui.same_line();
+            if ui.button("Queue Duo") {
+                self.send(Command::MmQueue(crate::mm::Mode::Duo));
+            }
+            ui.same_line();
+            if ui.button("Queue Squad") {
+                self.send(Command::MmQueue(crate::mm::Mode::Squad));
+            }
+        }
+        ui.same_line();
+        {
+            let _off = ui.begin_disabled(!st.active);
+            if ui.button("Leave queue") {
+                self.send(Command::MmLeave);
+            }
+        }
+        // MM-3 (dev only, `mm_join`): the join methods, one attempt per press, usable once the host's lobby id is known.
+        if st.join_ui {
+            use crate::mm::join::JoinCmd;
+            ui.text_colored(GREY, "Join methods (each press is logged as mm_join: method ...):");
+            {
+                let _off = ui.begin_disabled(!st.sc_known);
+                if ui.button("(a) link") {
+                    self.send(Command::MmJoin(JoinCmd::Link));
+                }
+                ui.same_line();
+                if ui.button("(b) invite / re-invite") {
+                    self.send(Command::MmJoin(JoinCmd::Invite));
+                }
+                ui.same_line();
+                if ui.button("(c) direct JoinLobby") {
+                    self.send(Command::MmJoin(JoinCmd::Direct));
+                }
+            }
+            {
+                let _off = ui.begin_disabled(!st.sc_known || !st.sc_owner);
+                if ui.button("(d) unlock: Public") {
+                    self.send(Command::MmJoin(JoinCmd::UnlockPublic));
+                }
+                ui.same_line();
+                if ui.button("(d) unlock: Invisible") {
+                    self.send(Command::MmJoin(JoinCmd::UnlockInvisible));
+                }
+                ui.same_line();
+                if ui.button("relock: Private") {
+                    self.send(Command::MmJoin(JoinCmd::RelockPrivate));
+                }
+            }
         }
     }
 

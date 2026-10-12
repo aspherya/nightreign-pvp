@@ -6,9 +6,14 @@
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
+# -MatchmakingTest (MM-2/MM-3 friend session): instead of the player settings, the packaged nrpvp.toml turns on developer mode with the
+#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite", mm_match_players = 2,
+#   probes = false, team_size = 1).
+#   The zip is dist\NightreignPvP-mmtest.zip (the player zip is not touched). Logs land in <Game>\NightreignPvP\logs as usual.
 param(
     [string]$Me3Dir = 'Z:\Tools\me3',
-    [int]$TeamSize = 1
+    [int]$TeamSize = 1,
+    [switch]$MatchmakingTest
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -40,11 +45,38 @@ Copy-Item -LiteralPath (Join-Path $Me3Dir 'LICENSE-MIT'), (Join-Path $Me3Dir 'LI
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\HOW TO INSTALL.txt') -Destination $stage
 
 $ascii = New-Object Text.ASCIIEncoding
-$toml = @(
-    '# Nightreign PvP settings. You do not need to change anything here.',
-    "team_size = $TeamSize",
-    'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
-) -join "`r`n"
+if ($MatchmakingTest) {
+    # MM-2/MM-3 test build for a friend session: developer mode (debug overlay with the Queue and join-method buttons; hotkeys F1 F2 F3 F5 as a backup).
+    $toml = @(
+        '# Nightreign PvP MATCHMAKING TEST settings (MM-2, MM-3). Developer build: the debug overlay (Insert hides it) has the Queue buttons.',
+        'dev_mode = true',
+        'mm_probe = true',
+        'mm_queue = true',
+        'mm_match_players = 2',
+        'mm_join = true',
+        'mm_join_auto = "invite"',
+        'probes = false',
+        # Developer mode defaults to pvpve = false; without these two lines a queued match would have no PvP at all.
+        'pvpve = true',
+        'pvpve_scheme = "rivals"',
+        'team_size = 1',
+        'team_candidates = [29, 6, 3, 16, 13, 2, 1]',
+        '# Old test hotkeys unbound so a tester cannot trigger them by accident (the overlay buttons remain).',
+        'hotkey_downed_cycle = ""',
+        'hotkey_pos_cycle = ""',
+        'hotkey_pos_save = ""',
+        'hotkey_pos_write = ""',
+        'hotkey_write_all = ""',
+        'hotkey_restore_all = ""'
+    ) -join "`r`n"
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\MATCHMAKING TEST.txt') -Destination $stage
+} else {
+    $toml = @(
+        '# Nightreign PvP settings. You do not need to change anything here.',
+        "team_size = $TeamSize",
+        'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
+    ) -join "`r`n"
+}
 [IO.File]::WriteAllText((Join-Path $mod 'nrpvp.toml'), $toml + "`r`n", $ascii)
 
 $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
@@ -52,7 +84,8 @@ $dirty = if (& git -C $repo status --porcelain 2>$null) { 'dirty' } else { 'clea
 $ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), me3 0.11.0"
 [IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
 
-$zip = Join-Path $dist 'NightreignPvP.zip'
+$zipName = if ($MatchmakingTest) { 'NightreignPvP-mmtest.zip' } else { 'NightreignPvP.zip' }
+$zip = Join-Path $dist $zipName
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
 Remove-Item $stage -Recurse -Force

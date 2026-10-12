@@ -71,6 +71,23 @@ questions. Nothing here gets implemented without a task card in TASKS.md and an 
   whether another player can pick that up, and whether a reward can be granted to the killer directly.
 - Also to decide: whether revives between hostile players should be possible at all, and how they work for teammates once teams exist.
 
+## Seamless entry flow (wanted by Leonardo, 2026-10-12; do not design until the online test FS-MM1 is done)
+- Target: pick "Solo / Duo / Squad Battle Royale" in the expedition type list → pick the Nightlord → start → matchmaking runs → the
+  match starts by itself when the criteria are met. See `re/PROJECT_SCOPE.md` §7.
+- This may change a lot of what the prototype does. Open points it raises, none answered:
+  - The mode entry sits in the native expedition screen (S7 routes C/D, the hard ones) or in a pre-menu (S7 route B). Which is acceptable.
+  - Nightlord choice: every queued player picks one; whose choice the match uses (host's, vote, or the Nightlord becomes part of the
+    queue key and splits the population). A Battle Royale match has no Nightlord fight in the current scope (§7 steps 5–8), so the
+    choice may only select the map/shifting-earth variant, or be dropped.
+  - "Start" must put the player into a waiting state instead of loading an expedition, then load everyone together. Needs the game's
+    start-expedition path found (S9 U6) so the mod can hold and trigger it.
+  - The mod must make the session exist and move players into it with no click: today SC's lobby appears only through the Invite
+    Members flow and the join needs an accepted Steam invite (S9 §5a). If FS-MM1 shows these cannot be automated from outside, the
+    options are the SC author's help or our own session layer on the game's networking code (large; S9 and the 2026-10-12 discussion).
+- Leonardo's first answer on the Nightlord question (2026-10-12): add a dedicated entry to the Nightlord list, e.g. "Brawling" /
+  "Battle Royale", instead of picking a real boss. He will define the scope further before any decision.
+- Decide after FS-MM1, with its logs.
+
 ## Public matchmaking queues (product requirement; implementation deferred to M8)
 - Detailed queue formats, session-formation feasibility, and architecture options: [S8: Public matchmaking and party/session formation](research/S8-public-matchmaking.md). The three formats are Solo (six individual teams), Duo (three teams of two), and Squad/Trio (two teams of three) at the six-player target.
 - Queues = team size: solo (up to 6 solo players, all rivals), duo (up to 3 teams of 2), trio (up to 2 teams of 3). The mod already takes `team_size`, but queueing and party formation are not implemented.

@@ -50,6 +50,13 @@ pub(crate) const DEFAULT_HOTKEY_CYCLE: &str = "";
 pub(crate) const DEFAULT_HOTKEY_MARK: &str = "F10";
 pub(crate) const DEFAULT_HOTKEY_WRITE_ALL: &str = "F11";
 pub(crate) const DEFAULT_HOTKEY_RESTORE_ALL: &str = "F12";
+/// MM-2 queue controls (dev mode + `mm_queue = true` only). F1/F2/F3/F5 are free (F4 = SC pause, F6..F12 and Insert are taken).
+pub(crate) const DEFAULT_HOTKEY_MM_SOLO: &str = "F1";
+pub(crate) const DEFAULT_HOTKEY_MM_DUO: &str = "F2";
+pub(crate) const DEFAULT_HOTKEY_MM_SQUAD: &str = "F3";
+pub(crate) const DEFAULT_HOTKEY_MM_LEAVE: &str = "F5";
+pub(crate) const DEFAULT_MM_MATCH_PLAYERS: u64 = 2;
+const MM_MATCH_PLAYERS_RANGE: (u64, u64) = (2, 6);
 
 /// Sanity bounds so a typo cannot spin a thread or silence the watcher.
 const PERSIST_MS_RANGE: (u64, u64) = (10, 5000);
@@ -104,6 +111,26 @@ auto_team_all = 0
 probes = false
 probe_interval_ms = 1000
 
+# MM-1 Steam access probe (dev mode only, read/listen-only): waits for the game's own Steam init, logs which flat Steam interfaces are
+# reachable and every lobby event (with owner, members and lobby data) under the prefix \"mm_probe:\". Registers listen-only callbacks;
+# never calls Steam setters. The player build forces this off.
+mm_probe = false
+
+# MM-2 public matchmaking queue (dev mode only; the player build forces it off). false = nothing of it runs. true = a queue lobby
+# worker on the Steam thread, queue buttons in the debug overlay, and the hotkeys below (they only exist while mm_queue = true).
+# Needs Seamless Co-op (nrsc.dll) loaded and no EasyAntiCheat module; otherwise queuing is refused and the reason is shown.
+# mm_match_players = players per match (2..=6); a team size from the queue mode (solo 1 / duo 2 / squad 3) overrides team_size
+# for that match only. Log lines start with \"mm_queue:\".
+mm_queue = false
+mm_match_players = 2
+
+# MM-3 (dev mode only; needs mm_queue = true; the player build forces it off): after MATCH READY, get every roster member into the host's
+# Seamless Co-op lobby. false = exactly MM-2. mm_join_auto = what happens by itself: \"invite\" (the host's mod invites every absent
+# player; default) | \"invite+link\" (plus the joiner's mod opens a steam://joinlobby link) | \"link\" | \"none\" (only the overlay buttons).
+# Log lines start with \"mm_join:\".
+mm_join = false
+mm_join_auto = \"invite\"
+
 # T-031 experiment value (dev mode only). INERT since T-032: the downed marker is unknown (ChrSet entry byte +9 was disproven by
 # FS-0 run 6), so nothing is written from it. hotkey_downed_cycle still steps through downed_rival_candidates (0 = off).
 downed_rival_team = 0
@@ -148,6 +175,10 @@ hotkey_cycle = \"\"         # select the next candidate (unbound; use the overla
 hotkey_mark = \"F10\"       # log a numbered MARK line (T-015); the overlay has a text box for annotated marks
 hotkey_write_all = \"F11\"   # FS-0: write the selected candidate to EVERY player (this client's copies)
 hotkey_restore_all = \"F12\" # FS-0: restore every player
+hotkey_mm_solo = \"F1\"     # MM-2 (needs mm_queue = true): queue Solo
+hotkey_mm_duo = \"F2\"      # MM-2: queue Duo (needs a Seamless Co-op party of 2; only the party leader queues)
+hotkey_mm_squad = \"F3\"    # MM-2: queue Squad (party of 3)
+hotkey_mm_leave = \"F5\"    # MM-2: leave the queue / the ready match
 ";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -175,6 +206,16 @@ pub(crate) struct Config {
     pub probes: bool,
     /// T-027: probe period in milliseconds (100..=60000).
     pub probe_interval_ms: u64,
+    /// MM-1: Steam access probe on (developer mode only; forced off in the player build).
+    pub mm_probe: bool,
+    /// MM-2: public matchmaking queue on (developer mode only; forced off in the player build).
+    pub mm_queue: bool,
+    /// MM-2: players per match, clamped to 2..=6 in `parse`.
+    pub mm_match_players: u64,
+    /// MM-3: join the host's Seamless Co-op lobby after MATCH READY (developer mode + `mm_queue` only; forced off in the player build).
+    pub mm_join: bool,
+    /// MM-3: `"invite"`, `"invite+link"`, `"link"` or `"none"` (normalised in `parse`; read it through [`Config::join_auto`]).
+    pub mm_join_auto: String,
     /// T-031 (dev only): team value written to a downed rival's copy; 0 = off.
     pub downed_rival_team: u8,
     /// T-031: values the downed-cycle hotkey steps through (0 = off).
@@ -202,6 +243,10 @@ pub(crate) struct Config {
     pub hotkey_mark: String,
     pub hotkey_write_all: String,
     pub hotkey_restore_all: String,
+    pub hotkey_mm_solo: String,
+    pub hotkey_mm_duo: String,
+    pub hotkey_mm_squad: String,
+    pub hotkey_mm_leave: String,
 }
 
 impl Default for Config {
@@ -221,6 +266,11 @@ impl Default for Config {
             auto_team_all: 0,
             probes: false,
             probe_interval_ms: DEFAULT_PROBE_INTERVAL_MS,
+            mm_probe: false,
+            mm_queue: false,
+            mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
+            mm_join: false,
+            mm_join_auto: "invite".to_string(),
             downed_rival_team: 0,
             downed_rival_candidates: DEFAULT_DOWNED_CANDIDATES.to_vec(),
             pos_candidates: crate::game::poswrite::default_candidates(),
@@ -241,6 +291,10 @@ impl Default for Config {
             hotkey_mark: DEFAULT_HOTKEY_MARK.to_string(),
             hotkey_write_all: DEFAULT_HOTKEY_WRITE_ALL.to_string(),
             hotkey_restore_all: DEFAULT_HOTKEY_RESTORE_ALL.to_string(),
+            hotkey_mm_solo: DEFAULT_HOTKEY_MM_SOLO.to_string(),
+            hotkey_mm_duo: DEFAULT_HOTKEY_MM_DUO.to_string(),
+            hotkey_mm_squad: DEFAULT_HOTKEY_MM_SQUAD.to_string(),
+            hotkey_mm_leave: DEFAULT_HOTKEY_MM_LEAVE.to_string(),
         }
     }
 }
@@ -290,6 +344,11 @@ impl Config {
         }
     }
 
+    /// MM-3: the automatic join action (an unknown text, only possible on an unvalidated `Config`, means `invite`).
+    pub(crate) fn join_auto(&self) -> crate::mm::join::JoinAuto {
+        crate::mm::join::JoinAuto::parse(&self.mm_join_auto).unwrap_or(crate::mm::join::JoinAuto::Invite)
+    }
+
     /// T-026: players per team, within 1..=3.
     pub(crate) fn team_size_usize(&self) -> usize {
         usize::try_from(self.team_size.clamp(TEAM_SIZE_RANGE.0, TEAM_SIZE_RANGE.1)).unwrap_or(1)
@@ -312,6 +371,10 @@ impl Config {
             Action::Mark => &self.hotkey_mark,
             Action::WriteAll => &self.hotkey_write_all,
             Action::RestoreAll => &self.hotkey_restore_all,
+            Action::MmSolo => &self.hotkey_mm_solo,
+            Action::MmDuo => &self.hotkey_mm_duo,
+            Action::MmSquad => &self.hotkey_mm_squad,
+            Action::MmLeave => &self.hotkey_mm_leave,
         }
     }
 
@@ -321,6 +384,10 @@ impl Config {
     /// T-030: always `None` outside dev mode, so no key is ever bound in the player build.
     pub(crate) fn binding(&self, a: Action) -> Option<KeyBind> {
         if !self.dev_mode {
+            return None;
+        }
+        // MM-2: the queue keys exist only while the queue feature is on, so nothing new is bound otherwise.
+        if a.is_mm() && !self.mm_queue {
             return None;
         }
         hotkey::parse_key(self.key_text(a))
@@ -345,7 +412,7 @@ impl Config {
                 self.binding(a).map_or("-".to_string(), |k| k.name)
             )
         };
-        [
+        let mut parts = vec![
             one("write", Action::Write),
             one("restore", Action::Restore),
             one("persist", Action::Persist),
@@ -360,8 +427,14 @@ impl Config {
             one("mark", Action::Mark),
             one("write_all", Action::WriteAll),
             one("restore_all", Action::RestoreAll),
-        ]
-        .join(" ")
+        ];
+        if self.mm_queue {
+            parts.push(one("mm_solo", Action::MmSolo));
+            parts.push(one("mm_duo", Action::MmDuo));
+            parts.push(one("mm_squad", Action::MmSquad));
+            parts.push(one("mm_leave", Action::MmLeave));
+        }
+        parts.join(" ")
     }
 }
 
@@ -388,6 +461,12 @@ fn enforce_player_mode(
     cfg.pvpve = true;
     cfg.pvpve_scheme = SCHEME_RIVALS.to_string();
     cfg.probes = false;
+    // MM-1: the Steam probe is a developer tool.
+    cfg.mm_probe = false;
+    // MM-2: the queue is a developer tool.
+    cfg.mm_queue = false;
+    // MM-3: so is the join step.
+    cfg.mm_join = false;
     // T-031: the rival-revive experiment is a developer tool.
     cfg.downed_rival_team = 0;
     // T-035: the rival revive rule is always on.
@@ -454,6 +533,7 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         PVPVE_INTERVAL_MS_RANGE,
     );
     clamp("team_size", &mut cfg.team_size, TEAM_SIZE_RANGE);
+    clamp("mm_match_players", &mut cfg.mm_match_players, MM_MATCH_PLAYERS_RANGE);
     clamp(
         "probe_interval_ms",
         &mut cfg.probe_interval_ms,
@@ -485,6 +565,23 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
                 cfg.rival_revive
             ));
             cfg.rival_revive = REVIVE_REDOWN.to_string();
+        }
+    }
+    // MM-3: mm_join_auto.
+    {
+        match crate::mm::join::JoinAuto::parse(&cfg.mm_join_auto) {
+            Some(a) => cfg.mm_join_auto = a.label().to_string(),
+            None => {
+                warnings.push(format!(
+                    "mm_join_auto = {:?} is not \"invite\", \"invite+link\", \"link\" or \"none\"; using \"invite\"",
+                    cfg.mm_join_auto
+                ));
+                cfg.mm_join_auto = "invite".to_string();
+            }
+        }
+        if cfg.dev_mode && cfg.mm_join && !cfg.mm_queue {
+            warnings.push("mm_join = true needs mm_queue = true; the join step is off".to_string());
+            cfg.mm_join = false;
         }
     }
     // T-039: rival_hit_seconds.
@@ -636,6 +733,10 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         &mut cfg.hotkey_restore_all,
         DEFAULT_HOTKEY_RESTORE_ALL,
     );
+    key("hotkey_mm_solo", &mut cfg.hotkey_mm_solo, DEFAULT_HOTKEY_MM_SOLO);
+    key("hotkey_mm_duo", &mut cfg.hotkey_mm_duo, DEFAULT_HOTKEY_MM_DUO);
+    key("hotkey_mm_squad", &mut cfg.hotkey_mm_squad, DEFAULT_HOTKEY_MM_SQUAD);
+    key("hotkey_mm_leave", &mut cfg.hotkey_mm_leave, DEFAULT_HOTKEY_MM_LEAVE);
 
     let (explicit_off, explicit_all) = peek_pvpve_overrides(text);
     enforce_player_mode(&mut cfg, explicit_off, explicit_all, &mut warnings);
@@ -727,7 +828,7 @@ pub(crate) fn load(dir: &Path) -> Config {
     };
     tracing::info!("mode: {}", if cfg.dev_mode { "DEV" } else { "PLAYER" });
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} log_dir={:?} keys: {}",
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} mm_queue={} mm_match_players={} mm_join={} mm_join_auto={} log_dir={:?} keys: {}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
@@ -737,6 +838,10 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.pvpve_interval_ms,
         cfg.pvpve_scheme,
         cfg.team_size,
+        cfg.mm_queue,
+        cfg.mm_match_players,
+        cfg.mm_join,
+        cfg.mm_join_auto,
         cfg.log_dir,
         cfg.describe_bindings()
     );
@@ -912,6 +1017,77 @@ mod tests {
         assert_eq!(w.len(), 1);
         assert!(parse_dev("pvpve = \"yes\"").is_err());
         assert!(parse_dev("pvpve_team = 300").is_err());
+    }
+
+    #[test]
+    fn mm_queue_defaults_off_is_dev_only_and_binds_keys_only_when_on() {
+        let c = dev_default();
+        assert!(!c.mm_queue && c.mm_match_players == 2);
+        // Off: no MM key is bound, so nothing new exists.
+        assert!(c.binding(Action::MmSolo).is_none() && c.binding(Action::MmLeave).is_none());
+        assert!(!c.describe_bindings().contains("mm_"));
+        let (cfg, w) = parse_dev("mm_queue = true
+mm_match_players = 3
+").expect("ok");
+        assert!(cfg.mm_queue && cfg.mm_match_players == 3 && w.is_empty(), "{w:?}");
+        let names: Vec<_> = [Action::MmSolo, Action::MmDuo, Action::MmSquad, Action::MmLeave]
+            .iter()
+            .map(|a| cfg.binding(*a).map(|k| k.name))
+            .collect();
+        assert_eq!(names, vec![Some("F1".into()), Some("F2".into()), Some("F3".into()), Some("F5".into())]);
+        assert!(cfg.describe_bindings().ends_with("mm_solo=F1 mm_duo=F2 mm_squad=F3 mm_leave=F5"));
+        // No default collides with a key that is already bound.
+        assert!(w.is_empty());
+        // Range and key validation.
+        let (cfg, w) = parse_dev("mm_queue = true
+mm_match_players = 9
+hotkey_mm_duo = \"banana\"
+").expect("ok");
+        assert_eq!(cfg.mm_match_players, 6);
+        assert_eq!(cfg.hotkey_mm_duo, "F2");
+        assert_eq!(w.len(), 2, "{w:?}");
+        let (cfg, _) = parse_dev("mm_match_players = 1
+").expect("ok");
+        assert_eq!(cfg.mm_match_players, 2);
+        // Player build: forced off, no keys.
+        let (cfg, _) = parse("mm_queue = true
+").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_queue && cfg.bindings().is_empty());
+        assert!(parse_dev("mm_queue = \"yes\"").is_err());
+    }
+
+    #[test]
+    fn mm_join_defaults_off_is_dev_only_and_needs_the_queue() {
+        use crate::mm::join::JoinAuto;
+        let c = dev_default();
+        assert!(!c.mm_join && c.join_auto() == JoinAuto::Invite);
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_join_auto = \"Invite+Link\"\n").expect("ok");
+        assert!(cfg.mm_join && cfg.join_auto() == JoinAuto::InviteLink && w.is_empty(), "{w:?}");
+        for (t, a) in [("link", JoinAuto::Link), ("none", JoinAuto::None), ("invite", JoinAuto::Invite)] {
+            let (cfg, _) = parse_dev(&format!("mm_join_auto = \"{t}\"\n")).expect("ok");
+            assert_eq!(cfg.join_auto(), a);
+        }
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_join_auto = \"banana\"\n").expect("ok");
+        assert_eq!((cfg.join_auto(), w.len()), (JoinAuto::Invite, 1), "{w:?}");
+        // mm_join without mm_queue is switched off with a warning.
+        let (cfg, w) = parse_dev("mm_join = true\n").expect("ok");
+        assert!(!cfg.mm_join && w.len() == 1, "{w:?}");
+        // Player build: forced off.
+        let (cfg, _) = parse("mm_queue = true\nmm_join = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_join);
+        assert!(parse_dev("mm_join = \"yes\"").is_err());
+    }
+
+    #[test]
+    fn mm_probe_defaults_off_and_is_dev_only() {
+        assert!(!Config::default().mm_probe);
+        assert!(!dev_default().mm_probe);
+        let (cfg, w) = parse_dev("mm_probe = true\n").expect("ok");
+        assert!(cfg.mm_probe && w.is_empty(), "{w:?}");
+        assert!(parse_dev("mm_probe = \"yes\"").is_err());
+        // The player build (no dev_mode) forces it off even when the file asks for it.
+        let (cfg, _) = parse("mm_probe = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_probe);
     }
 
     #[test]

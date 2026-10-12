@@ -72,6 +72,37 @@ several players who move to the same host.
 If U4(a) fails but (b) works, v1 ships with one click per joiner. If all three fail, public matchmaking needs SC's author, and we stop
 and ask (see §8).
 
+## 5a. MM-1 result (solo run 2026-10-12, game 1.03.3, SC 1.1.3, me3 0.11.0)
+
+Log: `../experiments/MM-1/2026-10-12_mm_probe_solo.log`. Game and SC behaved normally; no crash.
+
+| Finding | Tag |
+|---|---|
+| U1 answered: all 13 flat exports resolve; `SteamAPI_GetHSteamUser()` = 1 at DLL start; the four interface accessors return non-null; own Steam ID read | `[VERIFIED: MM-1 log]` |
+| Our listen-only callback objects register (flag set) and receive events next to SC, on the standard callback pump | `[VERIFIED: MM-1 log]` |
+| U2 answered in part: no lobby exists at launch or on arriving at the Roundtable. **Lobby A** appeared 40 s after the Roundtable loaded: owner = local player, limit 6, `LobbyEnter_t.locked = true`, data `nrsc_lobby_type = nrsc_ynx3_seamless_master_lobby`, `nrsc_lobby_version = 1.1.3`, `inviteParam = 0` | `[VERIFIED: MM-1 log 14:13:37Z]` |
+| **Lobby B** appeared 47 s later, 19 s before the expedition map loaded: owner = local player, limit 6, `locked = false`, data only `inviteParam = 0` | `[VERIFIED: MM-1 log 14:14:24Z]` |
+| Leonardo's actions in that run: around the time lobby A appeared he **sent an invite to a Steam friend** from Invite Members; he started the expedition with **Solo Mission**. So lobby A is created by the invite flow (opening the screen or sending the invite: not separated), and lobby B is created even for a Solo Mission start | `[VERIFIED: Leonardo's report 2026-10-12 + log times]` |
+| Consequence: a host who has invited nobody has **no lobby A**. Whether merely opening Invite Members creates it, and whether starting with "Up to 6 players" alone creates one, is UNKNOWN (2-minute solo check). If only a sent invite creates it, the host's mod needs another way to make SC open its lobby | UNKNOWN |
+| Lobby A is SC's joinable lobby and the `nrsc_*` data is what SC checks for its "host is not using seamless co-op" / "version does not match" errors | `[HYPOTHESIS]` |
+| Lobby B is the game's own session lobby for the expedition; whether joiners end up in A, B or both | UNKNOWN: MM-3 |
+| `locked = true` means "only invited users may join" `[SOURCE: ISteamMatchmaking docs]`. So U4(a) and U4(c) may be refused by Steam for lobby A, and U4(b) (an invite sent by the host's mod) is the path Steam designs for a locked lobby. Extra candidate **U4(d)**: host's mod, as lobby owner, calls `SetLobbyType` to unlock lobby A (changes a Steam setting on SC's lobby at runtime; does not touch SC's files) | `[HYPOTHESIS]`: MM-3 |
+| Steam has no callback for our own player leaving a lobby, so whether lobby A still exists during the expedition is UNKNOWN; poll `GetNumLobbyMembers` in MM-3 | UNKNOWN |
+
+## 5b. MM-2 first run in the real game (Leonardo solo, 2026-10-12, dev build with MM-2 + MM-3)
+
+Log: `../experiments/MM-2/2026-10-12_queue_solo.log`. No crash; no report of anything odd on screen.
+
+| Finding | Tag |
+|---|---|
+| Queue Solo: `RequestLobbyList` → 0 results → `CreateLobby(Invisible, 2)` OK → tags written (`SetLobbyData` all true) → status "solo 1/2 searching". Call results were readable (`LobbyCreated` result 1) | `[VERIFIED: log 15:34:41–42Z]` |
+| The repeated search finds our own lobby by its tags (`lobbies_matching=1`), so tag filtering and worldwide search work for this app id | `[VERIFIED: log]` |
+| Leave → `LeaveLobby` → Idle; Queue Solo again creates a new lobby. Duo and Squad are refused when alone, with the reason shown | `[VERIFIED: log 15:34:48–59Z]` |
+| U3, first half: SC's lobby A (`nrsc_lobby_type`, limit 6) was created at 15:40:55Z **while our Invisible queue lobby was held**, and both were listed with the local player as member for 9 s until Leave. Steam allowed both | `[VERIFIED: log 15:40:55–15:41:04Z]` |
+| What Leonardo did at 15:40:55Z (opened Invite Members only, or sent an invite) | UNKNOWN: ask |
+| Cosmetic defect: a queue lobby we left keeps being logged every 10 s as `members=[0]` | `[VERIFIED: log]`, fix with the next build |
+| Still untested: two real players in one queue lobby, the duplicate-lobby rule, every join method | FS-MM1 |
+
 ## 6. Solo flow (v1)
 
 1. Roundtable. Player picks **Solo Battle Royale** (v1: a button in our overlay; later the table entry from S7 route B).

@@ -144,6 +144,13 @@ After the final Night 2 player-versus-player battle:
 9. Win as the last surviving player or team.
 10. Show **VICTORY ACHIEVED**, present the expedition report, and return the winner to Roundtable Hold.
 
+**Entry flow wanted for steps 1–2 (Leonardo, 2026-10-12):** at the Roundtable table the expedition type list offers **Solo / Duo / Squad
+Battle Royale** next to "Solo Mission" and "Up to 6 players". The player picks one, picks the Nightlord as for any expedition, and
+starts. Matchmaking then runs by itself and the match begins once its criteria are met. No overlay buttons, no invite, no menu visit,
+no host action. The mod itself must create or obtain the session and bring every matched player into it. How: see
+`FUTURE_CONSIDERATIONS.md`, "Seamless entry flow". Not designed yet; the 2026-10-12 prototype (overlay buttons, Steam invite, host
+starts) is only the online feasibility test.
+
 The defining rule is that a death before sudden death costs the player their carried inventory but does not eliminate them. Only the final no-respawn stage determines the winner.
 
 ## References

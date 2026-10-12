@@ -79,7 +79,9 @@ candidate), repeat for 6 candidates. Tell Claude which one snapped the player ba
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
 6. "Battle Royale" menu entry (`research/S7-mode-menu.md`) and public queues. **Queue design decided 2026-10-12:**
    `research/S9-matchmaking-decision.md` (Steam queue lobby, no server of ours, Solo first). Cards MM-1 … MM-6 in `TASKS.md`.
-   MM-1 (solo probe) can start now; MM-3 (the join gate) needs a Friend Session.
+   **State 2026-10-12:** MM-1 done (solo run, S9 §5a). MM-2 (queue) and MM-3 (join step) are **built, never run in the game**.
+   Friend build: `dist\NightreignPvP-mmtest.zip` (`scripts\package-release.ps1 -MatchmakingTest`). Runbook: `TESTING.md` §6 FS-MM1.
+   Do not press the "(a) link" button yet (see the runbook). All of it is developer mode only; the player zip has no queue.
 7. Clean-up: the mod still carries a lot of investigation code (probes, dumps, the in-mod timer scans, snap-back test, experiment
    switches). It is all developer-mode only, but it should be trimmed once the features that needed it are done.
 

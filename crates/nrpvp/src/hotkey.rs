@@ -50,9 +50,14 @@ pub(crate) enum Action {
     PosSave,
     /// T-032: write the saved values into the selected position candidate, local player only (dev mode).
     PosWrite,
+    /// MM-2 (dev mode, `mm_queue` only): queue Solo / Duo / Squad, leave the queue.
+    MmSolo,
+    MmDuo,
+    MmSquad,
+    MmLeave,
 }
 
-pub(crate) const ALL_ACTIONS: [Action; 14] = [
+pub(crate) const ALL_ACTIONS: [Action; 18] = [
     Action::Write,
     Action::Restore,
     Action::Persist,
@@ -67,11 +72,20 @@ pub(crate) const ALL_ACTIONS: [Action; 14] = [
     Action::PosCycle,
     Action::PosSave,
     Action::PosWrite,
+    Action::MmSolo,
+    Action::MmDuo,
+    Action::MmSquad,
+    Action::MmLeave,
 ];
 
 impl Action {
     fn bit(self) -> u32 {
         1 << (self as u32)
+    }
+
+    /// MM-2 queue actions: bound only when `mm_queue` is on, and consumed by the game loop as `Command`s.
+    pub(crate) fn is_mm(self) -> bool {
+        matches!(self, Action::MmSolo | Action::MmDuo | Action::MmSquad | Action::MmLeave)
     }
 }
 

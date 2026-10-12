@@ -1,0 +1,74 @@
+NIGHTREIGN PVP - MATCHMAKING TEST BUILD
+=======================================
+
+This is a TEST build. It has a debug panel on screen with Queue buttons.
+Things may not work. That is what we are finding out.
+
+You need: ELDEN RING NIGHTREIGN on Steam, and Seamless Co-op for Nightreign
+(version 1.1.3, the same version as the other player) already installed.
+
+
+BEFORE YOU START
+----------------
+1. Back up your Seamless Co-op saves: copy the folder
+      %APPDATA%\Nightreign
+   somewhere safe. (Paste that line into the File Explorer address bar.)
+2. Install: see "HOW TO INSTALL.txt" in this zip. Two things go into the game folder.
+   If you had an older Nightreign PvP there, delete its "NightreignPvP" folder and
+   "nrpvp_launcher.exe" first.
+3. ALWAYS start this build with "nrpvp_launcher.exe". Never from Steam.
+   Steam's Play button starts the normal game with anti-cheat, without the mod.
+
+
+THE PANEL
+---------
+* A debug panel is on screen. The Insert key hides and shows it.
+* Find the "Queue" block: a status line and the buttons
+      Queue Solo   Queue Duo   Queue Squad   Leave queue
+* Use the buttons. Do not press the F1, F2, F3 or F5 keys: they do the same as the buttons.
+* Do NOT press any button named "(a) link". Leave the "Join methods" buttons alone
+  unless the person running the test asks you to press one.
+
+
+TEST 1 - TEAMMATES
+------------------
+1. One player (the leader) invites the other the normal Seamless Co-op way:
+   Matchmaking Settings > Invite Members. The other accepts (Shift+Tab, Steam overlay).
+2. The leader presses "Queue Duo". The other player presses nothing.
+3. Both status lines should end at "ALL PRESENT".
+4. The leader starts the expedition at the table, as usual.
+5. In the expedition: try to hit each other. Teammates should NOT be able to.
+
+
+TEST 2 - RIVALS
+---------------
+1. Both players close the game completely and start it again. Invite nobody.
+2. Both go to the Roundtable and press "Queue Solo" within about 10 seconds of each other.
+3. Both should see "MATCH READY host=<name>". That name is the host.
+4. If the host's line says "host has no Seamless Co-op lobby yet":
+   the host opens Matchmaking Settings > Invite Members and closes it again.
+   If the line still says the same after 15 seconds, the host sends one normal invite
+   to the other player.
+5. The other player's line says "host invited you". Accept the Steam invite (Shift+Tab).
+6. Both should see "ALL PRESENT". The host starts the expedition.
+7. In the expedition: try to hit each other. Rivals SHOULD be able to.
+
+
+WRITE DOWN
+----------
+* What the status line said at each step, and anything that looked wrong.
+* Any error box, with its exact text.
+* The time of day when something went wrong.
+
+
+AFTERWARDS
+----------
+Close the game. Zip the folder
+      <game folder>\NightreignPvP\logs
+and send it to the person who gave you this build.
+
+
+UNINSTALL
+---------
+Delete "nrpvp_launcher.exe" and the "NightreignPvP" folder from the game folder.
+Nothing else was changed.

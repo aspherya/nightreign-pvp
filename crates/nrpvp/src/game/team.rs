@@ -1181,6 +1181,12 @@ impl TeamCtl {
         }
     }
 
+    /// The team size the rules use right now: `team_size` from the config, or the queue match's override (MM-2) while a match
+    /// is MATCH READY. With `mm_queue` off the override is never set, so this is exactly `self.team_size`.
+    fn team_size_now(&self) -> usize {
+        crate::mm::effective_team_size(self.team_size)
+    }
+
     fn now_ms(&self) -> u64 {
         u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
     }
@@ -1742,7 +1748,7 @@ impl TeamCtl {
                 self.pvpve_team,
                 self.pvpve_writes,
                 self.pvpve_scheme.label(),
-                self.team_size
+                self.team_size_now()
             ),
         }
     }
@@ -1811,7 +1817,7 @@ impl TeamCtl {
         s.pvpve_team = self.pvpve_team;
         s.pvpve_writes = self.pvpve_writes;
         s.pvpve_scheme = self.pvpve_scheme.label().to_string();
-        s.team_size = u8::try_from(self.team_size).unwrap_or(u8::MAX);
+        s.team_size = u8::try_from(self.team_size_now()).unwrap_or(u8::MAX);
         s.roster_warning = self.live.roster_warning.clone();
         s.downed_rival_team = self.downed_cycle.current();
         if self.dev {
@@ -1895,7 +1901,7 @@ impl TeamCtl {
             // VERIFIED on NR 1.3.3.0 by FS-0/FS-1 for 2 players, see TECHNICAL_NOTES §4.
             .map(|&p| (p, mem::read::<u64>(p + CHR_P2P_HANDLE)))
             .collect();
-        build_view(&players, res.local, self.team_size)
+        build_view(&players, res.local, self.team_size_now())
     }
 
     /// T-026: log the rosters once per change of the player set.
@@ -1994,6 +2000,13 @@ impl TeamCtl {
                     let who = res.who(p).unwrap_or_else(|| "?".to_string());
                     tracing::info!("T-008: {}", watch_line(p, &who, f, prev));
                 }
+            }
+        }
+        // MM-3: tell the matchmaking worker whether the local player is in the Roundtable (team_type 1) or an expedition (2)
+        // (TECHNICAL_NOTES.md §4, VERIFIED TC-004 run 1, NR 1.3.3.0). Read-only; a plain atomic store, only while mm is enabled.
+        if crate::mm::enabled() {
+            if let Some(f) = res.local.and_then(|l| read_fields(&mut rc, l)) {
+                crate::mm::note_local_team(f.team);
             }
         }
         if !self.announced {
@@ -3247,6 +3260,27 @@ mod tests {
         assert!(plan.writes.is_empty());
     }
 
+
+    #[test]
+    fn mm_team_size_override_changes_the_rosters_only_when_set() {
+        // MM-2: the size passed to `build_view` comes from `mm::pick_team_size(configured, override)`.
+        let configured = 1;
+        let (players, _) = synth(&[1, 2, 3, 4], 0, configured);
+        let at = |ov: usize| {
+            let size = crate::mm::pick_team_size(configured, ov);
+            build_view(&players, Some(players[0].0), size)
+        };
+        // No override (queue off, or not MATCH READY): free-for-all as configured.
+        assert_eq!(at(0).relation[&players[1].0], Relation::Rival);
+        // Duo match: the lowest two ids are allies, the rest rivals.
+        let duo = at(2);
+        assert_eq!(duo.relation[&players[1].0], Relation::Ally);
+        assert_eq!(duo.relation[&players[2].0], Relation::Rival);
+        // Solo match over a configured team_size of 2 forces free-for-all.
+        let (players2, _) = synth(&[1, 2, 3, 4], 0, 2);
+        let solo = build_view(&players2, Some(players2[0].0), crate::mm::pick_team_size(2, 1));
+        assert_eq!(solo.relation[&players2[1].0], Relation::Rival);
+    }
     #[test]
     fn a_rival_turning_ally_is_planned_for_restore() {
         let (players, view) = synth(&[1, 2, 3], 0, 1);
