@@ -47,6 +47,8 @@ The product target is public solo/duo/trio matchmaking. The initial capacity tar
 
 SC and the engine currently constrain the session to six players. Do not spend effort on more than six without new evidence and an explicit scope decision. Public matchmaking is not implemented, and access to SC's lobby, queue discovery, party membership, and match start remains unresolved. Investigate these when the roadmap activates matchmaking; do not assume SC exposes a public API or that its lobby can be reused without permission.
 
+The detailed matchmaking/session-formation proposal and the Solo, Duo, and Squad queue formats are in [S8: Public matchmaking and party/session formation](research/S8-public-matchmaking.md). It is exploratory; the first exit condition is still proving how independently formed players can enter one shared SC session.
+
 ## 4. Two cross-cutting pieces
 
 **A. A way for our mod to talk to itself across players (spike S4).** Hostility needs none: each client applies it locally. Team assignment can

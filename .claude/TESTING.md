@@ -315,3 +315,28 @@ Why the scans missed it: the clock pauses on hits and the bar counts **down** fr
 - No hit completed the bar this time, so `getup_step` never ran. Its effect in the game is still UNKNOWN; it was switched off
   (`early_redown = false`) in the final build of 02:31, which is what Nucleus, `dist\nrpvp.dll` and the player zip now hold.
 - Leonardo accepts the current behaviour: a brief gauge flicker per hit, and a player who gets up after a full-bar hit is downed again.
+
+### 2026-10-12 — FS-0 run 21 (Nucleus, **3 instances, team_size 2**, STATUS Task C). Logs: `.claude/experiments/FS-0/run21_*`: **PASS**
+Pins: game 1.3.3.0, SC v1.1.3, Nucleus/Goldberg transport. Leonardo's report: "worked exactly how we wanted": teammates revive downed
+friends, rivals finish rivals. The logs agree:
+- **Teams agreed on all three games.** Expedition ids: Instance2 = `0x6001`, Instance0 = `0x6002`, Instance1 = `0x6003`. Team A = 6001 + 6002,
+  team B = 6003 alone. Team writes: Instance0 and Instance2 each marked one player (6003), Instance1 marked two. Nobody marked a teammate.
+- **Teammate revive, 3 of 3:** 12:51:48 (6002 down, bar 40 → 20 → 0, up at 110 hp), 12:53:31 (6001 down, 40 → 26 → 12 → 0, up at 120 hp),
+  12:56:46 (6002 down, 40 → 20 → 0). The rule left every teammate hit alone.
+- **Rival finish, 4 of 4 with hits:** every rival hit was undone and took 3 s off the clock (15 `rule:` lines on the victims' games, the
+  same hits mirrored on the attackers' copies). Deaths 5.9–8.5 s after the down instead of 15 s. Two untouched downs bled out in 15 s.
+- **Both halves in one down (12:57:22, 6002 downed, bar 90):** two hits of 20 stayed on the bar (90 → 70, 82.8 → 62.8) while three hits of
+  25–26 were undone and cost 3 s each; the player died at 12:57:31. `[HYPOTHESIS]` the kept hits were the teammate's: the rule treats every
+  hit not attributed to a rival that way, and 20 is the hit size 6001 showed elsewhere in the run (6003 hits for 25).
+- **Revive and finish in one fight (12:56:46–54):** 6001 revived teammate 6002 (2 hits) and then killed downed rival 6003 (4 hits).
+- **Attacker's gauge:** `(display copy)` lines ran on Instance0 and Instance2 for downed 6003 (a rival with no teammate). Instance1 has
+  none for downed 6001/6002, as designed (T-039 follow-up 3); what Instance1's screen showed there was not reported.
+- **Player ids change between the lobby and the expedition:** before the expedition the two joiners were `0x6003` and `0x6004`; in the
+  expedition the three players were `0x6001`, `0x6002`, `0x6003`. No team write happened before the expedition (first write 12:51:08).
+- **Bar grows back:** on the owner's game the bar rose about 9 per second between hits while the pause timer was 0 (70 → 78.2 in 0.9 s,
+  78.7 → 82.8 in 0.5 s). First seen here.
+- Log wording: a death is logged as `UP (hp=0)` followed by `HP restored` about 7.4 s later; a revive is `UP (hp=110)`.
+- Pass time: usually 0–2 ms, but the combat step peaked at 63–225 ms in the 10 s windows that contain rival hits (all three instances).
+  Cause UNKNOWN (three games on one PC; run 20 with two games had none). The rule still reacted on every hit.
+- Warnings: one 180 s WorldChrMan timeout per game while sitting in the menus, and one `ChrSet capacity 0` per area change. Both harmless.
+- Not shown by the logs: that teammates cannot damage each other (nothing logs damage).

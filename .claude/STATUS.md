@@ -21,11 +21,12 @@ traps we already fell into. Details live in the other docs; this file points to 
 |---|---|
 | PvP between players, PvE alongside, no networking changes | **Works.** Proven in Nucleus and with a friend over real Steam |
 | Automatic: each player's game marks rivals hostile, no keys | **Works** (Nucleus, 2 players). Teammates and yourself stay on the normal value, so sites of grace and pickups work |
-| Teams from player IDs (`team_size` 1, 2 or 3) | Built. Only `team_size = 1` (free-for-all) has run in the game |
+| Teams from player IDs (`team_size` 1, 2 or 3) | **Works** for `team_size` 1 and 2 (Nucleus run 21: 3 players, 2 v 1, all three games agreed). `team_size = 3` not run |
+| Teammate revive | **Works** (Nucleus run 21: 3 of 3) |
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader) | **Works** on Leonardo's PC. Not yet tried on a second PC |
 | Player build: PvP always on, no keys, small "BATTLE ROYALE" label | **Works** (solo check) |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
-| **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. Teams of 2+ not run; the attacker's screen is not handled there yet |
+| **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
 
 Most later Battle Royale mechanics are not started: separate spawns, keeping level on death, inventory drop, no-boss nights, final arena,
 sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and §9.
@@ -34,7 +35,7 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 
 | Place | Mode | Settings |
 |---|---|---|
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | developer (panel does not draw under Nucleus; logs to `dist\nucleus-logs\Instance<N>\`) | `team_size = 1`, PvP on, probes off |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | developer (panel does not draw under Nucleus; logs to `dist\nucleus-logs\Instance<N>\`) | `team_size = 2` (set for run 21), PvP on, probes off |
 | `dist\NightreignPvP.zip` | player (no keys, label only) | `team_size = 1` |
 | `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) | developer, full panel | `team_size = 1`, probes on |
 
@@ -51,8 +52,9 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 4. Check: both labels show "1 rival"; both can fight; graces and pickups work; the downed rule behaves as in Task A.
 5. Afterwards each sends the `logs` folder from `<Game>\NightreignPvP\`.
 
-### Task C: three players, teams of two (needs 3 people or 3 Nucleus instances)
-The only way to see both halves of the downed rule at once: a teammate filling the bar while a rival shortens the clock.
+### Task C: done (3 Nucleus instances, teams of two). Results: `TESTING.md` §3, FS-0 run 21
+Still open from it: whether teammates can damage each other (not visible in the logs), and what the lone rival's screen showed on the
+gauge of a downed enemy who has a teammate. Original card: the only way to see both halves of the downed rule at once: a teammate filling the bar while a rival shortens the clock.
 Set `team_size = 2` (Nucleus: `scripts\deploy-nucleus.ps1 -TeamSize 2`; zip: `scripts\package-release.ps1 -TeamSize 2`).
 Also the first test of: teammates can't hurt each other, teammate revive works, player IDs with 3 players.
 
@@ -68,12 +70,16 @@ candidate), repeat for 6 candidates. Tell Claude which one snapped the player ba
    never exercised in the game, effect UNKNOWN.
    Gauge flicker (up to 50 ms per rival hit, both screens): improvement ideas in `FUTURE_CONSIDERATIONS.md`, "Known side effects".
    Attacker-side gauge with teams of 2+: a copy cannot tell who hit, so `remote_step` only acts for a downed rival with no teammate.
-   With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved (Task C will show it).
+   With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved. Run 21 confirmed the rule
+   itself is right with teams; what that gauge looked like on the lone rival's screen was not reported.
+   New in run 21: the combat step peaked at 63–225 ms around rival hits with three games running (cause UNKNOWN, rule still fired).
 2. Separate team spawns: needs Task D, then "move each team to its own point after landing" (`research/S6-team-spawns.md`).
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
-6. "Battle Royale" menu entry and queues (`research/S7-mode-menu.md`, `FUTURE_CONSIDERATIONS.md`).
+6. "Battle Royale" menu entry (`research/S7-mode-menu.md`) and public queues. **Queue design decided 2026-10-12:**
+   `research/S9-matchmaking-decision.md` (Steam queue lobby, no server of ours, Solo first). Cards MM-1 … MM-6 in `TASKS.md`.
+   MM-1 (solo probe) can start now; MM-3 (the join gate) needs a Friend Session.
 7. Clean-up: the mod still carries a lot of investigation code (probes, dumps, the in-mod timer scans, snap-back test, experiment
    switches). It is all developer-mode only, but it should be trimmed once the features that needed it are done.
 
@@ -97,6 +103,8 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
 - **Nucleus deletes its instance folders on close.** Logs go to `dist\nucleus-logs\` for that reason.
 - **Never run the scanner or any tool against the normal game.** Steam launch = vanilla with anti-cheat. Mods only through Nucleus, `nrpvp_launcher.exe`, or `scripts\launch.ps1`.
 - **Never touch the vanilla saves** (`%APPDATA%\Nightreign\<id>\NR0000.sl2*`).
+- **Player ids change between the lobby and the expedition** (run 21: joiners were `0x6003`/`0x6004` in the lobby, `0x6002`/`0x6003` in
+  the expedition). Teams are only meaningful once the expedition has loaded; do not decide or show teams from lobby ids.
 - **Addresses change every launch and every area load.** A value found by the scanner is only good for that run; the mod must reach it through the player object (see `re/MEMORY_MAP.md`). A scanner left watching a fixed address after a restart is looking at the wrong memory: stop it.
 - **Double-check offsets before any write.** On 2026-10-12 a test wrote to `+0x728/+0x72C` instead of `+0x718/+0x71C` by mistake (no lasting effect).
 - **Setting health to 0 does not kill** in a multiplayer session; it downs. Death is the bleed-out clock reaching 0.

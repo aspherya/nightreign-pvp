@@ -1,8 +1,8 @@
 # Roadmap
 
 **Current phase:** Phase 1–2, shared world + PvP (Phase 0 closed 2026-10-10: GO)
-**Current milestone:** smoke-test the downed rule (T-039: rival hits shorten the bleed-out and never move the revive bar), then a friend session on the player zip. See STATUS.md §3.
-**Next step:** STATUS.md §3 Task A (Nucleus, 10 min).
+**Current milestone:** the downed rule (T-039) passed with teams of two in Nucleus (FS-0 run 21, 2026-10-12). Next: a friend session on the player zip, then separate spawns. See STATUS.md §3.
+**Next step:** STATUS.md §3 Task B (friend, player zip) and Task D (position snap-back, solo in Nucleus).
 **Constraint:** solo testing only, day to day. Two-player tests are batched into Friend Session FS-1, which is
 booked once the readiness gate in TASKS.md passes (T-004, T-008, T-012 done).
 **Blockers:** none yet. Open risks are listed below.

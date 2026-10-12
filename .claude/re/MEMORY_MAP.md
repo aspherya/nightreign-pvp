@@ -40,7 +40,7 @@ Confidence: **Confirmed** = seen behaving this way in the live game. **Likely** 
 | `+0x68` | u32 | Character / NPC id | 0 for real players, e.g. 10000010 for an enemy, 1000000 for the "object" players | T-007a |
 | `+0x70` | u32 | Character type | 0 in Roundtable, 13 in an expedition for players | TC-004 |
 | `+0x74` | u8 | **Team type**: decides who is hostile to whom | See §4. Each game decides from **its own copy**; it is not synced | TC-004, FS-0, FS-1 |
-| `+0x78` | 8 bytes | **Session player id** | Same value for the same player on everyone's game: `0x6001FFFFFFFF` host, `0x6002…` next to join; a rejoin gets a new number (`0x6003…`) | FS-0, FS-1 |
+| `+0x78` | 8 bytes | **Session player id** | Same value for the same player on everyone's game: `0x6001FFFFFFFF` host, `0x6002…` next to join; a rejoin gets a new number (`0x6003…`). With 3 players the expedition ids were `0x6001`/`0x6002`/`0x6003` on all three games; in the lobby before it the two joiners were `0x6003`/`0x6004`, so **ids are renumbered when the expedition starts** | FS-0, FS-1, run 21 |
 
 Nightreign's layout here is Elden Ring's shifted by 8 bytes (Elden Ring has team type at `+0x6C`).
 
@@ -89,6 +89,11 @@ Seen values: 240 full, 0 while downed, 120 right after a revive (half), full aga
 - Clock: setting it to 2.0 while downed made the player die 3 seconds later instead of 10. The game keeps counting from the new value. **Confirmed.**
 - Bar: writing the pre-hit value back sticks; the next hit subtracts from the restored value (run 15: `bar 58 -> 90 restored`, then 57, 55). **Confirmed.**
 - Pause timer: writing 0 lets the clock run again at once (run 15: the clock kept falling between rival hits). **Confirmed.**
+
+**Seen in run 21 (3 players, owner's game):**
+- The bar grows back by about 9 per second while the pause timer is 0 and no hit lands (70 → 78.2 in 0.9 s). Whether it stops at the
+  starting size: UNKNOWN. Our rule sets the pause to 0, so after a rival hit the growth starts at once.
+- The amount one hit takes off the bar depends on the attacker: 14, 20 and 25–26 for the three players of run 21 (11 in run 14).
 
 **Remote copies (another player's PlayerIns on my game):** the same block is used. State follows the owner. Bar, clock and pause are
 refreshed only when a hit lands, with the owner's values at that moment; a value the owner writes afterwards is not sent. The copy's

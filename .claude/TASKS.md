@@ -354,7 +354,7 @@ of grace: investigate first (read-only logging of what changes when the player s
 Acceptance: HUMAN-solo expedition via me3: PvE normal, value applied and restored automatically; grace behaviour documented. Two-client: FS-0.
 
 ### T-021 — Team values research (allies not hostile)
-Owner: HUMAN + OPUS (Nucleus) | Status: superseded by T-026 (teammates stay on the normal value 2, only rivals get 29; `team_size >= 2` not yet run in the game: STATUS.md Task C) | Depends on: T-020 | Phase: 2
+Owner: HUMAN + OPUS (Nucleus) | Status: superseded by T-026 (teammates stay on the normal value 2, only rivals get 29; `team_size = 2` passed with 3 Nucleus instances in FS-0 run 21, 2026-10-12) | Depends on: T-020 | Phase: 2
 Goal: find team_type values A and B such that A is hostile to B and to enemies, but A is not hostile to A (needed for 2v2 and up). Test candidates
 3, 13, 16, 9 and others from the enum with the overlay/hotkeys in Nucleus (needs 2 clients; ideally 3 for an ally check, otherwise FS-1).
 
@@ -525,4 +525,52 @@ Open follow-ups (no card yet; write one when the phase needs it):
 2. **One hit that removes the whole bar** (first down, bar 40; runs 18 and 19): the player gets up and rule v1 downs them again 3.7 s
    later. Accepted by Leonardo 2026-10-12 as long as the player ends up downed again. `early_redown` would close it; untested.
 3. **Teams of 2+:** the attacker-side restore cannot tell a teammate's hit from a rival's on a remote copy (`+0x1A0` is not valid there).
-   Needs a design before STATUS.md Task C.
+   Still open after STATUS.md Task C (FS-0 run 21 passed the rule itself with teams of two; the lone rival's gauge was not reported).
+
+## M8 — Public matchmaking (design: `research/S9-matchmaking-decision.md`)
+
+Decision (Opus, 2026-10-12): Steam queue lobby + join the host's SC lobby; no server of ours; Solo first. Never EAC, never Bandai servers.
+Cards run in order. MM-1 and MM-2 are developer-build only and change nothing in the player zip.
+
+### MM-1 — Steam access probe: flat interfaces and SC's lobby id
+Owner: SONNET/implementer → HUMAN-solo | Status: todo | Settles: S9 U1, U2
+Dev build only, behind `probes`-style switch `mm_probe = true`. New module `crates/nrpvp/src/steam/` (raw externs to the loaded
+`steam_api64.dll` via `GetProcAddress`; never Init / ManualDispatch / Shutdown; no `steamworks` crate).
+1. Log whether each accessor resolves and returns non-null: `SteamAPI_SteamMatchmaking_v009`, `SteamAPI_SteamUtils_v010` (or the version
+   the DLL exports: list the exports and log the one found), `SteamAPI_SteamUser_v021`, `SteamAPI_SteamFriends_v017`. Log own Steam ID.
+2. Register listeners with `SteamAPI_RegisterCallback` for `LobbyEnter_t`, `LobbyChatUpdate_t`, `GameLobbyJoinRequested_t`,
+   `LobbyDataUpdate_t` (hand-built `CCallbackBase`; listen only, never consume or answer). Log every event with lobby id.
+3. For each lobby id seen: log owner, member count, member limit, and all lobby data keys/values (`GetLobbyDataCount` / `ByIndex`).
+Acceptance (HUMAN-solo, `scripts\launch.ps1`): launch, reach the Roundtable, open Matchmaking Settings, open Invite Members, close it,
+start and finish/quit a solo expedition. Send the log. Game and SC must behave normally throughout.
+Stop and report if any accessor is null or registering a listener breaks SC (no invites, no lobby).
+
+### MM-2 — Queue lobby in Nucleus
+Owner: SONNET/implementer → HUMAN (Nucleus) | Status: todo | Depends: MM-1 | Settles: S9 U3
+Worker thread + state machine `Idle → Searching → InQueue → MatchReady` in `crates/nrpvp/src/mm/` (pure logic unit-tested, Steam behind
+a trait). Create/search/join an Invisible lobby with the S9 §6 tags; call results polled via `IsAPICallCompleted`/`GetAPICallResult`;
+duplicate-lobby rule (higher id yields). Dev overlay/hotkey: queue Solo, leave queue. Log roster on `MatchReady`. No SC join yet.
+Acceptance: 3 Nucleus instances queue within 10 s of each other → all three logs show the same queue lobby id and the same 3-member
+roster, one owner; leaving and re-queueing works; an SC co-op session between the instances still works afterwards.
+Before building: check which Goldberg build the handler ships (S4 §6 q6); if it lacks lobbies, report instead of working around it.
+
+### MM-3 — The gate: enter the host's SC lobby without a manual invite
+Owner: SONNET/implementer → HUMAN + friend (next FS) | Status: todo | Depends: MM-1 | Settles: S9 U4, U5
+Dev build: host's overlay shows its SC lobby id (from MM-1) and a "copy join code" button; joiner's overlay takes a pasted code and
+tries, one button each: (a) `steam://joinlobby/2622380/<lobby>/<host>` via ShellExecute; (b) host-side button `InviteUserToLobby`;
+(c) `JoinLobby` from our DLL. Every attempt and every lobby event is logged.
+FS runbook (goes into TESTING.md §6): try (a), (b), (c) as friends; then remove each other from Steam friends and repeat. Record for
+each: did the joiner appear in the host's Roundtable, could the expedition start, any SC error text.
+Outcome decides v1: (a) works for non-friends → fully automatic; only (b) → one click per joiner; none → stop, see S9 §5.
+
+### MM-4 — Solo queue end to end
+Owner: SONNET/implementer → HUMAN | Status: blocked on MM-2, MM-3 | Feeds: F1, F15
+S9 §6 steps 1–9 with the join method MM-3 selected. Player-build UI: one overlay button "Solo Battle Royale" at the Roundtable, queue
+counter, "match found", host prompt. Safety guard (S9 §2): no queueing unless `nrsc.dll` is loaded and no EAC module is.
+Acceptance: Nucleus cannot do the SC join if it needed `steam://`; then Nucleus covers steps 1–5 and a Friend Session covers 6–9.
+
+### MM-5 — Table entry "Battle Royale" (S7 route B) replaces the overlay button
+Owner: OPUS to card in detail | Status: later
+
+### MM-6 — Duo and Squad: party tickets and Steam ID → expedition player
+Owner: OPUS to card in detail | Status: later | Settles: S9 U7
