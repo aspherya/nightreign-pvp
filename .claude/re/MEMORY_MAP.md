@@ -139,6 +139,26 @@ Kept here so nobody repeats them.
 | Elden Ring's route to a character's position works | It doesn't. See §8 |
 | Setting health to 0 kills a player | In a multiplayer session it only downs them. Death comes from the bleed-out clock reaching 0 |
 
+## 11. Leads from a community cheat table (not yet seen in the live game)
+
+Source: `nightreign v1.01.4.CT` by Matthew80 (written for exe 1.1.2.0 / 1.1.3.0), read on 2026-10-12. The table was **not run**.
+Its byte patterns were searched in the 1.03.3 `nightreign.exe` file on disk. "Code at" is where the pattern sits in 1.3.3.0 (one
+match unless noted). The offsets are the table author's; what each object is and how to reach it from `PlayerIns` is `[HYPOTHESIS]`.
+
+| What | Offsets (table) | Code at (1.3.3.0) | Pattern | Our guess at the object |
+|---|---|---|---|---|
+| Health / max health, FP / max FP, stamina / max stamina | `+0x140` / `+0x14C`, `+0x150` / `+0x154`, `+0x15C` / `+0x160` | read `exe+0x7CBEBC`; **write** `exe+0x428CDD` (`mov [rdi+0x140],eax`) | `8B 88 40 01 00 00 89 8F`; `89 87 ?? ?? ?? ?? 33 D2 49 8B CE` | The character's data module (Elden Ring has the same fields 8 bytes lower). Relation to `[PlayerIns+0xB78]+0x70`: UNKNOWN |
+| Position x, y, z (the table edits these to move the player) | `+0x70`, `+0x74`, `+0x78` | `exe+0x46E5C1` (`movups xmm3,[rbx+0x70]`) | `0F 10 5B 70 F3 0F 10 93 98 01 00 00` | The physics module (same offset as Elden Ring). Not one of the §8 candidates |
+| Runes, level | `+0x6C`, `+0x68` | `exe+0x830E3D` (`mov eax,[r14+0x6C]`) | `41 8B 46 6C 89 86 1C 01 00 00` | `CS::PlayerGameData` = `[PlayerIns+0x5A0]` (same offsets as Elden Ring) |
+| Murk, sovereign sigil (kept between runs: **never write**) | `+0xD0`, `+0x5C` | same | same | same object |
+| Vigor … arcane (8 values) | `+0x34` … `+0x50` | pattern not found in 1.3.3.0 | n/a | same object |
+| "No hit" flag | byte `+0xF0`, bit `0x40`, in the object at `[X+0x60]` | `exe+0xC3676A` (the game clears the bit here) | `48 8B 40 60 80 A0 F0 00 00 00 BF` | `[PlayerIns+0x60]` (already a §8 pointer). What the table writes: UNKNOWN |
+| Damage of a hit being applied | `+0x258` in the table, **`+0x280` in 1.3.3.0** | `exe+0x43BFB1` | `41 8B 96 ?? ?? ?? ?? 85 D2 0F 9F C0` | A per-hit damage record |
+| "Use an item" removes it from the inventory | a call | `exe+0x1F0840` | `E8 ?? ?? ?? ?? 44 8B F0 FF C7` | The called function is a lead for §10 "inventory" |
+| Ultimate charge now / needed; skill cooldown | `+0x14` / `+0x18`; `+0x24`, `+0x28` | `exe+0x48B859`; `exe+0x2E0972` and `exe+0x48C03B` | `F3 0F 10 43 14 48 83`; `F3 0F 58 77 24 0F` | UNKNOWN |
+| Enemies ignore the player ("stealth") | byte `+0xD4` | `exe+0x2F5D02` | `74 ?? C6 81 ?? ?? ?? ?? ?? E9 ?? ?? ?? ?? 80 B9` | UNKNOWN |
+| Night's Tide speed multiplier | a float constant multiplied into the tide timer, and a rate at `+0x118` | **pattern not found in 1.3.3.0** | n/a | n/a |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).
