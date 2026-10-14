@@ -116,13 +116,39 @@ To tell teammate from rival: read the handle, find which player in the list has 
 
 ## 8. Position (not finished)
 
-| Where | What we saw | Status |
-|---|---|---|
-| `PlayerIns+0x6C0` | Three numbers that move smoothly as the player moves, followed by 1.0 | Candidate. Reading only |
-| `PlayerIns+0x6D0` | A second, slightly different set of three | Candidate |
-| `[PlayerIns+0x60]+0x1EC`, `[PlayerIns+0x6B0]+0x17C`, `+0x18C` | More position-like sets | Candidates |
+**The physics module holds the position. Writing it moves the player** (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
 
-Which one actually moves the player when written is **unknown**. The snap-back test for this has not been run. Needed for separate team spawns.
+**What run 1 showed (9 writes, local player, solo expedition):**
+- The chain is `[[PlayerIns+0x1B8]+0x68]+0x70`. The owner at `+0x08` is the PlayerIns. **Confirmed.**
+- x and z arrive within 2 cm every time and are **not snapped back**. **Confirmed.**
+- Height is not reliable. Saved while standing at y 193.35; after the write the ground byte went to 0 and the player fell to 191.58 (1.8 m lower) and stood there. Later writes ended at 188.2 and 185.7, and after the last one the player fell out of the world (y 185 to -171 in 9 s) and the expedition ended. Cause UNKNOWN.
+- `+0x92` and `+0x93` read 1 while standing and 0 while falling. **Confirmed** as "on the ground".
+- **The numbers are relative to an origin that moves** (run 2, log `run2_solo_teleport.log`). x and z stay within about -32..+32; when the player walks past the edge the value jumps back by about 32 m while the player keeps moving smoothly (hawk flight: z went 2.7 → 29.2 → 4.4 nine times in a row). y is not re-centred. So a saved x, y, z is only valid until the next jump: writing it later puts the player 32 m (or a multiple) away, often in the air. This explains the "wrong height" and "fell through" results of runs 1 and 2. Where the origin is stored: UNKNOWN; candidates `PlayerIns+0x30..0x50`, `+0x80`, `+0x90`, `+0xE0` are now logged with every position sample (`h30=`, `h80=`, `h90=`, `hE0=`).
+- The start of the expedition (before the hawk) reads (0.00, 10.66, 67.00).
+
+Facts from the exe on disk:
+
+| What | Where | How we know |
+|---|---|---|
+| Class of the object that holds the position | `CS::CSChrPhysicsModule`, table at `exe+0x2C13720` | `[VERIFIED: RTTI of nightreign.exe 1.3.3.0 on disk]` |
+| Position x, y, z (f32) | `+0x70`, `+0x74`, `+0x78` in that object | `[VERIFIED: code at exe+0x46E5C1 reads [rbx+0x70]]`. Same offset as Elden Ring. The community table (§11) edits these three to move the player |
+| "Standing on solid ground" byte | `+0x92` in that object | `[HYPOTHESIS]` The same code tests `[rcx+0x92]`; the name is Elden Ring's |
+| Owner (the character) | `+0x08` in that object | Confirmed, run 1 |
+| The character's module list | `[PlayerIns+0x1B8]`: a block of 57 pointers, no class | `[HYPOTHESIS]` Seen in the run 7 dump. Elden Ring has it at `+0x190`; in Nightreign `+0x190` is `CS::SpecialEffect`, which is why the T-028 probe found nothing |
+| Which entry of the list is the physics module | `+0x68` (same as Elden Ring) | Confirmed, run 1 |
+
+Older candidates (FS-0 run 6: numbers that move smoothly with the player). Reading only; none was written yet.
+
+| Where | What it is |
+|---|---|
+| `PlayerIns+0x6C0` | Three numbers followed by 1.0 |
+| `PlayerIns+0x6D0` | A second, slightly different set |
+| `[PlayerIns+0x60]+0x1EC` | Inside `CS::PlayerCtrl` |
+| `[PlayerIns+0x6B0]+0x17C`, `+0x18C` | Inside `CS::CSFD4LocationBodyScaleModifier` (a model/bone object: unlikely to move the player) |
+| `[PlayerIns+0x5F0]+0x64` | Object with no class |
+
+Still UNKNOWN: why the player ends below the saved height or falls through; whether other players see the move; how the map tile
+is stored and whether a far move must change it; what marks "landed after the hawk".
 
 ## 9. Things that turned out to be wrong
 
@@ -148,7 +174,7 @@ match unless noted). The offsets are the table author's; what each object is and
 | What | Offsets (table) | Code at (1.3.3.0) | Pattern | Our guess at the object |
 |---|---|---|---|---|
 | Health / max health, FP / max FP, stamina / max stamina | `+0x140` / `+0x14C`, `+0x150` / `+0x154`, `+0x15C` / `+0x160` | read `exe+0x7CBEBC`; **write** `exe+0x428CDD` (`mov [rdi+0x140],eax`) | `8B 88 40 01 00 00 89 8F`; `89 87 ?? ?? ?? ?? 33 D2 49 8B CE` | The character's data module (Elden Ring has the same fields 8 bytes lower). Relation to `[PlayerIns+0xB78]+0x70`: UNKNOWN |
-| Position x, y, z (the table edits these to move the player) | `+0x70`, `+0x74`, `+0x78` | `exe+0x46E5C1` (`movups xmm3,[rbx+0x70]`) | `0F 10 5B 70 F3 0F 10 93 98 01 00 00` | The physics module (same offset as Elden Ring). Not one of the §8 candidates |
+| Position x, y, z (the table edits these to move the player) | `+0x70`, `+0x74`, `+0x78` | `exe+0x46E5C1` (`movups xmm3,[rbx+0x70]`) | `0F 10 5B 70 F3 0F 10 93 98 01 00 00` | `CS::CSChrPhysicsModule` (§8). The table hooks this code and stores `rbx` (the object) with no filter, so its three "pos" rows point at whichever character ran the code last |
 | Runes, level | `+0x6C`, `+0x68` | `exe+0x830E3D` (`mov eax,[r14+0x6C]`) | `41 8B 46 6C 89 86 1C 01 00 00` | `CS::PlayerGameData` = `[PlayerIns+0x5A0]` (same offsets as Elden Ring) |
 | Murk, sovereign sigil (kept between runs: **never write**) | `+0xD0`, `+0x5C` | same | same | same object |
 | Vigor … arcane (8 values) | `+0x34` … `+0x50` | pattern not found in 1.3.3.0 | n/a | same object |

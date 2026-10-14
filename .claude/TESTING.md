@@ -391,3 +391,9 @@ friends, rivals finish rivals. The logs agree:
   Cause UNKNOWN (three games on one PC; run 20 with two games had none). The rule still reacted on every hit.
 - Warnings: one 180 s WorldChrMan timeout per game while sitting in the menus, and one `ChrSet capacity 0` per area change. Both harmless.
 - Not shown by the logs: that teammates cannot damage each other (nothing logs damage).
+
+### 2026-10-13 — T-028 run 1 (solo, `scripts\launch.ps1`, snap-back test with `Physics+0x70`). Log: `.claude/experiments/T-028/run1_solo_teleport.log`
+Game 1.03.3, Seamless Co-op v1.1.3, mod build 2026-10-13 22:30. One save (F7), nine writes (F6), first candidate only.
+**Position write moves the player: PASS for x and z** (within 2 cm, never snapped back). **Height: FAIL** (ended 1.8 m to 7.7 m below
+the saved height; after write 9 the player fell out of the world and the expedition ended). Chain confirmed:
+`[[PlayerIns+0x1B8]+0x68]+0x70`, owner at `+0x08`. Full findings: `re/MEMORY_MAP.md` §8. Leonardo: "it kinda worked, with some bugs".

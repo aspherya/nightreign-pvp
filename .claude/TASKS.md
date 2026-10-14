@@ -409,7 +409,7 @@ Read-only, guarded reads, every candidate labelled UNVERIFIED.
   How the expedition start position is chosen (hawk drop-in, start points per map pattern, event scripts, params), where a character's position
   lives (ER physics module as a hint), how ER/NR mods teleport players and whether that syncs in co-op, and what lists of safe points the
   engine has (`CSRespawnPointMan`, graces, map points). → `.claude/research/S6-team-spawns.md`
-- **T-028 — Position probe and self-teleport test.** Owner: SONNET/implementer → HUMAN | Status: todo (the snap-back test is built, T-032 part c; HUMAN run pending: STATUS.md Task D) | Depends on: T-027, S6.
+- **T-028 — Position probe and self-teleport test.** Owner: SONNET/implementer → HUMAN | Status: todo ( 2026-10-13: physics module located statically, `Physics+0x70` is the first snap-back candidate, built; the snap-back test is built, T-032 part c; HUMAN run pending: STATUS.md Task D) | Depends on: T-027, S6.
   Read-only first: log the local player's position candidates and the respawn-point list. Then a debug hotkey that moves the **local** player to a
   logged point. Acceptance (HUMAN + friend): the move is clean on both screens. Then the rule: on expedition start each team moves to its own point.
 

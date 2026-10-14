@@ -6,7 +6,7 @@
 //! Strictly read-only: guarded reads through [`RegionCache`], no writes, no calls into game functions.
 //!
 //! Sources (ER, fsrs = `vswarte/fromsoftware-rs` at 59fbd3b, see S6-team-spawns.md sections 2 and 5):
-//! * `ChrIns.modules` at ER +0x190 (NR +8 guess: +0x198) -> `ChrInsModuleContainer`; `physics` is the 14th pointer,
+//! * `ChrIns.modules` at ER +0x190 (NR: +0x1B8, seen as a block of 57 pointers in the FS-0 run 7 dump; +0x190 is `CS::SpecialEffect` in NR) -> `ChrInsModuleContainer`; `physics` is the 14th pointer,
 //!   +0x68 (neighbour +0x70 also tried). [SOURCE: fsrs chr_ins.rs#L211, chr_ins/module.rs; PT pointers.rs#L527]
 //! * `CSChrPhysicsModule` (fsrs chr_ins/module/physics.rs, offsets derived by hand from the struct, fetched
 //!   2026-10-10): `owner` (ChrIns*) +0x08, `position` (x,y,z,w f32) +0x70, `standing_on_solid_ground` +0x92,
@@ -25,8 +25,8 @@ use super::mem::{va_rva, RegionCache};
 
 const TAG: &str = "T-028 POS UNVERIFIED";
 
-/// ChrIns -> module container pointer: ER, NR +8 guess.
-pub(crate) const MODULES_PTR_OFFS: [usize; 2] = [0x190, 0x198];
+/// ChrIns -> module container pointer: ER, NR (see `poswrite::MODULES_OFF`).
+pub(crate) const MODULES_PTR_OFFS: [usize; 2] = [0x190, super::poswrite::MODULES_OFF];
 /// Container -> physics module pointer: ER, +8 neighbour.
 pub(crate) const PHYS_IN_MODULES: [usize; 2] = [0x68, 0x70];
 /// Container -> time act module pointer (ER).
@@ -175,6 +175,9 @@ pub(crate) struct Sample {
     pub anim: [Option<u32>; 2],
     /// Per [`BLOCK_VARIANTS`]: (block_position, block id).
     pub blocks: [(Option<[f32; 4]>, Option<u32>); 2],
+    /// Origin candidates of the local frame (T-028 run 2: x and z are re-centred in 32 m steps): the 0x20 bytes at
+    /// ChrIns+0x30 and the f32 x4 at +0x80, +0x90 and +0xE0. UNVERIFIED.
+    pub hdr: String,
 }
 
 impl Sample {
@@ -199,8 +202,9 @@ impl Sample {
             .map(|(o, b)| format!("{o:X}:{}", b.map_or("?".to_string(), |b| b.to_string())))
             .collect();
         let anim = |v: Option<u32>| v.map_or("?".to_string(), |v| v.to_string());
+        let hdr = &self.hdr;
         format!(
-            "pos={pos} via={via} bid[{:X}]={} bid[{:X}]={} bp[{:X}]={} bp[{:X}]={} gnd=[{}] anim[{:X}]={} anim[{:X}]={}",
+            "pos={pos} via={via} bid[{:X}]={} bid[{:X}]={} bp[{:X}]={} bp[{:X}]={} gnd=[{}] anim[{:X}]={} anim[{:X}]={} {hdr}",
             BLOCK_VARIANTS[0].1,
             h(self.blocks[0].1),
             BLOCK_VARIANTS[1].1,
@@ -258,6 +262,22 @@ pub(crate) fn read_sample(rc: &mut RegionCache, player: usize, cands: &[PhysCand
             rc.read::<u32>(player + id),
         );
     }
+    let v4 = |rc: &mut RegionCache, o: usize| match f4(&rc.read_prefix(player + o, 16)) {
+        Some(v) => format!("({:.2},{:.2},{:.2},{:.2})", v[0], v[1], v[2], v[3]),
+        None => "?".to_string(),
+    };
+    let raw: Vec<String> = rc
+        .read_prefix(player + 0x30, 0x20)
+        .chunks(4)
+        .map(|c| c.iter().rev().map(|b| format!("{b:02X}")).collect())
+        .collect();
+    s.hdr = format!(
+        "h30=[{}] h80={} h90={} hE0={}",
+        raw.join(" "),
+        v4(rc, 0x80),
+        v4(rc, 0x90),
+        v4(rc, 0xE0)
+    );
     let Some((ci, ki)) = select(cands) else {
         return s;
     };
@@ -408,7 +428,7 @@ impl PosProbe {
     /// The full candidate table of one player, once per WorldChrMan instance.
     fn log_table(&mut self, rc: &mut RegionCache, t: &Target, cands: &[PhysCand]) {
         tracing::info!(
-            "{TAG}: {} PlayerIns {} chain candidates (ChrIns+modules -> +phys -> physics module; ER 0x190/0x68/0x70, NR +8 guesses; good = vtable in exe AND physics+8 == PlayerIns):",
+            "{TAG}: {} PlayerIns {} chain candidates (ChrIns+modules -> +phys -> physics module; ER 0x190/0x68/0x70, NR 0x1B8 and +8 guesses; good = vtable in exe AND physics+8 == PlayerIns):",
             t.label(),
             va_rva(t.addr, self.base, self.size)
         );
@@ -515,10 +535,10 @@ mod tests {
     const PHYS: usize = 0x1400;
     const TIMEACT: usize = 0x2000;
 
-    /// A believable ER-layout chain: player+0x198 -> modules, modules+0x68 -> physics, physics+0x70 = position.
+    /// A believable ER-layout chain: player+0x1B8 -> modules, modules+0x68 -> physics, physics+0x70 = position.
     fn world() -> Arena {
         let mut a = Arena::new();
-        a.put64(PLAYER + 0x198, a.addr(MODS) as u64);
+        a.put64(PLAYER + 0x1B8, a.addr(MODS) as u64);
         a.put64(MODS + 0x68, a.addr(PHYS) as u64);
         a.put64(MODS + 0x18, a.addr(TIMEACT) as u64);
         a.put64(PHYS, (IMG + 0x1000) as u64);
@@ -568,18 +588,18 @@ mod tests {
         let mut rc = RegionCache::new();
         let c = read_phys_cands(&mut rc, a.addr(PLAYER), IMG, IMG_SIZE);
         assert_eq!(c.len(), 4);
-        // Only modules@0x198 / phys@0x68 is good.
+        // Only modules@0x1B8 / phys@0x68 is good.
         let good: Vec<(usize, usize)> = c
             .iter()
             .filter(|c| c.good())
             .map(|c| (c.modules_off, c.phys_off))
             .collect();
-        assert_eq!(good, [(0x198, 0x68)]);
+        assert_eq!(good, [(0x1B8, 0x68)]);
         let (i, k) = select(&c).expect("selected");
-        assert_eq!((c[i].modules_off, POS_OFFS[k]), (0x198, 0x70));
+        assert_eq!((c[i].modules_off, POS_OFFS[k]), (0x1B8, 0x70));
         let s = read_sample(&mut rc, a.addr(PLAYER), &c);
         assert_eq!(s.pos, Some((100.5, 30.25, -200.0)));
-        assert_eq!(s.via, Some((0x198, 0x68, 0x70)));
+        assert_eq!(s.via, Some((0x1B8, 0x68, 0x70)));
         assert_eq!(s.anim, [Some(20_000), Some(0)]);
         assert_eq!(s.blocks[1].1, Some(0x3C2A_2400));
         assert_eq!(s.blocks[1].0, Some([1.0, 2.0, 3.0, 0.5]));

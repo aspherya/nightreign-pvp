@@ -136,11 +136,11 @@ mm_join_auto = \"invite\"
 downed_rival_team = 0
 downed_rival_candidates = [0, 6, 14, 30, 2]
 
-# T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF or [PlayerIns+0xPTR]+0xOFF
-# (3 x f32 each). hotkey_pos_cycle selects one, hotkey_pos_save saves the local player's values of ALL candidates,
+# T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF, [PlayerIns+0xPTR]+0xOFF or
+# Physics+0xOFF (inside the player's physics module) (3 x f32 each). hotkey_pos_cycle selects one, hotkey_pos_save saves the local player's values of ALL candidates,
 # hotkey_pos_write writes the saved 12 bytes into the SELECTED candidate only and logs every candidate after 100 ms, 500 ms and 2 s.
 # Invalid entries are skipped with a warning.
-pos_candidates = [\"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
+pos_candidates = [\"Physics+0x70\", \"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
 
 # T-035 rival revive rule (dev mode only; the player build always uses \"redown\"): when a RIVAL completes the revive meter of
 # the LOCAL player, the player is downed again at once (HP written to 0) instead of being revived; allies revive as in vanilla.
@@ -1387,6 +1387,7 @@ hotkey_downed_cycle = \"nope\"
         assert_eq!(
             c.pos_candidates,
             vec![
+                "Physics+0x70",
                 "PlayerIns+0x6C0",
                 "PlayerIns+0x6D0",
                 "[PlayerIns+0x60]+0x1EC",

@@ -58,9 +58,17 @@ gauge of a downed enemy who has a teammate. Original card: the only way to see b
 Set `team_size = 2` (Nucleus: `scripts\deploy-nucleus.ps1 -TeamSize 2`; zip: `scripts\package-release.ps1 -TeamSize 2`).
 Also the first test of: teammates can't hurt each other, teammate revive works, player IDs with 3 players.
 
-### Task D: position snap-back test (needed for separate spawns)
-Never run. Developer build in Nucleus: stand still, **F7** (save spot), walk ~20 m, **F6** (try to return), note the result, **F9** (next
-candidate), repeat for 6 candidates. Tell Claude which one snapped the player back and what the other screen showed.
+### Task D: teleport test (needed for separate spawns). Build of 2026-10-13 22:30, solo, about 3 minutes
+**Run once 2026-10-13: the write moves the player (x, z exact, no snap-back) but the height is wrong and the last jump fell out of
+the world.** Details: `re/MEMORY_MAP.md` §8. Next is building work (a safe arrival), not another run of these steps.
+Original steps: `.scriptsaunch.ps1`, start a solo expedition, wait until you can walk.
+1. Stand still, press **F7** (saves the spot).
+2. Walk about 20 m away, press **F6** (tries to put you back).
+3. Tell Claude: did the character jump back to the saved spot and stay there? Anything odd (fall, damage, camera)?
+4. Close the game and send `dist
+rpvp.log`.
+The first candidate is now the physics module position (`re/MEMORY_MAP.md` §8). Only if nothing happened: **F9** (next candidate),
+then F6 again, up to 6 more times. The two-screen check (does the other player see the jump) comes after, in Nucleus.
 
 ## 4. Next building work
 
