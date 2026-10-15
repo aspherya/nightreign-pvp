@@ -397,3 +397,8 @@ Game 1.03.3, Seamless Co-op v1.1.3, mod build 2026-10-13 22:30. One save (F7), n
 **Position write moves the player: PASS for x and z** (within 2 cm, never snapped back). **Height: FAIL** (ended 1.8 m to 7.7 m below
 the saved height; after write 9 the player fell out of the world and the expedition ended). Chain confirmed:
 `[[PlayerIns+0x1B8]+0x68]+0x70`, owner at `+0x08`. Full findings: `re/MEMORY_MAP.md` §8. Leonardo: "it kinda worked, with some bugs".
+
+### 2026-10-14 — T-028 runs 2 and 3 (solo). Logs: `.claude/experiments/T-028/run2_solo_teleport.log`, `run3_solo_walk.log`
+Run 2 (3 saves/teleports): grass worked; rock → grass and cliff top arrived beside the saved spot and fell. Cause found from the log:
+the physics position is measured from an origin that moves. Run 3 (walk, no teleport): the origin is `PlayerIns+0x80`
+(`re/MEMORY_MAP.md` §8). Teleport now saves world position (physics − origin) and writes it back with the current origin; not run yet.

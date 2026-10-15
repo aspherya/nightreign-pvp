@@ -36,6 +36,10 @@ pub(crate) const MODULES_SPAN: usize = 0x1C8;
 /// Vtable of `CS::CSChrPhysicsModule` as an exe offset. NR 1.3.3.0, read from the RTTI of `nightreign.exe` on disk
 /// (2026-10-13). The game reads the position at +0x70 of this object (code at exe+0x46E5C1). MEMORY_MAP.md section 8.
 pub(crate) const PHYSICS_VTABLE_RVA: usize = 0x2C1_3720;
+/// PlayerIns -> origin of the local frame the physics position is measured in (x, y, z f32; y stays 0). The game moves it in
+/// 8 m steps as the player walks, so world position = physics position - origin. NR 1.3.3.0, T-028 run 3 (2026-10-14):
+/// local minus this value is a smooth path across every jump of the local value. MEMORY_MAP.md section 8.
+pub(crate) const ORIGIN_OFF: usize = 0x80;
 
 /// Where one candidate triple lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -194,6 +198,8 @@ struct Saved {
     ptr: Option<usize>,
     /// First qword of the pointee if it is an exe-image address (the vtable).
     vtable: Option<usize>,
+    /// The local-frame origin at save time (Physics candidates): a later write is shifted by how far the origin moved.
+    origin: Option<[u8; 12]>,
 }
 
 /// A resolved candidate address plus the facts a later write is checked against.
@@ -405,11 +411,23 @@ impl PosTest {
                         }
                     );
                 }
+                let origin = match c {
+                    Cand::Physics { .. } => {
+                        let o = m
+                            .read12(player + ORIGIN_OFF)
+                            .filter(|b| plausible(decode(b)))
+                            .ok_or("the origin at PlayerIns+0x80 is unreadable or implausible")?;
+                        found.push_str(&format!(" origin={}", fmt3(decode(&o))));
+                        Some(o)
+                    }
+                    _ => None,
+                };
                 m.read12(r.addr)
                     .map(|bytes| Saved {
                         bytes,
                         ptr: r.ptr,
                         vtable: r.vtable,
+                        origin,
                     })
                     .ok_or_else(|| format!("0x{:X} is unreadable", r.addr))
             });
@@ -466,7 +484,18 @@ impl PosTest {
                     .map_or("none".to_string(), |p| format!("0x{p:X}"))
             ));
         }
-        let new = decode(&saved.bytes);
+        let mut new = decode(&saved.bytes);
+        if let Some(o0) = saved.origin {
+            let o1 = m
+                .read12(player + ORIGIN_OFF)
+                .map(|b| decode(&b))
+                .filter(|o| plausible(*o))
+                .ok_or("the origin at PlayerIns+0x80 is unreadable or implausible; refusing")?;
+            let o0 = decode(&o0);
+            for i in 0..3 {
+                new[i] += o1[i] - o0[i];
+            }
+        }
         if !plausible(new) {
             return Err(format!(
                 "the saved value {} for {name} is not finite or has a component of at least {MAX_ABS}; refusing",
@@ -498,7 +527,11 @@ impl PosTest {
             .read12(now.addr)
             .map(|b| decode(&b))
             .ok_or("the target is unreadable")?;
-        m.write(now.addr, &saved.bytes)
+        let mut bytes = [0u8; 12];
+        for (i, v) in new.iter().enumerate() {
+            bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        m.write(now.addr, &bytes)
             .map_err(|e| format!("guarded write refused: {e}"))?;
         let readback = m
             .read12(now.addr)
@@ -705,10 +738,18 @@ mod tests {
         let r = t.write(&mut f, PLAYER).expect("write");
         assert_eq!(r.addr, PHYS + 0x70);
         assert_eq!(f.get3(PHYS + 0x70), [1.0, 2.0, 3.0]);
+        // The origin moved by (-32, 0, 24) since the save: the same world spot is now that far off in local numbers.
+        f.put3(PLAYER + ORIGIN_OFF, [-32.0, 0.0, 24.0]);
+        t.write(&mut f, PLAYER).expect("write after an origin move");
+        assert_eq!(f.get3(PHYS + 0x70), [-31.0, 2.0, 27.0]);
+        // An unreadable origin is refused rather than guessed.
+        f.put3(PLAYER + ORIGIN_OFF, [f32::NAN, 0.0, 0.0]);
+        assert!(t.write(&mut f, PLAYER).unwrap_err().contains("origin"));
+        f.put3(PLAYER + ORIGIN_OFF, [0.0; 3]);
         // The object in that slot is no longer a physics module: refused.
         f.put_u64(PHYS, VT_B);
         assert!(t.write(&mut f, PLAYER).is_err());
-        assert_eq!(f.writes.len(), 1);
+        assert_eq!(f.writes.len(), 2);
     }
 
     #[test]
