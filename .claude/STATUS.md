@@ -59,8 +59,14 @@ Set `team_size = 2` (Nucleus: `scripts\deploy-nucleus.ps1 -TeamSize 2`; zip: `sc
 Also the first test of: teammates can't hurt each other, teammate revive works, player IDs with 3 players.
 
 ### Task D: teleport test (needed for separate spawns). Build of 2026-10-13 22:30, solo, about 3 minutes
-**Solo: PASS (run 4, 2026-10-14).** The teleport now keeps world position (physics position − origin at `PlayerIns+0x80`) and lands on
-the saved spot. Still open: does the other player see the jump (Nucleus, 2 instances).
+**Solo: PASS (run 4, 2026-10-14). Two screens: PASS (Nucleus, 2026-10-14: the other player saw the jump, both screens agreed, both could still hit each other).**
+The teleport keeps world position (physics position − origin at `PlayerIns+0x80`).
+
+### Task E: separate team spawns, first run (built 2026-10-14 23:02, `team_spawns = true` in `dist
+rpvp.toml` and Nucleus)
+At the hawk drop each game moves its own player `spawn_radius` (200) m from the drop point, one direction per team, 40 m higher;
+the player then falls and lands as usual. Code: `crates/nrpvp/src/game/spawn.rs`. Not run yet. Unknowns: target inside a hill,
+in water or off the map; fall damage from the extra 40 m.
 1. Stand still, press **F7** (saves the spot).
 2. Walk about 20 m away, press **F6** (tries to put you back).
 3. Tell Claude: did the character jump back to the saved spot and stay there? Anything odd (fall, damage, camera)?

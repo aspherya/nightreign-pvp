@@ -1064,6 +1064,8 @@ pub(crate) struct TeamCtl {
     pos: PosTest,
     /// T-032: pending follow-up value logs after an F6 write: (due, label, PlayerIns).
     pos_follow: Vec<(Instant, &'static str, usize)>,
+    /// F3: separate team spawns (None = `team_spawns` off).
+    spawn: Option<super::spawn::SpawnCtl>,
 }
 
 /// What the overlay shows about the players, from a quiet (non-logging) resolve.
@@ -1178,6 +1180,9 @@ impl TeamCtl {
             new_mark: None,
             pos: PosTest::new(&poswrite::parse_list(&cfg.pos_candidates).0, base, size),
             pos_follow: Vec::new(),
+            spawn: cfg
+                .team_spawns
+                .then(|| super::spawn::SpawnCtl::new(cfg.spawn_radius, base)),
         }
     }
 
@@ -1976,6 +1981,12 @@ impl TeamCtl {
             self.next_pvpve = now + self.pvpve_every;
             self.pvpve_tick();
         }
+        if let Some(mut sp) = self.spawn.take() {
+            if sp.due(self.inst) {
+                self.spawn_tick(&mut sp);
+            }
+            self.spawn = Some(sp);
+        }
     }
 
     fn watch_tick(&mut self) {
@@ -2073,6 +2084,27 @@ impl TeamCtl {
                 }
             }
         }
+    }
+
+    /// F3: one spawn pass: resolve the LOCAL player (quiet), check it is in an expedition, and let [`super::spawn::SpawnCtl`]
+    /// decide. The roster is only built at the hawk drop.
+    fn spawn_tick(&mut self, sp: &mut super::spawn::SpawnCtl) {
+        let res = resolve(self.inst, &self.vts).ok();
+        let local = res.as_ref().and_then(|r| r.local);
+        let in_expedition = local.is_some_and(|l| {
+            read_fields(&mut RegionCache::direct(), l).is_some_and(|f| f.team == PVPVE_FROM)
+        });
+        sp.tick(self.inst, local, in_expedition, || {
+            let res = res.as_ref()?;
+            let view = self.view_for(res);
+            if let Some(w) = &view.warning {
+                tracing::warn!("T-028 SPAWN: roster not usable: {w}");
+                return None;
+            }
+            tracing::info!("T-028 SPAWN: {}", view.summary);
+            let mine = *view.team_no.get(&local?)?;
+            Some((mine, view.team_no.values().copied().collect()))
+        });
     }
 
     /// Whether automatic write number `n` gets its own log line. Dev: the first [`PVPVE_LOG_ALL_UP_TO`], then every

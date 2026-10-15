@@ -19,6 +19,7 @@ pub(crate) mod image;
 pub(crate) mod mark_dump;
 pub(crate) mod mem;
 pub(crate) mod poswrite;
+pub(crate) mod spawn;
 pub(crate) mod probe2;
 pub(crate) mod probe_down;
 pub(crate) mod probe_pos;

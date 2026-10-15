@@ -235,6 +235,35 @@ impl WriteReport {
     }
 }
 
+/// The player's `CS::CSChrPhysicsModule` and the offset in the module list where it was found: the first pointer in the
+/// first [`MODULES_SPAN`] bytes of `[PlayerIns+MODULES_OFF]` whose pointee has the physics vtable (`base` = exe base).
+pub(crate) fn physics_module(
+    m: &dyn PosMem,
+    player: usize,
+    base: usize,
+) -> Result<(usize, usize), String> {
+    let list = m
+        .read_u64(player + MODULES_OFF)
+        .ok_or("the module list pointer is unreadable")? as usize;
+    if !is_ptr(list) {
+        return Err(format!(
+            "the module list pointer 0x{list:X} is null or implausible"
+        ));
+    }
+    let want = base + PHYSICS_VTABLE_RVA;
+    (0..MODULES_SPAN)
+        .step_by(8)
+        .find_map(|slot| {
+            let p = m.read_u64(list + slot)? as usize;
+            (is_ptr(p) && m.read_u64(p)? as usize == want).then_some((p, slot))
+        })
+        .ok_or_else(|| {
+            format!(
+                "no CS::CSChrPhysicsModule (vtable exe+0x{PHYSICS_VTABLE_RVA:X}) in the first 0x{MODULES_SPAN:X} bytes of [PlayerIns+0x{MODULES_OFF:X}]"
+            )
+        })
+}
+
 /// Candidate list, selection and the saved values.
 #[derive(Debug)]
 pub(crate) struct PosTest {
@@ -330,31 +359,13 @@ impl PosTest {
                 })
             }
             Cand::Physics { off } => {
-                let list = m
-                    .read_u64(player + MODULES_OFF)
-                    .ok_or("the module list pointer is unreadable")? as usize;
-                if !is_ptr(list) {
-                    return Err(format!(
-                        "the module list pointer 0x{list:X} is null or implausible"
-                    ));
-                }
-                let want = self.base + PHYSICS_VTABLE_RVA;
-                (0..MODULES_SPAN)
-                    .step_by(8)
-                    .find_map(|slot| {
-                        let p = m.read_u64(list + slot)? as usize;
-                        (is_ptr(p) && m.read_u64(p)? as usize == want).then_some(Resolved {
-                            addr: p + off as usize,
-                            ptr: Some(p),
-                            vtable: Some(want),
-                            slot: Some(slot),
-                        })
-                    })
-                    .ok_or_else(|| {
-                        format!(
-                            "no CS::CSChrPhysicsModule (vtable exe+0x{PHYSICS_VTABLE_RVA:X}) in the first 0x{MODULES_SPAN:X} bytes of [PlayerIns+0x{MODULES_OFF:X}]"
-                        )
-                    })
+                let (p, slot) = physics_module(m, player, self.base)?;
+                Ok(Resolved {
+                    addr: p + off as usize,
+                    ptr: Some(p),
+                    vtable: Some(self.base + PHYSICS_VTABLE_RVA),
+                    slot: Some(slot),
+                })
             }
         }
     }

@@ -151,6 +151,12 @@ rival_revive = \"redown\"
 # takes this many seconds (0.5..15) off the bleed-out clock. Hits by allies / yourself / the environment are left alone.
 rival_hit_seconds = 3.0
 
+# F3 separate team spawns (both modes, off unless set): when the hawk drops you at the start of an expedition, the mod moves your
+# own character spawn_radius metres (20..1000) from the drop point, each team in its own direction, 40 m higher; you then land
+# as usual. Teams come from the player ids, so every game agrees. Log lines start with \"T-028 SPAWN\".
+team_spawns = false
+spawn_radius = 200.0
+
 # T-018: absolute directory for the logs (default = next to the DLL). Logs go to <log_dir>\\<DLL folder name>\\nrpvp.log
 # and ...\\logs\\. Use a TOML single-quoted string so backslashes stay literal. Nucleus deletes its Instance<N> folders
 # on close; point this somewhere permanent. Falls back to the DLL folder if unusable. Read before logging starts.
@@ -227,6 +233,10 @@ pub(crate) struct Config {
     pub rival_revive: String,
     /// T-039: seconds a rival hit takes off a downed LOCAL player's bleed-out clock (clamped to 0.5..=15.0 in `parse`).
     pub rival_hit_seconds: f32,
+    /// F3: move the LOCAL player to its team's own point at the hawk drop.
+    pub team_spawns: bool,
+    /// F3: metres from the drop point (clamped to `spawn::RADIUS_RANGE` in `parse`).
+    pub spawn_radius: f32,
     pub overlay_toggle_key: String,
     /// T-018: absolute log directory; empty = next to the DLL.
     pub log_dir: String,
@@ -276,6 +286,8 @@ impl Default for Config {
             pos_candidates: crate::game::poswrite::default_candidates(),
             rival_revive: REVIVE_REDOWN.to_string(),
             rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
+            team_spawns: false,
+            spawn_radius: crate::game::spawn::DEFAULT_RADIUS,
             overlay_toggle_key: DEFAULT_OVERLAY_TOGGLE.to_string(),
             log_dir: String::new(),
             hotkey_write: DEFAULT_HOTKEY_WRITE.to_string(),
@@ -597,6 +609,21 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             warnings.push(format!(
                 "rival_hit_seconds = {v} is outside {lo}..={hi}; using {}",
                 cfg.rival_hit_seconds
+            ));
+        }
+    }
+    // F3: spawn_radius.
+    {
+        let (lo, hi) = crate::game::spawn::RADIUS_RANGE;
+        let v = cfg.spawn_radius;
+        if !v.is_finite() {
+            warnings.push("spawn_radius is not a finite number; using the default".to_string());
+            cfg.spawn_radius = crate::game::spawn::DEFAULT_RADIUS;
+        } else if !(lo..=hi).contains(&v) {
+            cfg.spawn_radius = v.clamp(lo, hi);
+            warnings.push(format!(
+                "spawn_radius = {v} is outside {lo}..={hi}; using {}",
+                cfg.spawn_radius
             ));
         }
     }
