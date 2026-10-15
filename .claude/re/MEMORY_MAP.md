@@ -116,7 +116,7 @@ To tell teammate from rival: read the handle, find which player in the list has 
 
 ## 8. Position (not finished)
 
-**The physics module holds the position. Writing it moves the player** (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
+**The physics module holds the position. Writing it moves the player**. **A teleport that keeps world position (physics − origin, below) lands on the saved spot and stays: confirmed solo, run 4 (2026-10-14).** Not yet checked: what other players see (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
 
 **What run 1 showed (9 writes, local player, solo expedition):**
 - The chain is `[[PlayerIns+0x1B8]+0x68]+0x70`. The owner at `+0x08` is the PlayerIns. **Confirmed.**

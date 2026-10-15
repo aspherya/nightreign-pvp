@@ -59,9 +59,8 @@ Set `team_size = 2` (Nucleus: `scripts\deploy-nucleus.ps1 -TeamSize 2`; zip: `sc
 Also the first test of: teammates can't hurt each other, teammate revive works, player IDs with 3 players.
 
 ### Task D: teleport test (needed for separate spawns). Build of 2026-10-13 22:30, solo, about 3 minutes
-**Run once 2026-10-13: the write moves the player (x, z exact, no snap-back) but the height is wrong and the last jump fell out of
-the world.** Details: `re/MEMORY_MAP.md` §8. Next is building work (a safe arrival), not another run of these steps.
-Original steps: `.scriptsaunch.ps1`, start a solo expedition, wait until you can walk.
+**Solo: PASS (run 4, 2026-10-14).** The teleport now keeps world position (physics position − origin at `PlayerIns+0x80`) and lands on
+the saved spot. Still open: does the other player see the jump (Nucleus, 2 instances).
 1. Stand still, press **F7** (saves the spot).
 2. Walk about 20 m away, press **F6** (tries to put you back).
 3. Tell Claude: did the character jump back to the saved spot and stay there? Anything odd (fall, damage, camera)?

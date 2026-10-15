@@ -402,3 +402,7 @@ the saved height; after write 9 the player fell out of the world and the expedit
 Run 2 (3 saves/teleports): grass worked; rock → grass and cliff top arrived beside the saved spot and fell. Cause found from the log:
 the physics position is measured from an origin that moves. Run 3 (walk, no teleport): the origin is `PlayerIns+0x80`
 (`re/MEMORY_MAP.md` §8). Teleport now saves world position (physics − origin) and writes it back with the current origin; not run yet.
+
+### 2026-10-14 — T-028 run 4 (solo, origin-aware teleport, build 173f4fa). Log: `.claude/experiments/T-028/run4_solo_teleport.log`
+**PASS** (Leonardo: "it worked"). Four save/teleport pairs, including a cliff top from 16 m below and saves 40–250 m apart in world
+position. Height held within 0.6 m 2 s after every write; one origin jump right after arrival (−48 m) left the world position unchanged.
