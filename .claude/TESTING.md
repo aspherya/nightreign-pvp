@@ -240,6 +240,21 @@ Write down which of the invite, the link and the direct join still work between 
 **Stop rules:** a crash or freeze: note the time, relaunch, continue from the same step. Seamless Co-op breaks (cannot invite or start): restart both games and tell Leonardo before going on.
 **When done:** quit both games and send both `logs` folders (`NightreignPvP\logs` on each PC) to Leonardo. He copies them into `.claude/experiments/FS-MM1/` (`host/`, `client/`).
 
+### FS-MM2 — Matchmaking, second friend run (≈40 min). **Status: ready once MM-3e is built and the new mmtest zip is sent.**
+Tests MM-3a/MM-3e (automatic lobby + join, match end) and MM-2 Scenario 2 (Duo). Same setup as FS-MM1: both replace their install with
+the **new** `dist\NightreignPvP-mmtest.zip`, back up `%APPDATA%\Nightreign`, start with `nrpvp_launcher.exe`. Do not press any Join methods button.
+**1. Solo, fully automatic (15 min).** Both start the game fresh, invite nobody, go to the Roundtable, press **Queue Solo** within 10 s.
+Then **nobody opens any menu**. Expected: host line `creating the Seamless Co-op lobby...`, the other player's line `joining the host's
+lobby...`, then both `ALL PRESENT`, with no click. Only if the host's line asks for it, the host opens Invite Members (write that down).
+If a Steam invite pops up, accept it and write that down. Host starts the expedition; check you can hurt each other and that the
+expedition plays normally for both (enemies, graces, items).
+**2. End of the match (5 min).** Finish or abandon the expedition and **go back to the Roundtable** (do not quit to the title).
+Expected: within about 20 s both status lines show `Queue: idle`. Write down where you ended up and what the line said.
+**3. Duo, teammates (15 min).** Host invites the other the normal way (Invite Members, accept with Shift+Tab). Host presses **Queue Duo**;
+the other presses nothing. Expected: the other's line follows by itself, then `ALL PRESENT` on both within about 5 s. Host starts the
+expedition; check you **cannot** hurt each other and the overlay shows the same team for both. Back to the Roundtable, line goes idle.
+**When done:** both send their `NightreignPvP\logs` folder; Leonardo copies them into `.claude/experiments/FS-MM2/` (`host/`, `client/`).
+
 ### 2026-10-10 — T-029/T-030 player zip, Leonardo solo: **PASS**
 Installed from `dist\NightreignPvP.zip` by the txt guide; `nrpvp_launcher.exe` started the game (bundled me3 with `-e`); the BATTLE ROYALE badge
 showed top-right and changed to "Team 1 - 0 rivals" in a Solo Mission; sites of grace and item pickups work (local player stays on team 2).
@@ -391,3 +406,13 @@ friends, rivals finish rivals. The logs agree:
   Cause UNKNOWN (three games on one PC; run 20 with two games had none). The rule still reacted on every hit.
 - Warnings: one 180 s WorldChrMan timeout per game while sitting in the menus, and one `ChrSet capacity 0` per area change. Both harmless.
 - Not shown by the logs: that teammates cannot damage each other (nothing logs damage).
+
+### 2026-10-14 — FS-MM1 step 2 only (real Steam, 2 PCs: Leonardo host, fuso joiner; mmtest zip of 2026-10-12 12:51). Logs: `.claude/experiments/FS-MM1/{host,client}`: **PASS (Solo, with two manual steps)**
+Game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0. Baseline, Duo and the join-method buttons were not run.
+- **Queue Solo: PASS.** Both pressed Queue Solo; one queue lobby, same host and roster on both PCs, four matches in a row (either player as host).
+- **Gate: PASS with two human steps.** The host had to open Matchmaking Settings > Invite Members (opening it was enough: lobby A appeared and the
+  host's mod invited fuso by itself), and fuso had to accept the Steam invite. ALL PRESENT on both PCs 36 s after MATCH READY.
+- **Expedition as rivals: PASS.** Teams 0/1 on both PCs, remote written 2 → 29, downed rule fired 7 times with identical values on both PCs.
+- fuso pressed "(a) link" once while already in the lobby: Steam delivered it to the running game (left and re-entered lobby A in 1.6 s); no second copy.
+- Defects: status stuck on `IN EXPEDITION` after the expedition ended; false `not trusting its sc_lobby` warning on the joiner at ALL PRESENT.
+  Fix card MM-3a. Full findings: `research/S9-matchmaking-decision.md` §5c.

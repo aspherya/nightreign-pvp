@@ -492,6 +492,22 @@ impl OverlayApp {
                 self.send(Command::MmLeave);
             }
         }
+        // MM-3d (dev only, `mm_sc_create`): create a lobby the way the game does and see whether Seamless Co-op adopts it.
+        if st.sc_create_ui {
+            if ui.button("create SC lobby (test)") {
+                self.send(Command::MmScCreate);
+            }
+            if !st.sc_create_line.is_empty() {
+                let c = if st.sc_create_line.contains("ADOPTED") {
+                    GREEN_TEXT
+                } else if st.sc_create_line.contains("REFUSED") || st.sc_create_line.contains("failed") {
+                    RED
+                } else {
+                    AMBER
+                };
+                ui.text_colored(c, &st.sc_create_line);
+            }
+        }
         // MM-3 (dev only, `mm_join`): the join methods, one attempt per press, usable once the host's lobby id is known.
         if st.join_ui {
             use crate::mm::join::JoinCmd;

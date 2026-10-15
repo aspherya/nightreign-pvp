@@ -264,13 +264,15 @@ pub(crate) struct LobbyWatch {
 }
 
 impl LobbyWatch {
-    pub(crate) fn tick(&mut self, api: &dyn LobbyApi, known: &[u64], now: Instant, period: Duration) -> Vec<String> {
+    pub(crate) fn tick(&mut self, api: &dyn LobbyApi, own: u64, known: &[u64], now: Instant, period: Duration) -> Vec<String> {
         let mut out = Vec::new();
         for &lobby in known {
             let n = api.member_count(lobby);
             let (sig, member) = if n > 0 {
                 let ids: Vec<u64> = (0..n.clamp(0, 64)).map(|i| api.member_by_index(lobby, i)).collect();
-                (format!("owner={} limit={} members={ids:?}", api.owner(lobby), api.member_limit(lobby)), true)
+                // MM-3a: a lobby we left still lists zeros (`members=[0]`); only a lobby we are a member of is repeated periodically.
+                let member = own != 0 && ids.contains(&own);
+                (format!("owner={} limit={} members={ids:?}", api.owner(lobby), api.member_limit(lobby)), member)
             } else {
                 ("members=none (we are not in it, or it is gone)".to_string(), false)
             };
@@ -313,6 +315,8 @@ fn ptr_text(p: Option<usize>) -> String {
 }
 
 fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
+    // MM-3c: lets the lobby tracer label our own queue-lobby `CreateLobby` calls (harmless when the tracer is off).
+    super::lobtrace::note_steam_thread();
     tracing::info!(
         "mm_probe: enabled (listen-only; waits up to {} s for the game to initialise Steam)",
         WAIT_TOTAL.as_secs()
@@ -357,7 +361,8 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
     tracing::info!("mm_probe: SteamAPI_SteamUtils_v010(): {}", ptr_text(Flat::call_accessor(flat.utils)));
     tracing::info!("mm_probe: SteamAPI_SteamUser_v021(): {}", ptr_text(user));
     tracing::info!("mm_probe: SteamAPI_SteamFriends_v017(): {}", ptr_text(Flat::call_accessor(flat.friends)));
-    match flat.own_steam_id(user.unwrap_or(0)) {
+    let own_id = flat.own_steam_id(user.unwrap_or(0)).unwrap_or(0);
+    match Some(own_id).filter(|id| *id != 0) {
         Some(id) => tracing::info!("mm_probe: own Steam ID = {}", id_text(id)),
         None => tracing::warn!("mm_probe: own Steam ID unavailable (user accessor null or GetSteamID export missing)"),
     }
@@ -418,7 +423,7 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
             let now = Instant::now();
             if now >= next_watch {
                 next_watch = now + WATCH_STEP;
-                for l in watch.tick(&flat, &tracker.known(), now, WATCH_PERIOD) {
+                for l in watch.tick(&flat, own_id, &tracker.known(), now, WATCH_PERIOD) {
                     tracing::info!("{l}");
                 }
             }
@@ -618,17 +623,30 @@ mod tests {
         let mut lw = LobbyWatch::default();
         let t0 = Instant::now();
         let p = Duration::from_secs(10);
-        let l = lw.tick(&w, &[9], t0, p);
+        let l = lw.tick(&w, 1, &[9], t0, p);
         assert_eq!(l.len(), 1);
         assert!(l[0].starts_with("mm_join: lobby 9 (0x9) [SC lobby (A)] owner=1 limit=6 members=[1, 2]"), "{l:?}");
-        assert!(lw.tick(&w, &[9], t0 + Duration::from_secs(3), p).is_empty(), "unchanged and early");
+        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(3), p).is_empty(), "unchanged and early");
         w.members.borrow_mut().push(3);
-        assert_eq!(lw.tick(&w, &[9], t0 + Duration::from_secs(4), p).len(), 1, "membership changed");
-        assert_eq!(lw.tick(&w, &[9], t0 + Duration::from_secs(15), p).len(), 1, "periodic");
+        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(4), p).len(), 1, "membership changed");
+        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(15), p).len(), 1, "periodic");
         // A lobby we are not in: one line when it changes to that, then silence.
         w.members.borrow_mut().clear();
-        assert_eq!(lw.tick(&w, &[9], t0 + Duration::from_secs(16), p).len(), 1);
-        assert!(lw.tick(&w, &[9], t0 + Duration::from_secs(60), p).is_empty());
+        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(16), p).len(), 1);
+        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(60), p).is_empty());
+    }
+
+    #[test]
+    fn a_lobby_we_left_is_not_repeated_periodically() {
+        let w = W { members: std::cell::RefCell::new(vec![0, 0]), keys: vec!["nrsc_lobby_type"] };
+        let mut lw = LobbyWatch::default();
+        let t0 = Instant::now();
+        let p = Duration::from_secs(10);
+        assert_eq!(lw.tick(&w, 1, &[9], t0, p).len(), 1, "first sight");
+        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(30), p).is_empty(), "left lobby: no periodic line");
+        w.members.borrow_mut().push(1);
+        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(31), p).len(), 1, "membership changed");
+        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(45), p).len(), 1, "member: periodic");
     }
     #[test]
     fn queue_round_trip_through_the_callback_object() {

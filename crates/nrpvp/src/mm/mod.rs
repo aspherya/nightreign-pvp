@@ -13,6 +13,7 @@ pub(crate) mod guard;
 pub(crate) mod join;
 pub(crate) mod machine;
 pub(crate) mod proto;
+pub(crate) mod sccreate;
 pub(crate) mod worker;
 
 use std::collections::VecDeque;
@@ -60,6 +61,8 @@ pub(crate) enum Cmd {
     Leave,
     /// MM-3 (dev buttons): one join method attempt.
     Join(join::JoinCmd),
+    /// MM-3d (dev button, `mm_sc_create`): create a lobby the way the game does and see whether Seamless Co-op adopts it.
+    ScCreate,
 }
 
 /// What the overlay shows.
@@ -75,6 +78,10 @@ pub(crate) struct Status {
     pub sc_known: bool,
     /// MM-3: we own that Seamless Co-op lobby (button (d) usable).
     pub sc_owner: bool,
+    /// MM-3d (`mm_sc_create`): show the "create SC lobby (test)" button.
+    pub sc_create_ui: bool,
+    /// MM-3d: one status line of that test (empty until pressed).
+    pub sc_create_line: String,
 }
 
 struct Hub {

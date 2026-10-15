@@ -58,6 +58,8 @@ const RTTI_MAX_ATTEMPTS: u32 = 4;
 const MAX_SECTION_COPY: usize = 0x4000_0000;
 /// After this long without `WorldChrMan` we log a diagnostic dump (polling continues regardless).
 const WAIT_TIMEOUT: Duration = Duration::from_secs(180);
+/// MM-3a: a WorldChrMan that was live before and is null again this long is logged once (info) as a load.
+const NULL_LOADING_LOG: Duration = Duration::from_secs(10);
 const PROGRESS_EVERY: Duration = Duration::from_secs(10);
 /// T-019: a main-loop heartbeat line this often, so a stalled loop can be told apart from a frozen game.
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(10);
@@ -352,6 +354,9 @@ fn watch(
     let start = Instant::now();
     let mut last_progress = Instant::now();
     let mut timeout_logged = false;
+    // MM-3a: WorldChrMan was live before and is null again (a load screen): when it started, and whether we logged it.
+    let mut null_since: Option<Instant> = None;
+    let mut null_logged = false;
     let mut fd4: Option<Vec<Found>> = None;
     let mut fd4_resolve_tried = false;
     let mut nonnull_ticks = 0u32;
@@ -433,7 +438,18 @@ fn watch(
             }
         }
 
-        if !wcm_live && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
+        if wcm_live {
+            null_since = None;
+            null_logged = false;
+        } else if dumped {
+            // Found at least once already (`dumped`): a long null stretch is a load, not a failed discovery; info only.
+            let since = *null_since.get_or_insert_with(Instant::now);
+            if !null_logged && since.elapsed() >= NULL_LOADING_LOG {
+                null_logged = true;
+                tracing::info!("{TARGET} null for {} s (loading)", since.elapsed().as_secs());
+            }
+        }
+        if !wcm_live && !dumped && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
             timeout_logged = true;
             tracing::warn!(
                 "T-006: timeout after {} s waiting for {TARGET} to be non-null (still polling every 500 ms). {}",
@@ -758,6 +774,11 @@ fn run_command(
         Command::MmJoin(j) => {
             if !crate::mm::send(crate::mm::Cmd::Join(j)) {
                 tracing::info!("mm_join: {src}: {j:?} not sent (queue feature off or command queue full)");
+            }
+        }
+        Command::MmScCreate => {
+            if !crate::mm::send(crate::mm::Cmd::ScCreate) {
+                tracing::info!("mm_sc_create: {src}: create test not sent (queue feature off or command queue full)");
             }
         }
         Command::MmLeave => {

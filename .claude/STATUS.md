@@ -79,9 +79,12 @@ candidate), repeat for 6 candidates. Tell Claude which one snapped the player ba
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
 6. "Battle Royale" menu entry (`research/S7-mode-menu.md`) and public queues. **Queue design decided 2026-10-12:**
    `research/S9-matchmaking-decision.md` (Steam queue lobby, no server of ours, Solo first). Cards MM-1 … MM-6 in `TASKS.md`.
-   **State 2026-10-12:** MM-1 done (solo run, S9 §5a). MM-2 (queue) and MM-3 (join step) are **built, never run in the game**.
-   Friend build: `dist\NightreignPvP-mmtest.zip` (`scripts\package-release.ps1 -MatchmakingTest`). Runbook: `TESTING.md` §6 FS-MM1.
-   Do not press the "(a) link" button yet (see the runbook). All of it is developer mode only; the player zip has no queue.
+   **State 2026-10-14:** FS-MM1 (Leonardo + fuso, real Steam): Queue Solo matched both PCs, the host's mod invited the other into
+   Seamless Co-op's lobby, and they fought as rivals. Two human steps remain: the host opens Invite Members (it creates SC's lobby A;
+   MM-3c found the game makes it via `CreateLobby(Public, 6)` through SC's proxy; MM-3d proved SC adopts the same call from our mod),
+   and the joiner accepted the invite (MM-3a switches the test build to `invite+link`). MM-3e: the host's mod now creates the lobby
+   itself at MATCH READY. Friend zip of 2026-10-14 19:46. Next friend run: `TESTING.md` §6 FS-MM2 (fully automatic Solo, match end,
+   Duo). Findings: S9 §5c–5e. All of it is developer mode only.
 7. Clean-up: the mod still carries a lot of investigation code (probes, dumps, the in-mod timer scans, snap-back test, experiment
    switches). It is all developer-mode only, but it should be trimmed once the features that needed it are done.
 

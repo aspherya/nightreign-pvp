@@ -54,6 +54,8 @@ pub(crate) enum Command {
     MmLeave,
     /// MM-3 (dev only, `mm_join`): one join-method attempt (buttons (a) (b) (c) (d)).
     MmJoin(crate::mm::join::JoinCmd),
+    /// MM-3d (dev only, `mm_sc_create`): the "create SC lobby (test)" button.
+    MmScCreate,
 }
 
 /// Name of a known `team_type` value (Smithbox NR TEAM_TYPE enum, TECHNICAL_NOTES.md section 4; the

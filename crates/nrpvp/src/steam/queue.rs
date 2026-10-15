@@ -187,24 +187,44 @@ impl PublishedScLobby {
 }
 
 /// `ELobbyType` values (isteammatchmaking.h): Private = 0, FriendsOnly = 1, Public = 2, Invisible = 3, PrivateUnique = 4. Only the
-/// three the dev buttons use are representable.
+/// four the dev buttons use are representable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScType {
     Public,
+    Friends,
     Invisible,
     Private,
 }
 
 impl ScType {
+    /// MM-3d `mm_sc_create_type`: `"public"` | `"friends"` | `"private"` (case-insensitive). Invisible is not offered there.
+    pub(crate) fn parse_create(s: &str) -> Option<ScType> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "public" => Some(ScType::Public),
+            "friends" => Some(ScType::Friends),
+            "private" => Some(ScType::Private),
+            _ => None,
+        }
+    }
+    /// The config spelling (inverse of [`Self::parse_create`]); `"public"` for the types the config cannot name.
+    pub(crate) fn create_name(self) -> &'static str {
+        match self {
+            ScType::Friends => "friends",
+            ScType::Private => "private",
+            _ => "public",
+        }
+    }
     pub(crate) fn raw(self) -> c_int {
         match self {
             ScType::Private => 0,
+            ScType::Friends => 1,
             ScType::Public => 2,
             ScType::Invisible => 3,
         }
     }
     pub(crate) fn label(self) -> &'static str {
         match self {
+            ScType::Friends => "FriendsOnly (1)",
             ScType::Public => "Public (2)",
             ScType::Invisible => "Invisible (3)",
             ScType::Private => "Private (0)",
@@ -282,6 +302,12 @@ pub(crate) trait QueueSteam: LobbyText {
     fn begin_join_sc(&mut self, sc: &PublishedScLobby) -> Result<u64, String>;
     /// Method (a): hand `url` (a `steam://` URL built by `mm::join`) to the shell.
     fn open_url(&mut self, url: &str) -> Result<(), String>;
+
+    // ---- MM-3d: the one lobby creation that is not a queue lobby. ----
+    /// `ISteamMatchmaking::CreateLobby(ty, max_members)` through the same interface the game uses, to see whether Seamless Co-op adopts
+    /// the result. Returns the call handle; the result is polled with [`CallKind::Created`] and yields a [`QueueLobby`] (the lobby is
+    /// ours, so `leave` may be called on it, but `leave` refuses at call time while it carries `nrsc_lobby_type`).
+    fn begin_create_sc(&mut self, ty: ScType, max_members: i32) -> Result<u64, String>;
 }
 
 // ---- flat function types (steam_api_flat.h) ----
@@ -687,6 +713,15 @@ impl QueueSteam for RealSteam {
         if h == 0 { Err("JoinLobby returned handle 0".into()) } else { Ok(h) }
     }
 
+    fn begin_create_sc(&mut self, ty: ScType, max_members: i32) -> Result<u64, String> {
+        let Some(f) = self.f.create else { return Err(Self::miss("SteamAPI_ISteamMatchmaking_CreateLobby")) };
+        // SAFETY: non-null ISteamMatchmaking*; `CreateLobby(self, ELobbyType, int)` -> SteamAPICall_t (steam_api_flat.h), the same
+        // call as `begin_create` with another lobby type (S9 §5d: the game itself calls CreateLobby(2, 6) through this interface).
+        let h = unsafe { f(self.mmp(), ty.raw(), max_members) };
+        tracing::info!("mm_sc_create: Steam CreateLobby({}, {max_members}) -> handle {h}", ty.label());
+        if h == 0 { Err("CreateLobby returned handle 0".into()) } else { Ok(h) }
+    }
+
     fn open_url(&mut self, url: &str) -> Result<(), String> {
         use windows::core::{w, PCWSTR};
         use windows::Win32::UI::Shell::ShellExecuteW;
@@ -731,6 +766,7 @@ pub(crate) mod fake {
         SetType(u64, ScType),
         JoinSc(u64),
         OpenUrl(String),
+        CreateSc(ScType, i32),
     }
 
     #[derive(Default)]
@@ -749,6 +785,8 @@ pub(crate) mod fake {
         pub overlay: bool,
         pub invite_ok: bool,
         pub url_ok: bool,
+        /// MM-3d: a lobby made by `begin_create_sc` carries `nrsc_lobby_type` from the start (Seamless Co-op adopted it).
+        pub adopt_created: bool,
     }
 
     impl FakeSteam {
@@ -935,6 +973,24 @@ pub(crate) mod fake {
             self.results.insert(h, CallPoll::Done(CallData::Enter { lobby: sc.id(), response: if ok { 1 } else { 15 }, locked: true }));
             Ok(h)
         }
+        fn begin_create_sc(&mut self, ty: ScType, max: i32) -> Result<u64, String> {
+            self.writes.push(Write::CreateSc(ty, max));
+            self.next_handle += 1;
+            let h = self.next_handle;
+            if self.create_fails {
+                self.results.insert(h, CallPoll::Done(CallData::Created { result: 2, lobby: None }));
+            } else {
+                self.next_lobby += 1;
+                let id = self.next_lobby;
+                let own = self.own;
+                self.add_lobby(id, own, max, &[own], &[]);
+                if self.adopt_created {
+                    self.add_lobby(id, own, max, &[own], &[(KEY_SC_TYPE, "nrsc_ynx3_seamless_master_lobby")]);
+                }
+                self.results.insert(h, CallPoll::Done(CallData::Created { result: 1, lobby: Some(QueueLobby::for_test(id)) }));
+            }
+            Ok(h)
+        }
         fn open_url(&mut self, url: &str) -> Result<(), String> {
             self.writes.push(Write::OpenUrl(url.to_string()));
             if self.url_ok { Ok(()) } else { Err("fake refusal".into()) }
@@ -973,7 +1029,17 @@ mod tests {
     #[test]
     fn lobby_type_values_match_the_sdk_header() {
         // isteammatchmaking.h ELobbyType: Private 0, FriendsOnly 1, Public 2, Invisible 3, PrivateUnique 4.
-        assert_eq!((ScType::Private.raw(), ScType::Public.raw(), ScType::Invisible.raw()), (0, 2, 3));
+        assert_eq!((ScType::Private.raw(), ScType::Friends.raw(), ScType::Public.raw(), ScType::Invisible.raw()), (0, 1, 2, 3));
+    }
+
+    #[test]
+    fn create_type_names_round_trip() {
+        for t in [ScType::Public, ScType::Friends, ScType::Private] {
+            assert_eq!(ScType::parse_create(t.create_name()), Some(t));
+        }
+        assert_eq!(ScType::parse_create(" PUBLIC "), Some(ScType::Public));
+        assert_eq!(ScType::parse_create("invisible"), None);
+        assert_eq!(ScType::parse_create(""), None);
     }
     #[test]
     fn verify_refuses_seamless_coop_lobbies_even_when_tagged() {

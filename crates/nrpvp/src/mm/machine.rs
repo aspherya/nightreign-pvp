@@ -151,6 +151,8 @@ pub(crate) struct MachineCfg {
     pub join: bool,
     /// MM-3: `mm_join_auto`.
     pub join_auto: JoinAuto,
+    /// MM-3e: `mm_host_create` (needs `join`): the host's mod creates the Seamless Co-op lobby at MATCH READY.
+    pub host_create: bool,
 }
 
 pub(crate) struct Machine {
@@ -234,7 +236,7 @@ impl Machine {
             State::MatchReady(r) if self.cfg.join => (true, r.gate.sc_known(), r.gate.sc_owner()),
             _ => (false, false, false),
         };
-        super::Status { line, active, join_ui, sc_known, sc_owner }
+        super::Status { line, active, join_ui, sc_known, sc_owner, ..Default::default() }
     }
 
     /// MM-3: the worker refreshes these before every tick (Seamless Co-op lobby we are in, safety guard, local phase).
@@ -245,6 +247,19 @@ impl Machine {
     /// MM-3: the worker only needs the (cheap but not free) Seamless Co-op lookup while a match is ready and `mm_join` is on.
     pub(crate) fn wants_sc(&self) -> bool {
         self.cfg.join && matches!(self.state, State::MatchReady(_))
+    }
+
+    /// MM-3e: the Seamless Co-op lobby this ready match is bound to (the one the gate published or created), but only while it is
+    /// still alive: it carries `nrsc_lobby_type` and we are a member. The worker keeps `env.sc` on it and ignores any second SC lobby.
+    pub(crate) fn preferred_sc_alive(&self, api: &dyn QueueSteam) -> Option<u64> {
+        let State::MatchReady(r) = &self.state else { return None };
+        if !self.cfg.join {
+            return None;
+        }
+        let id = r.gate.preferred_sc()?;
+        let own = api.own_id();
+        let alive = ScLobby::verify(api, id).is_some() && (0..api.member_count(id).clamp(0, 64)).any(|i| api.member_by_index(id, i) == own);
+        alive.then_some(id)
     }
 
     fn tags(&self, mode: Mode) -> Tags {
@@ -311,8 +326,10 @@ impl Machine {
             State::InQueue(q) => {
                 Self::leave_lobby(api, &q.lobby, &q.ticket);
             }
-            State::MatchReady(r) => {
+            State::MatchReady(mut r) => {
                 self.ignore_q = Some(r.queue_id);
+                let c = r.gate.take_create();
+                self.abandon_create(api, c, now);
                 match &r.lobby {
                     Some(q) => Self::leave_lobby(api, q, &r.ticket),
                     // The gate already left the queue lobby; only our `nrpvp_q` value is left to clear.
@@ -893,7 +910,7 @@ mod tests {
     const OTHER: u64 = 7002;
 
     fn cfg() -> MachineCfg {
-        MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite }
+        MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite, host_create: false }
     }
 
     fn tag_data() -> Vec<(&'static str, &'static str)> {

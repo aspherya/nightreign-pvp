@@ -130,6 +130,25 @@ mm_match_players = 2
 # Log lines start with \"mm_join:\".
 mm_join = false
 mm_join_auto = \"invite\"
+# MM-3e (dev mode only; needs mm_join = true; the player build forces it off): the host's mod creates Seamless Co-op's lobby itself at
+# MATCH READY (CreateLobby(Public, 6), the call the game makes for Invite Members) instead of asking the host to open Invite Members.
+# If Seamless Co-op does not adopt it within 10 s the mod leaves it and the host is asked to open Invite Members. Log lines start
+# with \"mm_host_create:\".
+mm_host_create = false
+
+# MM-3c (dev mode only; the player build and the mmtest zip force it off): find what creates Seamless Co-op's lobby A. Arms hardware
+# execute breakpoints (debug registers, no code is patched) on ISteamMatchmaking::CreateLobby and
+# ISteamFriends::ActivateGameOverlayInviteDialog on every thread and logs each hit (3 per address, 10 min) with a call stack as
+# module+offset frames. Log lines start with \"mm_lobby_trace:\".
+mm_lobby_trace = false
+
+# MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
+# \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
+# Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
+# leaves it). It writes nothing to the lobby. Log lines start with \"mm_sc_create:\".
+# mm_sc_create_type = \"public\" (default) | \"friends\" | \"private\".
+mm_sc_create = false
+mm_sc_create_type = \"public\"
 
 # T-031 experiment value (dev mode only). INERT since T-032: the downed marker is unknown (ChrSet entry byte +9 was disproven by
 # FS-0 run 6), so nothing is written from it. hotkey_downed_cycle still steps through downed_rival_candidates (0 = off).
@@ -216,6 +235,14 @@ pub(crate) struct Config {
     pub mm_join: bool,
     /// MM-3: `"invite"`, `"invite+link"`, `"link"` or `"none"` (normalised in `parse`; read it through [`Config::join_auto`]).
     pub mm_join_auto: String,
+    /// MM-3e: the host's mod creates the Seamless Co-op lobby at MATCH READY (developer mode + `mm_join` only; forced off in the player build).
+    pub mm_host_create: bool,
+    /// MM-3c: lobby-creation call-stack tracer (developer mode only; forced off in the player build).
+    pub mm_lobby_trace: bool,
+    /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
+    pub mm_sc_create: bool,
+    /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
+    pub mm_sc_create_type: String,
     /// T-031 (dev only): team value written to a downed rival's copy; 0 = off.
     pub downed_rival_team: u8,
     /// T-031: values the downed-cycle hotkey steps through (0 = off).
@@ -270,7 +297,11 @@ impl Default for Config {
             mm_queue: false,
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
             mm_join: false,
+            mm_host_create: false,
             mm_join_auto: "invite".to_string(),
+            mm_lobby_trace: false,
+            mm_sc_create: false,
+            mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
             downed_rival_candidates: DEFAULT_DOWNED_CANDIDATES.to_vec(),
             pos_candidates: crate::game::poswrite::default_candidates(),
@@ -347,6 +378,11 @@ impl Config {
     /// MM-3: the automatic join action (an unknown text, only possible on an unvalidated `Config`, means `invite`).
     pub(crate) fn join_auto(&self) -> crate::mm::join::JoinAuto {
         crate::mm::join::JoinAuto::parse(&self.mm_join_auto).unwrap_or(crate::mm::join::JoinAuto::Invite)
+    }
+
+    /// MM-3d: the lobby type of the create test (an unknown text, only possible on an unvalidated `Config`, means public).
+    pub(crate) fn sc_create_type(&self) -> crate::steam::queue::ScType {
+        crate::steam::queue::ScType::parse_create(&self.mm_sc_create_type).unwrap_or(crate::steam::queue::ScType::Public)
     }
 
     /// T-026: players per team, within 1..=3.
@@ -467,6 +503,12 @@ fn enforce_player_mode(
     cfg.mm_queue = false;
     // MM-3: so is the join step.
     cfg.mm_join = false;
+    // MM-3e: and the host-side lobby creation.
+    cfg.mm_host_create = false;
+    // MM-3c: and the lobby tracer.
+    cfg.mm_lobby_trace = false;
+    // MM-3d: and the SC-adoption test button.
+    cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.
     cfg.downed_rival_team = 0;
     // T-035: the rival revive rule is always on.
@@ -582,6 +624,27 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         if cfg.dev_mode && cfg.mm_join && !cfg.mm_queue {
             warnings.push("mm_join = true needs mm_queue = true; the join step is off".to_string());
             cfg.mm_join = false;
+        }
+        if cfg.dev_mode && cfg.mm_host_create && !cfg.mm_join {
+            warnings.push("mm_host_create = true needs mm_join = true; the host-side lobby creation is off".to_string());
+            cfg.mm_host_create = false;
+        }
+    }
+    // MM-3d: mm_sc_create_type, and the button needs the Steam worker (mm_queue).
+    {
+        match crate::steam::queue::ScType::parse_create(&cfg.mm_sc_create_type) {
+            Some(t) => cfg.mm_sc_create_type = t.create_name().to_string(),
+            None => {
+                warnings.push(format!(
+                    "mm_sc_create_type = {:?} is not \"public\", \"friends\" or \"private\"; using \"public\"",
+                    cfg.mm_sc_create_type
+                ));
+                cfg.mm_sc_create_type = "public".to_string();
+            }
+        }
+        if cfg.dev_mode && cfg.mm_sc_create && !cfg.mm_queue {
+            warnings.push("mm_sc_create = true needs mm_queue = true; the button is off".to_string());
+            cfg.mm_sc_create = false;
         }
     }
     // T-039: rival_hit_seconds.
@@ -1079,6 +1142,21 @@ hotkey_mm_duo = \"banana\"
     }
 
     #[test]
+    fn mm_host_create_defaults_off_is_dev_only_and_needs_mm_join() {
+        assert!(!Config::default().mm_host_create);
+        assert!(!dev_default().mm_host_create);
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
+        assert!(cfg.mm_host_create && w.is_empty(), "{w:?}");
+        // Without mm_join the creation has no gate to run in.
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_host_create = true\n").expect("ok");
+        assert!(!cfg.mm_host_create && w.len() == 1, "{w:?}");
+        assert!(parse_dev("mm_host_create = \"yes\"").is_err());
+        // The player build (no dev_mode) forces it off even when the file asks for it.
+        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_host_create);
+    }
+
+    #[test]
     fn mm_probe_defaults_off_and_is_dev_only() {
         assert!(!Config::default().mm_probe);
         assert!(!dev_default().mm_probe);
@@ -1088,6 +1166,37 @@ hotkey_mm_duo = \"banana\"
         // The player build (no dev_mode) forces it off even when the file asks for it.
         let (cfg, _) = parse("mm_probe = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_probe);
+    }
+
+    #[test]
+    fn mm_lobby_trace_defaults_off_and_is_dev_only() {
+        assert!(!Config::default().mm_lobby_trace);
+        assert!(!dev_default().mm_lobby_trace);
+        let (cfg, w) = parse_dev("mm_lobby_trace = true\n").expect("ok");
+        assert!(cfg.mm_lobby_trace && w.is_empty(), "{w:?}");
+        assert!(parse_dev("mm_lobby_trace = \"yes\"").is_err());
+        // The player build (no dev_mode) forces it off even when the file asks for it.
+        let (cfg, _) = parse("mm_lobby_trace = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_lobby_trace);
+    }
+
+    #[test]
+    fn mm_sc_create_defaults_off_is_dev_only_and_needs_the_queue() {
+        use crate::steam::queue::ScType;
+        let c = Config::default();
+        assert!(!c.mm_sc_create && c.sc_create_type() == ScType::Public);
+        assert!(!dev_default().mm_sc_create);
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_sc_create = true\nmm_sc_create_type = \"Friends\"\n").expect("ok");
+        assert!(cfg.mm_sc_create && cfg.sc_create_type() == ScType::Friends && w.is_empty(), "{w:?}");
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_sc_create_type = \"invisible\"\n").expect("ok");
+        assert_eq!((cfg.sc_create_type(), w.len()), (ScType::Public, 1), "{w:?}");
+        // Without the queue worker there is nothing to run it on.
+        let (cfg, w) = parse_dev("mm_sc_create = true\n").expect("ok");
+        assert!(!cfg.mm_sc_create && w.len() == 1, "{w:?}");
+        assert!(parse_dev("mm_sc_create = \"yes\"").is_err());
+        // The player build (no dev_mode) forces it off even when the file asks for it.
+        let (cfg, _) = parse("mm_queue = true\nmm_sc_create = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_sc_create);
     }
 
     #[test]

@@ -26,8 +26,8 @@ THE PANEL
 * Find the "Queue" block: a status line and the buttons
       Queue Solo   Queue Duo   Queue Squad   Leave queue
 * Use the buttons. Do not press the F1, F2, F3 or F5 keys: they do the same as the buttons.
-* Do NOT press any button named "(a) link". Leave the "Join methods" buttons alone
-  unless the person running the test asks you to press one.
+* Do not press any button in the "Join methods" block. The mod joins the host's
+  lobby by itself.
 
 
 TEST 1 - TEAMMATES
@@ -45,13 +45,16 @@ TEST 2 - RIVALS
 1. Both players close the game completely and start it again. Invite nobody.
 2. Both go to the Roundtable and press "Queue Solo" within about 10 seconds of each other.
 3. Both should see "MATCH READY host=<name>". That name is the host.
-4. If the host's line says "host has no Seamless Co-op lobby yet":
-   the host opens Matchmaking Settings > Invite Members and closes it again.
-   If the line still says the same after 15 seconds, the host sends one normal invite
-   to the other player.
-5. The other player's line says "host invited you". Accept the Steam invite (Shift+Tab).
+4. Nobody opens any menu. The host's line says "creating the Seamless Co-op lobby..."
+   by itself, then waits for the other player to enter.
+5. The other player's line says "joining the host's lobby...". Nothing to click;
+   only if a Steam invite pops up on screen, accept it (Shift+Tab).
 6. Both should see "ALL PRESENT". The host starts the expedition.
-7. In the expedition: try to hit each other. Rivals SHOULD be able to.
+7. ONLY if the host's line asks for it (it says "host has no Seamless Co-op lobby yet"
+   or "<name> did not arrive: open Invite Members and invite them"):
+   the host opens Matchmaking Settings > Invite Members and invites the other player.
+   Write down that this was needed and which line asked for it.
+8. In the expedition: try to hit each other. Rivals SHOULD be able to.
 
 
 WRITE DOWN

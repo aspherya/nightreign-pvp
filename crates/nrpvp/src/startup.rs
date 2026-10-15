@@ -41,6 +41,10 @@ pub(crate) fn run() {
                     need: u32::try_from(cfg.mm_match_players).unwrap_or(2),
                     join: cfg.mm_join,
                     join_auto: cfg.join_auto(),
+                    // MM-3e: the host's mod creates the SC lobby at MATCH READY.
+                    host_create: cfg.mm_host_create,
+                    // MM-3d: the "create SC lobby (test)" dev button.
+                    sc_create: cfg.mm_sc_create.then(|| cfg.sc_create_type()),
                     // The game build string the banner logs (exe FileVersion); TODO MM-4: a sturdier build id if needed.
                     game: m.file_version.clone().unwrap_or_else(|| crate::mm::worker::GAME_UNKNOWN.to_string()),
                 }
@@ -48,6 +52,10 @@ pub(crate) fn run() {
             if cfg.dev_mode && (cfg.mm_probe || cfg.mm_queue || cfg.mm_join) {
                 // MM-3: `mm_join` or `mm_probe` also turn on the evidence logging (per-lobby membership lines) even without the queue worker.
                 crate::steam::probe::spawn(queue, cfg.mm_join || cfg.mm_probe);
+            }
+            // MM-3c: dev-only call-stack tracer for the creation of Seamless Co-op's lobby A (hardware breakpoints, no patching).
+            if cfg.dev_mode && cfg.mm_lobby_trace {
+                crate::steam::lobtrace::spawn();
             }
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();

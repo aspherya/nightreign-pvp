@@ -7,7 +7,7 @@
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
 # -MatchmakingTest (MM-2/MM-3 friend session): instead of the player settings, the packaged nrpvp.toml turns on developer mode with the
-#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite", mm_match_players = 2,
+#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite+link", mm_host_create = true, mm_match_players = 2,
 #   probes = false, team_size = 1).
 #   The zip is dist\NightreignPvP-mmtest.zip (the player zip is not touched). Logs land in <Game>\NightreignPvP\logs as usual.
 param(
@@ -54,7 +54,13 @@ if ($MatchmakingTest) {
         'mm_queue = true',
         'mm_match_players = 2',
         'mm_join = true',
-        'mm_join_auto = "invite"',
+        'mm_join_auto = "invite+link"',
+        '# MM-3e: the host mod creates the Seamless Co-op lobby itself at MATCH READY (no Invite Members).',
+        'mm_host_create = true',
+        '# MM-3c lobby tracer (hardware breakpoints) is a solo developer tool: never in a friend zip.',
+        'mm_lobby_trace = false',
+        '# MM-3d SC-adoption test button is a solo developer tool: never in a friend zip.',
+        'mm_sc_create = false',
         'probes = false',
         # Developer mode defaults to pvpve = false; without these two lines a queued match would have no PvP at all.
         'pvpve = true',

@@ -26,6 +26,10 @@ pub(crate) struct Setup {
     /// MM-3: `mm_join` (dev only) and `mm_join_auto`.
     pub join: bool,
     pub join_auto: super::join::JoinAuto,
+    /// MM-3e: `mm_host_create`.
+    pub host_create: bool,
+    /// MM-3d: `Some(type)` when `mm_sc_create` is on (dev only).
+    pub sc_create: Option<crate::steam::queue::ScType>,
     /// The game build string (the exe FileVersion the banner logs), or [`GAME_UNKNOWN`].
     pub game: String,
 }
@@ -41,6 +45,10 @@ pub(crate) struct Worker {
     next_env: Instant,
     guard_cache: Option<(Instant, Result<(), String>)>,
     exports_ok: bool,
+    /// MM-3d: the "create SC lobby (test)" button's state, `Some` only with `mm_sc_create`.
+    sc_create: Option<super::sccreate::ScCreate>,
+    /// MM-3e: the second SC lobby already logged as ignored.
+    ignored_sc: Option<u64>,
 }
 
 impl Worker {
@@ -67,6 +75,7 @@ impl Worker {
             sc: SC_PINNED_VERSION.to_string(),
             join: s.join,
             join_auto: s.join_auto,
+            host_create: s.host_create && s.join,
         });
         if s.join {
             tracing::info!(
@@ -74,8 +83,16 @@ impl Worker {
                 s.join_auto.label(),
                 steam.join_missing
             );
+            if s.host_create {
+                tracing::info!("mm_host_create: enabled: the host's mod creates the Seamless Co-op lobby at MATCH READY");
+            }
+        }
+        if let Some(ty) = s.sc_create {
+            tracing::info!("mm_sc_create: enabled, type {}; dev button \"create SC lobby (test)\" in the Queue block", ty.label());
         }
         Some(Worker {
+            ignored_sc: None,
+            sc_create: s.sc_create.map(super::sccreate::ScCreate::new),
             steam,
             machine,
             sc_seen: None,
@@ -91,6 +108,9 @@ impl Worker {
 
     pub(crate) fn on_event(&mut self, ev: &Event) {
         self.machine.on_event(ev);
+        if let Some(c) = self.sc_create.as_mut() {
+            c.on_event(ev);
+        }
         let lobby = match ev {
             Event::LobbyEnter { lobby, .. } | Event::LobbyDataUpdate { lobby, .. } | Event::LobbyChatUpdate { lobby, .. } => *lobby,
             _ => 0,
@@ -100,6 +120,17 @@ impl Worker {
         }
         // Seamless Co-op's lobby carries `nrsc_lobby_type`. Remember it (read only) and its version.
         if ScLobby::verify(&self.steam, lobby).is_some() {
+            // MM-3e: a ready match is bound to one SC lobby (the one the gate published or created). While that one is alive a
+            // second SC lobby (e.g. the host opened Invite Members anyway) is ignored.
+            if let Some(p) = self.machine.preferred_sc_alive(&self.steam) {
+                if p != lobby {
+                    if self.ignored_sc != Some(lobby) {
+                        tracing::info!("mm_host_create: second SC lobby ignored: {} (env.sc stays on {})", idt(lobby), idt(p));
+                        self.ignored_sc = Some(lobby);
+                    }
+                    return;
+                }
+            }
             if self.sc_seen != Some(lobby) {
                 tracing::info!("mm_queue: Seamless Co-op lobby seen: {}", idt(lobby));
                 self.sc_seen = Some(lobby);
@@ -113,6 +144,13 @@ impl Worker {
 
     /// The Seamless Co-op lobby the local player is currently a member of, if any.
     fn current_sc(&mut self) -> Option<(ScLobby, u64, u32)> {
+        // MM-3e: stay on the lobby the match is bound to, whatever was seen last.
+        if let Some(p) = self.machine.preferred_sc_alive(&self.steam) {
+            if self.sc_seen != Some(p) {
+                tracing::info!("mm_queue: Seamless Co-op lobby follows the match's lobby: {}", idt(p));
+                self.sc_seen = Some(p);
+            }
+        }
         let id = self.sc_seen?;
         let sc = ScLobby::verify(&self.steam, id);
         let n = self.steam.member_count(id);
@@ -173,6 +211,17 @@ impl Worker {
                 tracing::info!("mm_join: button {j:?}");
                 self.machine.join_cmd(&mut self.steam, j, now);
             }
+            Cmd::ScCreate => {
+                if self.sc_create.is_none() {
+                    tracing::info!("mm_sc_create: button ignored: mm_sc_create is off");
+                    return;
+                }
+                let guard = self.guard(now);
+                let in_sc = self.current_sc().map(|(sc, _, _)| sc.id());
+                if let Some(c) = self.sc_create.as_mut() {
+                    c.press(&mut self.steam, &guard, in_sc, now);
+                }
+            }
             Cmd::Leave => {
                 self.refusal = None;
                 self.machine.leave(&mut self.steam, "user pressed Leave", now);
@@ -205,6 +254,13 @@ impl Worker {
         }
         self.refresh_env(now, false);
         self.machine.tick(&mut self.steam, now);
+        if self.sc_create.as_ref().is_some_and(|c| c.running()) {
+            // What the worker's own SC-lobby detection reports right now (env.sc), for the MM-3d log lines.
+            let reports = self.current_sc().map(|(sc, _, _)| sc.id());
+            if let Some(c) = self.sc_create.as_mut() {
+                c.tick(&mut self.steam, now, reports);
+            }
+        }
         if now >= self.next_sync {
             self.next_sync = now + SYNC_EVERY;
             if self.sc_seen.is_some() && self.guard(now).is_ok() {
@@ -220,6 +276,10 @@ impl Worker {
             self.last_override = ov;
         }
         let mut st = self.machine.status();
+        if let Some(c) = &self.sc_create {
+            st.sc_create_ui = true;
+            st.sc_create_line = c.line().to_string();
+        }
         if let (Some(r), true) = (&self.refusal, self.machine.is_idle()) {
             st.line = format!("Queue: REFUSED - {r}");
         }

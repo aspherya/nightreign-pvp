@@ -13,6 +13,7 @@
 //! A `CSteamID` crosses the flat API as a plain `uint64` (`uint64_steamid` in `steam_api_flat.h`).
 
 pub(crate) mod callback;
+pub(crate) mod lobtrace;
 pub(crate) mod probe;
 pub(crate) mod queue;
 

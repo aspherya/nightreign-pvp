@@ -550,7 +550,7 @@ Ids/layouts (500+4/5/6/13, 300+33/37, pack 8, struct sizes 24/24/32/16/16/264) a
 UNKNOWN: MSVC slot order of the two `Run` overloads (both slots point at one function, so it does not matter). Log lines: `grep mm_probe nrpvp.log`.
 
 ### MM-2 — Queue lobby (Solo / Duo / Squad) with hotkeys and overlay
-Owner: SONNET/implementer → HUMAN + friend (real Steam, 2 PCs) | Status: **built, awaiting friend run** (2026-10-12) | Depends: MM-1 | Settles: S9 U3
+Owner: SONNET/implementer → HUMAN + friend (real Steam, 2 PCs) | Status: **Scenario 1 PASS (FS-MM1, 2026-10-14); Scenario 2 (Duo) awaiting FS-MM2** | Depends: MM-1 | Settles: S9 U3
 Dev mode only, switch `mm_queue = true`. Reuse `crates/nrpvp/src/steam/`; add the write-side calls there, each documented.
 1. Pure state machine in `crates/nrpvp/src/mm/` (unit-tested, Steam behind a trait): `Idle → Searching → InQueue → MatchReady`,
    plus `Leave`. A ticket is `(mode, party)`: Solo = 1 player; Duo/Squad = the local player's current SC party (see 4).
@@ -584,7 +584,7 @@ Build OK, 324 tests pass in `nrpvp` (was 293), clippy clean. All 18 Steam export
 callback pump consumes call results before our poll (log says so if a handle is "unknown to Steam"); whether Steam allows our Invisible lobby next to SC's two lobbies.
 
 ### MM-3 — The gate: enter the host's SC lobby (friend session build)
-Owner: SONNET/implementer → HUMAN + friend | Status: **built, awaiting friend run** (2026-10-12) | Depends: MM-2 | Settles: S9 U4, U5, §5a unknowns
+Owner: SONNET/implementer → HUMAN + friend | Status: **method (b) PASS (FS-MM1, 2026-10-14)**; fixes in MM-3a | Depends: MM-2 | Settles: S9 U4, U5, §5a unknowns
 Facts from MM-1 (S9 §5a): SC's lobby A is locked and is created by the invite flow; a second lobby B appears at expedition start.
 Build (dev mode, `mm_join = true`), on top of the MM-2 `MatchReady` state:
 1. Host side: if an SC lobby (data `nrsc_lobby_type`) is known → write its id into the queue lobby (`sc_lobby=`). If none → overlay
@@ -608,6 +608,95 @@ membership lines (`mm_join: lobby ...`) in `steam/probe.rs`, overlay row of butt
 Build OK, 351 tests pass (was 324), clippy clean. With `mm_join = false` a ready match behaves as in MM-2 (tested: no writes at all). Match end: Leave, or team_type 1 after having seen 2 for 5 s.
 UNKNOWN (the session answers them): which lobby (A or B) joiners end up in; whether Steam accepts invite/link/JoinLobby/SetLobbyType on SC's locked lobby; what `GameLobbyJoinRequested_t` /
 `LobbyInvite_t` an invited player's game receives; whether SC's lobby A exists for a host that has not opened Invite Members.
+
+FS-MM1 (2026-10-14, step 2 only): MM-2 Scenario 1 **PASS**; MM-3 method (b) **PASS** (host opened Invite Members, joiner accepted);
+rivals in the expedition **PASS**. Duo (Scenario 2), baseline and the method buttons not run yet → FS-MM2. Findings: S9 §5c.
+
+### MM-3a — Fixes from FS-MM1 and the invite+link default
+Owner: SONNET/implementer → HUMAN + friend (FS-MM2) | Status: built, awaiting FS-MM2 | Depends: MM-3 | Evidence: S9 §5c, logs `experiments/FS-MM1/`
+Only `crates/nrpvp/src/mm/`, `steam/probe.rs`, the startup warning in `game/` (item 5), `scripts/`, `scripts/release/`. The T-028 position work
+lives on branch `t-028-snapback`; on `main` only item 6 touches the (older, committed) snap-back keys.
+1. **Match end after the expedition.** Today the match ends only on Leave or 5 s of team_type 1 after an expedition; in FS-MM1 both
+   PCs stayed on `IN EXPEDITION - match active` with `wcm=0x0` and lobby A gone. Add to `gate_step`: once `saw_expedition`, if the
+   phase is not `Expedition` AND the player is in no SC lobby (`env.sc` is None, or not the published/target lobby) continuously for
+   15 s → `end_match(.., "expedition over: Seamless Co-op lobby gone")`. Keep the Roundtable rule. Unit tests: ends after 15 s; does
+   not end while `Expedition` even if the SC lobby read flickers; does not end before any expedition.
+2. **No false trust warning.** Step 2 (joiner reads `sc_lobby`): when a verified `published` value already exists, an `Err` from
+   `PublishedScLobby::from_queue` (owner moved after the host left) keeps the old value and logs nothing above debug. Unit test with
+   the owner moved after a first good read.
+3. **Joiner status with links on.** With `mm_join_auto` = `invite+link`/`link`, after the automatic link the joiner's line reads
+   `joining the host's lobby... (if a Steam invite pops up, accept it)` instead of the accept-the-invite text. Test.
+4. **Stop logging lobbies we left.** `steam/probe.rs` keeps printing every lobby ever seen every 10 s (`members=[0]` / `[0, 0]`).
+   Drop a lobby from the periodic `mm_join: lobby ...` lines once our own id is no longer a member.
+5. **Load-screen warning.** `T-006: timeout after 180 s waiting for WorldChrMan` fires during later loads once WorldChrMan had
+   been found before. After the first success, log that case at info, worded "WorldChrMan null for N s (loading)".
+6. **mmtest package.** `scripts\package-release.ps1 -MatchmakingTest` writes `mm_join_auto = "invite+link"`, and leaves the T-028
+   position test keys (F6/F7/F9) unbound in that zip's `nrpvp.toml` (find the switch in `config.rs`; if there is none, add
+   `pos_test = false` default and bind those keys only when true). Update `scripts\release\MATCHMAKING TEST.txt`: the joiner no longer
+   accepts an invite unless one pops up; the "(a) link" warning becomes "do not press any Join methods button".
+Acceptance (implementer): `cargo test` and `cargo clippy` clean; the new zip exists and its `nrpvp.toml` shows the two settings.
+Acceptance (HUMAN + friend): FS-MM2 in TESTING.md §6.
+Result (implementer, 2026-10-14): items 1-6 built. Files: `mm/machine/gate.rs` (15 s "SC lobby gone" end after an expedition, kept published sc_lobby on a later Err, link-on joiner text; +5 tests, 1 updated), `steam/probe.rs` (LobbyWatch takes own id, periodic lines only while a member; +1 test), `game/mod.rs` (WorldChrMan null after a first success logs info "WorldChrMan null for N s (loading)" after 10 s; the T-006 warn only before the first success), `scripts/package-release.ps1` (mmtest `mm_join_auto = "invite+link"`; F6/F7/F9 were already unbound there via `hotkey_pos_* = ""`, so no config.rs change), `scripts/release/MATCHMAKING TEST.txt`. Tests 351 -> 357 pass, clippy clean, release build OK. Zip `dist/NightreignPvP-mmtest.zip` 2026-10-14 00:14 local (03:14 UTC), toml checked. UNKNOWN: whether the 15 s rule behaves in the real game; phase None while loading counts as "not Expedition", so a very long load with no SC lobby after an expedition could end the match early.
+
+### MM-3c — What creates Seamless Co-op's lobby A (removes the host's Invite Members step)
+Owner: SONNET/implementer → HUMAN-solo (5 min) → OPUS analysis | Status: built, awaiting HUMAN-solo run | Depends: none (run after MM-3a in one build)
+Fact: lobby A appears only when the host opens Matchmaking Settings > Invite Members, every match (S9 §5c). Goal: find the call
+chain that creates it, so the host's mod can trigger the same game or SC path itself. Dev-only probe `mm_lobby_trace = true`
+(forced off in player and mmtest builds). Interop only: **no byte of `nrsc.dll` or the game is patched.**
+1. Hardware breakpoint (debug register DR0, execute) on the code that `ISteamMatchmaking::CreateLobby` runs: the vtable slot of the
+   `SteamAPI_SteamMatchmaking_v009()` object (slot index from the SDK header bundled by steamworks-rs; write the index and the source line
+   into the code comment) AND the flat export `SteamAPI_ISteamMatchmaking_CreateLobby` (DR1). Set on every thread of the process
+   (Toolhelp snapshot + Get/SetThreadContext), re-applied every 2 s for new threads, cleared after 3 hits or 10 min.
+2. A vectored exception handler catches `EXCEPTION_SINGLE_STEP` from those addresses only (else continue search), logs the thread id,
+   the arguments (rcx/rdx/r8/r9 → lobby type and max members), then walks the stack from the CONTEXT with `RtlLookupFunctionEntry` +
+   `RtlVirtualUnwind` (max 32 frames) and logs every frame as `module+offset` (module from `GetModuleHandleExW(FROM_ADDRESS)`). Resume
+   with RF set in EFlags. Our own queue lobby `CreateLobby` calls will also hit: label them by thread (our worker's id is known).
+3. Same treatment, logging only, for `ISteamFriends::ActivateGameOverlayInviteDialog` (DR2), to see whether the screen opens Steam's dialog.
+Acceptance (HUMAN-solo, `scripts\launch.ps1`): reach the Roundtable, open Matchmaking Settings > Invite Members, close it, quit. Game and
+Seamless Co-op must behave normally. Send `dist\nrpvp.log`. Opus then reads the frames in `nrsc.dll` / `nightreign.exe`.
+Stop and report if setting the thread contexts fails or the game hangs.
+Result (implementer, 2026-10-14): built, awaiting HUMAN-solo run. New `steam/lobtrace.rs` (+ `mm_lobby_trace` in `config.rs`, spawn in `startup.rs`, `note_steam_thread` call in `probe.rs`, features `Win32_System_Diagnostics_ToolHelp` + `Win32_System_Kernel`). Grep prefix `mm_lobby_trace:` (hits: `mm_lobby_trace: HIT n/3 <label> at 0x.. thread=.. rcx=.. rdx=.. r8=.. r9=.. [..]` then `mm_lobby_trace:   #i module+0xOFF (0xADDR)`). Switch `mm_lobby_trace` default false, forced off in the player build and written `false` in the mmtest toml (`package-release.ps1`, zip NOT rebuilt); `dist\nrpvp.toml` has it `true`. Armed: DR0 flat `SteamAPI_ISteamMatchmaking_CreateLobby`, DR1 the live vtable target behind it, DR2 flat `SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog`, DR3 its vtable target. The SDK headers are NOT on this machine (steamworks-rs is not a dependency), so no slot index is hard-coded: the displacement is decoded at run time from the export's first bytes (`mov rax,[rcx]; jmp [rax+disp]`) and the target read from the live interface object; the log prints the 24 raw bytes of each export and the decoded slot (disp/8). If the thunk has another shape only DR0/DR2 are armed (the bytes are logged to decode by hand). Order differs from the card (DR0 = flat, DR1 = vtable). VEH is alloc/lock-free (static 16-slot ring, CAS claim, CONTEXT + 8 KiB stack copy, RF set); unwinding (`RtlLookupFunctionEntry`/`RtlVirtualUnwind`, 32 frames, stack-pointer rebasing into a scratch copy) and logging run on the tracer thread. Threads suspended only around Get/SetThreadContext with no allocation; re-applied every 2 s; per address disarmed after 3 hits; all DRs cleared on every thread when all are done or after 10 min, then the VEH is removed. Build OK, 366 tests pass (was 357; +8 lobtrace: DR7, hit counting/disarm, finish rule, thunk decoder, formatting, rebase, handler ignores foreign exceptions, real-stack unwind; +1 config), clippy clean. Left for the HUMAN: the run above. UNKNOWN/risk: Arxan/EAC-free anti-debug may notice debug registers or the VEH (use `scripts\launch.ps1`, same as always); the game may call the vtable of a different Steam interface version than `_v009`/`_v017` returns (then DR1/DR3 never fire; check the `thunk jumps through` line); a call made before the tracer armed (it waits for Steam init) is missed, so open Invite Members only after the Roundtable loads; our own queue-lobby CreateLobby (mm_queue) also hits and is labelled `OUR Steam thread`; frames in the first hit beyond 8 KiB of stack are cut.
+
+### MM-3d — Does Seamless Co-op adopt a lobby the mod creates the game's way?
+Owner: SONNET/implementer → HUMAN-solo (5 min) | Status: built, awaiting HUMAN-solo run | Depends: MM-3c (done, S9 §5d)
+Fact (S9 §5d): Invite Members makes the game call `CreateLobby(Public, 6)` through SC's proxied `ISteamMatchmaking`; that lobby
+becomes SC's lobby A. Question: if the host's mod makes the same call through the same interface, does SC adopt it?
+Dev only, switch `mm_sc_create = true` (default false; forced off in player and mmtest builds; on in `dist\nrpvp.toml`).
+1. Overlay dev button **"create SC lobby (test)"** in the Queue block (no hotkey). Refuse, with the reason logged, if the safety guard
+   fails or the player is already in an SC lobby (`env.sc` is Some).
+2. Call `SteamAPI_ISteamMatchmaking_CreateLobby(SteamAPI_SteamMatchmaking_v009(), type, 6)` from the Steam worker thread, the
+   same way the queue lobby is created; `type` from `mm_sc_create_type` = `"public"` (default) | `"friends"` | `"private"`. Poll the
+   `LobbyCreated_t` call result with the existing poller and log result + lobby id.
+3. For 20 s after creation log, every 2 s: owner, members, limit, `locked` (from `LobbyEnter_t`), and every data key/value of that
+   lobby, plus whether the worker's SC-lobby detection now reports it (`env.sc`). Prefix `mm_sc_create:`.
+4. Write nothing to that lobby (no `SetLobbyData`, no type changes). If after 20 s it carries no `nrsc_lobby_type`, it is ours alone:
+   `LeaveLobby` it and log `not adopted`. If it carries `nrsc_lobby_type`, leave it alone and log `ADOPTED by Seamless Co-op`.
+5. Keep `mm_lobby_trace` working next to it (the trace will also show our call on our thread; fine).
+Acceptance (implementer): tests for the refuse rules and the adopted/not-adopted decision with `FakeSteam`; `cargo test`, clippy clean;
+dev DLL built; do NOT rebuild the mmtest zip.
+Acceptance (HUMAN-solo, `scripts\launch.ps1`): at the Roundtable press the button once, wait 30 s, then open Invite Members and close
+it, quit. Send the log. Also say if anything on screen changed when the button was pressed.
+Result (implementer, 2026-10-14): built, awaiting HUMAN-solo run. New `mm/sccreate.rs` (state machine `ScCreate`: press -> `CreateLobby(type, 6)` -> poll `LobbyCreated_t` -> watch 20 s, sample every 2 s -> verdict), `steam/queue.rs` (`QueueSteam::begin_create_sc`, `ScType::Friends` = 1 + `parse_create`/`create_name`, FakeSteam `adopt_created`), `mm/worker.rs` (`Cmd::ScCreate`, SC-lobby detection `env.sc` passed to the sampler), `mm/mod.rs` (`Cmd::ScCreate`, `Status.sc_create_ui/sc_create_line`), `overlay/{mod,shared}.rs` + `game/mod.rs` (`Command::MmScCreate`), `config.rs` (`mm_sc_create` default false, `mm_sc_create_type` = public|friends|private, dev + `mm_queue` only, forced off in the player build), `startup.rs`, `scripts/package-release.ps1` (mmtest toml `mm_sc_create = false`; zip NOT rebuilt). Button: **"create SC lobby (test)"** in the Queue block of the debug overlay (no hotkey), with a coloured status line under it. Log prefix `mm_sc_create:` (lines: `pressed`, `LobbyCreated result=.. lobby=..`, `+N.Ns lobby=.. owner=.. members=[..] limit=.. locked=.. data=[k="v",..] env.sc=.. nrsc_lobby_type=..` every 2 s, then `ADOPTED by Seamless Co-op` or `not adopted ... LeaveLobby`). Refusals (`mm_sc_create: REFUSED: ...`): safety guard fails, already in an SC lobby (`env.sc` Some), a test already running. Writes nothing to the lobby: no set_* call exists in the module; the only call besides reads is `leave` (takes the `QueueLobby` from our own CreateLobby result, refuses again at call time if `nrsc_lobby_type` is present), made only when the marker is absent after 20 s. Dev `dist\nrpvp.toml`: `mm_sc_create = true`, `mm_sc_create_type = "public"`; `dist\nrpvp.dll` rebuilt. 377 tests pass (was 366; +8 sccreate, +1 config, +1 queue, +1 refuse-rule), clippy clean. Left for the HUMAN: the run in the Acceptance line. UNKNOWN/risk: if the game's callback pump consumes our `LobbyCreated_t` the poll reports an invalid handle and the lobby is not tracked (a stray lobby could stay open until quit; the log shows the `event LobbyCreated` line with its id); the verdict is the marker on the lobby within 20 s only; `mm_lobby_trace` hits on our own call are labelled `OUR Steam thread`.
+
+### MM-3e — Host's mod creates the SC lobby at MATCH READY (no Invite Members)
+Owner: SONNET/implementer → HUMAN + friend (FS-MM2) | Status: built, awaiting FS-MM2 | Depends: MM-3d (ADOPTED, S9 §5e)
+Build on `mm/sccreate.rs` and the gate (`mm/machine/gate.rs`). New config `mm_host_create` (dev + `mm_join` only, default false,
+forced off in the player build; **true in the mmtest zip**).
+1. Host, MATCH READY, `env.sc` is None, guard OK: create the lobby with the MM-3d call (`Public`, 6) once. Wait for the adopted lobby
+   (`nrsc_lobby_type` present). From then the gate runs as today (publish `sc_lobby`, invite, ALL PRESENT) with that lobby.
+2. If the created lobby is not adopted within 10 s → `LeaveLobby` it (ours only, as MM-3d) and fall back to today's prompt
+   ("open Matchmaking Settings > Invite Members ..."). Also fall back if no roster member has entered within 45 s of publishing, but
+   then keep our lobby (do not leave it) and change the host line to: `<names> did not arrive: open Invite Members and invite them`.
+3. Never create a second lobby in the same match. If `env.sc` already exists (a lobby the game made) use it and create nothing.
+4. Host status while creating: `creating the Seamless Co-op lobby...`. Log prefix `mm_host_create:`.
+5. Two adopted SC lobbies at once (the host opened Invite Members anyway): the worker's `env.sc` must stay on the lobby the gate
+   published (`sc_lobby`); log the second one as `second SC lobby ignored`. Test it.
+6. `scripts\package-release.ps1 -MatchmakingTest`: `mm_host_create = true` (keep `mm_join_auto = "invite+link"`, `mm_sc_create = false`,
+   `mm_lobby_trace = false`). Rebuild the mmtest zip. Update `scripts\release\MATCHMAKING TEST.txt`: Solo test = nobody opens any menu;
+   only if the host's line asks for it, the host opens Invite Members.
+Acceptance (implementer): FakeSteam tests for 1–3 and 5; `cargo test`, clippy clean; zip rebuilt and its toml checked.
+Acceptance (HUMAN + friend): FS-MM2 (TESTING.md §6), step 1.
+Result (implementer, 2026-10-14): built, awaiting FS-MM2. Config `mm_host_create` (`config.rs`, `startup.rs`, `worker.rs` Setup, `MachineCfg.host_create`; dev + `mm_join`, forced off in the player build, true in the mmtest toml). `mm/machine/gate.rs`: `HostCreate` state (Todo, Creating, Watching, Adopted, Done) run by `host_create_step` on the first gate pass of a host with `env.sc` None and the guard OK: `begin_create_sc(Public, 6)` once, poll `LobbyCreated_t` (15 s), adopted when `nrsc_lobby_type` appears, `LeaveLobby` (our QueueLobby only) if not adopted within 10 s; never a second create (also none if `env.sc` exists, on failure, or after expedition); no-arrival line after 45 s since `sc_lobby` was published when no other roster member is in (lobby kept); `abandon_create` on Leave/match end (pending create becomes an orphan, a not-adopted lobby is left, an adopted one is untouched). `machine.rs`: `preferred_sc_alive`; `worker.rs`: `on_event` ignores a second SC lobby while the match's lobby is alive (log `mm_host_create: second SC lobby ignored`) and `current_sc` stays on the match's lobby. Log prefix `mm_host_create:`. Host lines, automatic path: `MATCH READY host=..` -> `creating the Seamless Co-op lobby...` -> `MATCH READY - waiting for <name> to enter your Seamless Co-op lobby (1/2 present)` -> `ALL PRESENT 2/2 - host: start the expedition`; joiner: `MATCH READY - waiting for the host's Seamless Co-op lobby` -> `joining the host's lobby... (if a Steam invite pops up, accept it)` -> `MATCH READY - in the host's lobby, waiting for the others` -> `ALL PRESENT - waiting for the host to start`. Fallback (not adopted in 10 s): host `host has no Seamless Co-op lobby yet: open Matchmaking Settings > Invite Members and invite <name>`; (no arrival 45 s): host `<name> did not arrive: open Invite Members and invite them`. Tests 377 -> 385 (+7 gate `host_create_tests`, +1 config), clippy clean, release build OK. Zip `dist\NightreignPvP-mmtest.zip` 2026-10-14 19:46 local (22:46 UTC), toml checked (`mm_host_create = true`, `mm_join_auto = "invite+link"`, `mm_sc_create = false`, `mm_lobby_trace = false`, F6/F7/F9 unbound); `MATCHMAKING TEST.txt` Test 2 updated (nobody opens a menu; Invite Members only if the host's line asks). Left for the HUMAN: FS-MM2 step 1 (two PCs). Risks: MM-3d proved adoption only solo (+0.0 s); with a real queue lobby open next to it, or with the joiner's invite/link on a lobby the game never "opened" via the UI, behaviour is UNKNOWN; if Steam rejects the invite on our created lobby the 45 s line appears; a `LobbyCreated_t` consumed by the game's pump leaves an untracked lobby (log `no LobbyCreated result`).
 
 ### MM-4 — Solo queue end to end, player build
 Owner: SONNET/implementer → HUMAN | Status: blocked on MM-3 | Feeds: F1, F15
