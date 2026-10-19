@@ -7,7 +7,7 @@
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
 # -MatchmakingTest (MM-2/MM-3 friend session): instead of the player settings, the packaged nrpvp.toml turns on developer mode with the
-#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite+link", mm_host_create = true, mm_match_players = 2,
+#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite+link", mm_host_create = false, mm_quiet_invite = true, mm_match_players = 2,
 #   probes = false, team_size = 1).
 #   The zip is dist\NightreignPvP-mmtest.zip (the player zip is not touched). Logs land in <Game>\NightreignPvP\logs as usual.
 param(
@@ -55,8 +55,10 @@ if ($MatchmakingTest) {
         'mm_match_players = 2',
         'mm_join = true',
         'mm_join_auto = "invite+link"',
-        '# MM-3e: the host mod creates the Seamless Co-op lobby itself at MATCH READY (no Invite Members).',
-        'mm_host_create = true',
+        '# MM-3e (the mod creating the lobby itself) failed in FS-MM2: the lobby must come from the game (Invite Members).',
+        'mm_host_create = false',
+        '# MM-3f: while the host waits at MATCH READY the Steam invite window of Invite Members is skipped (no code is patched).',
+        'mm_quiet_invite = true',
         '# MM-3c lobby tracer (hardware breakpoints) is a solo developer tool: never in a friend zip.',
         'mm_lobby_trace = false',
         '# MM-3d SC-adoption test button is a solo developer tool: never in a friend zip.',

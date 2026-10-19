@@ -155,6 +155,37 @@ Log: `../experiments/MM-3d/2026-10-14_sc_create_solo.log`. Nothing else on scree
 Decision (Opus, 2026-10-14): MM-3e makes the host's mod create the SC lobby itself at MATCH READY in the mmtest build, with
 Invite Members as the fallback prompt after 45 s. The host must not also open Invite Members while our lobby exists (two SC lobbies).
 
+## 5f. FS-MM2 step 1 (Leonardo + SamukaSamukando, 2 PCs, real Steam, 2026-10-19 17:24–17:28Z, mmtest zip of 2026-10-14)
+
+Logs: `.claude/experiments/FS-MM2/{host,client}`. Game 1.03.3, SC 1.1.3, me3 0.11.0, same `nrpvp.dll` on both PCs. The friend's clock
+runs about 14.7 s ahead (MATCH READY 17:25:35.57 there, 17:25:20.87 here); times below are Leonardo's. Try 1: friend hosted. Try 2: Leonardo hosted.
+
+| Finding | Evidence |
+|---|---|
+| Queue matched in under 1 s both tries; host, roster and team size 1 agreed on both PCs | `[VERIFIED: both logs]` |
+| The host's mod created the SC lobby and SC adopted it at +0.0 s, both tries, on both PCs | `[VERIFIED: mm_host_create: ADOPTED]` |
+| The joiner's link and invite reached the joiner's game (`GameLobbyJoinRequested_t` 0.2 s after the link), but the lobby was "seen" and then "gone or we are not in it" within 0.1 s; the joiner never became a member. Same in both tries | `[VERIFIED: 17:24:28–29 here, 17:25:37 friend]` |
+| The friend's manual accept 19 s later gave the same result | `[VERIFIED: friend 17:25:55]` |
+| The dev button "Direct" (`JoinLobby` by our mod) put the friend in the Steam lobby: 2/2, `ALL PRESENT` on both PCs | `[VERIFIED: friend 17:26:05 = 17:25:51 here]` |
+| The host started the expedition (team_type 2 at 17:27:07) with 1 player in its world; the friend's game never left the Roundtable (his WorldChrMan never changed). The host's world unloaded at 17:27:15 and its log ends at 17:27:32 with no shutdown line | `[VERIFIED: both logs]`; why the host's world ended UNKNOWN (ask Leonardo) |
+| Being in the Steam lobby is not being in the SC session. Our lobby has 2 data keys; the game's own lobby has 3 (`inviteParam = 0` too). The game's session code never opened ours, so the joiner's game leaves it at once and the host's game has nothing to bring a member in | `[HYPOTHESIS: strong]`: the game-made lobby worked in FS-MM1 with the same join paths |
+| A real SC join shows in the host's ChrSet: FS-MM1 host heartbeat `players=2` at the Roundtable from 02:26:53; here it stayed `players=1` on both PCs | `[VERIFIED: FS-MM1 host log, both FS-MM2 logs]` |
+| `ALL PRESENT` (Steam membership) is a false positive when the member is not in the SC session | `[VERIFIED: this run]` |
+| Leaving the queue does not leave an adopted SC lobby: the friend stayed in his try-1 lobby `…357` through try 2 | `[VERIFIED: friend log 17:26:03 onwards]` |
+
+Decision (Opus, 2026-10-19): the mod-created lobby (MM-3e) is dropped as the join path; `mm_host_create` goes off in the mmtest build.
+The SC lobby must come from the game's own session code. MM-3f: the host's Invite Members (the game's path) creates the lobby, and our
+mod stops the Steam invite dialog from opening and sends the invite itself. That is Leonardo's "Start Match" idea of 2026-10-14, applied to
+the host. After MM-3f: trigger that game action from the queue without the menu (MM-3g, RE of the call chain in §5d).
+
+## 5g. FS-MM3: Solo works with one host click (2026-10-19 18:01–18:13Z)
+
+Logs `.claude/experiments/FS-MM3/`. With the game's own lobby (host pressed Invite Members, MM-3f skipped the Steam window), the joiner's
+automatic link worked: his game briefly saw the lobby, then entered it 1.9 s after the link `[VERIFIED: client 18:02:23–25]`, appeared in the
+host's ChrSet (`players=2`) `[VERIFIED]`, and played the expedition as a rival `[VERIFIED: team write on both PCs, downed rule hits]`. The match
+ended at the Roundtable by itself on the host `[VERIFIED]`. This confirms §5f: the join path is fine; only a lobby made by the game works.
+The one remaining manual step is the host's Invite Members press (MM-3g).
+
 ## 6. Solo flow (v1)
 
 1. Roundtable. Player picks **Solo Battle Royale** (v1: a button in our overlay; later the table entry from S7 route B).

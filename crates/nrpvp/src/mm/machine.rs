@@ -153,6 +153,8 @@ pub(crate) struct MachineCfg {
     pub join_auto: JoinAuto,
     /// MM-3e: `mm_host_create` (needs `join`): the host's mod creates the Seamless Co-op lobby at MATCH READY.
     pub host_create: bool,
+    /// MM-3f: `mm_quiet_invite` (needs `join`): the host's line asks for Invite Members and the Steam invite window is suppressed.
+    pub quiet_invite: bool,
 }
 
 pub(crate) struct Machine {
@@ -240,8 +242,20 @@ impl Machine {
     }
 
     /// MM-3: the worker refreshes these before every tick (Seamless Co-op lobby we are in, safety guard, local phase).
-    pub(crate) fn set_env(&mut self, sc: Option<ScLobby>, guard: Result<(), String>, phase: Option<Phase>) {
-        self.env = Env { sc, guard, phase };
+    pub(crate) fn set_env(&mut self, sc: Option<ScLobby>, guard: Result<(), String>, phase: Option<Phase>, players: usize) {
+        self.env = Env { sc, guard, phase, players };
+    }
+
+    /// MM-3f: we are the host of a ready match (before the expedition) and no Seamless Co-op lobby exists yet, so the next Invite
+    /// Members is the one whose Steam window must stay closed. Pure state read.
+    pub(crate) fn quiet_invite_wanted(&self, own: u64) -> bool {
+        let State::MatchReady(r) = &self.state else { return false };
+        self.cfg.join
+            && self.cfg.quiet_invite
+            && r.host != 0
+            && r.host == own
+            && self.env.sc.is_none()
+            && r.gate.quiet_window_open()
     }
 
     /// MM-3: the worker only needs the (cheap but not free) Seamless Co-op lookup while a match is ready and `mm_join` is on.
@@ -910,7 +924,7 @@ mod tests {
     const OTHER: u64 = 7002;
 
     fn cfg() -> MachineCfg {
-        MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite, host_create: false }
+        MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite, host_create: false, quiet_invite: false }
     }
 
     fn tag_data() -> Vec<(&'static str, &'static str)> {

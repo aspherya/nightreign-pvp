@@ -165,6 +165,26 @@ Pins: game 1.03.3 (1.3.3.0), SC v1.1.3 (in-game text; = Nexus "1.13"), me3 0.11.
 - Side finding: the T-001 `dev` profile (no SC) wrote the **vanilla** `NR0000.sl2` (14:45). Offline only, but it should
   use a separate save file. Follow-up in T-004b.
 
+### 2026-10-19 — FS-MM2 step 1 (Leonardo + SamukaSamukando, real Steam, mmtest zip 2026-10-14 19:46). Logs: `.claude/experiments/FS-MM2/{host,client}`
+Game 1.03.3, SC 1.1.3, me3 0.11.0. **FAIL** (step 1, automatic join). Queue and host election: PASS in under 1 s, both tries. Host's mod
+created the SC lobby and SC adopted it (+0.0 s), both tries. The joiner's link and invite reached the game, which entered and left the
+lobby at once, both tries; manual accept did the same. The friend got into the Steam lobby only with the dev "Direct" button, which showed
+`ALL PRESENT`, but his game stayed at the Roundtable while Leonardo started the expedition alone; Leonardo's world ended 8 s later and his log
+stops at 17:27:32Z. Steps 2–3 not run. Analysis and decision: S9 §5f (the lobby must be made by the game; MM-3f).
+
+### 2026-10-19 — MM-3f solo check (Leonardo, build 121749e dirty, nrpvp.dll E3F8E7E8E9532E87). Log: `.claude/experiments/MM-3f/2026-10-19_quiet_invite_solo.log`
+Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS.** Test button armed DR0/DR1 on 137 threads (0 failed). Invite Members: the game created its own
+lobby (`inviteParam = 0`, `nrsc_lobby_type`, adopted) and the invite-dialog call from `nightreign.exe+0x258568B` was skipped 0.4 s later; no Steam
+window, no hang. Disarmed after 60 s on 133 threads. Not done: pressing Invite Members again after disarm (Leonardo quit right after).
+
+### 2026-10-19 — FS-MM3 (Leonardo host on MM-3f build E3F8E7E8E9532E87; SamukaSamukando joiner on the 2026-10-14 mmtest build). Logs: `.claude/experiments/FS-MM3/{host,client}`
+Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS (Solo, one host click).** Both pressed Queue Solo; match in 4 s. Host line asked for Invite Members;
+one press: game lobby (`inviteParam`), Steam window skipped, mod invite sent. The joiner's mod opened the link; his game entered the lobby 1.9 s
+later with no clicks (Leonardo: "only I had to click invite members"). Joiner in the host's world 6 s later (`players=2`), then ALL PRESENT;
+quiet invite disarmed on 137 threads. Expedition with both, rival write 2 -> 29 on both PCs, downed rule fired on rival hits. Back at the
+Roundtable after ~10 min: host status back to idle by itself. Not covered: the joiner ran the old build, so the joiner-side "loading in" line
+was not exercised (joiner join code is the same in both builds); friend's log ends at 18:13:45 while loading back.
+
 ## 4. Known bugs
 
 _None yet._

@@ -43,6 +43,8 @@ pub(crate) fn run() {
                     join_auto: cfg.join_auto(),
                     // MM-3e: the host's mod creates the SC lobby at MATCH READY.
                     host_create: cfg.mm_host_create,
+                    // MM-3f: skip the Steam invite window at the host's MATCH READY.
+                    quiet_invite: cfg.mm_quiet_invite,
                     // MM-3d: the "create SC lobby (test)" dev button.
                     sc_create: cfg.mm_sc_create.then(|| cfg.sc_create_type()),
                     // The game build string the banner logs (exe FileVersion); TODO MM-4: a sturdier build id if needed.
@@ -52,6 +54,11 @@ pub(crate) fn run() {
             if cfg.dev_mode && (cfg.mm_probe || cfg.mm_queue || cfg.mm_join) {
                 // MM-3: `mm_join` or `mm_probe` also turn on the evidence logging (per-lobby membership lines) even without the queue worker.
                 crate::steam::probe::spawn(queue, cfg.mm_join || cfg.mm_probe);
+            }
+            // MM-3f: the invite-window suppression (hardware breakpoints, no patching). The config already turned it off when
+            // mm_lobby_trace is on (both own the debug registers).
+            if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_join && cfg.mm_queue && !cfg.mm_lobby_trace {
+                crate::steam::quietinvite::spawn(m.base, m.size);
             }
             // MM-3c: dev-only call-stack tracer for the creation of Seamless Co-op's lobby A (hardware breakpoints, no patching).
             if cfg.dev_mode && cfg.mm_lobby_trace {

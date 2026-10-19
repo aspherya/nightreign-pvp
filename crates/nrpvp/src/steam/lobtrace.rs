@@ -55,7 +55,7 @@ use windows::Win32::System::Threading::{
 use super::Flat;
 
 /// Number of debug registers with an address (DR0..DR3).
-const TARGETS: usize = 4;
+pub(super) const TARGETS: usize = 4;
 /// Hits recorded per address before it is disarmed.
 const MAX_HITS: u32 = 3;
 /// The tracer disarms itself after this long.
@@ -75,9 +75,9 @@ const STACK_BYTES: usize = STACK_QWORDS * 8;
 const PAD_QWORDS: usize = 16 * 1024;
 const MAX_FRAMES: usize = 32;
 /// EFlags resume flag: suppresses the instruction breakpoint for exactly one instruction (Intel SDM vol. 3, 17.3.1.1).
-const EFLAGS_RF: u32 = 0x1_0000;
-const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
-const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
+pub(super) const EFLAGS_RF: u32 = 0x1_0000;
+pub(super) const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
+pub(super) const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 
 const LABELS: [&str; TARGETS] = [
     "flat ISteamMatchmaking::CreateLobby",
@@ -384,7 +384,7 @@ fn thread_ids(pid: u32, out: &mut Vec<u32>) -> bool {
 
 /// Apply `mask` to every thread except `own`. `applied` remembers the mask each thread already has (so only new threads and
 /// changed masks cost a suspend). With `force` every thread is written (disarm). Returns `(written, failed, first error)`.
-fn apply_all(
+pub(super) fn apply_all(
     pid: u32,
     own: u32,
     addrs: &[u64; TARGETS],

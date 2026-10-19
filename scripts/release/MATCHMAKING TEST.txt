@@ -26,8 +26,8 @@ THE PANEL
 * Find the "Queue" block: a status line and the buttons
       Queue Solo   Queue Duo   Queue Squad   Leave queue
 * Use the buttons. Do not press the F1, F2, F3 or F5 keys: they do the same as the buttons.
-* Do not press any button in the "Join methods" block. The mod joins the host's
-  lobby by itself.
+* Do not press any button in the "Join methods" block, nor "test quiet invite".
+  The mod joins the host's lobby by itself.
 
 
 TEST 1 - TEAMMATES
@@ -45,15 +45,19 @@ TEST 2 - RIVALS
 1. Both players close the game completely and start it again. Invite nobody.
 2. Both go to the Roundtable and press "Queue Solo" within about 10 seconds of each other.
 3. Both should see "MATCH READY host=<name>". That name is the host.
-4. Nobody opens any menu. The host's line says "creating the Seamless Co-op lobby..."
-   by itself, then waits for the other player to enter.
-5. The other player's line says "joining the host's lobby...". Nothing to click;
-   only if a Steam invite pops up on screen, accept it (Shift+Tab).
-6. Both should see "ALL PRESENT". The host starts the expedition.
-7. ONLY if the host's line asks for it (it says "host has no Seamless Co-op lobby yet"
-   or "<name> did not arrive: open Invite Members and invite them"):
-   the host opens Matchmaking Settings > Invite Members and invites the other player.
-   Write down that this was needed and which line asked for it.
+4. The joiner presses nothing and opens no menu.
+5. The HOST's line says "MATCH READY - press Matchmaking Settings > Invite Members
+   (no Steam window will open)". The host does exactly that: opens Matchmaking
+   Settings and presses Invite Members. No Steam window should open (if one does,
+   close it and write that down). The host does not invite anyone by hand.
+6. The host's line then says it is waiting for the other player. The joiner's line
+   says "joining the host's lobby...". Only if a Steam invite pops up on the joiner's
+   screen, accept it (Shift+Tab).
+7. When both are in the lobby the lines say "in the lobby 2/2, waiting for <name> to
+   load in" (host) and "in the host's lobby, loading in..." (joiner). After a few
+   seconds both should see "ALL PRESENT". If they stay on the "load in" lines for
+   more than a minute, write that down: it means the second player did not really
+   enter the host's game. The host starts the expedition only after ALL PRESENT.
 8. In the expedition: try to hit each other. Rivals SHOULD be able to.
 
 

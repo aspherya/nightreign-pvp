@@ -15,6 +15,7 @@
 pub(crate) mod callback;
 pub(crate) mod lobtrace;
 pub(crate) mod probe;
+pub(crate) mod quietinvite;
 pub(crate) mod queue;
 
 use std::ffi::{c_char, c_int, c_void, CStr};

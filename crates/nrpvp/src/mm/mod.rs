@@ -63,6 +63,8 @@ pub(crate) enum Cmd {
     Join(join::JoinCmd),
     /// MM-3d (dev button, `mm_sc_create`): create a lobby the way the game does and see whether Seamless Co-op adopts it.
     ScCreate,
+    /// MM-3f (dev button, `mm_quiet_invite`): suppress the Steam invite window for 60 s so Invite Members can be tried solo.
+    QuietTest,
 }
 
 /// What the overlay shows.
@@ -82,6 +84,10 @@ pub(crate) struct Status {
     pub sc_create_ui: bool,
     /// MM-3d: one status line of that test (empty until pressed).
     pub sc_create_line: String,
+    /// MM-3f (`mm_quiet_invite`): show the "test quiet invite" button and hide the direct JoinLobby button.
+    pub quiet_ui: bool,
+    /// MM-3f: one status line of the suppression (empty when idle).
+    pub quiet_line: String,
 }
 
 struct Hub {
@@ -98,6 +104,8 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 static TEAM_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 /// MM-3: the local player's team_type as last read by the game loop (0 = never read). Only written while the feature is enabled.
 static LOCAL_TEAM: AtomicU8 = AtomicU8::new(0);
+/// MM-3f: how many players the local ChrSet held at the game loop's last read (0 = never read).
+static LOCAL_PLAYERS: AtomicUsize = AtomicUsize::new(0);
 
 fn hub() -> &'static Hub {
     HUB.get_or_init(|| Hub { cmds: Mutex::new(VecDeque::new()), status: Mutex::new(Status::default()) })
@@ -154,6 +162,18 @@ pub(crate) fn note_local_team(team: u8) {
     if enabled() {
         LOCAL_TEAM.store(team, Ordering::Relaxed);
     }
+}
+
+/// Game loop: the number of players in the local ChrSet (read by the gate's ALL PRESENT check). Inert unless mm is enabled.
+pub(crate) fn note_local_players(n: usize) {
+    if enabled() {
+        LOCAL_PLAYERS.store(n, Ordering::Relaxed);
+    }
+}
+
+/// Worker: the last ChrSet player count the game loop stored (0 = never read).
+pub(crate) fn local_players() -> usize {
+    LOCAL_PLAYERS.load(Ordering::Relaxed)
 }
 
 /// Worker: the local player's phase according to the last `team_type` the game loop read (`None` = never read / not 1 or 2).

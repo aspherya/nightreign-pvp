@@ -508,6 +508,16 @@ impl OverlayApp {
                 ui.text_colored(c, &st.sc_create_line);
             }
         }
+        // MM-3f (dev only, `mm_quiet_invite`): suppress the Steam invite window for 60 s, then press Matchmaking Settings > Invite Members.
+        if st.quiet_ui {
+            if ui.button("test quiet invite") {
+                self.send(Command::MmQuietTest);
+            }
+            if !st.quiet_line.is_empty() {
+                let c = if st.quiet_line.contains("SUPPRESSED") { GREEN_TEXT } else { AMBER };
+                ui.text_colored(c, &st.quiet_line);
+            }
+        }
         // MM-3 (dev only, `mm_join`): the join methods, one attempt per press, usable once the host's lobby id is known.
         if st.join_ui {
             use crate::mm::join::JoinCmd;
@@ -521,9 +531,12 @@ impl OverlayApp {
                 if ui.button("(b) invite / re-invite") {
                     self.send(Command::MmJoin(JoinCmd::Invite));
                 }
-                ui.same_line();
-                if ui.button("(c) direct JoinLobby") {
-                    self.send(Command::MmJoin(JoinCmd::Direct));
+                // MM-3f: the direct JoinLobby gives Steam membership without the Seamless Co-op session (S9 5f): not offered with mm_quiet_invite.
+                if !st.quiet_ui {
+                    ui.same_line();
+                    if ui.button("(c) direct JoinLobby") {
+                        self.send(Command::MmJoin(JoinCmd::Direct));
+                    }
                 }
             }
             {

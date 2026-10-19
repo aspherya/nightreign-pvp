@@ -781,6 +781,11 @@ fn run_command(
                 tracing::info!("mm_sc_create: {src}: create test not sent (queue feature off or command queue full)");
             }
         }
+        Command::MmQuietTest => {
+            if !crate::mm::send(crate::mm::Cmd::QuietTest) {
+                tracing::info!("mm_quiet_invite: {src}: test not sent (queue feature off or command queue full)");
+            }
+        }
         Command::MmLeave => {
             if !crate::mm::send(crate::mm::Cmd::Leave) {
                 tracing::info!("mm_queue: {src}: leave not sent (queue feature off or command queue full)");

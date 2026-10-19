@@ -56,6 +56,8 @@ pub(crate) enum Command {
     MmJoin(crate::mm::join::JoinCmd),
     /// MM-3d (dev only, `mm_sc_create`): the "create SC lobby (test)" button.
     MmScCreate,
+    /// MM-3f (dev only, `mm_quiet_invite`): the "test quiet invite" button.
+    MmQuietTest,
 }
 
 /// Name of a known `team_type` value (Smithbox NR TEAM_TYPE enum, TECHNICAL_NOTES.md section 4; the

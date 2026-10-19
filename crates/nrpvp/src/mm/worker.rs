@@ -28,6 +28,8 @@ pub(crate) struct Setup {
     pub join_auto: super::join::JoinAuto,
     /// MM-3e: `mm_host_create`.
     pub host_create: bool,
+    /// MM-3f: `mm_quiet_invite`.
+    pub quiet_invite: bool,
     /// MM-3d: `Some(type)` when `mm_sc_create` is on (dev only).
     pub sc_create: Option<crate::steam::queue::ScType>,
     /// The game build string (the exe FileVersion the banner logs), or [`GAME_UNKNOWN`].
@@ -49,6 +51,15 @@ pub(crate) struct Worker {
     sc_create: Option<super::sccreate::ScCreate>,
     /// MM-3e: the second SC lobby already logged as ignored.
     ignored_sc: Option<u64>,
+    /// MM-3f: `mm_quiet_invite` is on.
+    quiet: bool,
+    /// MM-3f: the dev button's test window ends at this time.
+    quiet_test_until: Option<Instant>,
+    /// MM-3f: when the raw "wanted" condition was last true (for the linger after the SC lobby appears).
+    quiet_raw_at: Option<Instant>,
+    quiet_last_want: bool,
+    /// MM-3f: the suppressed counter when the current test window started.
+    quiet_seen_sup: u32,
 }
 
 impl Worker {
@@ -76,6 +87,7 @@ impl Worker {
             join: s.join,
             join_auto: s.join_auto,
             host_create: s.host_create && s.join,
+            quiet_invite: s.quiet_invite && s.join,
         });
         if s.join {
             tracing::info!(
@@ -90,7 +102,15 @@ impl Worker {
         if let Some(ty) = s.sc_create {
             tracing::info!("mm_sc_create: enabled, type {}; dev button \"create SC lobby (test)\" in the Queue block", ty.label());
         }
+        if s.quiet_invite && s.join {
+            tracing::info!("mm_quiet_invite: enabled: the Steam invite window is skipped while we are host at MATCH READY without a Seamless Co-op lobby (or for 60 s after the dev button)");
+        }
         Some(Worker {
+            quiet: s.quiet_invite && s.join,
+            quiet_test_until: None,
+            quiet_raw_at: None,
+            quiet_last_want: false,
+            quiet_seen_sup: 0,
             ignored_sc: None,
             sc_create: s.sc_create.map(super::sccreate::ScCreate::new),
             steam,
@@ -195,7 +215,7 @@ impl Worker {
         self.next_env = now + Duration::from_millis(500);
         let sc = self.current_sc().map(|(sc, _, _)| sc);
         let guard = self.guard(now);
-        self.machine.set_env(sc, guard, super::local_phase());
+        self.machine.set_env(sc, guard, super::local_phase(), super::local_players());
     }
 
     fn refuse(&mut self, why: String) {
@@ -222,6 +242,21 @@ impl Worker {
                     c.press(&mut self.steam, &guard, in_sc, now);
                 }
             }
+            Cmd::QuietTest => {
+                if !self.quiet {
+                    tracing::info!("mm_quiet_invite: button ignored: mm_quiet_invite is off");
+                    return;
+                }
+                if !crate::steam::quietinvite::ready() {
+                    tracing::warn!("mm_quiet_invite: button pressed but the hook is not installed (Steam not ready or the install failed, see above)");
+                }
+                self.quiet_test_until = Some(now + crate::steam::quietinvite::TEST_WINDOW);
+                self.quiet_seen_sup = crate::steam::quietinvite::suppressed();
+                tracing::info!(
+                    "mm_quiet_invite: test armed for {} s: open Matchmaking Settings > Invite Members now; no Steam window should appear",
+                    crate::steam::quietinvite::TEST_WINDOW.as_secs()
+                );
+            }
             Cmd::Leave => {
                 self.refusal = None;
                 self.machine.leave(&mut self.steam, "user pressed Leave", now);
@@ -246,6 +281,55 @@ impl Worker {
         }
     }
 
+    /// MM-3f: decide whether the invite window is suppressed right now and tell the arming thread.
+    fn quiet_tick(&mut self, now: Instant) {
+        use crate::steam::quietinvite as qi;
+        if !self.quiet {
+            return;
+        }
+        let test_active = self.quiet_test_until.is_some_and(|t| now < t);
+        let raw = qi::arm_wanted(self.machine.quiet_invite_wanted(self.steam.own_id()), test_active);
+        if raw {
+            self.quiet_raw_at = Some(now);
+        }
+        let since = self.quiet_raw_at.map(|t| now.saturating_duration_since(t));
+        let want = qi::keep_armed(raw, since, qi::LINGER);
+        if want != self.quiet_last_want {
+            tracing::info!(
+                "mm_quiet_invite: {} (host waiting for the game's lobby or test window: {raw}, lingering: {})",
+                if want { "wanted: arming" } else { "not wanted: disarming" },
+                want && !raw
+            );
+            self.quiet_last_want = want;
+        }
+        qi::set_wanted(want);
+    }
+
+    /// MM-3f: the status line for the overlay.
+    fn quiet_line(&self, now: Instant) -> String {
+        use crate::steam::quietinvite as qi;
+        let sup = qi::suppressed();
+        if !qi::ready() {
+            return "quiet invite: hook not installed yet (waiting for Steam)".to_string();
+        }
+        if let Some(t) = self.quiet_test_until.filter(|t| now < *t) {
+            let left = t.saturating_duration_since(now).as_secs();
+            return if sup > self.quiet_seen_sup {
+                format!("quiet invite: SUPPRESSED {} Steam window(s) ({left} s left)", sup - self.quiet_seen_sup)
+            } else {
+                format!("quiet invite: test armed, {left} s left: press Matchmaking Settings > Invite Members")
+            };
+        }
+        if sup > 0 {
+            return format!("quiet invite: {sup} Steam window(s) suppressed this session");
+        }
+        if qi::armed() {
+            "quiet invite: armed (host at MATCH READY)".to_string()
+        } else {
+            String::new()
+        }
+    }
+
     /// One pass: commands, the machine, party following, override, status. Called every ~100 ms.
     pub(crate) fn tick(&mut self, now: Instant) {
         for c in super::take_cmds() {
@@ -254,6 +338,7 @@ impl Worker {
         }
         self.refresh_env(now, false);
         self.machine.tick(&mut self.steam, now);
+        self.quiet_tick(now);
         if self.sc_create.as_ref().is_some_and(|c| c.running()) {
             // What the worker's own SC-lobby detection reports right now (env.sc), for the MM-3d log lines.
             let reports = self.current_sc().map(|(sc, _, _)| sc.id());
@@ -279,6 +364,10 @@ impl Worker {
         if let Some(c) = &self.sc_create {
             st.sc_create_ui = true;
             st.sc_create_line = c.line().to_string();
+        }
+        if self.quiet {
+            st.quiet_ui = true;
+            st.quiet_line = self.quiet_line(now);
         }
         if let (Some(r), true) = (&self.refusal, self.machine.is_idle()) {
             st.line = format!("Queue: REFUSED - {r}");

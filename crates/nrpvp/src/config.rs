@@ -135,6 +135,13 @@ mm_join_auto = \"invite\"
 # If Seamless Co-op does not adopt it within 10 s the mod leaves it and the host is asked to open Invite Members. Log lines start
 # with \"mm_host_create:\".
 mm_host_create = false
+# MM-3f (dev mode only; needs mm_join = true; the player build forces it off): while this player is the host at MATCH READY and no Seamless
+# Co-op lobby exists yet, the Steam invite window that Matchmaking Settings > Invite Members opens is skipped (hardware execute breakpoint on
+# ISteamFriends::ActivateGameOverlayInviteDialog, no code is patched; only calls from nightreign.exe are skipped). The game still makes its
+# own lobby; the mod sends the invite. Everywhere else the window works as normal. Also hides the \"(c) direct JoinLobby\" button and adds a
+# \"test quiet invite\" button. Uses debug registers, so it is switched off (with a warning) when mm_lobby_trace = true.
+# Log lines start with \"mm_quiet_invite:\".
+mm_quiet_invite = false
 
 # MM-3c (dev mode only; the player build and the mmtest zip force it off): find what creates Seamless Co-op's lobby A. Arms hardware
 # execute breakpoints (debug registers, no code is patched) on ISteamMatchmaking::CreateLobby and
@@ -237,6 +244,8 @@ pub(crate) struct Config {
     pub mm_join_auto: String,
     /// MM-3e: the host's mod creates the Seamless Co-op lobby at MATCH READY (developer mode + `mm_join` only; forced off in the player build).
     pub mm_host_create: bool,
+    /// MM-3f: skip the Steam invite window while this player is the host at MATCH READY without a Seamless Co-op lobby (developer mode + `mm_join` only; forced off in the player build and when `mm_lobby_trace` is on).
+    pub mm_quiet_invite: bool,
     /// MM-3c: lobby-creation call-stack tracer (developer mode only; forced off in the player build).
     pub mm_lobby_trace: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
@@ -298,6 +307,7 @@ impl Default for Config {
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
             mm_join: false,
             mm_host_create: false,
+            mm_quiet_invite: false,
             mm_join_auto: "invite".to_string(),
             mm_lobby_trace: false,
             mm_sc_create: false,
@@ -505,6 +515,8 @@ fn enforce_player_mode(
     cfg.mm_join = false;
     // MM-3e: and the host-side lobby creation.
     cfg.mm_host_create = false;
+    // MM-3f: and the invite-window suppression.
+    cfg.mm_quiet_invite = false;
     // MM-3c: and the lobby tracer.
     cfg.mm_lobby_trace = false;
     // MM-3d: and the SC-adoption test button.
@@ -628,6 +640,15 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         if cfg.dev_mode && cfg.mm_host_create && !cfg.mm_join {
             warnings.push("mm_host_create = true needs mm_join = true; the host-side lobby creation is off".to_string());
             cfg.mm_host_create = false;
+        }
+        if cfg.dev_mode && cfg.mm_quiet_invite && !cfg.mm_join {
+            warnings.push("mm_quiet_invite = true needs mm_join = true; the invite-window suppression is off".to_string());
+            cfg.mm_quiet_invite = false;
+        }
+        // MM-3f: both use the four debug registers of every thread; the tracer would overwrite the suppression's.
+        if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_lobby_trace {
+            warnings.push("mm_quiet_invite and mm_lobby_trace both use the hardware breakpoints; mm_quiet_invite is off while mm_lobby_trace = true".to_string());
+            cfg.mm_quiet_invite = false;
         }
     }
     // MM-3d: mm_sc_create_type, and the button needs the Steam worker (mm_queue).
@@ -1154,6 +1175,21 @@ hotkey_mm_duo = \"banana\"
         // The player build (no dev_mode) forces it off even when the file asks for it.
         let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_host_create);
+    }
+
+    #[test]
+    fn mm_quiet_invite_defaults_off_is_dev_only_needs_mm_join_and_excludes_the_tracer() {
+        assert!(!Config::default().mm_quiet_invite);
+        assert!(!dev_default().mm_quiet_invite);
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\n").expect("ok");
+        assert!(cfg.mm_quiet_invite && w.is_empty(), "{w:?}");
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_quiet_invite = true\n").expect("ok");
+        assert!(!cfg.mm_quiet_invite && w.len() == 1, "{w:?}");
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\n").expect("ok");
+        assert!(!cfg.mm_quiet_invite && cfg.mm_lobby_trace && w.len() == 1, "{w:?}");
+        assert!(parse_dev("mm_quiet_invite = \"yes\"").is_err());
+        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\n").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.mm_quiet_invite);
     }
 
     #[test]

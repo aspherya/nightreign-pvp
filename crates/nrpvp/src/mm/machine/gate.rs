@@ -61,12 +61,20 @@ pub(crate) struct Env {
     /// The MM-2 safety guard (SC loaded, no EasyAntiCheat).
     pub guard: Result<(), String>,
     pub phase: Option<Phase>,
+    /// MM-3f: how many players the local ChrSet holds right now (0 = not read yet). A real Seamless Co-op join shows as `players >= 2`
+    /// at the Roundtable (S9 5f: FS-MM1 2, FS-MM2 stayed 1 while the Steam lobby had both).
+    pub players: usize,
 }
 
 impl Default for Env {
     fn default() -> Env {
-        Env { sc: None, guard: Err("safety guard not evaluated yet".into()), phase: None }
+        Env { sc: None, guard: Err("safety guard not evaluated yet".into()), phase: None, players: 0 }
     }
+}
+
+/// MM-3f: the Steam lobby has everybody; ALL PRESENT also needs the local ChrSet to hold at least the roster size.
+pub(crate) fn everyone_loaded(steam_all: bool, players: usize, total: usize) -> bool {
+    steam_all && total > 0 && players >= total
 }
 
 /// Per-match state of the gate.
@@ -152,6 +160,10 @@ impl Gate {
     /// The host's SC lobby id when known (the host: the one it is in; a joiner: the one the host published).
     pub(crate) fn sc_known(&self) -> bool {
         self.published.is_some() || self.sc_last.is_some()
+    }
+    /// MM-3f: no ALL PRESENT yet and no expedition: the window in which the host's Invite Members is still expected.
+    pub(crate) fn quiet_window_open(&self) -> bool {
+        self.all_present.is_none() && !self.saw_expedition
     }
     pub(crate) fn sc_owner(&self) -> bool {
         self.sc_owner
@@ -374,7 +386,9 @@ impl Machine {
         self.host_create_step(api, &mut r.gate, is_host, env_sc.as_ref().map(ScLobby::id), now);
         let present: Vec<u64> = r.roster.iter().map(|e| e.id).filter(|id| members.contains(id)).collect();
         let absent: Vec<u64> = r.roster.iter().map(|e| e.id).filter(|id| !members.contains(id)).collect();
-        let local_all = i_am_in && total > 0 && absent.is_empty();
+        let steam_all = i_am_in && total > 0 && absent.is_empty();
+        // MM-3f: Steam membership alone is not enough (S9 5f): the ChrSet must hold the whole roster too.
+        let local_all = everyone_loaded(steam_all, self.env.players, total);
 
         // 4. Host: publish, invite.
         if is_host {
@@ -461,6 +475,8 @@ impl Machine {
         // 8. Status and evidence.
         let names = |ids: &[u64], api: &dyn QueueSteam| ids.iter().map(|i| api.persona(*i)).collect::<Vec<_>>().join(", ");
         let others_absent: Vec<u64> = absent.iter().copied().filter(|i| *i != own).collect();
+        // The roster members other than ourselves (for the "load in" line, where nobody is absent from the Steam lobby).
+        let others_absent_roster: Vec<u64> = r.roster.iter().map(|e| e.id).filter(|i| *i != own).collect();
         let pub_present = r.lobby.as_ref().map(|q| api.lobby_data(q.id(), proto::K_PRESENT)).and_then(|s| proto::parse_present(&s));
         let shown_present = if target.is_some() && !members.is_empty() { Some((present.len(), total)) } else { pub_present };
         let count = shown_present.map_or(String::new(), |(n, t)| format!(" ({n}/{t} present)"));
@@ -489,10 +505,19 @@ impl Machine {
             }
         } else if host == 0 {
             "MATCH READY - the roster names no host".to_string()
+        } else if steam_all && r.gate.all_present.is_none() {
+            // MM-3f: in the Steam lobby with everyone, but the game has not brought them all into the world yet.
+            if is_host {
+                format!("in the lobby {total}/{total}, waiting for {} to load in", names(&others_absent_roster, api))
+            } else {
+                "in the host's lobby, loading in...".to_string()
+            }
         } else if is_host && env_sc.is_none() && r.gate.creating() {
             "creating the Seamless Co-op lobby...".to_string()
         } else if no_arrival {
             format!("{} did not arrive: open Invite Members and invite them", names(&others_absent, api))
+        } else if is_host && env_sc.is_none() && self.cfg.quiet_invite {
+            "MATCH READY - press Matchmaking Settings > Invite Members (no Steam window will open)".to_string()
         } else if is_host && env_sc.is_none() {
             format!(
                 "host has no Seamless Co-op lobby yet: open Matchmaking Settings > Invite Members and invite {}",
@@ -700,7 +725,7 @@ mod tests {
     const SC: u64 = 5555;
 
     fn machine(join: bool, auto: JoinAuto) -> Machine {
-        Machine::new(MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join, join_auto: auto, host_create: false })
+        Machine::new(MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join, join_auto: auto, host_create: false, quiet_invite: false })
     }
 
     fn ready(m: &mut Machine, own: u64, t: Instant) {
@@ -750,7 +775,7 @@ mod tests {
         let mut s = world(HOST);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(
             line(&m),
@@ -761,12 +786,134 @@ mod tests {
         assert!(m.status().join_ui && !m.status().sc_known);
         // The moment an SC lobby appears the host publishes it and invites.
         add_sc(&mut s, &[HOST]);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         assert_eq!(s.lobby_data(Q, "sc_lobby"), SC.to_string());
         assert_eq!(s.lobby_data(Q, "present"), "1/2");
         assert!(m.status().sc_known && m.status().sc_owner);
         assert!(line(&m).starts_with("MATCH READY - waiting for P7002"), "{}", line(&m));
+    }
+
+    fn quiet_machine() -> Machine {
+        Machine::new(MachineCfg {
+            need: 2,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            join: true,
+            join_auto: JoinAuto::Invite,
+            host_create: false,
+            quiet_invite: true,
+        })
+    }
+
+    #[test]
+    fn quiet_invite_is_wanted_only_for_the_host_of_a_ready_match_without_an_sc_lobby() {
+        let t = Instant::now();
+        // Not in a match: no.
+        let mut m = quiet_machine();
+        assert!(!m.quiet_invite_wanted(HOST));
+        // Host, MATCH READY, no SC lobby yet: yes.
+        ready(&mut m, HOST, t);
+        m.set_env(None, Ok(()), None, 2);
+        assert!(m.quiet_invite_wanted(HOST));
+        // The same match seen by the joiner: no (Duo / Squad invites and the joiner's own menus are untouched).
+        assert!(!m.quiet_invite_wanted(JOINER));
+        // The game's lobby exists: no.
+        m.set_env(sc(), Ok(()), None, 2);
+        assert!(!m.quiet_invite_wanted(HOST));
+        // Switched off in the config: no.
+        let mut off = machine(true, JoinAuto::Invite);
+        ready(&mut off, HOST, t);
+        off.set_env(None, Ok(()), None, 2);
+        assert!(!off.quiet_invite_wanted(HOST));
+        // mm_join off: no.
+        let mut nojoin = Machine::new(MachineCfg {
+            need: 2,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            join: false,
+            join_auto: JoinAuto::Invite,
+            host_create: false,
+            quiet_invite: true,
+        });
+        ready(&mut nojoin, HOST, t);
+        assert!(!nojoin.quiet_invite_wanted(HOST));
+    }
+
+    #[test]
+    fn quiet_invite_stops_being_wanted_once_everybody_is_present_or_the_expedition_started() {
+        let mut m = quiet_machine();
+        let mut s = world(HOST);
+        add_sc(&mut s, &[HOST, JOINER]);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(None, Ok(()), Some(Phase::Expedition), 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert!(!m.quiet_invite_wanted(HOST), "expedition started");
+        let mut m = quiet_machine();
+        ready(&mut m, HOST, t);
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        m.set_env(None, Ok(()), None, 2);
+        assert!(!m.quiet_invite_wanted(HOST), "ALL PRESENT reached");
+    }
+
+    #[test]
+    fn the_host_line_asks_for_invite_members_without_a_steam_window_when_quiet_invite_is_on() {
+        let mut m = quiet_machine();
+        let mut s = world(HOST);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(None, Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "MATCH READY - press Matchmaking Settings > Invite Members (no Steam window will open)");
+        // Then the game's lobby appears and the gate runs as before.
+        add_sc(&mut s, &[HOST]);
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(s.lobby_data(Q, "sc_lobby"), SC.to_string());
+        assert!(line(&m).starts_with("MATCH READY - waiting for P7002"), "{}", line(&m));
+    }
+
+    #[test]
+    fn everyone_loaded_needs_the_steam_lobby_and_the_chrset_count() {
+        assert!(everyone_loaded(true, 2, 2));
+        assert!(everyone_loaded(true, 3, 2));
+        assert!(!everyone_loaded(true, 1, 2), "FS-MM2: Steam had both, the ChrSet stayed at 1");
+        assert!(!everyone_loaded(true, 0, 2), "never read");
+        assert!(!everyone_loaded(false, 2, 2));
+        assert!(!everyone_loaded(true, 0, 0));
+    }
+
+    #[test]
+    fn all_present_waits_for_the_chrset_to_hold_the_roster() {
+        // Host.
+        let mut m = machine(true, JoinAuto::Invite);
+        let mut s = world(HOST);
+        add_sc(&mut s, &[HOST, JOINER]);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 4);
+        assert_eq!(line(&m), "in the lobby 2/2, waiting for P7002 to load in");
+        assert!(!s.writes.contains(&Write::Leave(Q)), "the queue lobby is kept until everybody is loaded");
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(line(&m), "ALL PRESENT 2/2 - host: start the expedition");
+        assert!(s.writes.contains(&Write::Leave(Q)));
+        // Joiner.
+        let mut m = machine(true, JoinAuto::Invite);
+        let mut s = world(JOINER);
+        add_sc(&mut s, &[HOST, JOINER]);
+        s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+        let mut t = Instant::now();
+        ready(&mut m, JOINER, t);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 4);
+        assert_eq!(line(&m), "in the host's lobby, loading in...");
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(line(&m), "ALL PRESENT - waiting for the host to start");
     }
 
     #[test]
@@ -776,7 +923,7 @@ mod tests {
         add_sc(&mut s, &[HOST]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 6);
         let invites: Vec<_> = s.writes.iter().filter(|w| matches!(w, Write::Invite(..))).collect();
         assert_eq!(invites, vec![&Write::Invite(SC, JOINER)], "one invite, once");
@@ -800,7 +947,7 @@ mod tests {
             add_sc(&mut s, &[HOST]);
             let mut t = Instant::now();
             ready(&mut m, HOST, t);
-            m.set_env(sc(), Ok(()), None);
+            m.set_env(sc(), Ok(()), None, 2);
             tick(&mut m, &mut s, &mut t, 4);
             assert!(sc_writes(&s).is_empty(), "{auto:?}: {:?}", s.writes);
         }
@@ -810,7 +957,7 @@ mod tests {
         add_sc(&mut s, &[HOST]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(sc_writes(&s), vec![&Write::Invite(SC, JOINER)]);
     }
@@ -823,7 +970,7 @@ mod tests {
         add_sc(&mut s, &[HOST]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 6); // 3.6 s
         assert_eq!(s.writes.iter().filter(|w| matches!(w, Write::Invite(..))).count(), 1);
         tick(&mut m, &mut s, &mut t, 6); // past the 5 s retry delay
@@ -839,7 +986,7 @@ mod tests {
         s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(line(&m), "ALL PRESENT - waiting for the host to start");
         assert!(s.writes.contains(&Write::Leave(Q)));
@@ -851,7 +998,7 @@ mod tests {
         add_sc(&mut sh, &[HOST, JOINER]);
         let mut th = Instant::now();
         ready(&mut mh, HOST, th);
-        mh.set_env(sc(), Ok(()), None);
+        mh.set_env(sc(), Ok(()), None, 2);
         tick(&mut mh, &mut sh, &mut th, 3);
         assert_eq!(line(&mh), "ALL PRESENT 2/2 - host: start the expedition");
         assert!(sc_writes(&sh).is_empty(), "{:?}", sh.writes);
@@ -863,7 +1010,7 @@ mod tests {
         let mut s = world(JOINER);
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         assert_eq!(line(&m), "MATCH READY - waiting for the host's Seamless Co-op lobby");
         // The host publishes its lobby and the list of invited players.
@@ -888,7 +1035,7 @@ mod tests {
         q.data.insert("invited".into(), JOINER.to_string());
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(line(&m), "host invited you: accept the Steam invite (Shift+Tab)");
     }
@@ -900,7 +1047,7 @@ mod tests {
         s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         assert!(m.status().sc_known);
         // The host leaves the queue lobby: Steam hands ownership to the joiner. The earlier value stays.
@@ -922,11 +1069,11 @@ mod tests {
         add_sc(&mut s, &[HOST, JOINER]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), Some(Phase::Expedition));
+        m.set_env(sc(), Ok(()), Some(Phase::Expedition), 2);
         tick(&mut m, &mut s, &mut t, 3);
         // Lobby A is gone, the phase is unknown (loading / title): still the match for a while, then over.
         s.lobbies.remove(&SC);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 20); // 12 s
         assert!(matches!(m.state, State::MatchReady(_)));
         tick(&mut m, &mut s, &mut t, 8); // 16.8 s
@@ -942,19 +1089,19 @@ mod tests {
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
         for i in 0..100 {
-            m.set_env(if i % 3 == 0 { None } else { sc() }, Ok(()), Some(Phase::Expedition));
+            m.set_env(if i % 3 == 0 { None } else { sc() }, Ok(()), Some(Phase::Expedition), 2);
             tick(&mut m, &mut s, &mut t, 1);
         }
         // Even a long stretch with no SC lobby at all, while the phase says Expedition.
-        m.set_env(None, Ok(()), Some(Phase::Expedition));
+        m.set_env(None, Ok(()), Some(Phase::Expedition), 2);
         tick(&mut m, &mut s, &mut t, 60);
         assert!(matches!(m.state, State::MatchReady(_)));
         // And the clock restarts when the lobby is seen again outside the expedition.
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 20); // 12 s
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 1);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 20); // 12 s again
         assert!(matches!(m.state, State::MatchReady(_)));
     }
@@ -965,7 +1112,7 @@ mod tests {
         let mut s = world(HOST);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 100); // 60 s
         assert!(matches!(m.state, State::MatchReady(_)));
     }
@@ -977,7 +1124,7 @@ mod tests {
         s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 4);
         assert!(!s.writes.iter().any(|w| matches!(w, Write::OpenUrl(_))));
         assert_eq!(line(&m), "host's lobby is ready: waiting for the invite");
@@ -995,7 +1142,7 @@ mod tests {
             s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
             let mut t = Instant::now();
             ready(&mut m, JOINER, t);
-            m.set_env(None, guard.clone(), None);
+            m.set_env(None, guard.clone(), None, 2);
             tick(&mut m, &mut s, &mut t, 4);
             assert!(!s.writes.iter().any(|w| matches!(w, Write::OpenUrl(_))), "{app} {overlay} {guard:?}");
         }
@@ -1010,7 +1157,7 @@ mod tests {
         q.owner = 9999; // ownership moved to somebody else
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert!(!s.writes.iter().any(|w| matches!(w, Write::OpenUrl(_))));
         assert!(!m.status().sc_known);
@@ -1031,7 +1178,7 @@ mod tests {
         s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
         let mut t = Instant::now();
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         assert!(sc_writes(&s).is_empty(), "auto none does nothing");
         m.join_cmd(&mut s, JoinCmd::Link, t);
@@ -1040,7 +1187,7 @@ mod tests {
         assert!(s.writes.contains(&Write::JoinSc(SC)));
         tick(&mut m, &mut s, &mut t, 2); // polls the call result
         // (d) from a non-owner: refused.
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         m.join_cmd(&mut s, JoinCmd::UnlockPublic, t);
         assert!(!s.writes.iter().any(|w| matches!(w, Write::SetType(..))));
         // Host: (d) and relock work, (a)/(c) are ignored, (b) invites absent members only.
@@ -1049,7 +1196,7 @@ mod tests {
         add_sc(&mut sh, &[HOST]);
         let mut th = Instant::now();
         ready(&mut mh, HOST, th);
-        mh.set_env(sc(), Ok(()), None);
+        mh.set_env(sc(), Ok(()), None, 2);
         tick(&mut mh, &mut sh, &mut th, 2);
         mh.join_cmd(&mut sh, JoinCmd::Link, th);
         mh.join_cmd(&mut sh, JoinCmd::Direct, th);
@@ -1077,17 +1224,17 @@ mod tests {
         let mut s = world(HOST);
         add_sc(&mut s, &[HOST]);
         let t = Instant::now();
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         m.join_cmd(&mut s, JoinCmd::Invite, t); // idle
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Err("EasyAntiCheat".into()), None);
+        m.set_env(sc(), Err("EasyAntiCheat".into()), None, 2);
         m.join_cmd(&mut s, JoinCmd::Invite, t);
         m.join_cmd(&mut s, JoinCmd::UnlockPublic, t);
         assert!(sc_writes(&s).is_empty());
         // mm_join off: ignored too.
         let mut off = machine(false, JoinAuto::None);
         ready(&mut off, HOST, t);
-        off.set_env(sc(), Ok(()), None);
+        off.set_env(sc(), Ok(()), None, 2);
         off.join_cmd(&mut s, JoinCmd::Invite, t);
         assert!(sc_writes(&s).is_empty());
     }
@@ -1100,21 +1247,21 @@ mod tests {
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
         // Roundtable before any expedition: the match stays.
-        m.set_env(sc(), Ok(()), Some(Phase::Roundtable));
+        m.set_env(sc(), Ok(()), Some(Phase::Roundtable), 2);
         tick(&mut m, &mut s, &mut t, 20);
         assert!(matches!(m.state, State::MatchReady(_)));
         assert_eq!(m.team_override(), Some(1));
         // In the expedition: still the match, status says so.
-        m.set_env(sc(), Ok(()), Some(Phase::Expedition));
+        m.set_env(sc(), Ok(()), Some(Phase::Expedition), 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert!(line(&m).starts_with("IN EXPEDITION"), "{}", line(&m));
         assert_eq!(m.team_override(), Some(1));
         // Loading screens (phase unknown) change nothing.
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 20);
         assert!(matches!(m.state, State::MatchReady(_)));
         // Back at the Roundtable: ends after the debounce.
-        m.set_env(None, Ok(()), Some(Phase::Roundtable));
+        m.set_env(None, Ok(()), Some(Phase::Roundtable), 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert!(matches!(m.state, State::MatchReady(_)), "debounce");
         tick(&mut m, &mut s, &mut t, 10);
@@ -1129,7 +1276,7 @@ mod tests {
         add_sc(&mut s, &[HOST]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         m.leave(&mut s, "test", t);
         assert!(m.is_idle() && s.writes.contains(&Write::Leave(Q)));
@@ -1139,7 +1286,7 @@ mod tests {
         add_sc(&mut s, &[HOST, JOINER]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         m.leave(&mut s, "test", t);
         assert!(m.is_idle());
@@ -1158,7 +1305,7 @@ mod tests {
         if let State::MatchReady(r) = &mut m.state {
             r.ticket.party = Party { id: HOST, size: 2, leader: false, sc: sc() };
         }
-        m.set_env(sc(), Ok(()), None);
+        m.set_env(sc(), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert!(line(&m).starts_with("ALL PRESENT"));
         // The leader value is empty: the follower still keeps the match (the queue lobby is gone, nothing to follow).
@@ -1179,7 +1326,7 @@ mod tests {
         add_sc(&mut s, &[HOST]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(sc(), Ok(()), Some(Phase::Expedition));
+        m.set_env(sc(), Ok(()), Some(Phase::Expedition), 2);
         let before = s.writes.len();
         tick(&mut m, &mut s, &mut t, 30);
         assert_eq!(s.writes.len(), before, "no write of any kind");
@@ -1198,7 +1345,7 @@ mod tests {
             add_sc(&mut s, &[HOST]);
             let mut t = Instant::now();
             ready(&mut m, HOST, t);
-            m.set_env(sc(), Ok(()), None);
+            m.set_env(sc(), Ok(()), None, 2);
             tick(&mut m, &mut s, &mut t, 4);
             s.lobbies.get_mut(&SC).expect("sc").members.push(JOINER);
             tick(&mut m, &mut s, &mut t, 4);
@@ -1233,6 +1380,7 @@ mod host_create_tests {
             join: true,
             join_auto: JoinAuto::InviteLink,
             host_create,
+            quiet_invite: false,
         })
     }
 
@@ -1275,7 +1423,7 @@ mod host_create_tests {
         s.adopt_created = true;
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 1);
         assert_eq!(s.writes.iter().find(|w| matches!(w, Write::CreateSc(..))), Some(&Write::CreateSc(ScType::Public, 6)));
         assert_eq!(m.status().line, CREATING);
@@ -1283,7 +1431,7 @@ mod host_create_tests {
         assert_eq!(m.status().line, CREATING, "still creating until the worker reports the lobby as env.sc");
         let lobby = s.next_lobby;
         // The worker now reports the adopted lobby as env.sc.
-        m.set_env(Some(ScLobby::for_test(lobby)), Ok(()), None);
+        m.set_env(Some(ScLobby::for_test(lobby)), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(s.lobby_data(Q, "sc_lobby"), lobby.to_string());
         assert!(m.status().line.starts_with("MATCH READY - waiting for P7002 to enter your Seamless Co-op lobby"), "{}", m.status().line);
@@ -1301,7 +1449,7 @@ mod host_create_tests {
         let mut s = world(HOST);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 10); // ~6 s
         let lobby = s.next_lobby;
         assert_eq!(m.status().line, CREATING);
@@ -1315,7 +1463,7 @@ mod host_create_tests {
         assert_eq!(m.status().line, PROMPT);
         // The game's own lobby appearing later is used normally.
         s.add_lobby(SC, HOST, 6, &[HOST], &[(KEY_SC_TYPE, "x")]);
-        m.set_env(Some(ScLobby::for_test(SC)), Ok(()), None);
+        m.set_env(Some(ScLobby::for_test(SC)), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         assert_eq!(s.lobby_data(Q, "sc_lobby"), SC.to_string());
         assert_eq!(creates(&s), 1);
@@ -1328,10 +1476,10 @@ mod host_create_tests {
         s.adopt_created = true;
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         let lobby = s.next_lobby;
-        m.set_env(Some(ScLobby::for_test(lobby)), Ok(()), None);
+        m.set_env(Some(ScLobby::for_test(lobby)), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 60); // ~36 s after publishing
         assert!(m.status().line.starts_with("MATCH READY - waiting for P7002"), "{}", m.status().line);
         tick(&mut m, &mut s, &mut t, 30); // ~54 s
@@ -1352,16 +1500,16 @@ mod host_create_tests {
         s.add_lobby(SC, HOST, 6, &[HOST], &[(KEY_SC_TYPE, "x")]);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(Some(ScLobby::for_test(SC)), Ok(()), None);
+        m.set_env(Some(ScLobby::for_test(SC)), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 4);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 10);
         assert_eq!(creates(&s), 0);
         // Switch off.
         let mut m = machine(false);
         let mut s = world(HOST);
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 10);
         assert_eq!(creates(&s), 0);
         assert_eq!(m.status().line, PROMPT);
@@ -1369,18 +1517,18 @@ mod host_create_tests {
         let mut m = machine(true);
         let mut s = world(JOINER);
         ready(&mut m, JOINER, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 10);
         assert_eq!(creates(&s), 0);
         // The safety guard fails: no create; it starts once the guard is fine.
         let mut m = machine(true);
         let mut s = world(HOST);
         ready(&mut m, HOST, t);
-        m.set_env(None, Err("EasyAntiCheat".into()), None);
+        m.set_env(None, Err("EasyAntiCheat".into()), None, 2);
         tick(&mut m, &mut s, &mut t, 5);
         assert_eq!(creates(&s), 0);
         assert_eq!(m.status().line, PROMPT);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         assert_eq!(creates(&s), 1);
     }
@@ -1392,7 +1540,7 @@ mod host_create_tests {
         s.create_fails = true;
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 30);
         assert_eq!(creates(&s), 1);
         assert!(!s.writes.iter().any(|w| matches!(w, Write::Leave(_))));
@@ -1408,10 +1556,10 @@ mod host_create_tests {
         s.adopt_created = true;
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         let mine = s.next_lobby;
-        m.set_env(Some(ScLobby::for_test(mine)), Ok(()), None);
+        m.set_env(Some(ScLobby::for_test(mine)), Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 2);
         s.add_lobby(SC2, HOST, 6, &[HOST], &[(KEY_SC_TYPE, "y")]);
         assert_eq!(m.preferred_sc_alive(&s), Some(mine), "the worker ignores {SC2} and keeps env.sc on ours");
@@ -1425,7 +1573,7 @@ mod host_create_tests {
         sj.add_lobby(SC2, JOINER, 6, &[JOINER], &[(KEY_SC_TYPE, "y")]);
         sj.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
         ready(&mut mj, JOINER, t);
-        mj.set_env(Some(ScLobby::for_test(SC)), Ok(()), None);
+        mj.set_env(Some(ScLobby::for_test(SC)), Ok(()), None, 2);
         tick(&mut mj, &mut sj, &mut t, 2);
         assert_eq!(mj.preferred_sc_alive(&sj), Some(SC));
         // Once the match's lobby is gone (we are not a member) the preference lapses.
@@ -1442,7 +1590,7 @@ mod host_create_tests {
         let mut s = world(HOST);
         let mut t = Instant::now();
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         m.tick(&mut s, t + Duration::from_millis(600)); // CreateLobby sent
         let lobby = s.next_lobby;
         m.leave(&mut s, "test", t + Duration::from_secs(1));
@@ -1452,7 +1600,7 @@ mod host_create_tests {
         let mut m = machine(true);
         let mut s = world(HOST);
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         let lobby = s.next_lobby;
         m.leave(&mut s, "test", t);
@@ -1462,7 +1610,7 @@ mod host_create_tests {
         let mut s = world(HOST);
         s.adopt_created = true;
         ready(&mut m, HOST, t);
-        m.set_env(None, Ok(()), None);
+        m.set_env(None, Ok(()), None, 2);
         tick(&mut m, &mut s, &mut t, 3);
         let lobby = s.next_lobby;
         m.leave(&mut s, "test", t);

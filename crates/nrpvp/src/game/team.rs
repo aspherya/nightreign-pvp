@@ -2008,6 +2008,8 @@ impl TeamCtl {
             if let Some(f) = res.local.and_then(|l| read_fields(&mut rc, l)) {
                 crate::mm::note_local_team(f.team);
             }
+            // MM-3f: the ChrSet player count (a real Seamless Co-op join shows as 2+ at the Roundtable, S9 5f).
+            crate::mm::note_local_players(res.players.len());
         }
         if !self.announced {
             if let Some(l) = res.local {
