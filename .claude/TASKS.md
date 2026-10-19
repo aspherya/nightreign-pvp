@@ -815,7 +815,24 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
      is a roadblock. Alternatives put to Leonardo: C1 the game's own Commence dialog with our live text ("Searching for players 3/6", its
      button = cancel), C2 an on-screen message (UI-2), C3 keep digging (later polish). Recommended C1.
    - Not exercised: Cancel matchmaking (`0x9EE750`, no hit: offline fails at once, there is nothing to cancel).
-2..n. Implementation steps are written once Leonardo picks C1/C2/C3.
+   **Decision (Leonardo, 2026-10-19):** C1 now (C3 later as polish; C1's queue start / cancel / hand-off carry over, only the searching
+   screen would change). Nucleus may help later for two-window tests of our side (real Steam matchmaking still needs two accounts).
+2. **C1 prototype (built 2026-10-19, `game/c1proto.rs`, dev `ui_c1_proto = true`), no code patched:**
+   - Redirect: DR0 at `exe+0x9EEBFB` (first instruction after the Commence checks' prologue; bytes checked). If `[[r14+0xFC8]+0x49] != 2`
+     (a multiplayer option) `RIP = exe+0x9EEC1D`: the game's own 506040 notice-dialog branch, which builds, shows and cleans up an OK
+     dialog and leaves through the normal epilogue `0x9EF0B4` (the caller `0x9E8110` ignores the result) `[VERIFIED: disassembly]`.
+   - Live text: FMG string = `fmg + offsets[idx]` (`0x27F5710`: `[[fmg+0x18]+idx*8] + fmg`); CL_Dialogues (204; 506040 has no
+     `_dlc01` twin) entry 506040's offset slot ← `buffer - fmg`, one aligned 8-byte store (`mem::write_u64_aligned`); the DLL rewrites the
+     UTF-16 buffer every second ("Searching for players n/6", n = 1..6). Groups at `fmg+0x28` (16 bytes: offset index, first id, last id),
+     group count `fmg+0xC` `[VERIFIED: 0x27F5710 disassembly]`.
+   - Open questions it answers: does the dialog show our text? does the open dialog follow the buffer (live counter) or keep the text it
+     had when it opened? does the menu behave normally after OK?
+   **Runbook (Leonardo, solo, ~4 min, `.\scripts\launch.ps1`):** 1. Roundtable → table → Matchmaking Settings → Number of Players → an
+   **"Up to 6 players"** option → back. 2. **Commence Expedition**: a dialog should say "Battle Royale (prototype) / Searching for players
+   n/6 / Press OK to stop searching". Watch it ~8 s: **does the number change while it is open?** Press OK. 3. Commence again once,
+   OK, then leave the menu. 4. Number of Players → **Solo Mission** → Commence: the normal expedition should start. 5. Quit. Tell Claude what
+   the dialog showed and whether the number changed.
+3..n. Real implementation (queue start, cancel, hand-off at match found, labels Solo/Duo/Trio) after the prototype.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)

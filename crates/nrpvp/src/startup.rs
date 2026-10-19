@@ -74,6 +74,10 @@ pub(crate) fn run() {
                 crate::steam::lobtrace::spawn();
             }
             // UI-0: dev-only text-id tracer (hardware breakpoints on the game's text lookup, no patching).
+            // UI-1 C1: dev-only prototype of the Commence dialog with live text.
+            if cfg.dev_mode && cfg.ui_c1_proto {
+                game::c1proto::spawn(m.base);
+            }
             // UI-1 A/B/C: dev-only expedition-menu tracer (hardware breakpoints, no patching).
             if cfg.dev_mode && cfg.ui_menu_trace {
                 game::menutrace::spawn(m.base, m.size);

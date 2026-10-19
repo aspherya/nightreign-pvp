@@ -181,6 +181,12 @@ ui_flag_watch = false
 # mm_lobby_trace off (debug registers).
 ui_menu_trace = false
 
+# UI-1 C1 prototype (dev mode only; the player build forces it off): Commence Expedition with a multiplayer Number of Players option
+# opens the game's own dialog with live \"Searching for players n/6\" text instead of the offline error (hardware breakpoint + one FMG
+# string-offset write, no code patched). Logs \"ui_c1_proto:\". Takes the debug registers (turns ui_menu_trace, ui_text_trace,
+# mm_quiet_invite and mm_lobby_trace off).
+ui_c1_proto = false
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -294,6 +300,8 @@ pub(crate) struct Config {
     pub ui_flag_watch: bool,
     /// UI-1 A/B/C: expedition-menu tracer (developer mode only; forced off in the player build; takes the debug registers).
     pub ui_menu_trace: bool,
+    /// UI-1 C1 prototype (developer mode only; forced off in the player build; takes the debug registers).
+    pub ui_c1_proto: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -363,6 +371,7 @@ impl Default for Config {
             ui_text_trace: false,
             ui_flag_watch: false,
             ui_menu_trace: false,
+            ui_c1_proto: false,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
@@ -583,6 +592,7 @@ fn enforce_player_mode(
     cfg.ui_text_trace = false;
     cfg.ui_flag_watch = false;
     cfg.ui_menu_trace = false;
+    cfg.ui_c1_proto = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.
@@ -734,6 +744,14 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_lobby_trace {
             warnings.push("mm_quiet_invite and mm_lobby_trace both use the hardware breakpoints; mm_quiet_invite is off while mm_lobby_trace = true".to_string());
             cfg.mm_quiet_invite = false;
+        }
+        // UI-1 C1 prototype: owns DR0 on every thread; every other debug-register user is switched off.
+        if cfg.dev_mode && cfg.ui_c1_proto && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
+            warnings.push("ui_c1_proto uses the hardware breakpoints; ui_menu_trace, ui_text_trace, mm_quiet_invite and mm_lobby_trace are off while it is on".to_string());
+            cfg.ui_menu_trace = false;
+            cfg.ui_text_trace = false;
+            cfg.mm_quiet_invite = false;
+            cfg.mm_lobby_trace = false;
         }
         // UI-1: the menu tracer owns all four debug registers.
         if cfg.dev_mode && cfg.ui_menu_trace && (cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
@@ -1342,6 +1360,13 @@ ui_menu_trace = true
         let (cfg, _) = parse("ui_menu_trace = true
 ").expect("ok");
         assert!(!cfg.ui_menu_trace);
+        let (cfg, w) = parse_dev("ui_menu_trace = true
+ui_c1_proto = true
+").expect("ok");
+        assert!(cfg.ui_c1_proto && !cfg.ui_menu_trace && w.len() == 1, "{w:?}");
+        let (cfg, _) = parse("ui_c1_proto = true
+").expect("ok");
+        assert!(!cfg.ui_c1_proto);
     }
 
     #[test]

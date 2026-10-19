@@ -12,6 +12,7 @@
 //! are executed here, on the main loop thread, by [`run_command`]; the overlay's render thread never touches
 //! game memory. After each tick the loop publishes a [`Snapshot`] for the overlay.
 
+pub(crate) mod c1proto;
 pub(crate) mod combat_state;
 pub(crate) mod discover;
 pub(crate) mod downed;
