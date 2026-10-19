@@ -26,6 +26,7 @@ pub(crate) mod probe_scan;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
 pub(crate) mod team;
+pub(crate) mod texttrace;
 pub(crate) mod wide_scan;
 
 use std::collections::BTreeMap;

@@ -206,3 +206,41 @@ because that kills it partway.
   set. An FMG edit to those ids would be hidden under SC. Our "Battle Royale" label must therefore be a **new** id (talk list, `EventTextForTalk`), not those.
 - **Leonardo, still needed for step 3:** screenshots into `.claude/experiments/UI-0/`: (1) "Commence expedition" prompt at the table,
   (2) the expedition menu under SC, (3) Number of Players list, (4) Matchmaking Settings, (5) the "Matchmaking…" status while searching.
+
+### Step 5, flags and text ids (2026-10-19, built; Leonardo's run pending)
+
+Leonardo's screenshots (`experiments/UI-0/s0`, `s3`, `s4`) are kept but **not read**, to save tokens (Leonardo, 2026-10-19). The text-id
+logger below replaces them and gives exact ids, which a picture cannot.
+
+**Text lookup found** (static, game 1.03.3 / exe 1.3.3.0; scripts `experiments/UI-0/msgrepo_xrefs.py`, `disfunc.py`):
+- 140 code sites load the `MsgRepository` slot `exe+0x3C246A8`. Per-category getters (e.g. `exe+0xE5B250`, called with `edx = 130011`
+  "Please set group password" and `110330` "Enter player name") call **`exe+0x27F4D20` = `LookupEntry(repo, slot, category, id)`**
+  `[VERIFIED: disassembly]`: bounds `slot < [repo+0x10]`, `category < [repo+0x14]`, FMG = `[[repo+8] + slot*8] + category*8`, then a tail jump to
+  **`exe+0x27F5710`, the FMG search `(fmg, id)`**. Same shape as ER `MsgRepositoryImp::LookupEntry` `[SOURCE: fsrs msg_repository.rs]`.
+- **`category` is the FMG file id inside the msgbnd** `[VERIFIED: callers pass 203, 210, 400–428, 504–515; same ids as the WitchyBND
+  manifests]`: 1 TalkMsg, 32 ActionButtonText, 33 EventTextForTalk, 200 CL_MenuText, 201 CL_LineHelp, 203 CL_System_Message_win64,
+  204 CL_Dialogues, 500+ the `_dlc01` twins (504 CL_MenuText_dlc01). Full list in `game/texttrace.rs::category_name`.
+- Getter `0xE5B250` tries category 504 first and falls back to a second, **obfuscated** path (`exe+0xF9C630` via another global,
+  `edx = 200`). So not every lookup goes through `0x27F4D20`, which is why the FMG search `0x27F5710` is traced too.
+
+**Built (dev only), nothing patched:**
+- `game/texttrace.rs`, config `ui_text_trace = true`: hardware execute breakpoints (DR0 `0x27F4D20`, DR1 `0x27F5710`) plus a VEH, the same
+  family as MM-3f. Before arming it checks the entry bytes; a jump there (an SC hook) is logged with the target module, and that answers
+  "does SC hook `LookupEntry`?" directly. Each `(category, id)` is logged once: `ui_text_trace: TEXT <FMG> <cat> id <id>`. FMG-search
+  hits are mapped back to a category through the repository table. It runs 20 min, then disarms. It takes the debug registers, so it
+  forces `mm_quiet_invite` / `mm_lobby_trace` off.
+- `probe2.rs` flag watch (needs `probes = true`): adds 6000 (always OFF) / 6001 (always ON) as a check of the ER layout on NR, plus 10002700..07,
+  10003045, 69990. Once per manager instance it logs **every flag group that has storage** (`flag groups with a descriptor …`), for
+  picking our own flag range (a flag in a group with no block cannot be set).
+- `experiments/UI-0/map_text.py <nrpvp.log>`: prints each traced id with its English text from the extracted FMGs, plus the MARK
+  lines. Ids that come out `<not in FMG>` are candidates for SC's own strings.
+- Build: `cargo test` 427 pass; clippy clean; `dist\nrpvp.dll` built, and `dist\nrpvp.toml` has `ui_text_trace = true`, `probes = true`.
+
+**Runbook for Leonardo (solo, about 5 min; the game may stutter in menus while the trace runs, which is expected):**
+1. `.\scripts\launch.ps1` (SC + dev build). Load into the Roundtable.
+2. Press **F10** (MARK), wait 3 s. (Baseline: what the Roundtable itself looks up.)
+3. **F10**, go to the table, press "Commence expedition", wait on the expedition screen 5 s.
+4. **F10**, open **Number of Players**, move over each option, close it.
+5. **F10**, open **Matchmaking Settings**, move over each entry (do not press Invite Members), close it.
+6. **F10**, start a **Solo Mission** expedition and let it load (this records the start and the expedition flags).
+7. Quit the game. Tell Claude "step 5 run done". Claude reads `dist\nrpvp.log` through `map_text.py`.

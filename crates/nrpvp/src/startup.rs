@@ -73,6 +73,10 @@ pub(crate) fn run() {
             if cfg.dev_mode && cfg.mm_lobby_trace {
                 crate::steam::lobtrace::spawn();
             }
+            // UI-0: dev-only text-id tracer (hardware breakpoints on the game's text lookup, no patching).
+            if cfg.dev_mode && cfg.ui_text_trace {
+                game::texttrace::spawn(m.base, m.size);
+            }
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();
                 overlay::spawn(

@@ -165,6 +165,12 @@ mm_quiet_invite = false
 # module+offset frames. Log lines start with \"mm_lobby_trace:\".
 mm_lobby_trace = false
 
+# UI-0 (dev mode only; the player build forces it off): log every text id the game looks up (menus, dialogs, talk), once each, as
+# \"ui_text_trace: TEXT <FMG> <category> id <id>\". Hardware execute breakpoints on the game's text lookup (no code is patched); runs
+# 20 minutes from launch. Menus may stutter while it runs. Uses the debug registers, so mm_quiet_invite and mm_lobby_trace are switched
+# off while it is on.
+ui_text_trace = false
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -272,6 +278,8 @@ pub(crate) struct Config {
     pub mm_quiet_invite: bool,
     /// MM-3c: lobby-creation call-stack tracer (developer mode only; forced off in the player build).
     pub mm_lobby_trace: bool,
+    /// UI-0: text-id tracer (developer mode only; forced off in the player build; turns `mm_quiet_invite` and `mm_lobby_trace` off).
+    pub ui_text_trace: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -338,6 +346,7 @@ impl Default for Config {
             mm_quiet_invite: false,
             mm_join_auto: "invite".to_string(),
             mm_lobby_trace: false,
+            ui_text_trace: false,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
@@ -554,6 +563,8 @@ fn enforce_player_mode(
     cfg.mm_host_create = false;
     // MM-3c: and the lobby tracer.
     cfg.mm_lobby_trace = false;
+    // UI-0: and the text-id tracer.
+    cfg.ui_text_trace = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.
@@ -705,6 +716,12 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_lobby_trace {
             warnings.push("mm_quiet_invite and mm_lobby_trace both use the hardware breakpoints; mm_quiet_invite is off while mm_lobby_trace = true".to_string());
             cfg.mm_quiet_invite = false;
+        }
+        // UI-0: the text tracer owns the debug registers too.
+        if cfg.dev_mode && cfg.ui_text_trace && (cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
+            warnings.push("ui_text_trace uses the hardware breakpoints; mm_quiet_invite and mm_lobby_trace are off while it is on".to_string());
+            cfg.mm_quiet_invite = false;
+            cfg.mm_lobby_trace = false;
         }
     }
     // MM-3d: mm_sc_create_type, and the button needs the Steam worker (mm_queue).
@@ -1269,6 +1286,24 @@ hotkey_mm_duo = \"banana\"
         // The player build (no dev_mode) forces it off even when the file asks for it.
         let (cfg, _) = parse("mm_probe = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_probe);
+    }
+
+    #[test]
+    fn ui_text_trace_is_dev_only_and_takes_the_debug_registers() {
+        assert!(!Config::default().ui_text_trace);
+        let (cfg, w) = parse_dev("ui_text_trace = true
+").expect("ok");
+        assert!(cfg.ui_text_trace && w.is_empty(), "{w:?}");
+        let (cfg, w) = parse_dev("mm_queue = true
+mm_join = true
+mm_quiet_invite = true
+mm_lobby_trace = true
+ui_text_trace = true
+").expect("ok");
+        assert!(cfg.ui_text_trace && !cfg.mm_quiet_invite && !cfg.mm_lobby_trace, "{w:?}");
+        let (cfg, _) = parse("ui_text_trace = true
+").expect("ok");
+        assert!(!cfg.dev_mode && !cfg.ui_text_trace);
     }
 
     #[test]

@@ -100,11 +100,63 @@ const PGD_DUMP_LEN: usize = 0xC0;
 const PGD_MAX_DUMPS: usize = 8;
 
 /// Flags watched (S3-match-flow.md): game clear/over, the timeline chain 7500..=7523, clock-stop 2200/2201.
+/// UI-0 step 5: 6001 "always ON" / 6000 "always OFF" (a check of the layout; ESD t600001000 comments), the lobby flags
+/// 10002700..=10002707 (10002700 "For lobby menu: Matching menu", S7 1.1), 10003045 (blocks the expedition button in t600001000) and
+/// 69990 "lobby multiplayer start" (S7 1.1).
 pub(crate) fn watched_flags() -> Vec<u32> {
     let mut v = vec![7000, 7001];
     v.extend(7500..=7523);
     v.extend([2200, 2201]);
+    v.extend([6000, 6001]);
+    v.extend(10_002_700..=10_002_707);
+    v.extend([10_003_045, 69_990]);
     v
+}
+
+/// UI-0 step 5: every group key of the descriptor map in order (in-order walk of the MSVC tree), at most `limit` keys.
+fn all_groups(rc: &mut RegionCache, head: usize, limit: usize) -> Result<Vec<u32>, &'static str> {
+    let head_node = read_node(rc, head).ok_or("map head unreadable")?;
+    let mut out = Vec::new();
+    let mut stack: Vec<usize> = Vec::new();
+    let mut cur = head_node.parent;
+    let mut steps = 0usize;
+    loop {
+        while cur != head {
+            let n = read_node(rc, cur).ok_or("tree node unreadable")?;
+            if n.is_nil {
+                break;
+            }
+            if stack.len() >= TREE_MAX_DEPTH {
+                return Err("tree walk exceeded the depth guard");
+            }
+            stack.push(cur);
+            cur = n.left;
+        }
+        let Some(top) = stack.pop() else { break };
+        let n = read_node(rc, top).ok_or("tree node unreadable")?;
+        out.push(n.key);
+        steps += 1;
+        if steps >= limit {
+            break;
+        }
+        cur = n.right;
+    }
+    Ok(out)
+}
+
+/// `[1, 2, 3, 7, 9, 10]` -> `"1..3 7 9..10"` (sorted input).
+pub(crate) fn group_ranges(keys: &[u32]) -> String {
+    let mut parts = Vec::new();
+    let mut i = 0;
+    while i < keys.len() {
+        let mut j = i;
+        while j + 1 < keys.len() && keys[j + 1] == keys[j].wrapping_add(1) {
+            j += 1;
+        }
+        parts.push(if i == j { keys[i].to_string() } else { format!("{}..{}", keys[i], keys[j]) });
+        i = j + 1;
+    }
+    parts.join(" ")
 }
 
 fn le32(b: &[u8], off: usize) -> Option<u32> {
@@ -1010,6 +1062,19 @@ impl Probes {
                 );
             }
             self.flag_checks_ok = Some(ok);
+            // UI-0 step 5: which groups have storage (a flag in a group without a block cannot be set), once per instance.
+            if ok {
+                match all_groups(rc, layout.head, 200_000) {
+                    Ok(g) => tracing::info!(
+                        "{TAG}: flag groups with a descriptor ({} of map size {}; flag = group * {} + n): {}",
+                        g.len(),
+                        layout.map_size,
+                        layout.divisor,
+                        group_ranges(&g)
+                    ),
+                    Err(e) => tracing::warn!("{TAG}: flag group census failed: {e}"),
+                }
+            }
         }
         if !ok {
             let failed: Vec<&str> = checks.iter().filter(|c| !c.ok).map(|c| c.name).collect();
@@ -1123,6 +1188,21 @@ impl Probes {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_ranges_compress_runs() {
+        assert_eq!(group_ranges(&[1, 2, 3, 7, 9, 10]), "1..3 7 9..10");
+        assert_eq!(group_ranges(&[]), "");
+        assert_eq!(group_ranges(&[5]), "5");
+    }
+
+    #[test]
+    fn watched_flags_include_the_lobby_set() {
+        let w = watched_flags();
+        for f in [6000, 6001, 10_002_700, 10_002_707, 10_003_045, 69_990] {
+            assert!(w.contains(&f), "{f}");
+        }
+    }
 
     // ---- a synthetic CSEventFlagMan in heap memory (addresses are real, so RegionCache works) ----
 
