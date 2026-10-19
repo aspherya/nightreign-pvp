@@ -114,16 +114,28 @@ fn encode(s: &str, wide: bool) -> Vec<u8> {
     }
 }
 
-/// Scan every committed read-write region of the process for the needle (UTF-16 and UTF-8), skipping `[skip, skip+skip_len)`.
-fn scan_copies(skip: usize, skip_len: usize, max: usize) -> (Vec<TextCopy>, usize) {
-    use windows::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_READWRITE};
-    const CHUNK: usize = 1 << 20;
+/// Scan every committed, private, read-write region of the process for the needle (UTF-16 and UTF-8), skipping
+/// `[skip, skip+skip_len)`, for at most `limit`. Logs its start and every 2 GiB.
+fn scan_copies(skip: usize, skip_len: usize, max: usize, limit: Duration) -> (Vec<TextCopy>, usize) {
+    use windows::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, MEM_PRIVATE, PAGE_READWRITE};
+    const CHUNK: usize = 16 << 20;
     let n16 = encode(NEEDLE, true);
     let n8 = encode(NEEDLE, false);
     let mut out: Vec<TextCopy> = Vec::new();
     let mut scanned = 0usize;
+    let mut next_report = 2usize << 30;
     let mut addr = 0x10000usize;
+    let t0 = Instant::now();
+    tracing::info!("ui_c1_proto: scan for copies of our text started");
     while addr < 0x7FFF_FFFF_0000 && out.len() < max {
+        if t0.elapsed() >= limit {
+            tracing::info!("ui_c1_proto: scan stopped at the time limit ({} MiB scanned)", scanned >> 20);
+            break;
+        }
+        if scanned >= next_report {
+            tracing::info!("ui_c1_proto: scan progress {} MiB, {} copies so far", scanned >> 20, out.len());
+            next_report += 2usize << 30;
+        }
         let mut mbi = MEMORY_BASIC_INFORMATION::default();
         // SAFETY: valid out-buffer; VirtualQuery tolerates any address.
         let got = unsafe {
@@ -134,9 +146,9 @@ fn scan_copies(skip: usize, skip_len: usize, max: usize) -> (Vec<TextCopy>, usiz
         }
         let rbase = mbi.BaseAddress as usize;
         let rend = rbase.saturating_add(mbi.RegionSize);
-        if mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE {
+        if mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && mbi.Protect == PAGE_READWRITE {
             let mut a = rbase;
-            while a < rend && out.len() < max {
+            while a < rend && out.len() < max && t0.elapsed() < limit {
                 let len = (rend - a).min(CHUNK + 64);
                 let b = super::mem::RegionCache::direct().read_prefix(a, len);
                 scanned += b.len();
@@ -324,7 +336,7 @@ fn run(base: usize) {
         if scan_at.is_some_and(|t| now >= t) {
             scan_at = None;
             let t0 = Instant::now();
-            let (found, scanned) = scan_copies(BUF.0.get() as usize, BUF_UNITS * 2, 32);
+            let (found, scanned) = scan_copies(BUF.0.get() as usize, BUF_UNITS * 2, 32, Duration::from_secs(30));
             tracing::info!(
                 "ui_c1_proto: scan for copies of our text: {} found in {} MiB ({} ms): {}",
                 found.len(),
@@ -371,7 +383,7 @@ fn run(base: usize) {
                 pass
             );
             if red != seen_red {
-                scan_at = Some(now + Duration::from_millis(1500));
+                scan_at = Some(now);
             }
             (seen_red, seen_pass) = (red, pass);
         }
