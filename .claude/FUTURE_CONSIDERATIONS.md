@@ -90,7 +90,7 @@ questions. Nothing here gets implemented without a task card in TASKS.md and an 
 
 ## Public matchmaking queues (product requirement; implementation deferred to M8)
 - Detailed queue formats, session-formation feasibility, and architecture options: [S8: Public matchmaking and party/session formation](research/S8-public-matchmaking.md). The three formats are Solo (six individual teams), Duo (three teams of two), and Squad/Trio (two teams of three) at the six-player target.
-- Queues = team size: solo (up to 6 solo players, all rivals), duo (up to 3 teams of 2), trio (up to 2 teams of 3). The mod already takes `team_size`, but queueing and party formation are not implemented.
+- Queues = team size, always 6 players per match (decided by Leonardo 2026-10-19): solo (6 solo players, all rivals), duo (3 teams of 2), trio/squad (2 teams of 3). Queueing works for Solo (`MATCHMAKING.md`); Duo/Squad party formation is MM-6.
 - Finding players: Steam lobby list filtered by our own lobby tags (mod, queue, mod version); join an open one or create and wait; start when
   full or on a timer. Parties queue together and must stay on one team, so roster building needs party info over the mod channel (S4), not only join order.
 - To verify first: can our DLL tag and search the lobby SC creates and join it cleanly (lobby data is owner-only; SC owns the lobby; we may not

@@ -24,7 +24,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 
 | # | Scope v3 feature | What we have | What's missing | Risk |
 |---|---|---|---|---|
-| F1 | Public solo/duo/trio queues, initially up to 6 players | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
+| F1 | Public solo/duo/trio queues, 6 players per match in every mode | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
 | F2 | Teams: allies can't hurt each other, rivals can | 29 is free-for-all | Team values or a hostility hook `[UNKNOWN]`; all clients agreeing on teams `[LEAD: derive from the per-player id]` | High |
 | F3 | Teams spawn at different positions | Nothing | How spawn points are chosen `[UNKNOWN]` | Medium |
 | F4 | PvP active immediately, PvE continues | `[PROVEN]` | Automatic rule verified in-game; sites of grace broken on 29 | Low |
@@ -43,7 +43,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 
 ## 3. Public queues and initial player cap
 
-The product target is public solo/duo/trio matchmaking. The initial capacity target is **6 players**: up to six solo players, three duos, or two trios. Private SC sessions and Nucleus are the current development test path, not the intended public product.
+The product target is public solo/duo/trio matchmaking. Every match has **6 players** (decided by Leonardo 2026-10-19): six solo players, three duos, or two trios (squads). This fits Seamless Co-op's cap, so no work goes into raising it. Private SC sessions and Nucleus are the current development test path, not the intended public product.
 
 SC and the engine currently constrain the session to six players. Do not spend effort on more than six without new evidence and an explicit scope decision. Public matchmaking is not implemented, and access to SC's lobby, queue discovery, party membership, and match start remains unresolved. Investigate these when the roadmap activates matchmaking; do not assume SC exposes a public API or that its lobby can be reused without permission.
 

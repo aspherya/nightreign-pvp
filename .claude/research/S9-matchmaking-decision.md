@@ -193,12 +193,14 @@ The one remaining manual step is the host's Invite Members press (MM-3g).
    Found → join it. None → create one (Invisible, 6 members) and tag it.
 3. Two players who both created a lobby: each keeps searching; the owner of the lobby with the higher id leaves and joins the lower.
 4. Overlay shows "Searching… 3 / 6".
-5. Lobby full, or 90 s passed with at least `min_players` (config, default 2 during development): the owner closes it to new joins
+5. Lobby full (6; **every match has 6 players in every mode, decided by Leonardo 2026-10-19**). The 90 s / `min_players` early start
+   built in MM-4 is a test setting only; the final game waits for a full lobby. The owner closes it to new joins
    and writes `state=go`, `host=<steam id>`, `sc_lobby=<id>`, `roster=<steam ids>`.
 6. Everyone but the host joins the host's SC lobby (U4). Overlay on all: "Match found, joining…".
 7. Host sees "6 / 6 present, start the expedition" and starts it the normal way. Mode on every client is already Solo
    (everyone came from the same queue), so `team_size = 1` is applied with no further agreement.
-8. Anyone missing 30 s after `go`: the host starts without them if `min_players` is still met, else everyone returns to step 2.
+8. Anyone missing after `go`: built in MM-4 as "the host may start without them" (60 s) and "the joiner gives up" (120 s). Whether a
+   final match may start with fewer than 6 when someone fails to arrive is open (default for now: the host may start).
 9. After the match each player leaves the host's SC lobby (back to their own Roundtable) and can queue again.
 
 Threading: Steam calls and the queue state machine run on our own worker thread and pass plain messages to the game loop and overlay.
@@ -209,8 +211,8 @@ Nothing on the game loop waits for Steam.
 - A party forms the normal SC way (invite friends), then the leader picks Duo or Squad. The queue ticket is the whole party:
   all of them join the same queue lobby. The leader publishes the queue lobby id as its member data on the SC lobby (id known from U2);
   the members' mods read it and follow. No extra channel needed.
-- Queue lobby member data carries `party=<leader steam id>`. Match is complete at 3 parties of 2 or 2 parties of 3. Only complete
-  parties queue in the first version; no solo fill.
+- Queue lobby member data carries `party=<leader steam id>`. Match is complete at 3 parties of 2 (Duo) or 2 parties of 3 (Squad):
+  always 6 players (decided 2026-10-19). Only complete parties queue in the first version; no solo fill.
 - Host = owner of the queue lobby; the host's party is already in the right SC lobby; the other parties move in.
 - Teams are fixed by the roster (Steam IDs). Each client maps Steam ID → expedition player (U7) and applies the existing team rule.
   Join order must not be used: ids are renumbered at expedition start `[VERIFIED: run 21]`.

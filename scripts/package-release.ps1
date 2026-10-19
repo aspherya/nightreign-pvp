@@ -14,7 +14,7 @@ param(
     [string]$Me3Dir = 'Z:\Tools\me3',
     [int]$TeamSize = 1,
     # Pre-release feature flag: players per match in the player zip (2..6). 2 = quick friend tests (default until the first release);
-    # 6 = the final game (S9 section 6). Everyone who should meet needs the same number.
+    # 6 = the final game: every match has 6 players (Solo 6 x 1, Duo 3 x 2, Squad 2 x 3). Min = max, so matches only start full. Everyone who should meet needs the same number.
     [ValidateRange(2, 6)][int]$MatchPlayers = 2,
     [switch]$MatchmakingTest
 )
@@ -89,7 +89,7 @@ if ($MatchmakingTest) {
         'matchmaking = true',
         '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
         "mm_max_players = $MatchPlayers",
-        'mm_min_players = 2',
+        "mm_min_players = $MatchPlayers",
         'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
     ) -join "`r`n"
 }

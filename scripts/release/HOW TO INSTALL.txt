@@ -39,8 +39,8 @@ You do not need to invite anyone first. The mod can find other players for you.
    panel opens. (Insert closes it again.)
 2. Everybody who wants to play presses "Solo Battle Royale" in that panel.
    It says "Searching for players... 1/2" while it looks. This test version
-   starts a match as soon as 2 players are found (the full game will take up
-   to 6). Everyone needs the same version of the mod to find each other.
+   starts a match as soon as 2 players are found (the full game always has
+   6 players per match). Everyone needs the same version of the mod to find each other.
    "Leave" stops the search. Leaving the Roundtable also stops it.
 3. When it says "Match found!", one player is the host. Only the host does anything:
    the host's panel says "Press Matchmaking Settings > Invite Members to open your

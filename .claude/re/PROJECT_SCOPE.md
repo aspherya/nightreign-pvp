@@ -14,8 +14,8 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 | Match setting | Requirement |
 |---|---|
-| Players | 10 players per match |
-| Queue types | Solo, duos, and trios |
+| Players | **6 players per match, in every mode** (Seamless Co-op's cap) (decided by Leonardo 2026-10-19) |
+| Queue types | Solo (6 players, everyone a rival), Duo (3 teams of 2), Squad/Trio (2 teams of 3) |
 | Matchmaking | Public queue that matches players with random participants and assigns teammates and rivals |
 | Solo teams | Each player is an individual team; all other players are rivals |
 | Team queues | Duo and trio players are assigned to teams of the selected size; players on other teams are rivals |

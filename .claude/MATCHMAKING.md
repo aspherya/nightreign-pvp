@@ -8,6 +8,10 @@ Pins: game 1.03.3 (exe 1.3.3.0), SC v1.1.3, me3 0.11.0.
 
 ## 1. The idea in one paragraph
 
+**Match size (decided by Leonardo 2026-10-19): every match has 6 players**, Seamless Co-op's cap. Solo = 6 players, each on their own;
+Duo = 3 teams of 2; Squad (trio) = 2 teams of 3. Until the first release the player zip uses 2-player matches so two people can test
+(pre-release flag, §6). Only Solo exists today.
+
 There is no server of ours. Players who press the button meet in a hidden **Steam lobby** (the *queue lobby*) that our mod creates
 and tags, so other copies of the mod can find it through Steam's lobby search. When enough players are in it, its owner becomes the
 **host**. The host's game then opens a normal **Seamless Co-op lobby** (the game's own multiplayer lobby, taken over by SC), and every other
@@ -35,7 +39,7 @@ All Steam calls run on our own worker thread through the game's `steam_api64.dll
 | 1 | each player | At the Roundtable: Insert → **Solo Battle Royale**. Refused at the title screen or in an expedition | `Searching for players...` |
 | 2 | each mod | Searches Steam for queue lobbies with the same tags (§4) and room. Joins the **lowest** lobby id found, else creates one | `Searching for players... 1/2` |
 | 3 | lobby owners | If two lobbies exist, the owner of the higher id writes `merge_to`, everyone in it leaves and joins the lower one | |
-| 4 | queue owner | Lobby full (or `mm_fill_wait_s` passed with at least `mm_min_players`): closes the lobby and writes `host` (itself), `roster`, `state=go` | `Match found!` |
+| 4 | queue owner | Lobby full (6 in the final game; a test setting can start earlier, §5): closes the lobby and writes `host` (itself), `roster`, `state=go` | `Match found!` |
 | 5 | host | Asked to press **Matchmaking Settings > Invite Members**. The game creates its lobby; SC adopts it; the quiet invite swallows the Steam window | `Match found! Press Matchmaking Settings > Invite Members to open your lobby (no Steam window will open)` |
 | 6 | host's mod | Publishes the SC lobby id (`sc_lobby`) on the queue lobby and sends each roster member a Steam lobby invite | `Match found! Waiting for players to join your lobby (1/2 here)` |
 | 7 | joiner's mod | Reads `sc_lobby` and opens `steam://joinlobby/2622380/<lobby>/<host>`. Steam hands it to the running game, which joins | `Match found! Joining the host...` |
@@ -71,7 +75,7 @@ The SC lobby carries `inviteParam = "0"` (written by the game) plus SC's `nrsc_l
 | Rule | Value |
 |---|---|
 | Re-search while waiting | every ~5 s |
-| Start with fewer than full | `mm_fill_wait_s` (90 s) after the 2nd member, if at least `mm_min_players` |
+| Start with fewer than full (**test setting only**; the final game waits for 6) | `mm_fill_wait_s` (90 s) after the 2nd member, if at least `mm_min_players` |
 | Host: start without missing players | 60 s after `sc_lobby` is published: `N/M here - you can start; <names> did not arrive` |
 | Joiner gives up | 120 s after `state=go` without being in the host's lobby: `match missed - queue again` |
 | Left the Roundtable while searching | dropped from the queue after 3 s (not in MATCH READY: a joiner's world reloads when it joins) |
@@ -82,8 +86,8 @@ The SC lobby carries `inviteParam = "0"` (written by the game) plus SC's `nrsc_l
 | Setting | Player zip | Meaning |
 |---|---|---|
 | `matchmaking` | `true` | Turns on queue + join + quiet invite in the player build. `false` removes it (and the Insert key) |
-| `mm_max_players` | `2` (pre-release) | Players per match. **Pre-release flag**: `package-release.ps1 -MatchPlayers N` (default 2); the final game is 6. Everyone must have the same number |
-| `mm_min_players` | `2` | Smallest match after the fill wait |
+| `mm_max_players` | `2` (pre-release) | Players per match. **Pre-release flag**: `package-release.ps1 -MatchPlayers N` (default 2) writes N here and in `mm_min_players`; the final game is 6 in every mode. Everyone must have the same number |
+| `mm_min_players` | same as `mm_max_players` | Smallest match after the fill wait. Equal to the max in shipped zips, so matches only start full |
 | `mm_fill_wait_s` | 90 (default) | See §5 |
 | `overlay_toggle_key` | Insert (default) | Opens the matchmaking panel |
 
@@ -121,7 +125,7 @@ A healthy joiner shows: `the host published sc_lobby` → `method (a) link` → 
 ## 9. Not done yet
 
 - **MM-3g**: the host still presses Invite Members. Goal: the mod triggers that game action itself (call chain in `re/MEMORY_MAP.md` §12).
-- **MM-6**: Duo and Squad (parties queue together; Steam ID → expedition player mapping for teams). Built partly, dev only, not tested.
+- **MM-6**: Duo (3 teams of 2) and Squad (2 teams of 3) (parties queue together; Steam ID → expedition player mapping for teams). Built partly, dev only, not tested.
 - **MM-5**: the "Battle Royale" choice at the expedition table instead of the overlay button.
 - More than 2 players: only in automated tests. Boss choice: whatever the host picks.
 - Before any public release: ask SC's author (he does not want random matchmaking in SC; S9 §8).

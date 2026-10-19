@@ -759,4 +759,5 @@ Owner: OPUS to card in detail | Status: later
 
 ### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
 Owner: OPUS to card in detail | Status: later | Settles: S9 U7
+Match sizes (Leonardo, 2026-10-19): Duo = 3 teams of 2, Squad = 2 teams of 3, always 6 players; complete parties only.
 With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapped to expedition players on every client.

@@ -26,7 +26,7 @@ traps we already fell into. Details live in the other docs; this file points to 
 | Teammate revive | **Works** (Nucleus run 21: 3 of 3) |
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader) | **Works** on Leonardo's PC. Not yet tried on a second PC |
 | Player build: PvP always on, no keys, small "BATTLE ROYALE" label | **Works** (solo check) |
-| **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Player build has it (MM-4: Insert panel, Solo Battle Royale, up to 6, 90 s fill rule); 3–6 players only in automated tests |
+| **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Player build has it (MM-4: Insert panel, Solo Battle Royale; 2-player matches until release, 6 in the final game); 3–6 players only in automated tests |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
 
@@ -142,7 +142,7 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
 ## 8. Decisions made (so they are not re-argued)
 
 - Stack: Rust DLL loaded through me3 next to Seamless Co-op; nothing in Seamless Co-op is modified.
-- Target: 6 players (Seamless Co-op's limit); design for N teams of M.
+- **Every match has 6 players** (Seamless Co-op's limit; Leonardo, 2026-10-19): Solo 6 × 1, Duo 3 × 2, Squad 2 × 3. Pre-release zips use 2 for testing.
 - PvP is always on for rivals; players cannot switch it off. Launching with `nrpvp_launcher.exe` is the mode, until a menu entry exists.
 - Hostility: each game keeps itself and teammates on the normal value and marks only rivals (value 29).
 - Downed players: teammates fill the purple bar; rivals shorten the bleed-out and never move the bar. Instant death on 0 health was
