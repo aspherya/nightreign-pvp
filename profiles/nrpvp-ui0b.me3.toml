@@ -1,0 +1,19 @@
+# me3 profile for UI-0 step 6b (dev only): same as nrpvp-sc.me3.toml plus a package with the table talk script with our "Battle Royale (test)" list (sets flag 10007000) + menu_dlc01 msgbnd with EventTextForTalk 99100000/99100001.
+# The package folder dist\ui0-pkg-b holds game-relative files built from the game 1.03.3 unpack (Z:\Tools\nr-unpacked); it is
+# gitignored (game content). Package syntax: [[packages]] with id and path ('path' is an alias of 'source', me3 CHANGELOG 8f145b5).
+profileVersion = "v1"
+
+[[supports]]
+game = "nightreign"
+
+[[natives]]
+path = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\SeamlessCoop\nrsc.dll'
+load_early = true
+
+[[natives]]
+path = '../dist/nrpvp.dll'
+load_after = [{ id = "nrsc.dll", optional = false }]
+
+[[packages]]
+id = "nrpvp-ui0b"
+path = '../dist/ui0-pkg-b'

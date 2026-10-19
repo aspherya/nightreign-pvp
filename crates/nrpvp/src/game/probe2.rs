@@ -110,6 +110,8 @@ pub(crate) fn watched_flags() -> Vec<u32> {
     v.extend([6000, 6001]);
     v.extend(10_002_700..=10_002_707);
     v.extend([10_003_045, 69_990]);
+    // UI-0 step 6: our first flag (group 10007: has storage, no ESD/EMEVD reference in game 1.03.3), set by the table list.
+    v.push(10_007_000);
     v
 }
 
@@ -1199,7 +1201,7 @@ mod tests {
     #[test]
     fn watched_flags_include_the_lobby_set() {
         let w = watched_flags();
-        for f in [6000, 6001, 10_002_700, 10_002_707, 10_003_045, 69_990] {
+        for f in [6000, 6001, 10_002_700, 10_002_707, 10_003_045, 69_990, 10_007_000] {
             assert!(w.contains(&f), "{f}");
         }
     }

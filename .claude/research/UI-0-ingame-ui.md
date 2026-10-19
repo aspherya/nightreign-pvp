@@ -244,3 +244,62 @@ logger below replaces them and gives exact ids, which a picture cannot.
 5. **F10**, open **Matchmaking Settings**, move over each entry (do not press Invite Members), close it.
 6. **F10**, start a **Solo Mission** expedition and let it load (this records the start and the expedition flags).
 7. Quit the game. Tell Claude "step 5 run done". Claude reads `dist\nrpvp.log` through `map_text.py`.
+
+#### Step 5 results (Leonardo's run, 2026-10-19 21:51–21:54 UTC, SC + dev build, game 1.03.3)
+
+Read with `map_text.py dist\nrpvp.log`: 234 unique texts, 0 dropped, all through `LookupEntry` (FMG-search hits were repeats).
+- **SC hooks `LookupEntry`** `[VERIFIED: entry bytes]`: `E9 BC C2 5F FD` (a 5-byte jump, the rest of the function unchanged) to `0x7FF704910FE1`,
+  which is in no module, so a hook trampoline. Which DLL put it there is `[HYPOTHESIS: SC]` (S7: SC wraps the message repository);
+  following the trampoline names the owner (next trace run). Our breakpoint at the entry still fires, before SC's code.
+- **Every lookup asks the `_dlc01` FMG first, then the base one** (504 then 200, 505 then 203, 507 then 33) `[VERIFIED: log order]`.
+- **Q7 answered:** the expedition screen looks up 1882 "Commence expedition" (ActionButtonText), then CL_MenuText 102000 "Expeditions",
+  130416 "Target", 130410 "Matchmaking Settings", 130404–130406 passwords, 130300 "Commence Expedition". **Number of Players** looks up
+  **130409 "One player", 130417 "Two players", 130408 "Three players"**, 130407, LineHelp 701010. Leonardo's screen shows "Solo Mission" /
+  "Up to 6 players" there, so SC's `LookupEntry` hook swaps exactly those ids `[VERIFIED: ids looked up; HYPOTHESIS: SC swaps 130409/130417/130408,
+  the only labels on that list]`. Matchmaking Settings: 130400 "Team Session", 130401 "Invite Members", 130200/130201, 130002, LineHelp 701002/5/6/7.
+  Start: 130304 "Commence Solo Expedition" / 130305 "Commence Two-Player Expedition", then 336902 "Ready to commence expedition".
+  In me3 the game is **offline**: choosing Two players shows CL_Dialogues 506023 "Cannot start multiplayer session in offline mode…" (SC's
+  "Up to 6 players" path does not go through that check).
+- **Q5 answered: reading flags works** `[VERIFIED]`: the ER layout's checks all pass; 6001 "always ON" went ON when the save loaded and
+  6000 stayed off; 7500 (timeline) went ON when "DAY I" showed. The lobby flags 10002700..07 / 10003045 / 69990 never read ON (sampled
+  once per second: a short pulse would be missed). Divisor 1000; **143 groups have storage**: `0..9 60..99 1009 1019 … 1209 (every 10)
+  10000..10005 10007..10009 11000..11005 11007..11009 12000..12005 12007..12009 16000..16005 16007..16009 16100..16105 16107..16115
+  16117..16119 18000..18005 18007..18009 19000..19005 19007..19009`.
+- **Our flag range: group 10007 (flags 10007000..10007999)** `[VERIFIED: has storage; 0 references in all 191 NR talk ESDs and in the raw
+  u32 words of all 278 EMEVDs; DarkScript3's NR flag names list nothing there]`. 10008 is the same (spare). Still UNKNOWN: whether the exe or
+  params use it, and whether it is saved to the `.co2` (step 6 shows the latter).
+
+### Step 4, on-screen text (2026-10-19, answered from data, no GUI needed)
+
+- **EMEVD** (DarkScript3 `nr-common.emedf.json` + a parse of all 278 decompressed EMEVDs): NR has the ER message instructions:
+  2007[1] Display Generic Dialog, [3] Display Status Message, [4] Blinking Message, [9] Full Screen Message, [10] Generic Dialog and Set Event
+  Flags, [12] Blinking Message with Priority, [16] Network Message, [15] Show Tutorial Popup, [19] Text Effect, and 2003[111] Show Floating Message.
+  The game uses: Generic Dialog 11× (m10: message ids 70010..70100), Generic Dialog + flags 4× (m10, 70040/70100), Blinking 1×, Tutorial
+  Popup 114×, Text Effect 86×, Floating Message 15× `[VERIFIED: instruction table parse]`. **The m10 Generic Dialog ids are EventTextForMap
+  (FMG 34)** ("Hark, the murmuring of waves…"), the FMG 6PF adds entries to.
+- **ESD**: `OpenGenericDialog(type, <id>, …)` (64 uses), `TalkToPlayer`, talk lists (`AddTalkListData(n, <EventTextForTalk id>, -1)`).
+- **Pick for UI-2:** fixed messages as **our own EventTextForMap entries**, shown by an EMEVD event that waits on our flag (group 10007), and the
+  DLL sets the flag (no hook). "Searching 3/6" = one entry per count (6 entries). Live text without fixed entries would need the DLL to point
+  one of our FMG entries at its own string `[HYPOTHESIS: FMG string offsets are 64-bit and relative, as in DS3-format FMGs]`, or a hook like
+  SC's, which we avoid. Whether a Generic Dialog / Status Message draws in the Roundtable and during matchmaking: UNKNOWN until UI-2.
+
+### Step 6, smallest proof (2026-10-19, built; Leonardo's run pending)
+
+Built from the 1.03.3 unpack; packages in `dist\` (gitignored, game content); save folders backed up to `Z:\Tools\save-backups\2026-10-19-ui0-step6`.
+- **6a** `dist\ui0-pkg-a\script\talk\m10_00_00_00.talkesdbnd.dcx` (340304 bytes): esdtool recompile of the **unchanged** `t600001000` (the other
+  86 ESDs passed through). Profile `profiles\nrpvp-ui0a.me3.toml` = SC profile + `[[packages]]`.
+- **6b** `dist\ui0-pkg-b`: the talk bundle with `t600001000_x6`, a list "Battle Royale (test)" (EventTextForTalk 99100000) / "Expedition"
+  (99100001) shown after "Commence expedition". Choice 1 sets **flag 10007000 ON**, choice 2 sets it OFF; both then open the stock menu
+  (`x4`); cancel opens nothing. Plus `msg\engus\menu_dlc01.msgbnd.dcx` with those two entries added. Only `EventTextForTalk.fmg` differs
+  from vanilla `[VERIFIED: unpack + byte compare of all FMGs]`, so the 3020/3021 whitespace issue does not apply. Edited source:
+  `Z:\Tools\nr-unpacked\work\ui0-step6\b\t600001000.py`. The DLL watches 10007000 (probe line `flag 10007000: off -> ON`).
+- `scripts\launch.ps1 -Profile ui0a | ui0b`.
+
+**Runbook for Leonardo (solo, about 6 min):**
+1. `.\scripts\launch.ps1 -Profile ui0a`. Roundtable loads? Go to the table, "Commence expedition": does the normal expedition menu
+   open? Start a Solo Mission; does it load? Quit.
+2. `.\scripts\launch.ps1 -Profile ui0b`. At the table, "Commence expedition": is there a list "Battle Royale (test)" / "Expedition"?
+   Pick **Battle Royale (test)**: does the expedition menu open? Close it. Again, pick **Expedition**: same? Once more and press Back on the
+   list. Then start a Solo Mission from the menu; does it load? Quit.
+3. Tell Claude what you saw in each. Claude reads `dist\nrpvp.log` (flag 10007000 lines, `ui_text_trace` ids 99100000/1, me3 package lines).
+If the game crashes or the table does nothing, quit and say at which step. The vanilla files are untouched; the next normal launch is unaffected.
