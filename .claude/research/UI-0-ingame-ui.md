@@ -234,7 +234,7 @@ logger below replaces them and gives exact ids, which a picture cannot.
   picking our own flag range (a flag in a group with no block cannot be set).
 - `experiments/UI-0/map_text.py <nrpvp.log>`: prints each traced id with its English text from the extracted FMGs, plus the MARK
   lines. Ids that come out `<not in FMG>` are candidates for SC's own strings.
-- Build: `cargo test` 427 pass; clippy clean; `dist\nrpvp.dll` built, and `dist\nrpvp.toml` has `ui_text_trace = true`, `probes = true`.
+- Build: `cargo test` 425 pass (1 ignored); clippy clean; `dist\nrpvp.dll` built, and `dist\nrpvp.toml` has `ui_text_trace = true`, `probes = true`.
 
 **Runbook for Leonardo (solo, about 5 min; the game may stutter in menus while the trace runs, which is expected):**
 1. `.\scripts\launch.ps1` (SC + dev build). Load into the Roundtable.
