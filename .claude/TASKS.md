@@ -832,7 +832,17 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
    n/6 / Press OK to stop searching". Watch it ~8 s: **does the number change while it is open?** Press OK. 3. Commence again once,
    OK, then leave the menu. 4. Number of Players → **Solo Mission** → Commence: the normal expedition should start. 5. Quit. Tell Claude what
    the dialog showed and whether the number changed.
-3..n. Real implementation (queue start, cancel, hand-off at match found, labels Solo/Duo/Trio) after the prototype.
+   **Prototype results (Leonardo solo, 2026-10-19 23:11–23:30 UTC; logs `experiments/UI-0/c1proto-run2.log`, `-run3.log`):**
+   - Redirect + text **work** `[VERIFIED: Leonardo saw the box with our text; log: byte 0/1 redirected, byte 2 (Solo) left alone and the
+     expedition started]`.
+   - **The box does not follow the text while open**: it copies the text when it opens. Even rewriting the digits in place in all copies
+     found (19 copies UTF-16/UTF-8 in 8 GB of private heap, 10 still matching, updated every second from 23:29:33) left it frozen
+     `[VERIFIED: Leonardo]`. A live counter inside the box needs close/reopen (unknown API) or the real matchmaking screen (C3).
+   - Crash on quit (`0xC0000374` heap corruption in ntdll) on every run: **pre-existing**, logged by Windows every day since 2026-10-10 (5–17
+     per day), not caused by UI-1. Separate issue.
+   Options put to Leonardo: (1) box "Searching… you will be told" + live status as on-screen game messages (UI-2) + Commence again = "Stop
+   searching?"; (2) close/reopen the box on each change; (3) the real matchmaking screen. Recommended 1 (2/3 later).
+3..n. Real implementation (queue start, cancel, hand-off at match found, labels Solo/Duo/Trio) after Leonardo's choice.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
