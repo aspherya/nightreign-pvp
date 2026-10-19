@@ -113,3 +113,96 @@ with a reason, and cards UI-1 (mode choice at the table), UI-2 (in-game status) 
 ## 9. Results log
 
 (append findings per step here, newest last)
+
+### Step 1, toolchain (2026-10-19, done)
+
+Leonardo approved the full standard set (asked for the best-documented tools). Each tool is in its own folder in `Z:\Tools\`; zips stay in
+`Z:\Tools\_downloads\`. Every download comes from the project's GitHub "latest release". The SHA-256 below is the zip's.
+
+| Tool | Folder | Release / asset | SHA-256 (zip) | Role |
+|---|---|---|---|---|
+| Nuxe 1.2.1 | `Z:\Tools\Nuxe-1.2.1` | github.com/JKAnderson/Nuxe v1.2.1 `Nuxe.1.2.1.zip` | `023D3C2A…78267A` | Unpack archives. **Unpack only; never Patch/Restore** |
+| WitchyBND 3.0.1.0 | `Z:\Tools\WitchyBND-3.0.1.0` | github.com/ividyon/WitchyBND 3.0.1.0 `-win-x64.zip` | `A3E6B2A0…AF50364` | BND4/DCX/FMG on the command line |
+| ESDLang esdtool 0.5.1 | `Z:\Tools\ESDLang-0.5.1` | github.com/thefifthmatt/ESDLang v0.5.1 `esdtool-v0.5.1.zip` | `DEB613A5…49CB91C` | Talk ESD decompile/compile |
+| ESDLang dump 0.5.1 | `Z:\Tools\ESDLang-0.5.1-esd-dump` | same release, `extra-all-esds-dump-v0.5.1.zip` | `3F74955F…78CC9DE` | Pre-decompiled ESDs incl. `nr\` (142 files) |
+| DarkScript3 3.6.3 | `Z:\Tools\DarkScript3-3.6.3` | github.com/AinTunez/DarkScript3 3.6.3 `Darkscript3_6_3.zip` | `84FE6E2B…F49638FCA` | EMEVD (step 4) |
+| Smithbox 2.2.6 | `Z:\Tools\Smithbox-2.2.6` | github.com/vawser/Smithbox 2.2.6 `Smithbox_2_2_6_2026_09_20_b.zip` | `9A147C31…19994B3D7` | Text/params editor (GUI, Leonardo); fallback |
+
+Full hashes: `Get-FileHash Z:\Tools\_downloads\*.zip`. .NET 6/8/9/10 runtimes are already installed `[VERIFIED: dotnet --list-runtimes]`.
+
+**Unpack without touching the game folder.** Nuxe's Basic unpack writes next to the exe, so `Z:\Tools\nr-unpacked\1.03.3\` holds NTFS
+**hard links** to `data0..3` and `dlc01` `.bhd/.bdt` (no extra space; unpacking only reads them) `[VERIFIED: fsutil hardlink list]`. Run Nuxe's
+Advanced unpack on that folder. Game exe `1.3.3.0` `[VERIFIED: FileVersion]`. Do not edit the linked archives: they are the game's files.
+
+### Step 3 head start from the ESDLang dump (2026-10-19)
+
+Source: `extra-all-esds-dump-v0.5.1\nr\` (published 2025-08-16, so its game version may predate 1.03.3; recheck against our unpack).
+All facts below are `[SOURCE: ESDLang v0.5.1 NR dump]` until rechecked.
+
+- **Q2: ESD `t600001000` (the table) has no talk list.** When the "Commence expedition" action button (6900) is pressed, it calls
+  `OpenCommenceExpeditionMenu()` and waits while menu type 34 is open. Flag `10002700` ("For lobby menu: Matching menu") is used as the "menu
+  requested" input, and the script turns it off afterwards. Only the Executor hero gets a short talk line first (`x5`).
+  ⇒ The Solo/Up-to-6 choice lives **inside the native menu 34** (Q7: a native screen, not a talk list). A talk list ("Battle Royale" / "Expedition")
+  can still be put **before** `OpenCommenceExpeditionMenu()`. Other NR ESDs build lists with `AddTalkListData*` + `OpenConversationChoicesMenu`
+  (30 uses), so the commands exist in NR.
+- **Q3: no ESD command opens matchmaking settings, invite, or the party screen.** NR scripts use these menu openers: CommenceExpedition,
+  ChangeCharacter, Relic, VisualCodex, Journal, Jar/Garb/Enhance/Regular/Catalog/LegendaryEnhance shops, ReplicateArmament, SparringEquipment,
+  SparringSettings, ConversationChoices, GenericDialog. esdtool's full talk command list (all games) has nothing named for matchmaking, party, or
+  invite either. NR also uses **unnamed** commands (`c1_163..181`, `c5_166..172`, `f301..316`); any of them could be online-related: UNKNOWN.
+  ⇒ MM-3g stays a DLL job (call the game function) unless one of those unnamed commands turns out to be it.
+
+### Step 2, extraction (2026-10-19, done)
+
+Leonardo ran Nuxe 1.2.1 Advanced → Unpack on `Z:\Tools\nr-unpacked\1.03.3\`: 32,228 files plus folders `action … sound`. The game folder is unchanged:
+it has no new folders and no file newer than 10/10 `[VERIFIED: listing after unpack]`. `regulation.bin` is also hard-linked there, because esdtool
+loads params for names (SHA-256 `876A3CA2…2C91E0268`). Work copies are in `Z:\Tools\nr-unpacked\work\` (`esd\`, `msg\`, `rt\`). None of this goes into git.
+
+| File (game 1.03.3, exe 1.3.3.0) | Bytes | SHA-256 |
+|---|---|---|
+| `script/talk/m10_00_00_00.talkesdbnd.dcx` | 335760 | `43D5005F1934A37121CA2589C58684E73964F2440B1D13BB79443AC689796CD1` |
+| `script/talk/m10_00_00_00_dlc01.talkesdbnd.dcx` | (also present; 32 ESDs) | not hashed yet |
+| `event/m10_00_00_00.emevd.dcx` | 23232 | `A4D87CAEBE834496F66B958E1FCDE0190006CB97ACE6805AB1A02A00C642D55B` |
+| `event/common.emevd.dcx` | 13056 | `0018635B07959514CD9F1DF4E4889959B649C04E175567E6D8A8E2F11B0E2805` |
+| `msg/engus/menu_dlc01.msgbnd.dcx` | 158976 | `E33F1C338878DA423D95CF54589072D99425F2A92C10603E5C93BDA9323184DB` |
+| `msg/engus/item_dlc01.msgbnd.dcx` | 209904 | `A4F14491D8D3F34BAAF9CC57ECE763BA433B3647C40B2817068F36B926ADA0F2` |
+
+- **S7 open question 7 answered:** `msg/engus/` holds only `item_dlc01`, `menu_dlc01`, `ngword` msgbnds. There is **no** base `menu.msgbnd`
+  `[VERIFIED: unpacked listing]`. Every menu string is in `menu_dlc01`.
+- **Lobby GFX** (names only, `menu/`): `02_170_lobbymenutop`, `02_171_lobbyselect`, `02_200_matching`, `02_230_matching_selectoption`,
+  `02_600_heroselect`, `03_063_talkchoice`, `01_010_messagebox`, `01_011/013_messagebox_small(_nb)`, `01_950_systemtoast`,
+  `01_080_emergencynotice`, `01_090_summonmessage`, `01_060_caption` `[VERIFIED: unpacked listing]`. The messagebox, systemtoast and caption files
+  are candidates for Q4.
+
+### Step 3, the table (2026-10-19, tools part done; Leonardo's screenshots pending)
+
+Tools: esdtool needs `oo2core_6_win64.dll` (copied from `ELDEN RING\Game` into the esdtool folder) and `-basedir` with `regulation.bin`.
+Command: `esdtool.exe -nr -basedir Z:\Tools\nr-unpacked\1.03.3 -i <talkesdbnd> -writepy <dir>\%e.py`. Do not pipe it into `select -First`,
+because that kills it partway.
+
+- **Q1 (round-trip): yes, semantically.** `m10_00_00_00` decompiles to 87 ESDs and `_dlc01` to 32. Recompiled `t600001000` is 9356 bytes vs 9674
+  original, so **not byte-identical**, but decompiling it again gives the same script (ignoring the name and whitespace) `[VERIFIED: rt\ diff]`.
+  FMG via WitchyBND: `CL_MenuText.fmg` repacks to 90628 vs 90632 bytes. The only change is entries 3020/3021 (" " → ""). Witchy trims
+  whitespace-only text `[VERIFIED: rt\fmg xml diff]`. Use Smithbox for FMG edits if that matters, or keep those entries out of our edits.
+  The in-game proof is still step 6.
+- **The 2025-08 dump vs 1.03.3:** `t600001000` is identical. `t100401000, t101001000, t201001000, t605001000, t617001000, t618001000` changed, and
+  the whole `_dlc01` bundle is new `[VERIFIED: hash compare]`. Use our own decompile from now on.
+- **Q2 confirmed on 1.03.3:** see the head start above. Pattern for a list, as the game itself does it (`t121201000`):
+  `ClearPreviousMenuSelection(); ClearTalkListData(); AddTalkListDataAlt(1, <EventTextForTalk id>, -1, 0, False); …;
+  OpenConversationChoicesMenu(0); if GetTalkListEntryResult() == 1: …`. Yes/no prompts use `OpenGenericDialog(DialogBoxType.CenterBottom1, <id>,
+  DialogResult.Left, DialogBoxStyle.OrnateNoOptions, 1)`. So the step 6 edit is: in `t600001000_x3`, before `x4`, show a list
+  "Battle Royale (test)" / "Expedition". The first sets our flag, then both call `x4()`.
+- **Q3 confirmed on 1.03.3:** menu openers in m10 + dlc01 are CommenceExpedition, ChangeCharacter, Relic, VisualCodex, Journal, Jar/Garb/Catalog shops,
+  SparringEquipment, SparringSettings, ConversationChoices, GenericDialog. There is no matchmaking, invite, or party opener.
+- **Q7: the party-size choice is native menu 34** (`OpenCommenceExpeditionMenu`, GFX probably `02_170/171/230`, `[HYPOTHESIS]` which one).
+  Vanilla text `[VERIFIED: CL_MenuText]`: 130407 "Number of Players", 130409 "One player", 130417/130200 "Two players", 130408/130201
+  "Three players", 130410 "Matchmaking Settings", 130401 "Invite Members", 130300/130302 "Commence Expedition", 130304 "Commence Solo
+  Expedition", 130305 "Commence Two-Player Expedition", 40340 "Perform Matchmaking", 40341 "No Matchmaking", 336900 "Matchmaking...",
+  336901 "Matchmaking complete", 336902 "Ready to commence expedition", 336904 "Matchmaking cancelled". CL_Dialogues: 506011 "Matchmaking has
+  been canceled", 506012 "Cancel matchmaking?", 506020–22 "Matchmaking failed…". CL_LineHelp 701005 "Invite players to team session".
+  ActionButtonText 1882 "Commence expedition". Full hit list: `work\msg\search.tsv` (211 rows).
+  **SC shadowing:** `SeamlessCoop\locale\english.json` has 4 keys only: `MODMESSAGE_YUINEXUSBEGINONEPLAYER` "Solo Mission",
+  `…TWOPLAYER`/`…THREEPLAYER` "Up to 6 players", `…PLAYERCOUNTREMAINING` "{} / {}" `[VERIFIED: file read]`. So "Solo Mission / Up to 6
+  players" is SC text set at run time, over vanilla ids `[HYPOTHESIS]`: 130304/130305 + a three-player id, or the 130409/130417/130408
+  set. An FMG edit to those ids would be hidden under SC. Our "Battle Royale" label must therefore be a **new** id (talk list, `EventTextForTalk`), not those.
+- **Leonardo, still needed for step 3:** screenshots into `.claude/experiments/UI-0/`: (1) "Commence expedition" prompt at the table,
+  (2) the expedition menu under SC, (3) Number of Players list, (4) Matchmaking Settings, (5) the "Matchmaking…" status while searching.
