@@ -2,7 +2,7 @@
 # Contents (to be dropped into the game folder, next to nightreign.exe and nrsc_launcher.exe):
 #   nrpvp_launcher.exe            double-click to play
 #   NightreignPvP\nrpvp.dll       the mod
-#   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4); PvP is always on, no dev_mode)
+#   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4), mm_max_players = -MatchPlayers (default 2 until release); PvP is always on, no dev_mode)
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
@@ -13,6 +13,9 @@
 param(
     [string]$Me3Dir = 'Z:\Tools\me3',
     [int]$TeamSize = 1,
+    # Pre-release feature flag: players per match in the player zip (2..6). 2 = quick friend tests (default until the first release);
+    # 6 = the final game (S9 section 6). Everyone who should meet needs the same number.
+    [ValidateRange(2, 6)][int]$MatchPlayers = 2,
     [switch]$MatchmakingTest
 )
 $ErrorActionPreference = 'Stop'
@@ -84,6 +87,9 @@ if ($MatchmakingTest) {
         "team_size = $TeamSize",
         '# MM-4: Solo Battle Royale matchmaking (the panel opens with the Insert key). Set to false to turn it off.',
         'matchmaking = true',
+        '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
+        "mm_max_players = $MatchPlayers",
+        'mm_min_players = 2',
         'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
     ) -join "`r`n"
 }
