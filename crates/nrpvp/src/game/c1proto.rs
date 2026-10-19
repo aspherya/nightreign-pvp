@@ -66,7 +66,7 @@ pub(crate) fn redirect(players: u8) -> bool {
 
 /// The text shown for search tick `n`.
 pub(crate) fn text_for(n: u32) -> String {
-    format!("Battle Royale (prototype)\nSearching for players {}/6\nPress OK to stop searching", (n % 6) + 1)
+    format!("Battle Royale (prototype)\nSearching for players {}/6 ({n} s)\nPress OK to stop searching", (n % 6) + 1)
 }
 
 unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
@@ -254,5 +254,6 @@ mod tests {
         assert!(text_for(0).contains("1/6"));
         assert!(text_for(5).contains("6/6"));
         assert!(text_for(6).contains("1/6"));
+        assert!(text_for(42).contains("(42 s)"));
     }
 }
