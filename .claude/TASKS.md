@@ -767,57 +767,43 @@ EventTextForTalk texts, our flag 10007000 set by the list and read by the DLL, S
 EMEVD Generic Dialog with EventTextForMap ids is the status-text route. Dev tools added: `ui_text_trace`, lobby-flag watch, flag-group census,
 `experiments/UI-0/map_text.py`, profiles `nrpvp-ui0a/ui0b`. Two-player check: FS-UI1 (TESTING.md §6).
 
-### UI-1 — Battle Royale at the Roundtable table: Solo / Duo / Trio, then the stock boss menu
-Owner: OPUS (spike + spec) → SONNET/implementer → HUMAN (solo), then FS | Status: spike first (step 0) | Depends: UI-0 | Replaces: MM-5
-**Flow (Leonardo, 2026-10-19):** press the table → the game's own list shows **Solo / Duo / Trio** (Battle Royale only; the normal
-expedition is not offered while the mod is installed) → the stock expedition menu opens (pick the Nightlord) → pressing start begins **our**
-matchmaking → the match starts by itself. To stop, the player uses the game's own cancel ("Cancel matchmaking?", CL_Dialogues 506012); there
-is no "Leave" entry. Trio = 2 teams of 3 (called Squad elsewhere). No ImGui for players.
-0. **Spike (Opus + HUMAN solo, before any building): how does the DLL see "start" and "cancel" inside the stock menu?** UI-0 saw the game
-   look up 336900 "Matchmaking...", 336902 "Ready to commence expedition", 336904 "Matchmaking cancelled", 506012 "Cancel matchmaking?"
-   (step 5 trace), but no flag change at 1 s sampling. Dev build: snapshot the whole blocks of flag groups 10000..10009 every 100 ms and log
-   every bit that changes, keep `ui_text_trace` on; Leonardo, with SC, picks each Number of Players option, presses start, cancels, starts a
-   Solo Mission. Also answer: does pressing start with SC loaded begin SC's own hosting or the game's offline path, and can our queue run
-   instead without breaking SC (S9: the game's own session code must still make the SC lobby, MM-3f)? Pick the signal (a flag, best; else
-   a text id as a last resort) and write it here before step 2.
-   **Built (2026-10-19):** `game/flagwatch.rs`, dev config `ui_flag_watch = true` (own thread, every 50 ms, all groups with storage,
-   read-only, flags flipping >20×/10 s muted; lines `ui_flag_watch: flag <id>: off -> ON`); `dist
-rpvp.toml` also has `ui_text_trace = true`,
-   `mm_probe`/`mm_join` on (Steam lobby events logged). 427 tests pass, clippy clean.
-   **Runbook (Leonardo, solo, ~5 min, `.\scripts\launch.ps1`, normal SC profile):** press **F10** before each step and wait 3 s after it.
-   1. Load into the Roundtable. 2. Table → expedition menu. 3. Number of Players = **Up to 6 players**; press **Commence Expedition**;
-   wait 10 s; note in one line what the screen shows. 4. Cancel it the game's way (whatever it offers; "Cancel matchmaking?" → yes);
-   note what you pressed. 5. Number of Players = **Solo Mission**; Commence; let it load. 6. Quit. Tell Claude the two notes from 3 and 4.
-   **Result (Leonardo solo, 2026-10-19 22:26–22:30 UTC; log `experiments/UI-0/ui1-step0-nrpvp.log`):** "Up to 6 players" → Commence: the
-   game looks up CL_Dialogues 506023 "Cannot start multiplayer session in offline mode…", CL_MenuText 336900 "Matchmaking...", 336905
-   "<remaining> / <total>", CL_Dialogues 506020 "Matchmaking failed": **the stock menu's matchmaking is the game's online one and fails under
-   me3 (offline)**; no Steam lobby event, so SC does not host from it either `[VERIFIED]`. **No event flag changed** at 50 ms sampling from
-   opening the menu through start, failure and cancel `[VERIFIED]`. Solo Commence: the departure cutscene flags 2307/2330 go ON (named
-   "hero animations during CS"). ⇒ The boss menu's start/cancel cannot drive our queue; the table list has to start (and cancel) matchmaking.
-   Flow to be confirmed with Leonardo (proposed: table → Solo/Duo/Trio starts the search; table again → "Cancel matchmaking"; the host picks
-   the Nightlord in the boss menu once everyone is in, as today).
-1. **Game-data sources in git, built by a script.** New `gamedata/` folder with only our own material: the edit of `t600001000` as a
-   patch against the esdtool decompile, and our FMG entries as a small table (`id`, English text). New `scripts/build-gamedata.ps1`: from
-   `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into `dist\gamedata\script\talk\`, add our
-   entries to `EventTextForTalk` in **every** `msg/<lang>/menu_dlc01.msgbnd.dcx` (English text everywhere for now) with WitchyBND, print the
-   hashes. It refuses to run if the unpacked `m10_00_00_00.talkesdbnd.dcx` hash differs from the pinned 1.03.3 hash (`43D5005F…`) (Q8).
-2. **The list** (in `t600001000`, before `x4`): "Solo Battle Royale" (sets 10007001), "Duo Battle Royale" (10007002), "Trio Battle
-   Royale" (10007003); each choice sets its mode flag (the others OFF) and then opens the stock menu (`x4`); Back on the list = nothing.
-   Text ids 99100000.. in EventTextForTalk.
-3. **DLL: production flag access** (`game/flags.rs`, out of `probe2.rs`; cheap `mem::read`, no `RegionCache::new()` on the main loop):
-   `get(flag)` and `set(flag, on)`; `set` refuses anything outside 10007000..=10007999. First flag write in the project: tests on a synthetic
-   manager like probe2's.
-4. **Start and cancel** (with the step 0 signal): start pressed with mode M chosen → `MmQueue(M)`; the game's cancel → `MmLeave`; leaving
-   the Roundtable keeps MM-4's auto-leave. Duo/Trio need MM-6: until then the DLL logs and ignores them (UI-2 shows "coming soon").
-   The mode flags are cleared by the DLL once consumed, and at startup (not left ON in the save).
-5. **Launch with the package.** The launcher / me3 profile of the player zip gains a `[[packages]]` entry for `gamedata\`; the Insert panel
-   stays until UI-2 brings the status text into the game.
-6. Before a public zip ships game files: list exactly which ones (two) and note the SC-author question (S9 §8).
-Acceptance (implementer): `cargo test` (flag get/set + range refusal on the synthetic manager; start/cancel logic), clippy clean, hashes from
-`build-gamedata.ps1` recorded here, player zip contains `gamedata\` and the profile entry.
-Acceptance (HUMAN, solo): player zip: table shows exactly Solo / Duo / Trio; Solo → boss menu → start → `Searching for players... 1/6`
-(badge); the game's cancel → queue left; relaunch: no mode flag left ON.
-Two-player: next FS after FS-UI1 passes.
+### UI-1 — Battle Royale inside the stock expedition menu (Leonardo's flow)
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo), then FS | Status: investigating A/B/C | Depends: UI-0 | Replaces: MM-5
+**Flow (Leonardo, 2026-10-19, "the best flow possible, we are not giving it up"):** spawn at the Roundtable → press the table → the stock boss
+list → **Matchmaking Settings → Number of Players shows Solo / Duo / Trio** → back, pick the **first boss** (only that one for now) →
+**Commence Expedition** → the game searches for players (**our** queue) → when the match is full the expedition starts by itself. Cancel =
+the game's own "Cancel matchmaking". Battle Royale only (no normal expedition while the mod is installed). On a roadblock: talk to
+Leonardo about alternatives that keep this flow.
+**Why it needs the DLL:** the menu is native code (`OpenCommenceExpeditionMenu`, menu 34), not a script; under me3 the game is offline, so
+Commence with more than one player shows 506023 "Cannot start multiplayer session in offline mode" and then "Matchmaking failed"; no
+event flag changes (step 0 result below). We must **never** make the game think it is online (that is Bandai's servers).
+**Static findings (2026-10-19, `experiments/UI-0/imm_xrefs.py`, `disfunc.py`, game 1.03.3)** `[VERIFIED: disassembly; meaning HYPOTHESIS until the trace]`:
+- The expedition menu code is ordinary (has `.pdata`): `0x9EE750` "Cancel matchmaking?" 506012 / "canceled" 506011 (tail obfuscated);
+  `0x9EEBE0` **Commence checks**: 506040 not installed, 506070 too many relics, 506024 Deep of Night offline, then 506023 offline-multiplayer,
+  decided from **byte `+0x49` of the settings object `[menu+0xFC8]`** (`<=1` with online, or `==2` → the matchmaking branch) and
+  `0x6AEAE0` = "is online" (`[exe+0x3C13258]+0xB40`); `0x9EF3F0` Commence button label (130304 Solo / 130305 Two-Player); `0x9FB020`
+  **Number of Players list** (130408/130417/130409; settings `[rbx+0x3E08]`, same `+0x49` byte, reset to 0 in some cases); `0x60A1C0` a
+  table matchmaking-result → dialog (506020..506030 family).
+- The "Matchmaking..." ids (336900..336905) are computed, not constants: the matchmaking screen's code is found from the stack (trace).
+**A (Solo/Duo/Trio in Number of Players):** read/write the `+0x49` byte (values per option from the trace); labels: SC swaps 130409/130417/
+130408 through its `LookupEntry` hook, so our labels need a later hook or FMG ids that SC does not touch (to decide).
+**B (Commence starts our queue):** catch the Commence check sequence (`0x9EEBE0`) when the setting is Duo/Trio (or our Solo), before the
+offline dialog, and start `MmQueue` instead (hardware breakpoint + skip, as MM-3f does), so the offline dialog never shows.
+**C (the game's own matchmaking screen and cancel):** find the screen's state from the stack of the 336900 lookups; drive "Matchmaking..."
+and the "<remaining> / <total>" counter (336905, tags `matchRemainingCount` / `matchTotalCount`) from our queue; cancel through `0x9EE750`.
+Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonardo first.
+0. **Step 0 result (2026-10-19 22:26–22:30 UTC, log `experiments/UI-0/ui1-step0-nrpvp.log`)**: "Up to 6 players" → Commence: 506023
+   offline, 336900 "Matchmaking...", 336905 counter, 506020 "Matchmaking failed"; no Steam lobby event; **no event flag changed** (50 ms
+   watcher, `ui_flag_watch`). Solo Commence: departure cutscene flags 2307/2330 ON.
+1. **Trace for A/B/C (built 2026-10-19):** `game/menutrace.rs`, dev config `ui_menu_trace = true`: DR0 `0x9EEBE0`, DR1 `0x9FB020`, DR2
+   `0x9EE750`, DR3 `LookupEntry` only for 336900..336905 / 506011 / 506012 / 506020..506023; logs registers + exe return candidates from the
+   stack; dumps the settings object candidates and logs every byte change of them every 100 ms. `ui_flag_watch` stays on. 430 tests, clippy clean.
+   **Runbook (Leonardo, solo, ~5 min, `.\scripts\launch.ps1`)**, press **F10** before each step:
+   1. Roundtable → table → boss list. 2. Matchmaking Settings → Number of Players: select each of the three options in turn, ~2 s each,
+   end on the **first "Up to 6 players"**. 3. Back, **Commence Expedition** → the offline message → OK. 4. Number of Players → the
+   **second "Up to 6 players"** → Commence → OK. 5. Number of Players → **Solo Mission** → Commence; if a cancel is offered, cancel once,
+   then Commence again and let it load. 6. Quit. Then tell Claude "menu trace done".
+2..n. Implementation steps are written after the trace answers A/B/C.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
