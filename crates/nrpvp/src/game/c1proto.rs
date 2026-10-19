@@ -64,9 +64,123 @@ pub(crate) fn redirect(players: u8) -> bool {
     players != ONE_PLAYER
 }
 
+/// Marker that starts the live part of the text (the scan looks for it; digits follow at fixed positions).
+pub(crate) const NEEDLE: &str = "Searching for players ";
+
+/// The live part after [`NEEDLE`]: fixed width, `d/6 (sss s)`.
+pub(crate) fn live_part(n: u32) -> String {
+    format!("{}/6 ({:03} s)", (n % 6) + 1, n % 1000)
+}
+
 /// The text shown for search tick `n`.
 pub(crate) fn text_for(n: u32) -> String {
-    format!("Battle Royale (prototype)\nSearching for players {}/6 ({n} s)\nPress OK to stop searching", (n % 6) + 1)
+    format!("Battle Royale (prototype)\n{NEEDLE}{}\nPress OK to stop searching", live_part(n))
+}
+
+/// Every start offset of `needle` in `hay`.
+pub(crate) fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + needle.len() <= hay.len() {
+        match hay[i..=hay.len() - needle.len()].iter().position(|b| *b == needle[0]) {
+            None => break,
+            Some(p) => {
+                let at = i + p;
+                if hay[at..at + needle.len()] == *needle {
+                    out.push(at);
+                }
+                i = at + 1;
+            }
+        }
+    }
+    out
+}
+
+/// A copy of our text found in game memory: address of the NEEDLE and whether it is UTF-16.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TextCopy {
+    pub addr: usize,
+    pub wide: bool,
+}
+
+fn encode(s: &str, wide: bool) -> Vec<u8> {
+    if wide {
+        s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+    } else {
+        s.as_bytes().to_vec()
+    }
+}
+
+/// Scan every committed read-write region of the process for the needle (UTF-16 and UTF-8), skipping `[skip, skip+skip_len)`.
+fn scan_copies(skip: usize, skip_len: usize, max: usize) -> (Vec<TextCopy>, usize) {
+    use windows::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, PAGE_READWRITE};
+    const CHUNK: usize = 1 << 20;
+    let n16 = encode(NEEDLE, true);
+    let n8 = encode(NEEDLE, false);
+    let mut out: Vec<TextCopy> = Vec::new();
+    let mut scanned = 0usize;
+    let mut addr = 0x10000usize;
+    while addr < 0x7FFF_FFFF_0000 && out.len() < max {
+        let mut mbi = MEMORY_BASIC_INFORMATION::default();
+        // SAFETY: valid out-buffer; VirtualQuery tolerates any address.
+        let got = unsafe {
+            VirtualQuery(Some(addr as *const core::ffi::c_void), &mut mbi, std::mem::size_of::<MEMORY_BASIC_INFORMATION>())
+        };
+        if got == 0 {
+            break;
+        }
+        let rbase = mbi.BaseAddress as usize;
+        let rend = rbase.saturating_add(mbi.RegionSize);
+        if mbi.State == MEM_COMMIT && mbi.Protect == PAGE_READWRITE {
+            let mut a = rbase;
+            while a < rend && out.len() < max {
+                let len = (rend - a).min(CHUNK + 64);
+                let b = super::mem::RegionCache::direct().read_prefix(a, len);
+                scanned += b.len();
+                for (needle, wide) in [(&n16, true), (&n8, false)] {
+                    for off in find_all(&b, needle) {
+                        let at = a + off;
+                        if (at >= skip && at < skip + skip_len) || out.iter().any(|c| c.addr == at) {
+                            continue;
+                        }
+                        out.push(TextCopy { addr: at, wide });
+                    }
+                }
+                a += CHUNK;
+            }
+        }
+        if rend <= addr {
+            break;
+        }
+        addr = rend;
+    }
+    (out, scanned)
+}
+
+/// Rewrite the live part of a copy if its bytes still are our text for `prev` (so a reused block is never touched).
+fn update_copy(c: &TextCopy, prev: u32, next: u32) -> Result<(), &'static str> {
+    let at = c.addr + encode(NEEDLE, c.wide).len();
+    let old = encode(&live_part(prev), c.wide);
+    let new = encode(&live_part(next), c.wide);
+    if super::mem::RegionCache::direct().read_prefix(at, old.len()) != old {
+        return Err("copy no longer holds our text");
+    }
+    for (i, chunk) in new.chunks(super::mem::MAX_WRITE_BYTES).enumerate() {
+        super::mem::write_bytes(at + i * super::mem::MAX_WRITE_BYTES, chunk)?;
+    }
+    Ok(())
+}
+
+/// The tick (`n` and up to 60 before it) whose live part a copy holds now.
+fn tick_of(c: &TextCopy, n: u32) -> Option<u32> {
+    let at = c.addr + encode(NEEDLE, c.wide).len();
+    (0..=60u32).map(|back| n.wrapping_sub(back)).find(|k| {
+        let want = encode(&live_part(*k), c.wide);
+        super::mem::RegionCache::direct().read_prefix(at, want.len()) == want
+    })
 }
 
 unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
@@ -184,6 +298,9 @@ fn run(base: usize) {
     // (fmg, slot address, original value) currently redirected.
     let mut patched: Option<(usize, usize, u64)> = None;
     let (mut n, mut seen_red, mut seen_pass) = (0u32, 0u32, 0u32);
+    // Copies of our text inside the open dialog (the dialog copies the text when it opens), and when to scan for them.
+    let mut copies: Vec<TextCopy> = Vec::new();
+    let mut scan_at: Option<Instant> = None;
     tracing::info!(
         "ui_c1_proto: armed: Commence with a multiplayer Number of Players opens the game's 506040 dialog with our text (buffer 0x{buf_addr:X})"
     );
@@ -194,8 +311,36 @@ fn run(base: usize) {
             let _ = apply_all(pid, own, &addrs, 0b1, false, &mut applied, &mut scratch);
             next_apply = now + APPLY_EVERY;
         }
+        let prev = n;
         n = n.wrapping_add(1);
         write_text(&text_for(n));
+        copies.retain(|c| match update_copy(c, prev, n) {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::info!("ui_c1_proto: copy at 0x{:X} dropped: {e}", c.addr);
+                false
+            }
+        });
+        if scan_at.is_some_and(|t| now >= t) {
+            scan_at = None;
+            let t0 = Instant::now();
+            let (found, scanned) = scan_copies(BUF.0.get() as usize, BUF_UNITS * 2, 32);
+            tracing::info!(
+                "ui_c1_proto: scan for copies of our text: {} found in {} MiB ({} ms): {}",
+                found.len(),
+                scanned >> 20,
+                t0.elapsed().as_millis(),
+                found.iter().map(|c| format!("0x{:X}{}", c.addr, if c.wide { " utf16" } else { " utf8" })).collect::<Vec<_>>().join(", ")
+            );
+            // Each copy holds the text of the tick it was made at: bring it to `n` once, then it follows every tick.
+            copies = found
+                .into_iter()
+                .filter_map(|c| tick_of(&c, n).map(|k| (c, k)))
+                .filter(|(c, k)| update_copy(c, *k, n).is_ok())
+                .map(|(c, _)| c)
+                .collect();
+            tracing::info!("ui_c1_proto: {} copies are being updated every second", copies.len());
+        }
         // Keep 506040 pointing at our buffer (the FMG can be reloaded, e.g. on a language change).
         if let Some(fmg) = dialogues_fmg(base) {
             if patched.is_none_or(|(f, _, _)| f != fmg) {
@@ -225,6 +370,9 @@ fn run(base: usize) {
                 red,
                 pass
             );
+            if red != seen_red {
+                scan_at = Some(now + Duration::from_millis(1500));
+            }
             (seen_red, seen_pass) = (red, pass);
         }
     }
@@ -250,10 +398,23 @@ mod tests {
     }
 
     #[test]
+    fn find_all_finds_every_match() {
+        assert_eq!(find_all(b"abcabcab", b"abc"), vec![0, 3]);
+        assert_eq!(find_all(b"aaa", b"aa"), vec![0, 1]);
+        assert!(find_all(b"ab", b"abc").is_empty());
+    }
+
+    #[test]
+    fn live_part_is_fixed_width() {
+        assert_eq!(live_part(0).len(), live_part(999).len());
+        assert_eq!(live_part(7), "2/6 (007 s)");
+    }
+
+    #[test]
     fn text_counts_one_to_six() {
         assert!(text_for(0).contains("1/6"));
         assert!(text_for(5).contains("6/6"));
         assert!(text_for(6).contains("1/6"));
-        assert!(text_for(42).contains("(42 s)"));
+        assert!(text_for(42).contains("(042 s)"));
     }
 }
