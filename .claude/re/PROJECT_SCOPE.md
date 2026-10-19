@@ -134,7 +134,7 @@ After the final Night 2 player-versus-player battle:
 ## 7. Overall game loop
 
 1. Choose solo, duo, or trio matchmaking.
-2. Queue publicly and join a 10-player match with randomly matched players.
+2. Queue publicly and join a 6-player match with randomly matched players (6 solos, 3 duos or 2 trios).
 3. Receive a team assignment; in solo queue, each player is their own team.
 4. Explore, level up, gather loot, fight PvE, and engage rivals during Day 1.
 5. Survive Night 1 while the Night's Tide shrinks the area and no night boss appears.
@@ -147,7 +147,10 @@ After the final Night 2 player-versus-player battle:
 **Entry flow wanted for steps 1–2 (Leonardo, 2026-10-12):** at the Roundtable table the expedition type list offers **Solo / Duo / Squad
 Battle Royale** next to "Solo Mission" and "Up to 6 players". The player picks one, picks the Nightlord as for any expedition, and
 starts. Matchmaking then runs by itself and the match begins once its criteria are met. No overlay buttons, no invite, no menu visit,
-no host action. The mod itself must create or obtain the session and bring every matched player into it. How: see
+no host action.
+**No ImGui for players (Leonardo, 2026-10-19):** the final product shows nothing from our overlay to players. Every choice and every
+status message lives in the game's own UI (menus, talk lists, on-screen messages), by changing or adding game menu options and
+behaviour. The overlay stays a developer tool. The mod itself must create or obtain the session and bring every matched player into it. How: see
 `FUTURE_CONSIDERATIONS.md`, "Seamless entry flow". Not designed yet; the 2026-10-12 prototype (overlay buttons, Steam invite, host
 starts) is only the online feasibility test.
 
