@@ -11,6 +11,7 @@ PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). Produc
 | [TASKS.md](TASKS.md) | Task board: the unit of work for agents. **Start here.** |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Stack decision, verified facts, hypotheses, RE findings |
 | [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we have found**, what it holds, how it behaves, and how it was confirmed |
+| [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, settings, logs, failure patterns |
 | [TESTING.md](TESTING.md) | Test environment, test cases, results log |
 | [FUTURE_CONSIDERATIONS.md](FUTURE_CONSIDERATIONS.md) | Deferred ideas. Never implement from here without a task. |
 

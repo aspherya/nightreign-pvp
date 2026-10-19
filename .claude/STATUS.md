@@ -8,6 +8,7 @@ traps we already fell into. Details live in the other docs; this file points to 
 | `re/MEMORY_MAP.md` | Every memory location found, with behaviour and proof |
 | `re/PROJECT_SCOPE.md` | Canonical product intent and scope boundaries |
 | `PROJECT_PLAN.md` | Detailed feature feasibility/milestone plan; §11 records downed-player design decisions |
+| `MATCHMAKING.md` | How the Steam matchmaking works, its settings, and how to read its logs |
 | `TESTING.md` §3 | The result of every test session, newest last |
 | `TASKS.md` | Task cards and their state |
 | `TECHNICAL_NOTES.md` | Stack, Seamless Co-op facts, verified engine facts |
