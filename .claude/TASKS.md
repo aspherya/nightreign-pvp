@@ -788,6 +788,14 @@ rpvp.toml` also has `ui_text_trace = true`,
    1. Load into the Roundtable. 2. Table → expedition menu. 3. Number of Players = **Up to 6 players**; press **Commence Expedition**;
    wait 10 s; note in one line what the screen shows. 4. Cancel it the game's way (whatever it offers; "Cancel matchmaking?" → yes);
    note what you pressed. 5. Number of Players = **Solo Mission**; Commence; let it load. 6. Quit. Tell Claude the two notes from 3 and 4.
+   **Result (Leonardo solo, 2026-10-19 22:26–22:30 UTC; log `experiments/UI-0/ui1-step0-nrpvp.log`):** "Up to 6 players" → Commence: the
+   game looks up CL_Dialogues 506023 "Cannot start multiplayer session in offline mode…", CL_MenuText 336900 "Matchmaking...", 336905
+   "<remaining> / <total>", CL_Dialogues 506020 "Matchmaking failed": **the stock menu's matchmaking is the game's online one and fails under
+   me3 (offline)**; no Steam lobby event, so SC does not host from it either `[VERIFIED]`. **No event flag changed** at 50 ms sampling from
+   opening the menu through start, failure and cancel `[VERIFIED]`. Solo Commence: the departure cutscene flags 2307/2330 go ON (named
+   "hero animations during CS"). ⇒ The boss menu's start/cancel cannot drive our queue; the table list has to start (and cancel) matchmaking.
+   Flow to be confirmed with Leonardo (proposed: table → Solo/Duo/Trio starts the search; table again → "Cancel matchmaking"; the host picks
+   the Nightlord in the boss menu once everyone is in, as today).
 1. **Game-data sources in git, built by a script.** New `gamedata/` folder with only our own material: the edit of `t600001000` as a
    patch against the esdtool decompile, and our FMG entries as a small table (`id`, English text). New `scripts/build-gamedata.ps1`: from
    `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into `dist\gamedata\script\talk\`, add our
