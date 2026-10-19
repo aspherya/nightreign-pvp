@@ -11,6 +11,11 @@
 //! - **Text**: entry 506040's string-offset slot in the CL_Dialogues FMG points at one of our UTF-16 texts (`fmg + offset`, see
 //!   `c1proto.rs`). The handler picks the text by storing `text - fmg` into that slot just before the dialog is built. 506040 ("not
 //!   fully installed") is not otherwise shown on an installed game.
+//! - **Labels** (hardware execute breakpoint, `crate::hwbp` slot 3) at `exe+0x7AC800`, the CL_MenuText getter (`edx` = text id,
+//!   category 200 with its `_dlc01` twin 504 asked first). Seamless Co-op's `LookupEntry` hook replaces 130409 / 130417 / 130408 (One /
+//!   Two / Three players) with "Solo Mission" / "Up to 6 players"; the handler swaps those ids for ours (99100100..=99100102 "Solo" /
+//!   "Duo" / "Trio", CL_MenuText_dlc01 entries from the game-data package, `scripts/build-gamedata.ps1`) before the lookup runs, so
+//!   SC's hook never sees them. Armed only once our first id is found in the live CL_MenuText_dlc01 FMG (no package = SC's labels).
 //! - The handler never takes a lock: it records a request in an atomic; this module's thread hands it to the matchmaking worker
 //!   (`crate::mm::send`), the same path as the overlay's queue buttons.
 //!
@@ -26,6 +31,26 @@ use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EX
 use super::c1proto::{dialogues_fmg, offset_slot, AFTER_PROLOGUE_BYTES, NOTICE_BRANCH_BYTES, NOTICE_ID, RVA_AFTER_PROLOGUE, RVA_NOTICE_BRANCH};
 use crate::mm::{PHASE_MATCHED, PHASE_SEARCHING};
 use crate::steam::lobtrace::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
+
+/// The CL_MenuText getter `getter(out, id)` (game 1.03.3): `mov [rsp+8],rcx; push rbx; sub rsp,30h`.
+pub(crate) const RVA_MENUTEXT_GETTER: usize = 0x7A_C800;
+pub(crate) const MENUTEXT_GETTER_BYTES: [u8; 10] = [0x48, 0x89, 0x4C, 0x24, 0x08, 0x53, 0x48, 0x83, 0xEC, 0x30];
+/// CL_MenuText_dlc01 (FMG file id in menu_dlc01.msgbnd).
+const CAT_MENUTEXT_DLC: u32 = 504;
+/// Our label ids (gamedata/fmg-entries.json).
+pub(crate) const LABEL_SOLO: u32 = 99_100_100;
+pub(crate) const LABEL_DUO: u32 = 99_100_101;
+pub(crate) const LABEL_TRIO: u32 = 99_100_102;
+
+/// The id the Number of Players list should ask for instead of the game's (pure; unit tested).
+pub(crate) fn label_swap(id: u32) -> Option<u32> {
+    match id {
+        130_409 => Some(LABEL_SOLO),
+        130_417 => Some(LABEL_DUO),
+        130_408 => Some(LABEL_TRIO),
+        _ => None,
+    }
+}
 
 const MENU_SETTINGS_OFF: usize = 0xFC8;
 const PLAYERS_BYTE: usize = 0x49;
@@ -96,6 +121,8 @@ unsafe impl Sync for Texts {}
 static TEXTS: Texts = Texts(UnsafeCell::new([[0; TEXT_UNITS]; N_TEXTS]));
 
 static ADDR: AtomicUsize = AtomicUsize::new(0);
+static LABEL_ADDR: AtomicUsize = AtomicUsize::new(0);
+static LABEL_SWAPS: AtomicU32 = AtomicU32::new(0);
 static TARGET: AtomicUsize = AtomicUsize::new(0);
 /// The CL_Dialogues FMG and the address of entry 506040's offset slot (0 = not resolved: Commence is left alone).
 static FMG: AtomicUsize = AtomicUsize::new(0);
@@ -133,6 +160,14 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rip = (*ctx).Rip as usize;
+        if rip != 0 && rip == LABEL_ADDR.load(Ordering::Relaxed) {
+            if let Some(ours) = label_swap((*ctx).Rdx as u32) {
+                (*ctx).Rdx = u64::from(ours);
+                LABEL_SWAPS.fetch_add(1, Ordering::Relaxed);
+            }
+            (*ctx).EFlags |= EFLAGS_RF;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
         if rip == 0 || rip != ADDR.load(Ordering::Relaxed) {
             return EXCEPTION_CONTINUE_SEARCH;
         }
@@ -199,12 +234,19 @@ fn run(base: usize) {
     }
     crate::hwbp::set(crate::hwbp::SLOT_COMMENCE, base + RVA_AFTER_PROLOGUE);
     tracing::info!("br_menu: Commence handler armed (hwbp slot 2); waiting for the CL_Dialogues FMG");
+    let labels_ok = check(RVA_MENUTEXT_GETTER, &MENUTEXT_GETTER_BYTES);
+    if !labels_ok {
+        tracing::warn!("br_menu: menu text getter bytes differ from game 1.03.3; Number of Players labels stay as they are");
+    }
+    let mut labels_armed = false;
+    let mut seen_swaps = 0u32;
     let mut next_resolve = Instant::now();
     let mut seen = 0u32;
     loop {
         std::thread::sleep(Duration::from_millis(100));
         let now = Instant::now();
-        if now >= next_resolve {
+        let resolve_tick = now >= next_resolve;
+        if resolve_tick {
             next_resolve = now + Duration::from_secs(2);
             match dialogues_fmg(base).and_then(|f| offset_slot(f, NOTICE_ID).map(|(s, _)| (f, s))) {
                 Some((f, s)) if f != FMG.load(Ordering::Relaxed) => {
@@ -222,6 +264,22 @@ fn run(base: usize) {
                     }
                 }
             }
+        }
+        // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
+        if labels_ok && !labels_armed && resolve_tick {
+            if let Some(f) = super::c1proto::fmg_for(base, CAT_MENUTEXT_DLC) {
+                if offset_slot(f, LABEL_SOLO).is_some() && offset_slot(f, LABEL_TRIO).is_some() {
+                    LABEL_ADDR.store(base + RVA_MENUTEXT_GETTER, Ordering::Relaxed);
+                    crate::hwbp::set(crate::hwbp::SLOT_LABELS, base + RVA_MENUTEXT_GETTER);
+                    labels_armed = true;
+                    tracing::info!("br_menu: our labels found in CL_MenuText_dlc01 0x{f:X}: Number of Players shows Solo / Duo / Trio (hwbp slot 3)");
+                }
+            }
+        }
+        let sw = LABEL_SWAPS.load(Ordering::Relaxed);
+        if sw != seen_swaps && (seen_swaps == 0 || sw / 100 != seen_swaps / 100) {
+            tracing::info!("br_menu: Number of Players labels swapped {sw} time(s) so far");
+            seen_swaps = sw;
         }
         match REQUEST.swap(REQ_NONE, Ordering::AcqRel) {
             REQ_QUEUE_SOLO => {
@@ -276,6 +334,15 @@ mod tests {
     #[test]
     fn matchmaking_off_says_so() {
         assert_eq!(decide(PLAYERS_ONE, PHASE_IDLE, false), Decision::Dialog { text: T_OFF, request: REQ_NONE });
+    }
+
+    #[test]
+    fn labels_swap_only_the_three_number_of_players_ids() {
+        assert_eq!(label_swap(130_409), Some(LABEL_SOLO));
+        assert_eq!(label_swap(130_417), Some(LABEL_DUO));
+        assert_eq!(label_swap(130_408), Some(LABEL_TRIO));
+        assert_eq!(label_swap(130_200), None);
+        assert_eq!(label_swap(130_407), None);
     }
 
     #[test]

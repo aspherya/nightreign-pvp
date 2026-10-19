@@ -247,14 +247,19 @@ fn r32(a: usize) -> Option<u32> {
 
 /// The CL_Dialogues FMG (slot 0) from the repository table (`[[repo+8] + slot*8] + cat*8`, bounds at repo+0x10/+0x14).
 pub(crate) fn dialogues_fmg(base: usize) -> Option<usize> {
+    fmg_for(base, CAT_DIALOGUES)
+}
+
+/// The FMG of `category` (slot 0) from the repository table.
+pub(crate) fn fmg_for(base: usize, category: u32) -> Option<usize> {
     let repo = r64(base + RVA_MSGREPO).filter(|p| *p != 0)?;
     let table = r64(repo + 8)?;
     let cats = r32(repo + 0x14)?;
-    if CAT_DIALOGUES >= cats {
+    if category >= cats {
         return None;
     }
     let row = r64(table).filter(|p| *p != 0)?;
-    r64(row + CAT_DIALOGUES as usize * 8).filter(|p| *p != 0)
+    r64(row + category as usize * 8).filter(|p| *p != 0)
 }
 
 /// Address of the string-offset slot of `id` in `fmg`, and the FMG's group count (for the log).

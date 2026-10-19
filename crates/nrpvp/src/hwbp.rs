@@ -24,6 +24,8 @@ pub(crate) const SLOT_QUIET_FLAT: usize = 0;
 pub(crate) const SLOT_QUIET_VTABLE: usize = 1;
 /// Slot of the UI-1 Commence handler.
 pub(crate) const SLOT_COMMENCE: usize = 2;
+/// Slot of the UI-1 Number of Players label swap.
+pub(crate) const SLOT_LABELS: usize = 3;
 
 const TICK: Duration = Duration::from_millis(100);
 const APPLY_EVERY: Duration = Duration::from_secs(2);

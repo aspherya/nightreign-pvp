@@ -1,0 +1,8 @@
+{
+  "_comment": "Our own text entries, added to every language's msg/<lang>/menu_dlc01.msgbnd.dcx by scripts/build-gamedata.ps1. Keys are FMG file names inside that bundle; ids are in our range 99100000..99199999 (UI-0/UI-1). English in every language for now.",
+  "CL_MenuText_dlc01": {
+    "99100100": "Solo",
+    "99100101": "Duo",
+    "99100102": "Trio"
+  }
+}

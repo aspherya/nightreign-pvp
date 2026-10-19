@@ -865,8 +865,20 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
    threads, 0 failed. Commence with two players (byte 1) and three players (byte 0) → "coming soon"; one player (byte 2) → queue Solo
    sent → `solo 1/2 searching` (dev `mm_match_players = 2`); Commence again → stop sent → `Queue: idle`; again start, again stop. No
    crash during play. Still open: the match-ready Commence (FS), labels, player build.
-4..n. Labels Solo/Duo/Trio in Number of Players (SC overrides 130409/130417/130408; plan: swap the ids the list asks for, needs our FMG
-   entries in the gamedata package), Duo/Trio queues (MM-6), player build switch-on, then UI-2 messages.
+4. **Labels Solo / Duo / Trio (built 2026-10-19):**
+   - Game-data package: `gamedata/fmg-entries.json` (our texts, in git) + `scripts/build-gamedata.ps1` → `dist\gamedata\msg\<lang>\
+     menu_dlc01.msgbnd.dcx` for all 15 languages (English text everywhere for now), only the listed FMGs rewritten (refuses FMGs with
+     whitespace-only texts), pinned to the 1.03.3 engus hash. Labels live in **CL_MenuText_dlc01 (504)**, ids 99100100 Solo / 99100101 Duo
+     / 99100102 Trio. engus check: only CL_MenuText_dlc01.fmg differs from vanilla, the three entries present `[VERIFIED]`.
+   - DLL (`menuflow.rs`, hwbp slot 3): breakpoint at the CL_MenuText getter `exe+0x7AC800` (`edx` = id; bytes checked) swaps
+     130409→99100100, 130417→99100101, 130408→99100102 before the lookup, so SC's `LookupEntry` hook never sees those ids. Armed only once
+     99100100 and 99100102 are found in the live CL_MenuText_dlc01 FMG (no package → SC's labels stay). All four hardware slots are now
+     used (0/1 quiet invite, 2 Commence, 3 labels).
+   - Profile `profiles/nrpvp-br.me3.toml` (SC + DLL + `[[packages]] dist/gamedata`), `scripts\launch.ps1 -Profile br`. 443 tests, clippy clean.
+   **Runbook (Leonardo, solo, ~3 min):** `.\scripts\launch.ps1 -Profile br`. 1. Table → Matchmaking Settings → Number of Players: the
+   three options should read **Solo / Duo / Trio** (also check how the chosen value shows on the settings page). 2. Pick Solo → back →
+   Commence: the searching box; Commence again: stopped. 3. Quit; tell Claude what the list showed.
+5..n. Duo/Trio queues (MM-6), player build switch-on (launcher/zip carry the package and the profile entry), then UI-2 messages.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
