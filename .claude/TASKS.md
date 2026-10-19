@@ -842,7 +842,27 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
      per day), not caused by UI-1. Separate issue.
    Options put to Leonardo: (1) box "Searching… you will be told" + live status as on-screen game messages (UI-2) + Commence again = "Stop
    searching?"; (2) close/reopen the box on each change; (3) the real matchmaking screen. Recommended 1 (2/3 later).
-3..n. Real implementation (queue start, cancel, hand-off at match found, labels Solo/Duo/Trio) after Leonardo's choice.
+   **Decision (Leonardo, 2026-10-19): option 1**, then on-screen messages (UI-2), then MM-3g. Options 2/3 are later polish.
+3. **Option 1 built (2026-10-19), dev `br_menu = true` (needs `mm_queue`; player build forces it off until tested):**
+   - `game/menuflow.rs`: hardware breakpoint at `0x9EEBFB` (as the prototype). Number of Players byte: **2 = one player, 1 = two, 0 =
+     three** `[VERIFIED: 0x9EF3F0 picks 130304 "Commence Solo Expedition" for 2 and 130305 "Two-Player" for 1]`. Pure `decide()`:
+     idle + one player → queue Solo, dialog "searching… press Commence again to stop"; idle + two/three → dialog "Duo and Trio coming
+     soon"; searching → leave, dialog "stopped searching"; match ready → Commence runs unchanged (one player is switched to two first, so
+     the host's start is a multiplayer one `[HYPOTHESIS, FS check]`); matchmaking off → dialog saying so. The dialog text is picked by
+     pointing entry 506040's FMG offset slot at one of four DLL-owned UTF-16 texts just before the game builds the dialog. The handler
+     records a request in an atomic; the module thread calls `mm::send(Queue(Solo) / Leave)` (the overlay's path).
+   - `hwbp.rs`: one owner of DR0..DR3 for every thread; MM-3f quiet invite now claims slots 0/1 through it, `br_menu` slot 2, so both run
+     together. The all-register dev tracers (`mm_lobby_trace`, `ui_text_trace`, `ui_menu_trace`, `ui_c1_proto`) switch `br_menu` off.
+   - `mm`: lock-free queue phase (`mm::phase()`: idle / searching / matched), written by the worker every tick.
+   - 442 tests pass (decide table, config rules, hwbp mask), `clippy --all-targets` clean; `dist\nrpvp.dll` built, `dist\nrpvp.toml`
+     has `br_menu = true`, `ui_c1_proto = false`.
+   **Runbook (Leonardo, solo, ~4 min, `.\scripts\launch.ps1`):** 1. Roundtable → table → Matchmaking Settings → Number of Players =
+   **Solo Mission** → back → **Commence**: dialog "Battle Royale: searching for players (Solo)…"; OK; the Insert panel's status line
+   should say the queue is searching. 2. **Commence again**: "stopped searching"; the panel goes back to idle. 3. Number of Players =
+   **Up to 6 players** → Commence: "Duo and Trio … coming soon". 4. Quit. Tell Claude what each step showed.
+   Not solo-testable: the match-ready Commence (host starts the expedition with the others): next FS.
+4..n. Labels Solo/Duo/Trio in Number of Players (SC overrides 130409/130417/130408; plan: swap the ids the list asks for, needs our FMG
+   entries in the gamedata package), Duo/Trio queues (MM-6), player build switch-on, then UI-2 messages.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)

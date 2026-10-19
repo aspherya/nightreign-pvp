@@ -187,6 +187,12 @@ ui_menu_trace = false
 # mm_quiet_invite and mm_lobby_trace off).
 ui_c1_proto = false
 
+# UI-1 option 1 (dev mode + mm_queue for now; the player build forces it off until it is tested): Battle Royale from the stock
+# expedition menu. Commence Expedition with Number of Players = one player starts the Solo queue and the game's own dialog says
+# so; Commence again stops searching; once the match is ready Commence starts the expedition as normal. Duo/Trio say \"coming
+# soon\". Hardware breakpoint (shared slot 2, works next to mm_quiet_invite), no code patched. Logs \"br_menu:\".
+br_menu = false
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -302,6 +308,9 @@ pub(crate) struct Config {
     pub ui_menu_trace: bool,
     /// UI-1 C1 prototype (developer mode only; forced off in the player build; takes the debug registers).
     pub ui_c1_proto: bool,
+    /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; forced off in the player build
+    /// for now and while a dev tool that owns all debug registers is on).
+    pub br_menu: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -372,6 +381,7 @@ impl Default for Config {
             ui_flag_watch: false,
             ui_menu_trace: false,
             ui_c1_proto: false,
+            br_menu: false,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
@@ -593,6 +603,7 @@ fn enforce_player_mode(
     cfg.ui_flag_watch = false;
     cfg.ui_menu_trace = false;
     cfg.ui_c1_proto = false;
+    cfg.br_menu = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.
@@ -744,6 +755,16 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_lobby_trace {
             warnings.push("mm_quiet_invite and mm_lobby_trace both use the hardware breakpoints; mm_quiet_invite is off while mm_lobby_trace = true".to_string());
             cfg.mm_quiet_invite = false;
+        }
+        // UI-1 option 1: br_menu shares the debug registers through crate::hwbp (with mm_quiet_invite); the dev tools that take all
+        // four registers win, and br_menu needs the queue worker.
+        if cfg.dev_mode && cfg.br_menu && (cfg.ui_c1_proto || cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_lobby_trace) {
+            warnings.push("br_menu is off while ui_c1_proto, ui_menu_trace, ui_text_trace or mm_lobby_trace is on (they own all debug registers)".to_string());
+            cfg.br_menu = false;
+        }
+        if cfg.dev_mode && cfg.br_menu && !cfg.mm_queue {
+            warnings.push("br_menu = true needs mm_queue = true; Commence is left alone".to_string());
+            cfg.br_menu = false;
         }
         // UI-1 C1 prototype: owns DR0 on every thread; every other debug-register user is switched off.
         if cfg.dev_mode && cfg.ui_c1_proto && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
@@ -1337,36 +1358,39 @@ hotkey_mm_duo = \"banana\"
         let (cfg, w) = parse_dev("ui_text_trace = true
 ").expect("ok");
         assert!(cfg.ui_text_trace && w.is_empty(), "{w:?}");
-        let (cfg, w) = parse_dev("mm_queue = true
-mm_join = true
-mm_quiet_invite = true
-mm_lobby_trace = true
-ui_text_trace = true
-").expect("ok");
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\nui_text_trace = true\n")
+                .expect("ok");
         assert!(cfg.ui_text_trace && !cfg.mm_quiet_invite && !cfg.mm_lobby_trace, "{w:?}");
-        let (cfg, _) = parse("ui_text_trace = true
-").expect("ok");
+        let (cfg, _) = parse("ui_text_trace = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.ui_text_trace);
-        let (cfg, w) = parse_dev("ui_flag_watch = true
-").expect("ok");
+        let (cfg, w) = parse_dev("ui_flag_watch = true\n").expect("ok");
         assert!(cfg.ui_flag_watch && w.is_empty(), "{w:?}");
-        let (cfg, _) = parse("ui_flag_watch = true
-").expect("ok");
+        let (cfg, _) = parse("ui_flag_watch = true\n").expect("ok");
         assert!(!cfg.ui_flag_watch);
-        let (cfg, w) = parse_dev("ui_text_trace = true
-ui_menu_trace = true
-").expect("ok");
+        let (cfg, w) = parse_dev("ui_text_trace = true\nui_menu_trace = true\n").expect("ok");
         assert!(cfg.ui_menu_trace && !cfg.ui_text_trace && w.len() == 1, "{w:?}");
-        let (cfg, _) = parse("ui_menu_trace = true
-").expect("ok");
+        let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
-        let (cfg, w) = parse_dev("ui_menu_trace = true
-ui_c1_proto = true
-").expect("ok");
+        let (cfg, w) = parse_dev("ui_menu_trace = true\nui_c1_proto = true\n").expect("ok");
         assert!(cfg.ui_c1_proto && !cfg.ui_menu_trace && w.len() == 1, "{w:?}");
-        let (cfg, _) = parse("ui_c1_proto = true
-").expect("ok");
+        let (cfg, _) = parse("ui_c1_proto = true\n").expect("ok");
         assert!(!cfg.ui_c1_proto);
+    }
+
+    #[test]
+    fn br_menu_needs_the_queue_and_yields_to_the_dev_tracers() {
+        assert!(!Config::default().br_menu);
+        let (cfg, w) = parse_dev("mm_queue = true\nbr_menu = true\n").expect("ok");
+        assert!(cfg.br_menu && w.is_empty(), "{w:?}");
+        let (cfg, w) = parse_dev("br_menu = true\n").expect("ok");
+        assert!(!cfg.br_menu && w.len() == 1, "{w:?}");
+        let (cfg, _) = parse_dev("mm_queue = true\nbr_menu = true\nui_menu_trace = true\n").expect("ok");
+        assert!(!cfg.br_menu);
+        let (cfg, _) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nbr_menu = true\n").expect("ok");
+        assert!(cfg.br_menu && cfg.mm_quiet_invite);
+        let (cfg, _) = parse("br_menu = true\n").expect("ok");
+        assert!(!cfg.br_menu);
     }
 
     #[test]

@@ -19,21 +19,17 @@
 //! Armed only while [`set_wanted`]`(true)`; otherwise every debug register is cleared on every thread. `mm_quiet_invite` and
 //! `mm_lobby_trace` both own the debug registers of every thread, so the config turns the former off when the latter is on.
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
-use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use super::lobtrace::{apply_all, EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
+use super::lobtrace::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
 use super::Flat;
 
 const FLAT_NAME: &str = "SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog\0";
 const TICK: Duration = Duration::from_millis(100);
-/// While armed, new threads are armed at least this often.
-const APPLY_EVERY: Duration = Duration::from_secs(2);
 const WAIT_TOTAL: Duration = Duration::from_secs(300);
 const WAIT_STEP: Duration = Duration::from_millis(500);
 /// The window stays suppressed this long after the SC lobby appeared: the game opens it about 300 ms after `LobbyCreated_t`
@@ -253,39 +249,28 @@ fn run() {
         start.elapsed().as_secs_f32(),
         EXE_SIZE.load(Ordering::Relaxed)
     );
-    // SAFETY: GetCurrentThreadId has no preconditions.
-    let own = unsafe { GetCurrentThreadId() };
-    let pid = std::process::id();
-    let mut applied: HashMap<u32, u8> = HashMap::new();
-    let mut scratch: Vec<u32> = Vec::with_capacity(2048);
+    // UI-1: the debug registers are owned by `crate::hwbp` (shared with the Commence handler); this thread only claims and frees
+    // the two quiet-invite slots.
     let mut is_armed = false;
-    let mut next_apply = Instant::now();
     let (mut seen_sup, mut seen_pass) = (0u32, 0u32);
     loop {
         std::thread::sleep(TICK);
         let want = WANT.load(Ordering::Relaxed);
-        let now = Instant::now();
-        if want && (!is_armed || now >= next_apply) {
+        if want && !is_armed {
             ARMED.store(true, Ordering::Relaxed);
-            let (written, failed, first) = apply_all(pid, own, &addrs, mask, false, &mut applied, &mut scratch);
-            if !is_armed || written > 0 || failed > 0 {
-                tracing::info!(
-                    "mm_quiet_invite: ARMED ({written} thread(s) written, {} armed in total, {failed} failed{})",
-                    applied.len(),
-                    first.map_or(String::new(), |(t, e)| format!("; first: thread {t}: {e}"))
-                );
+            for (i, slot) in [crate::hwbp::SLOT_QUIET_FLAT, crate::hwbp::SLOT_QUIET_VTABLE].into_iter().enumerate() {
+                if mask & (1 << i) != 0 {
+                    crate::hwbp::set(slot, addrs[i] as usize);
+                }
             }
             is_armed = true;
-            next_apply = now + APPLY_EVERY;
+            tracing::info!("mm_quiet_invite: ARMED (hwbp slots 0/1; every thread within ~100 ms)");
         } else if !want && is_armed {
-            let (written, failed, first) = apply_all(pid, own, &addrs, 0, false, &mut applied, &mut scratch);
-            applied.clear();
+            crate::hwbp::clear(crate::hwbp::SLOT_QUIET_FLAT);
+            crate::hwbp::clear(crate::hwbp::SLOT_QUIET_VTABLE);
             ARMED.store(false, Ordering::Relaxed);
             is_armed = false;
-            tracing::info!(
-                "mm_quiet_invite: disarmed (debug registers cleared on {written} thread(s), {failed} failed{})",
-                first.map_or(String::new(), |(t, e)| format!("; first: thread {t}: {e}"))
-            );
+            tracing::info!("mm_quiet_invite: disarmed (hwbp slots 0/1 freed)");
         }
         // Log from the counters (never inside the handler).
         let (sup, pass) = (SUPPRESSED.load(Ordering::Relaxed), PASSED.load(Ordering::Relaxed));

@@ -215,6 +215,15 @@ impl Machine {
         matches!(self.state, State::Idle)
     }
 
+    /// UI-1: the queue phase for lock-free readers ([`super::PHASE_IDLE`], [`super::PHASE_SEARCHING`], [`super::PHASE_MATCHED`]).
+    pub(crate) fn phase_code(&self) -> u8 {
+        match &self.state {
+            State::Idle => super::PHASE_IDLE,
+            State::Searching { .. } | State::Creating { .. } | State::Joining { .. } | State::InQueue(_) => super::PHASE_SEARCHING,
+            State::MatchReady(_) => super::PHASE_MATCHED,
+        }
+    }
+
     /// Team size to force for the match: only while MATCH READY.
     pub(crate) fn team_override(&self) -> Option<usize> {
         match &self.state {

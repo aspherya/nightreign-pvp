@@ -398,6 +398,7 @@ impl Worker {
             super::set_team_override(ov);
             self.last_override = ov;
         }
+        super::set_phase(self.machine.phase_code());
         let mut st = self.machine.status();
         if let Some(c) = &self.sc_create {
             st.sc_create_ui = true;

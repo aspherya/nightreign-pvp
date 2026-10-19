@@ -110,6 +110,27 @@ static LOCAL_TEAM: AtomicU8 = AtomicU8::new(0);
 static LOCAL_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// MM-3f: how many players the local ChrSet held at the game loop's last read (0 = never read).
 static LOCAL_PLAYERS: AtomicUsize = AtomicUsize::new(0);
+/// UI-1: the queue phase, written by the worker every tick, read lock-free (also from the Commence exception handler).
+static PHASE: AtomicU8 = AtomicU8::new(PHASE_IDLE);
+pub(crate) const PHASE_IDLE: u8 = 0;
+/// Searching, creating, joining or in a queue lobby.
+pub(crate) const PHASE_SEARCHING: u8 = 1;
+/// MATCH READY (the match exists; the host starts the expedition).
+pub(crate) const PHASE_MATCHED: u8 = 2;
+
+/// Worker: publish the queue phase.
+pub(crate) fn set_phase(p: u8) {
+    PHASE.store(p, Ordering::Relaxed);
+}
+
+/// The queue phase ([`PHASE_IDLE`] when the feature is off).
+pub(crate) fn phase() -> u8 {
+    if enabled() {
+        PHASE.load(Ordering::Relaxed)
+    } else {
+        PHASE_IDLE
+    }
+}
 
 fn hub() -> &'static Hub {
     HUB.get_or_init(|| Hub { cmds: Mutex::new(VecDeque::new()), status: Mutex::new(Status::default()) })

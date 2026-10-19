@@ -10,6 +10,7 @@
 mod config;
 mod game;
 mod hotkey;
+mod hwbp;
 mod logging;
 mod logring;
 mod mark;
