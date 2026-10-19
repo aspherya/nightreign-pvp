@@ -861,6 +861,10 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
    should say the queue is searching. 2. **Commence again**: "stopped searching"; the panel goes back to idle. 3. Number of Players =
    **Up to 6 players** → Commence: "Duo and Trio … coming soon". 4. Quit. Tell Claude what each step showed.
    Not solo-testable: the match-ready Commence (host starts the expedition with the others): next FS.
+   **Result (Leonardo solo, 2026-10-19 23:47–23:49 UTC, log `experiments/UI-0/ui1-option1-nrpvp.log`): PASS.** hwbp armed slot 2 on 47
+   threads, 0 failed. Commence with two players (byte 1) and three players (byte 0) → "coming soon"; one player (byte 2) → queue Solo
+   sent → `solo 1/2 searching` (dev `mm_match_players = 2`); Commence again → stop sent → `Queue: idle`; again start, again stop. No
+   crash during play. Still open: the match-ready Commence (FS), labels, player build.
 4..n. Labels Solo/Duo/Trio in Number of Players (SC overrides 130409/130417/130408; plan: swap the ids the list asks for, needs our FMG
    entries in the gamedata package), Duo/Trio queues (MM-6), player build switch-on, then UI-2 messages.
 
