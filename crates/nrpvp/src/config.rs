@@ -57,6 +57,11 @@ pub(crate) const DEFAULT_HOTKEY_MM_SQUAD: &str = "F3";
 pub(crate) const DEFAULT_HOTKEY_MM_LEAVE: &str = "F5";
 pub(crate) const DEFAULT_MM_MATCH_PLAYERS: u64 = 2;
 const MM_MATCH_PLAYERS_RANGE: (u64, u64) = (2, 6);
+/// MM-4: queue lobby size, the smallest match, and the wait for more players once the lobby has a 2nd member.
+pub(crate) const DEFAULT_MM_MAX_PLAYERS: u64 = 6;
+pub(crate) const DEFAULT_MM_MIN_PLAYERS: u64 = 2;
+pub(crate) const DEFAULT_MM_FILL_WAIT_S: u64 = 90;
+const MM_FILL_WAIT_RANGE: (u64, u64) = (5, 600);
 
 /// Sanity bounds so a typo cannot spin a thread or silence the watcher.
 const PERSIST_MS_RANGE: (u64, u64) = (10, 5000);
@@ -122,7 +127,18 @@ mm_probe = false
 # mm_match_players = players per match (2..=6); a team size from the queue mode (solo 1 / duo 2 / squad 3) overrides team_size
 # for that match only. Log lines start with \"mm_queue:\".
 mm_queue = false
-mm_match_players = 2
+# mm_match_players = 2
+
+# MM-4 Solo Battle Royale matchmaking, the player setting (player build only; developer mode uses the mm_* switches). true (default)
+# = the Roundtable panel (opened with the overlay toggle key) has a \"Solo Battle Royale\" button: it finds other players and gets them
+# into the host's Seamless Co-op lobby; the host starts the expedition. false = no matchmaking at all. Needs Seamless Co-op.
+matchmaking = true
+# MM-4 lobby rules (queue lobby size 2..=6; the match starts when it is full, or mm_fill_wait_s seconds (5..=600) after the lobby got
+# its 2nd member if it holds at least mm_min_players). Everybody who should meet needs the same mm_max_players. Setting
+# mm_match_players (the older switch above) makes min = max = that number.
+mm_max_players = 6
+mm_min_players = 2
+mm_fill_wait_s = 90
 
 # MM-3 (dev mode only; needs mm_queue = true; the player build forces it off): after MATCH READY, get every roster member into the host's
 # Seamless Co-op lobby. false = exactly MM-2. mm_join_auto = what happens by itself: \"invite\" (the host's mod invites every absent
@@ -238,6 +254,14 @@ pub(crate) struct Config {
     pub mm_queue: bool,
     /// MM-2: players per match, clamped to 2..=6 in `parse`.
     pub mm_match_players: u64,
+    /// MM-4: queue lobby size (2..=6); the match starts when the lobby is full. `mm_match_players` in the file overrides min and max.
+    pub mm_max_players: u64,
+    /// MM-4: the smallest match (2..=`mm_max_players`).
+    pub mm_min_players: u64,
+    /// MM-4: seconds after the lobby got its 2nd member before it may start with `mm_min_players` or more (5..=600).
+    pub mm_fill_wait_s: u64,
+    /// MM-4: player setting. true (default) = the player build runs Solo matchmaking (queue, join step, quiet invite). No effect in developer mode.
+    pub matchmaking: bool,
     /// MM-3: join the host's Seamless Co-op lobby after MATCH READY (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_join: bool,
     /// MM-3: `"invite"`, `"invite+link"`, `"link"` or `"none"` (normalised in `parse`; read it through [`Config::join_auto`]).
@@ -305,6 +329,10 @@ impl Default for Config {
             mm_probe: false,
             mm_queue: false,
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
+            mm_max_players: DEFAULT_MM_MAX_PLAYERS,
+            mm_min_players: DEFAULT_MM_MIN_PLAYERS,
+            mm_fill_wait_s: DEFAULT_MM_FILL_WAIT_S,
+            matchmaking: true,
             mm_join: false,
             mm_host_create: false,
             mm_quiet_invite: false,
@@ -427,9 +455,13 @@ impl Config {
     /// The resolved key for `a`, or `None` if unbound (or, only possible on an unvalidated `Config`, if
     /// the name is unknown).
     ///
-    /// T-030: always `None` outside dev mode, so no key is ever bound in the player build.
+    /// T-030: always `None` outside dev mode, so no key is ever bound in the player build. MM-4: the one exception is the toggle of
+    /// the matchmaking panel, while matchmaking is on.
     pub(crate) fn binding(&self, a: Action) -> Option<KeyBind> {
         if !self.dev_mode {
+            if a == Action::ToggleOverlay && self.mm_queue {
+                return hotkey::parse_key(self.key_text(a));
+            }
             return None;
         }
         // MM-2: the queue keys exist only while the queue feature is on, so nothing new is bound otherwise.
@@ -450,7 +482,10 @@ impl Config {
     /// `write=F5 restore=F6 ...` for the startup log; unbound actions show `-`.
     pub(crate) fn describe_bindings(&self) -> String {
         if !self.dev_mode {
-            return "none (player mode)".to_string();
+            return match self.binding(Action::ToggleOverlay) {
+                Some(k) => format!("overlay-toggle={} (matchmaking panel; player mode)", k.name),
+                None => "none (player mode)".to_string(),
+            };
         }
         let one = |label: &str, a: Action| {
             format!(
@@ -507,16 +542,16 @@ fn enforce_player_mode(
     cfg.pvpve = true;
     cfg.pvpve_scheme = SCHEME_RIVALS.to_string();
     cfg.probes = false;
-    // MM-1: the Steam probe is a developer tool.
+    // MM-4: the player setting `matchmaking` (default true) turns on exactly what Solo matchmaking needs: the queue, the join step
+    // with the host's invite plus the joiner's link, and the quiet invite (S9 5g). `matchmaking = false` leaves all of it off.
+    cfg.mm_queue = cfg.matchmaking;
+    cfg.mm_join = cfg.matchmaking;
+    cfg.mm_quiet_invite = cfg.matchmaking;
+    cfg.mm_join_auto = "invite+link".to_string();
+    // MM-1: the Steam probe's logging is a developer tool (the callbacks it registers stay when the queue needs them).
     cfg.mm_probe = false;
-    // MM-2: the queue is a developer tool.
-    cfg.mm_queue = false;
-    // MM-3: so is the join step.
-    cfg.mm_join = false;
-    // MM-3e: and the host-side lobby creation.
+    // MM-3e: the host-side lobby creation failed in FS-MM2 and is a developer tool.
     cfg.mm_host_create = false;
-    // MM-3f: and the invite-window suppression.
-    cfg.mm_quiet_invite = false;
     // MM-3c: and the lobby tracer.
     cfg.mm_lobby_trace = false;
     // MM-3d: and the SC-adoption test button.
@@ -588,11 +623,32 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
     );
     clamp("team_size", &mut cfg.team_size, TEAM_SIZE_RANGE);
     clamp("mm_match_players", &mut cfg.mm_match_players, MM_MATCH_PLAYERS_RANGE);
+    // MM-4: lobby size, smallest match, fill wait (the older `mm_match_players`, when the file sets it, is applied below).
+    clamp("mm_max_players", &mut cfg.mm_max_players, MM_MATCH_PLAYERS_RANGE);
+    clamp("mm_min_players", &mut cfg.mm_min_players, MM_MATCH_PLAYERS_RANGE);
+    clamp("mm_fill_wait_s", &mut cfg.mm_fill_wait_s, MM_FILL_WAIT_RANGE);
     clamp(
         "probe_interval_ms",
         &mut cfg.probe_interval_ms,
         PROBE_INTERVAL_MS_RANGE,
     );
+    // MM-4: `mm_match_players`, when the file sets it, fixes min = max (the mmtest zip keeps 2 so tests stay quick).
+    if let Ok(t) = toml::from_str::<toml::Table>(text) {
+        if t.contains_key("mm_match_players") {
+            if t.contains_key("mm_max_players") || t.contains_key("mm_min_players") {
+                warnings.push("mm_match_players is set, so mm_min_players and mm_max_players are ignored (both become mm_match_players)".to_string());
+            }
+            cfg.mm_max_players = cfg.mm_match_players;
+            cfg.mm_min_players = cfg.mm_match_players;
+        }
+    }
+    if cfg.mm_min_players > cfg.mm_max_players {
+        warnings.push(format!(
+            "mm_min_players = {} is above mm_max_players = {}; using {}",
+            cfg.mm_min_players, cfg.mm_max_players, cfg.mm_max_players
+        ));
+        cfg.mm_min_players = cfg.mm_max_players;
+    }
     if cfg.downed_rival_candidates.is_empty() {
         warnings.push("downed_rival_candidates is empty; using the defaults".to_string());
         cfg.downed_rival_candidates = DEFAULT_DOWNED_CANDIDATES.to_vec();
@@ -912,7 +968,7 @@ pub(crate) fn load(dir: &Path) -> Config {
     };
     tracing::info!("mode: {}", if cfg.dev_mode { "DEV" } else { "PLAYER" });
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} mm_queue={} mm_match_players={} mm_join={} mm_join_auto={} log_dir={:?} keys: {}",
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} log_dir={:?} keys: {}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
@@ -922,10 +978,15 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.pvpve_interval_ms,
         cfg.pvpve_scheme,
         cfg.team_size,
+        cfg.matchmaking,
         cfg.mm_queue,
         cfg.mm_match_players,
+        cfg.mm_max_players,
+        cfg.mm_min_players,
+        cfg.mm_fill_wait_s,
         cfg.mm_join,
         cfg.mm_join_auto,
+        cfg.mm_quiet_invite,
         cfg.log_dir,
         cfg.describe_bindings()
     );
@@ -939,8 +1000,13 @@ mod tests {
 
     /// What a player-mode parse of an empty file gives.
     fn player_default() -> Config {
+        // MM-4: matchmaking = true (the default) turns on the queue, the join step with invite+link and the quiet invite.
         Config {
             pvpve: true,
+            mm_queue: true,
+            mm_join: true,
+            mm_join_auto: "invite+link".to_string(),
+            mm_quiet_invite: true,
             ..Config::default()
         }
     }
@@ -1133,9 +1199,8 @@ hotkey_mm_duo = \"banana\"
         let (cfg, _) = parse_dev("mm_match_players = 1
 ").expect("ok");
         assert_eq!(cfg.mm_match_players, 2);
-        // Player build: forced off, no keys.
-        let (cfg, _) = parse("mm_queue = true
-").expect("ok");
+        // Player build: the queue follows `matchmaking`, not `mm_queue`.
+        let (cfg, _) = parse("mm_queue = true\nmatchmaking = false\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_queue && cfg.bindings().is_empty());
         assert!(parse_dev("mm_queue = \"yes\"").is_err());
     }
@@ -1156,9 +1221,11 @@ hotkey_mm_duo = \"banana\"
         // mm_join without mm_queue is switched off with a warning.
         let (cfg, w) = parse_dev("mm_join = true\n").expect("ok");
         assert!(!cfg.mm_join && w.len() == 1, "{w:?}");
-        // Player build: forced off.
-        let (cfg, _) = parse("mm_queue = true\nmm_join = true\n").expect("ok");
+        // Player build: follows `matchmaking`, and always joins with invite+link.
+        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmatchmaking = false\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_join);
+        let (cfg, _) = parse("mm_join_auto = \"none\"\n").expect("ok");
+        assert!(cfg.mm_join && cfg.join_auto() == JoinAuto::InviteLink);
         assert!(parse_dev("mm_join = \"yes\"").is_err());
     }
 
@@ -1188,7 +1255,7 @@ hotkey_mm_duo = \"banana\"
         let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\n").expect("ok");
         assert!(!cfg.mm_quiet_invite && cfg.mm_lobby_trace && w.len() == 1, "{w:?}");
         assert!(parse_dev("mm_quiet_invite = \"yes\"").is_err());
-        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\n").expect("ok");
+        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmatchmaking = false\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_quiet_invite);
     }
 
@@ -1382,17 +1449,58 @@ probes = true
 
     #[test]
     fn player_mode_has_no_key_bindings() {
-        let (cfg, _) = parse(
-            "hotkey_write = \"F5\"
-overlay_toggle_key = \"Insert\"
-",
-        )
-        .expect("ok");
+        // MM-4: with matchmaking = false no key at all (T-030).
+        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Insert\"\nmatchmaking = false\n").expect("ok");
         assert!(cfg.bindings().is_empty());
         for a in hotkey::ALL_ACTIONS {
             assert!(cfg.binding(a).is_none(), "{a:?}");
         }
         assert_eq!(cfg.describe_bindings(), "none (player mode)");
+        // MM-4: with matchmaking on, the one key is the panel toggle; every other key stays unbound.
+        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\n").expect("ok");
+        let bound: Vec<_> = cfg.bindings().into_iter().map(|(a, k)| (a, k.name)).collect();
+        assert_eq!(bound, vec![(Action::ToggleOverlay, "Home".to_string())]);
+        assert_eq!(cfg.describe_bindings(), "overlay-toggle=Home (matchmaking panel; player mode)");
+        // ... and an unbound toggle leaves no key.
+        let (cfg, _) = parse("overlay_toggle_key = \"\"\n").expect("ok");
+        assert!(cfg.bindings().is_empty());
+    }
+
+    #[test]
+    fn matchmaking_setting_drives_the_player_build_and_the_lobby_rules_parse() {
+        // Default: on, with the documented lobby rules and no dev-only extras.
+        let (cfg, w) = parse("").expect("ok");
+        assert!(w.is_empty(), "{w:?}");
+        assert!(cfg.matchmaking && cfg.mm_queue && cfg.mm_join && cfg.mm_quiet_invite);
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (6, 2, 90));
+        assert!(!cfg.mm_probe && !cfg.mm_host_create && !cfg.mm_lobby_trace && !cfg.mm_sc_create);
+        // Off: nothing runs.
+        let (cfg, _) = parse("matchmaking = false\n").expect("ok");
+        assert!(!cfg.mm_queue && !cfg.mm_join && !cfg.mm_quiet_invite);
+        // Dev-only switches stay forced off whatever the file says.
+        let (cfg, _) = parse("mm_probe = true\nmm_host_create = true\nmm_lobby_trace = true\nmm_sc_create = true\n").expect("ok");
+        assert!(cfg.mm_queue && !cfg.mm_probe && !cfg.mm_host_create && !cfg.mm_lobby_trace && !cfg.mm_sc_create);
+        // Developer mode ignores `matchmaking`.
+        let (cfg, _) = parse_dev("matchmaking = true\n").expect("ok");
+        assert!(!cfg.mm_queue && !cfg.mm_join);
+        // Lobby rules: ranges, min <= max.
+        let (cfg, w) = parse("mm_max_players = 4\nmm_min_players = 3\nmm_fill_wait_s = 30\n").expect("ok");
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (4, 3, 30));
+        assert!(w.is_empty(), "{w:?}");
+        let (cfg, w) = parse("mm_max_players = 9\nmm_min_players = 1\nmm_fill_wait_s = 1\n").expect("ok");
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (6, 2, 5));
+        assert_eq!(w.len(), 3, "{w:?}");
+        let (cfg, w) = parse("mm_max_players = 3\nmm_min_players = 5\n").expect("ok");
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players), (3, 3));
+        assert_eq!(w.len(), 1, "{w:?}");
+        // The older mm_match_players sets min = max (the mmtest zip, dev mode).
+        let (cfg, w) = parse_dev("mm_queue = true\nmm_match_players = 2\n").expect("ok");
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players), (2, 2));
+        assert!(w.is_empty(), "{w:?}");
+        let (cfg, w) = parse("mm_match_players = 3\nmm_max_players = 5\n").expect("ok");
+        assert_eq!((cfg.mm_max_players, cfg.mm_min_players), (3, 3));
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(parse("matchmaking = \"yes\"").is_err());
     }
 
     #[test]

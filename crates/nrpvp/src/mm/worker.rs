@@ -16,13 +16,34 @@ pub(crate) const SC_PINNED_VERSION: &str = "1.1.3";
 // TODO MM-4: derive a proper build id (FileVersion is what the startup banner logs; revisit if it proves unstable).
 pub(crate) const GAME_UNKNOWN: &str = "unknown";
 
+/// MM-4: the world state in which the player has left the Roundtable: an expedition, or the world was unloaded.
+pub(crate) fn away_from_roundtable(w: super::World) -> bool {
+    matches!(w, super::World::Gone | super::World::Present(Some(super::join::Phase::Expedition)))
+}
+
+/// MM-4: why a queue request is refused for this world state (`None` = fine).
+pub(crate) fn world_refusal(w: super::World) -> Option<&'static str> {
+    match w {
+        super::World::Never | super::World::Gone => Some("load into the Roundtable first"),
+        super::World::Present(Some(super::join::Phase::Expedition)) => Some("go back to the Roundtable first"),
+        super::World::Present(_) => None,
+    }
+}
+
 const SYNC_EVERY: Duration = Duration::from_secs(1);
 const GUARD_CACHE: Duration = Duration::from_secs(5);
 
 /// What the startup code hands the worker.
 pub(crate) struct Setup {
-    /// `mm_match_players`.
+    /// Queue lobby size (`mm_max_players`).
     pub need: u32,
+    /// MM-4: `mm_min_players`, `mm_fill_wait_s`.
+    pub min: u32,
+    pub fill_wait: Duration,
+    /// MM-4: the player build (status lines in player words, quieter probe).
+    pub friendly: bool,
+    /// MM-4: no local-player read for this long means the world is unloaded (a few watcher periods).
+    pub world_stale: Duration,
     /// MM-3: `mm_join` (dev only) and `mm_join_auto`.
     pub join: bool,
     pub join_auto: super::join::JoinAuto,
@@ -60,6 +81,8 @@ pub(crate) struct Worker {
     quiet_last_want: bool,
     /// MM-3f: the suppressed counter when the current test window started.
     quiet_seen_sup: u32,
+    /// MM-4: see [`Setup::world_stale`].
+    world_stale: Duration,
 }
 
 impl Worker {
@@ -74,14 +97,20 @@ impl Worker {
             tracing::warn!("mm_queue: these Steam exports did not resolve, queuing is refused: {:?}", steam.missing);
         }
         tracing::info!(
-            "mm_queue: worker started: own Steam id {}, mm_match_players={}, game tag {:?}, sc tag {:?} (pinned until an SC lobby is seen)",
+            "mm_queue: worker started: own Steam id {}, lobby size (mm_max_players)={}, mm_min_players={}, mm_fill_wait_s={}, player build={}, game tag {:?}, sc tag {:?} (pinned until an SC lobby is seen)",
             idt(steam.own_id()),
             s.need,
+            s.min,
+            s.fill_wait.as_secs(),
+            s.friendly,
             s.game,
             SC_PINNED_VERSION
         );
         let machine = Machine::new(MachineCfg {
             need: s.need,
+            min: s.min,
+            fill_wait: s.fill_wait,
+            friendly: s.friendly,
             game: s.game,
             sc: SC_PINNED_VERSION.to_string(),
             join: s.join,
@@ -106,6 +135,7 @@ impl Worker {
             tracing::info!("mm_quiet_invite: enabled: the Steam invite window is skipped while we are host at MATCH READY without a Seamless Co-op lobby (or for 60 s after the dev button)");
         }
         Some(Worker {
+            world_stale: s.world_stale,
             quiet: s.quiet_invite && s.join,
             quiet_test_until: None,
             quiet_raw_at: None,
@@ -271,6 +301,11 @@ impl Worker {
                     self.refuse(e);
                     return;
                 }
+                // MM-4: a queue needs a loaded world (the auto-leave watches it); at the title screen there is nothing to queue from.
+                if let Some(e) = world_refusal(super::world_state(self.world_stale)) {
+                    self.refuse(e.to_string());
+                    return;
+                }
                 let own = self.steam.own_id();
                 let sc = self.current_sc();
                 match build_party(mode, own, sc) {
@@ -337,6 +372,9 @@ impl Worker {
             self.command(c, now);
         }
         self.refresh_env(now, false);
+        // MM-4 step 4: leave the queue by itself when the player leaves the Roundtable (not while MATCH READY).
+        let away = away_from_roundtable(super::world_state(self.world_stale));
+        self.machine.world_tick(&mut self.steam, away, now);
         self.machine.tick(&mut self.steam, now);
         self.quiet_tick(now);
         if self.sc_create.as_ref().is_some_and(|c| c.running()) {
@@ -377,5 +415,30 @@ impl Worker {
             super::publish(st.clone());
             self.last_status = Some(st);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mm::join::Phase;
+    use crate::mm::World;
+
+    #[test]
+    fn away_means_an_expedition_or_an_unloaded_world_never_a_title_screen_or_unknown_team() {
+        assert!(!away_from_roundtable(World::Present(Some(Phase::Roundtable))));
+        assert!(away_from_roundtable(World::Present(Some(Phase::Expedition))));
+        assert!(away_from_roundtable(World::Gone));
+        assert!(!away_from_roundtable(World::Present(None)), "a team_type that tells nothing is not a reason to leave");
+        assert!(!away_from_roundtable(World::Never));
+    }
+
+    #[test]
+    fn a_queue_request_needs_a_loaded_world() {
+        assert!(world_refusal(World::Never).is_some());
+        assert!(world_refusal(World::Gone).is_some());
+        assert!(world_refusal(World::Present(Some(Phase::Expedition))).is_some());
+        assert!(world_refusal(World::Present(Some(Phase::Roundtable))).is_none());
+        assert!(world_refusal(World::Present(None)).is_none());
     }
 }

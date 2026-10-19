@@ -1,4 +1,4 @@
-# Status and handoff (written 2026-10-12)
+# Status and handoff (written 2026-10-12, matchmaking updated 2026-10-19)
 
 Read this first when picking the project up again. It says what works, what is built but untested, what to test next, and the
 traps we already fell into. Details live in the other docs; this file points to them.
@@ -25,6 +25,7 @@ traps we already fell into. Details live in the other docs; this file points to 
 | Teammate revive | **Works** (Nucleus run 21: 3 of 3) |
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader) | **Works** on Leonardo's PC. Not yet tried on a second PC |
 | Player build: PvP always on, no keys, small "BATTLE ROYALE" label | **Works** (solo check) |
+| **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Player build has it (MM-4: Insert panel, Solo Battle Royale, up to 6, 90 s fill rule); 3–6 players only in automated tests |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
 
@@ -42,6 +43,11 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
 ## 3. Next human tasks, in order
+
+### Task E (next): FS-MM4, two PCs on the player zip
+Zip: `dist\NightreignPvP.zip` (MM-4 build 5AA3CF20AF48B3A9, also installed in Leonardo's game folder). Both: Insert → Solo Battle
+Royale. Host: Matchmaking Settings > Invite Members when the line asks. Expedition, back to the Roundtable. Also MM-4 solo step 5 (quit to
+title while queued: queue left by itself). Logs: both `<Game>\NightreignPvP\logs`.
 
 ### Task A: done (downed rule, free-for-all). Results: `TESTING.md` §3, FS-0 runs 15–20
 
@@ -79,12 +85,12 @@ candidate), repeat for 6 candidates. Tell Claude which one snapped the player ba
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
 6. "Battle Royale" menu entry (`research/S7-mode-menu.md`) and public queues. **Queue design decided 2026-10-12:**
    `research/S9-matchmaking-decision.md` (Steam queue lobby, no server of ours, Solo first). Cards MM-1 … MM-6 in `TASKS.md`.
-   **State 2026-10-14:** FS-MM1 (Leonardo + fuso, real Steam): Queue Solo matched both PCs, the host's mod invited the other into
-   Seamless Co-op's lobby, and they fought as rivals. Two human steps remain: the host opens Invite Members (it creates SC's lobby A;
-   MM-3c found the game makes it via `CreateLobby(Public, 6)` through SC's proxy; MM-3d proved SC adopts the same call from our mod),
-   and the joiner accepted the invite (MM-3a switches the test build to `invite+link`). MM-3e: the host's mod now creates the lobby
-   itself at MATCH READY. Friend zip of 2026-10-14 19:46. Next friend run: `TESTING.md` §6 FS-MM2 (fully automatic Solo, match end,
-   Duo). Findings: S9 §5c–5e. All of it is developer mode only.
+   **State 2026-10-19:** Solo works end to end with one human step (FS-MM3). Path: queue lobby match → host presses Invite Members →
+   the game makes the Seamless Co-op lobby → MM-3f skips the Steam invite window (hardware breakpoint, no patch) → host's mod invites, the
+   joiner's mod opens the join link → joiner's game enters → ALL PRESENT once the host's world shows the players. A lobby created by our
+   mod does **not** work (FS-MM2, S9 §5f). MM-4 brings it to the player build (solo steps 1–4 PASS). Next: FS-MM4 (Task E), then MM-3g
+   (trigger the game's Invite Members from the queue so no one clicks; call chain in S9 §5d), then MM-6 Duo/Squad and MM-5 table entry.
+   Findings: S9 §5c–5g.
 7. Clean-up: the mod still carries a lot of investigation code (probes, dumps, the in-mod timer scans, snap-back test, experiment
    switches). It is all developer-mode only, but it should be trimmed once the features that needed it are done.
 
@@ -118,15 +124,19 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
   `RegionCache::direct()` there; `RegionCache::new()` is for the discovery and probe scans. The heartbeat line shows the pass time.
 - **Keep `probes = false` for rule tests.** The probes still use the slow reads and cost about 0.4 s per pass. Until 2026-10-12 the
   Nucleus handler had `probes = true` (copied from `dist\nrpvp.toml`); `deploy-nucleus.ps1` now writes `probes = false` unless `-Probes $true`.
+- **Only a lobby the game makes can be joined.** Our own `CreateLobby(Public, 6)` gets adopted by Seamless Co-op but joiners' games
+  leave it at once, and a direct `JoinLobby` gives Steam membership without the game session (FS-MM2). Steam lobby membership is not
+  presence: ALL PRESENT also needs the host's ChrSet to hold the players.
+- **`mm_quiet_invite` and `mm_lobby_trace` both use all four debug registers**; config turns quiet invite off when the trace is on.
 - **Sonnet agents can be cut off by usage limits mid-task.** Check `cargo build` and `git status` before trusting the tree; the task card says what was intended.
 
 ## 7. Repository state
 
-- Last commit: `1a85f31`. **The 2026-10-12 work is not committed**: the read speed fix, attacker-side gauge restore, deploy script,
-  and these docs. Leonardo commits; nothing was committed by Claude.
-- `scripts/package-friend.ps1` and `scripts/friend-kit/` were deleted (by Leonardo); `package-release.ps1` replaces them.
-- Tests: `cargo test` → 282 pass in `nrpvp`, 26 in `nrscan`, 3 in the launcher.
+- `main`: MM-3f committed as `0872bc9`; MM-4 merged on top (2026-10-19). Leonardo pushes.
+- Branch `t-028-snapback` (Leonardo): T-028 snap-back/teleport runs and F3 team spawns, 3 commits not on `main` and not yet pushed.
+- Tests: `cargo test` → 418 pass in `nrpvp` (1 ignored hudhook smoke).
 - Pins: game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0.
+- Friend-session logs are gitignored (`*.log`); they live in `.claude/experiments/<session>/` on Leonardo's PC only.
 
 ## 8. Decisions made (so they are not re-argued)
 
@@ -137,4 +147,5 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
 - Downed players: teammates fill the purple bar; rivals shorten the bleed-out and never move the bar. Instant death on 0 health was
   rejected (auto-revive items would defeat it).
 - Investigation first, then building: confirm memory locations with the scanner before adding mod code.
+- Matchmaking joins through the game's own lobby (Invite Members path), never a lobby our mod creates; never EAC, never Bandai servers.
 - Leonardo only does smoke tests; Claude decides design and order, and does not build tools that are not needed for the goal.

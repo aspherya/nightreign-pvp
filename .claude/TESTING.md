@@ -185,6 +185,11 @@ quiet invite disarmed on 137 threads. Expedition with both, rival write 2 -> 29 
 Roundtable after ~10 min: host status back to idle by itself. Not covered: the joiner ran the old build, so the joiner-side "loading in" line
 was not exercised (joiner join code is the same in both builds); friend's log ends at 18:13:45 while loading back.
 
+### 2026-10-19 — MM-4 solo check (Leonardo, player zip, nrpvp.dll 5AA3CF20AF48B3A9). Log: `.claude/experiments/MM-4/2026-10-19_player_solo.log`
+Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS (steps 1–4).** `mode: PLAYER`, only the Insert key bound, probe in quiet mode. Insert opened the panel;
+Solo Battle Royale: queue lobby (Invisible, 6), `Searching for players... 1/6`; Leave: `Not in a queue`. Not run: step 5 (auto-leave on quit to
+title, refusal at the title); check it in FS-MM4.
+
 ## 4. Known bugs
 
 _None yet._

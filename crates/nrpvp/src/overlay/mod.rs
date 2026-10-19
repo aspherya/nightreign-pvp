@@ -40,7 +40,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::hotkey::{self, Action};
 use crate::logring;
 use shared::{
-    badge_lines, short_id, team_name, Command, PlayerRow, PvpveState, Relation, Role, Shared,
+    badge_lines, badge_mm_line, queue_tone, Tone, short_id, team_name, Command, PlayerRow, PvpveState, Relation, Role, Shared,
     Snapshot,
 };
 
@@ -61,17 +61,28 @@ const RED: [f32; 4] = [0.95, 0.35, 0.30, 1.0];
 const AMBER: [f32; 4] = [0.95, 0.75, 0.25, 1.0];
 const GREY: [f32; 4] = [0.60, 0.60, 0.60, 1.0];
 
+/// MM-4: the colour of a queue status line.
+fn tone_colour(t: Tone) -> [f32; 4] {
+    match t {
+        Tone::Good => GREEN_TEXT,
+        Tone::Bad => RED,
+        Tone::Busy => AMBER,
+        Tone::Idle => GREY,
+    }
+}
+
 /// Start the install thread. Returns immediately; never fails the caller.
 pub(crate) fn spawn(
     shared: Arc<Shared>,
     toggle_name: Option<String>,
     settle: Duration,
     player: bool,
+    queue_panel: bool,
 ) {
     let r = std::thread::Builder::new()
         .name("nrpvp-overlay".into())
         .spawn(move || {
-            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name, settle, player)));
+            let result = catch_unwind(AssertUnwindSafe(|| run(shared, toggle_name, settle, player, queue_panel)));
             if result.is_err() {
                 tracing::error!(
                     "overlay: install thread panicked; continuing without an overlay (hotkeys still work)"
@@ -85,7 +96,7 @@ pub(crate) fn spawn(
     }
 }
 
-fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, player: bool) {
+fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, player: bool, queue_panel: bool) {
     let t0 = Instant::now();
     if !wait_for_game_window() {
         tracing::warn!(
@@ -100,7 +111,7 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, playe
         settle.as_millis()
     );
     std::thread::sleep(settle);
-    match install(shared, toggle_name, player) {
+    match install(shared, toggle_name, player, queue_panel) {
         Ok(()) => tracing::info!(
             "overlay: hudhook DX12 hooks applied (the panel appears with the first presented frame; visible at start)"
         ),
@@ -112,8 +123,9 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, playe
 
 /// Apply the hudhook DX12 hooks. Panics inside hudhook (it uses `expect` while creating hooks) become an
 /// `Err` here.
-fn install(shared: Arc<Shared>, toggle_name: Option<String>, player: bool) -> Result<(), String> {
-    let app = OverlayApp::new(shared, toggle_name, player);
+fn install(shared: Arc<Shared>, toggle_name: Option<String>, player: bool, queue_panel: bool) -> Result<(), String> {
+    let mut app = OverlayApp::new(shared, toggle_name, player);
+    app.queue_panel = queue_panel;
     let applied = catch_unwind(AssertUnwindSafe(|| {
         Hudhook::builder()
             .with::<ImguiDx12Hooks>(app)
@@ -187,6 +199,10 @@ struct OverlayApp {
     toggle_name: Option<String>,
     /// T-030: player build. Draws only the read-only badge; never captures mouse or keyboard; cannot be hidden.
     player: bool,
+    /// MM-4: player build with matchmaking: the toggle key opens a small interactive panel (Solo Battle Royale / Leave).
+    queue_panel: bool,
+    /// MM-4: that panel is open.
+    panel_open: bool,
     visible: bool,
     /// Set after a panic while drawing: the overlay then stops drawing instead of risking the game.
     broken: bool,
@@ -203,6 +219,8 @@ impl OverlayApp {
             shared,
             toggle_name,
             player,
+            queue_panel: false,
+            panel_open: false,
             visible: true,
             broken: false,
             snap: Snapshot::default(),
@@ -218,6 +236,14 @@ impl OverlayApp {
         self.snap = self.shared.snapshot();
         let (l1, l2) = badge_lines(&self.snap);
         let screen = ui.io().display_size;
+        // MM-4: with matchmaking on, a third line shows the queue status (or the key that opens the panel).
+        let mm_line = if self.queue_panel {
+            let st = crate::mm::status();
+            let key = self.toggle_name.clone().unwrap_or_else(|| "Insert".to_string());
+            badge_mm_line(&st.line, st.active, self.panel_open, &key)
+        } else {
+            None
+        };
         ui.window("##nrpvp_badge")
             .flags(
                 WindowFlags::NO_DECORATION
@@ -235,6 +261,39 @@ impl OverlayApp {
             .build(|| {
                 ui.text_colored(AMBER, l1);
                 ui.text(l2);
+                if let Some((text, tone)) = &mm_line {
+                    ui.text_colored(tone_colour(*tone), text);
+                }
+            });
+    }
+
+    /// MM-4: the player build's matchmaking panel: the status line in player words, `Solo Battle Royale` and `Leave`. Duo and Squad
+    /// are not offered (MM-6) and there is no dev button.
+    fn draw_queue_panel(&self, ui: &Ui) {
+        let st = crate::mm::status();
+        let screen = ui.io().display_size;
+        let key = self.toggle_name.clone().unwrap_or_else(|| "Insert".to_string());
+        ui.window("Battle Royale matchmaking###nrpvp_mm_panel")
+            .flags(WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_COLLAPSE | WindowFlags::NO_SAVED_SETTINGS)
+            .position([screen[0] - BADGE_MARGIN, BADGE_MARGIN + 90.0], Condition::FirstUseEver)
+            .position_pivot([1.0, 0.0])
+            .build(|| {
+                let line = if st.line.is_empty() { "Starting...".to_string() } else { st.line.clone() };
+                ui.text_colored(tone_colour(queue_tone(&line, st.active)), line);
+                {
+                    let _off = ui.begin_disabled(st.active);
+                    if ui.button("Solo Battle Royale") {
+                        self.send(Command::MmQueue(crate::mm::Mode::Solo));
+                    }
+                }
+                ui.same_line();
+                {
+                    let _off = ui.begin_disabled(!st.active);
+                    if ui.button("Leave") {
+                        self.send(Command::MmLeave);
+                    }
+                }
+                ui.text_colored(GREY, format!("{key} closes this panel"));
             });
     }
 
@@ -729,8 +788,15 @@ impl ImguiRenderLoop for OverlayApp {
         _render_context: &'a mut dyn RenderContext,
     ) {
         if self.player {
-            // The badge cannot be hidden and ImGui never draws a cursor of its own.
+            // The badge cannot be hidden and ImGui never draws a cursor of its own, except while the matchmaking panel is open.
             ctx.io_mut().mouse_draw_cursor = false;
+            if self.queue_panel {
+                if hotkey::take(Action::ToggleOverlay) {
+                    self.panel_open = !self.panel_open;
+                    tracing::info!("overlay: matchmaking panel {}", if self.panel_open { "opened" } else { "closed" });
+                }
+                ctx.io_mut().mouse_draw_cursor = self.panel_open && !os_cursor_showing();
+            }
             return;
         }
         if hotkey::take(Action::ToggleOverlay) {
@@ -748,7 +814,10 @@ impl ImguiRenderLoop for OverlayApp {
         // A panic must not unwind into the game's Present call (that would abort the process).
         let drawn = catch_unwind(AssertUnwindSafe(|| {
             if self.player {
-                self.draw_badge(ui)
+                self.draw_badge(ui);
+                if self.queue_panel && self.panel_open {
+                    self.draw_queue_panel(ui);
+                }
             } else {
                 self.draw(ui)
             }
@@ -760,8 +829,11 @@ impl ImguiRenderLoop for OverlayApp {
     }
 
     fn message_filter(&self, io: &Io) -> MessageFilter {
-        // T-030: the player badge never blocks game input.
+        // T-030: the player badge never blocks game input; MM-4: only an open matchmaking panel takes the mouse.
         if self.player {
+            if self.queue_panel && self.panel_open {
+                return input_filter(true, self.broken, io.want_capture_mouse, false);
+            }
             return MessageFilter::empty();
         }
         input_filter(
@@ -1018,6 +1090,6 @@ mod tests {
     #[test]
     #[ignore]
     fn hudhook_install_smoke() {
-        install(Shared::new(), None, false).expect("hooks apply");
+        install(Shared::new(), None, false, false).expect("hooks apply");
     }
 }

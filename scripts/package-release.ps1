@@ -2,7 +2,7 @@
 # Contents (to be dropped into the game folder, next to nightreign.exe and nrsc_launcher.exe):
 #   nrpvp_launcher.exe            double-click to play
 #   NightreignPvP\nrpvp.dll       the mod
-#   NightreignPvP\nrpvp.toml      settings (team size and defaults; PvP is always on, no dev_mode)
+#   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4); PvP is always on, no dev_mode)
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
@@ -82,6 +82,8 @@ if ($MatchmakingTest) {
     $toml = @(
         '# Nightreign PvP settings. You do not need to change anything here.',
         "team_size = $TeamSize",
+        '# MM-4: Solo Battle Royale matchmaking (the panel opens with the Insert key). Set to false to turn it off.',
+        'matchmaking = true',
         'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
     ) -join "`r`n"
 }

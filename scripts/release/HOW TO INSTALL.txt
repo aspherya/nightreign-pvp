@@ -30,6 +30,32 @@ PLAY
 5. A small "BATTLE ROYALE" label appears in the corner of the screen. It shows your
    team and how many rivals you have. It cannot be turned off.
 
+
+FIND PLAYERS (SOLO BATTLE ROYALE)
+---------------------------------
+You do not need to invite anyone first. The mod can find other players for you.
+
+1. Go to the Roundtable. Press the Insert key: a small "Battle Royale matchmaking"
+   panel opens. (Insert closes it again.)
+2. Everybody who wants to play presses "Solo Battle Royale" in that panel.
+   It says "Searching for players... 3/6" while it looks. The match starts when
+   6 players are found, or 90 seconds after a second player has joined.
+   "Leave" stops the search. Leaving the Roundtable also stops it.
+3. When it says "Match found!", one player is the host. Only the host does anything:
+   the host's panel says "Press Matchmaking Settings > Invite Members to open your
+   lobby". Open that menu once and press Invite Members. No Steam window will open,
+   and you do not need to invite anyone by hand. Everybody else does nothing: they
+   are brought into the host's game by themselves (their panel says "Joining the
+   host...").
+4. When the panel says "Everyone is here - host: start the expedition", the host
+   starts the expedition at the table, as usual. If someone does not show up, the
+   host's panel says so after a minute and the host can start without them.
+5. In the expedition the other players are your rivals. After the expedition, back at
+   the Roundtable, press "Solo Battle Royale" again for another match.
+
+To turn this off, open the file "nrpvp.toml" inside the NightreignPvP folder and
+write this line: matchmaking = false
+
 Everyone who started the game with nrpvp_launcher.exe is in this mode.
 Everyone in the session must start the game with nrpvp_launcher.exe.
 
@@ -39,6 +65,8 @@ IMPORTANT
 * To play the normal game, start it from Steam as always.
   Only use nrpvp_launcher.exe for PvP sessions with friends who also have this mod.
 * All players need the same version of this mod and of Seamless Co-op.
+* Matchmaking only connects you to other players of this mod. Always start the game
+  with nrpvp_launcher.exe, never with the Play button in Steam.
 * Windows may ask "Do you want to run this file?" the first time. Choose Run.
   If Windows shows a blue "Windows protected your PC" box: click "More info", then "Run anyway".
 

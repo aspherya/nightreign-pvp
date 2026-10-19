@@ -536,10 +536,15 @@ fn watch(
                 None => {}
             }
         }
-        // T-030: only the dev panel sends commands; the player badge is read-only.
-        if let Some(ui) = ui.as_ref().filter(|_| cfg.dev_mode) {
+        // T-030: only the dev panel sends commands; the player badge is read-only. MM-4: the player build's matchmaking panel may
+        // send exactly two (Solo queue, Leave), and only while the queue is on.
+        if let Some(ui) = ui.as_ref().filter(|_| cfg.dev_mode || crate::mm::enabled()) {
             for cmd in ui.drain() {
-                run_command(cmd, "overlay", &mut team, &mut disc, wcm_inst);
+                if cfg.dev_mode || player_may_send(&cmd) {
+                    run_command(cmd, "overlay", &mut team, &mut disc, wcm_inst);
+                } else {
+                    tracing::warn!("overlay: {cmd:?} ignored in the player build");
+                }
             }
         }
         // T-032: a MARK this tick starts the dump job (dev mode only; `take_new_mark` is always None in the player build) and
@@ -740,6 +745,11 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
         Action::MmLeave => Some(Command::MmLeave),
         Action::Cycle | Action::ToggleOverlay | Action::DownedCycle => None,
     }
+}
+
+/// MM-4: the commands the player build's matchmaking panel may send: queue Solo, leave the queue. Nothing else.
+fn player_may_send(cmd: &Command) -> bool {
+    matches!(cmd, Command::MmQueue(crate::mm::Mode::Solo) | Command::MmLeave)
 }
 
 /// Execute one command on the main loop thread. `src` is the trigger for the log ("F5", "overlay", ...).
@@ -1076,5 +1086,24 @@ mod command_tests {
         }
         // Set(29) selected the candidate even though there was no local player to write to.
         assert!(shared.drain().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod mm4_tests {
+    use super::*;
+
+    #[test]
+    fn the_player_build_panel_may_only_queue_solo_and_leave() {
+        assert!(player_may_send(&Command::MmQueue(crate::mm::Mode::Solo)));
+        assert!(player_may_send(&Command::MmLeave));
+        assert!(!player_may_send(&Command::MmQueue(crate::mm::Mode::Duo)));
+        assert!(!player_may_send(&Command::MmQueue(crate::mm::Mode::Squad)));
+        assert!(!player_may_send(&Command::MmScCreate));
+        assert!(!player_may_send(&Command::MmQuietTest));
+        assert!(!player_may_send(&Command::MmJoin(crate::mm::join::JoinCmd::Direct)));
+        assert!(!player_may_send(&Command::SetAll(29)));
+        assert!(!player_may_send(&Command::RunDiscovery));
+        assert!(!player_may_send(&Command::Mark(None)));
     }
 }

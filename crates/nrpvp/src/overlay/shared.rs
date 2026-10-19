@@ -146,6 +146,42 @@ pub(crate) struct PlayerRow {
 pub(crate) const BADGE_TITLE: &str = "BATTLE ROYALE";
 pub(crate) const BADGE_WAITING: &str = "waiting for expedition";
 
+/// MM-4: how a queue status line is coloured.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Tone {
+    /// A match was found, everybody is here, or the match runs.
+    Good,
+    /// Refused or failed.
+    Bad,
+    /// Working on it.
+    Busy,
+    /// Nothing going on.
+    Idle,
+}
+
+/// MM-4: the colour class of a player-words queue line (`active` = in some queue state).
+pub(crate) fn queue_tone(line: &str, active: bool) -> Tone {
+    if line.contains("REFUSED") || line.contains("failed") || line.contains("missed") {
+        Tone::Bad
+    } else if line.starts_with("Match found") || line.starts_with("Everyone is here") || line == "In match" || line.contains("you can start") {
+        Tone::Good
+    } else if active {
+        Tone::Busy
+    } else {
+        Tone::Idle
+    }
+}
+
+/// MM-4: the third badge line while the matchmaking panel is available: the queue status when there is something to say, else a hint
+/// naming the key that opens the panel (not shown while it is open).
+pub(crate) fn badge_mm_line(line: &str, active: bool, panel_open: bool, key: &str) -> Option<(String, Tone)> {
+    let hint = || (!panel_open).then(|| (format!("[{key}] Battle Royale matchmaking"), Tone::Idle));
+    if line.is_empty() || (!active && line == "Not in a queue") {
+        return hint();
+    }
+    Some((line.to_string(), queue_tone(line, active)))
+}
+
 /// T-030: the two lines of the player badge. Line 1 is fixed; line 2 is `waiting for expedition` until the local
 /// player is resolved with at least one player row, then `Team N` (1-based, `?` if the rosters are unavailable) and
 /// the rival count.
@@ -488,6 +524,25 @@ mod tests {
             relation: Some(rel),
             reverts_total: 0,
         }
+    }
+
+    #[test]
+    fn queue_tones_and_the_badge_queue_line() {
+        assert_eq!(queue_tone("Searching for players... 3/6", true), Tone::Busy);
+        assert_eq!(queue_tone("Match found! Joining the host...", true), Tone::Good);
+        assert_eq!(queue_tone("Everyone is here - host: start the expedition", true), Tone::Good);
+        assert_eq!(queue_tone("In match", true), Tone::Good);
+        assert_eq!(queue_tone("2/3 here - you can start; X did not arrive", true), Tone::Good);
+        assert_eq!(queue_tone("Queue: REFUSED - no Seamless Co-op", false), Tone::Bad);
+        assert_eq!(queue_tone("match missed - queue again", false), Tone::Bad);
+        assert_eq!(queue_tone("Not in a queue", false), Tone::Idle);
+        // Idle: a hint while the panel is closed, nothing while it is open.
+        assert_eq!(badge_mm_line("Not in a queue", false, false, "Insert"), Some(("[Insert] Battle Royale matchmaking".to_string(), Tone::Idle)));
+        assert_eq!(badge_mm_line("Not in a queue", false, true, "Insert"), None);
+        assert_eq!(badge_mm_line("", false, false, "Home").map(|x| x.0), Some("[Home] Battle Royale matchmaking".to_string()));
+        // Anything to say is shown whether the panel is open or not.
+        assert_eq!(badge_mm_line("Searching for players... 1/6", true, true, "Insert"), Some(("Searching for players... 1/6".to_string(), Tone::Busy)));
+        assert_eq!(badge_mm_line("Queue: left (you left the Roundtable)", false, false, "Insert").map(|x| x.1), Some(Tone::Idle));
     }
 
     #[test]

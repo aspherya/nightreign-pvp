@@ -18,6 +18,15 @@ use std::time::{Duration, Instant};
 use super::callback::{self, RawEvent};
 use super::{steam_dll_loaded, Flat, LobbyApi};
 
+/// MM-4: an info line that the player build (`verbose = false`) leaves out: the probe's startup dump and per-event lobby dumps.
+macro_rules! vinfo {
+    ($v:expr, $($a:tt)*) => {
+        if $v {
+            tracing::info!($($a)*);
+        }
+    };
+}
+
 const MATCHMAKING_BASE: i32 = 500;
 const FRIENDS_BASE: i32 = 300;
 pub(crate) const ID_LOBBY_ENTER: i32 = MATCHMAKING_BASE + 4;
@@ -289,11 +298,12 @@ impl LobbyWatch {
     }
 }
 
-/// Start the Steam thread (one thread, one listener registration). Call only in developer mode, when `mm_probe` or `mm_queue` is
-/// on; nothing here runs otherwise. `queue` is `Some` when `mm_queue` is on: the MM-2 worker then runs inside this loop.
-pub(crate) fn spawn(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
+/// Start the Steam thread (one thread, one listener registration). Call only when `mm_probe` or `mm_queue` is on; nothing here runs
+/// otherwise. `queue` is `Some` when `mm_queue` is on: the MM-2 worker then runs inside this loop. `verbose = false` (MM-4, the player
+/// build) keeps the callbacks the queue needs and drops the startup dump and the per-event lobby dumps.
+pub(crate) fn spawn(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     let r = std::thread::Builder::new().name("nrpvp-mm-probe".into()).spawn(move || {
-        if catch_unwind(AssertUnwindSafe(|| run(queue, evidence))).is_err() {
+        if catch_unwind(AssertUnwindSafe(|| run(queue, evidence, verbose))).is_err() {
             tracing::error!("mm_probe: probe thread panicked");
         }
     });
@@ -314,10 +324,13 @@ fn ptr_text(p: Option<usize>) -> String {
     }
 }
 
-fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
+fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     // MM-3c: lets the lobby tracer label our own queue-lobby `CreateLobby` calls (harmless when the tracer is off).
     super::lobtrace::note_steam_thread();
-    tracing::info!(
+    if !verbose {
+        tracing::info!("mm_probe: quiet mode (player build): callbacks are registered, the startup dump and lobby dumps are not logged");
+    }
+    vinfo!(verbose, 
         "mm_probe: enabled (listen-only; waits up to {} s for the game to initialise Steam)",
         WAIT_TOTAL.as_secs()
     );
@@ -326,15 +339,15 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
     loop {
         if flat.is_none() && steam_dll_loaded() {
             let (f, resolved) = Flat::resolve();
-            tracing::info!("mm_probe: steam_api64.dll loaded after {:.1} s", start.elapsed().as_secs_f32());
+            vinfo!(verbose, "mm_probe: steam_api64.dll loaded after {:.1} s", start.elapsed().as_secs_f32());
             for r in &resolved {
-                tracing::info!("mm_probe: export {} resolved: {}", r.name, yes_no(r.found));
+                vinfo!(verbose, "mm_probe: export {} resolved: {}", r.name, yes_no(r.found));
             }
             flat = Some(f);
         }
         if let Some(f) = &flat {
             if f.hsteam_user() != 0 {
-                tracing::info!(
+                vinfo!(verbose, 
                     "mm_probe: SteamAPI_GetHSteamUser() = {} after {:.1} s: Steam is initialised",
                     f.hsteam_user(),
                     start.elapsed().as_secs_f32()
@@ -357,13 +370,13 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
     // (a) accessors and own Steam ID.
     let mm = Flat::call_accessor(flat.matchmaking);
     let user = Flat::call_accessor(flat.user);
-    tracing::info!("mm_probe: SteamAPI_SteamMatchmaking_v009(): {}", ptr_text(mm));
-    tracing::info!("mm_probe: SteamAPI_SteamUtils_v010(): {}", ptr_text(Flat::call_accessor(flat.utils)));
-    tracing::info!("mm_probe: SteamAPI_SteamUser_v021(): {}", ptr_text(user));
-    tracing::info!("mm_probe: SteamAPI_SteamFriends_v017(): {}", ptr_text(Flat::call_accessor(flat.friends)));
+    vinfo!(verbose, "mm_probe: SteamAPI_SteamMatchmaking_v009(): {}", ptr_text(mm));
+    vinfo!(verbose, "mm_probe: SteamAPI_SteamUtils_v010(): {}", ptr_text(Flat::call_accessor(flat.utils)));
+    vinfo!(verbose, "mm_probe: SteamAPI_SteamUser_v021(): {}", ptr_text(user));
+    vinfo!(verbose, "mm_probe: SteamAPI_SteamFriends_v017(): {}", ptr_text(Flat::call_accessor(flat.friends)));
     let own_id = flat.own_steam_id(user.unwrap_or(0)).unwrap_or(0);
     match Some(own_id).filter(|id| *id != 0) {
-        Some(id) => tracing::info!("mm_probe: own Steam ID = {}", id_text(id)),
+        Some(id) => vinfo!(verbose, "mm_probe: own Steam ID = {}", id_text(id)),
         None => tracing::warn!("mm_probe: own Steam ID unavailable (user accessor null or GetSteamID export missing)"),
     }
     let mm_ok = flat.bind_matchmaking(mm.unwrap_or(0));
@@ -376,7 +389,7 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
             let results = unsafe { callback::register_all(reg, &wanted) };
             for (id, ok) in results {
                 let name = CALLBACKS.iter().find(|c| c.0 == id).map_or("?", |c| c.2);
-                tracing::info!("mm_probe: RegisterCallback {name} (id {id}): registered flag set = {}", yes_no(ok));
+                vinfo!(verbose, "mm_probe: RegisterCallback {name} (id {id}): registered flag set = {}", yes_no(ok));
             }
         }
         None => tracing::warn!("mm_probe: SteamAPI_RegisterCallback missing; no events will be seen"),
@@ -398,10 +411,13 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool) {
             let RawEvent { id, len, data } = raw;
             match decode(id, &data[..len]) {
                 Some(ev) => {
-                    // Without matchmaking, log the event only.
-                    let lines = if mm_ok { tracker.handle(&flat, &ev, Instant::now()) } else { vec![describe(&ev)] };
-                    for l in lines {
-                        tracing::info!("{l}");
+                    // MM-4: the player build keeps the callbacks but drops the verbose lobby dumps (the queue worker logs what matters).
+                    if verbose {
+                        // Without matchmaking, log the event only.
+                        let lines = if mm_ok { tracker.handle(&flat, &ev, Instant::now()) } else { vec![describe(&ev)] };
+                        for l in lines {
+                            tracing::info!("{l}");
+                        }
                     }
                     if let Some(w) = worker.as_mut() {
                         w.on_event(&ev);

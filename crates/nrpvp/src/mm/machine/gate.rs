@@ -23,6 +23,14 @@ use crate::mm::join::{self, JoinCmd, Phase};
 use crate::mm::proto;
 use crate::steam::queue::{CallData, CallKind, CallPoll, PublishedScLobby, QueueLobby, QueueSteam, ScLobby, ScType, KEY_SC_TYPE};
 
+/// MM-4 (S9 6 step 8): the host, this long after publishing `sc_lobby`, is told it may start without the players who have not arrived
+/// (when at least `mm_min_players` are here).
+pub(crate) const MISSING_AFTER: Duration = Duration::from_secs(60);
+/// MM-4: a joiner who is still not in the host's Seamless Co-op lobby this long after the match started gives up, leaves and goes idle.
+pub(crate) const JOINER_GIVE_UP: Duration = Duration::from_secs(120);
+/// MM-4: the idle line after a joiner gave up.
+pub(crate) const MISSED_TEXT: &str = "match missed - queue again";
+
 const GATE_EVAL: Duration = Duration::from_millis(500);
 const SUMMARY_EVERY: Duration = Duration::from_secs(10);
 const INVITE_RETRY: Duration = Duration::from_secs(5);
@@ -100,6 +108,10 @@ pub(crate) struct Gate {
     sc_last: Option<u64>,
     /// What the overlay shows.
     line: String,
+    /// MM-4: the same state in player words (the player build shows this one).
+    pline: String,
+    /// MM-4: when the match started (for the joiner's give-up).
+    created: Instant,
     sc_owner: bool,
     /// MM-3e: the host's creation of the SC lobby.
     create: HostCreate,
@@ -107,6 +119,8 @@ pub(crate) struct Gate {
     pub_at: Option<Instant>,
     /// MM-3e: the no-arrival fallback was logged.
     no_arrival_logged: bool,
+    /// MM-4: the "you can start" line was logged.
+    missing_logged: bool,
 }
 
 impl Gate {
@@ -130,10 +144,13 @@ impl Gate {
             warned_publish: None,
             sc_last: None,
             line: String::new(),
+            pline: String::new(),
+            created: now,
             sc_owner: false,
             create: HostCreate::Todo,
             pub_at: None,
             no_arrival_logged: false,
+            missing_logged: false,
         }
     }
 
@@ -170,6 +187,10 @@ impl Gate {
     }
     pub(crate) fn line(&self) -> &str {
         &self.line
+    }
+    /// MM-4: the status in player words (empty until the first gate pass).
+    pub(crate) fn player_line(&self) -> &str {
+        &self.pline
     }
 }
 
@@ -382,6 +403,19 @@ impl Machine {
         } else {
             r.gate.sc_gone_since = None;
         }
+        // 3d. MM-4 step 3: a joiner that is still not in the host's lobby 120 s after the match started gives up (the host never made
+        // a lobby, never invited, or the join never worked): leave and go idle so it can queue again.
+        if !is_host
+            && !i_am_in
+            && r.gate.all_present.is_none()
+            && !r.gate.saw_expedition
+            && now.saturating_duration_since(r.gate.created) >= JOINER_GIVE_UP
+        {
+            let why = format!("not in the host's lobby {} s after the match started: giving up", JOINER_GIVE_UP.as_secs());
+            let idle = self.end_match(api, r, &why, now);
+            self.last_error = Some(MISSED_TEXT.to_string());
+            return idle;
+        }
         // 3c. MM-3e: the host's mod creates the SC lobby itself (once) when the game has not made one.
         self.host_create_step(api, &mut r.gate, is_host, env_sc.as_ref().map(ScLobby::id), now);
         let present: Vec<u64> = r.roster.iter().map(|e| e.id).filter(|id| members.contains(id)).collect();
@@ -495,6 +529,54 @@ impl Machine {
                 NO_ARRIVAL.as_secs()
             );
         }
+        // MM-4 step 3: the host may start without the players who have not arrived once 60 s have passed and enough are here.
+        let here = if self.env.players > 0 { present.len().min(self.env.players) } else { present.len() };
+        let missing = is_host
+            && env_sc.is_some()
+            && r.gate.all_present.is_none()
+            && !others_absent.is_empty()
+            && here >= self.cfg.min as usize
+            && r.gate.pub_at.is_some_and(|t| now.saturating_duration_since(t) >= MISSING_AFTER);
+        let missing_line = format!("{here}/{total} here - you can start; {} did not arrive", names(&others_absent, api));
+        if missing && !r.gate.missing_logged {
+            r.gate.missing_logged = true;
+            tracing::info!("mm_join: {} s after publishing sc_lobby: {missing_line}", MISSING_AFTER.as_secs());
+        }
+        r.gate.pline = if r.gate.saw_expedition {
+            "In match".to_string()
+        } else if r.gate.all_present.is_some() {
+            if is_host {
+                "Everyone is here - host: start the expedition".to_string()
+            } else {
+                "Everyone is here - waiting for the host to start".to_string()
+            }
+        } else if host == 0 {
+            "Match found!".to_string()
+        } else if steam_all && r.gate.all_present.is_none() {
+            if is_host {
+                format!("Match found! Everyone is in your lobby, waiting for {} to load in...", names(&others_absent_roster, api))
+            } else {
+                "Match found! Loading in...".to_string()
+            }
+        } else if is_host && env_sc.is_none() && r.gate.creating() {
+            "Match found! Creating your lobby...".to_string()
+        } else if no_arrival {
+            format!("{} did not arrive: press Matchmaking Settings > Invite Members and invite them", names(&others_absent, api))
+        } else if missing {
+            missing_line.clone()
+        } else if is_host && env_sc.is_none() && self.cfg.quiet_invite {
+            "Match found! Press Matchmaking Settings > Invite Members to open your lobby (no Steam window will open)".to_string()
+        } else if is_host && env_sc.is_none() {
+            "Match found! Press Matchmaking Settings > Invite Members to open your lobby".to_string()
+        } else if is_host {
+            format!("Match found! Waiting for players to join your lobby{}", count.replace("present", "here"))
+        } else if r.gate.published.is_none() {
+            "Match found! Waiting for the host...".to_string()
+        } else if !i_am_in {
+            "Match found! Joining the host...".to_string()
+        } else {
+            format!("Match found! In the host's lobby, waiting for the others{}", count.replace("present", "here"))
+        };
         r.gate.line = if r.gate.saw_expedition {
             "IN EXPEDITION - match active (Leave, or going back to the Roundtable, ends it)".to_string()
         } else if let Some(n) = r.gate.all_present {
@@ -516,6 +598,8 @@ impl Machine {
             "creating the Seamless Co-op lobby...".to_string()
         } else if no_arrival {
             format!("{} did not arrive: open Invite Members and invite them", names(&others_absent, api))
+        } else if missing {
+            missing_line
         } else if is_host && env_sc.is_none() && self.cfg.quiet_invite {
             "MATCH READY - press Matchmaking Settings > Invite Members (no Steam window will open)".to_string()
         } else if is_host && env_sc.is_none() {
@@ -725,7 +809,7 @@ mod tests {
     const SC: u64 = 5555;
 
     fn machine(join: bool, auto: JoinAuto) -> Machine {
-        Machine::new(MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join, join_auto: auto, host_create: false, quiet_invite: false })
+        Machine::new(MachineCfg { need: 2, min: 2, fill_wait: Duration::from_secs(90), friendly: false, game: "1.3.3.0".into(), sc: "1.1.3".into(), join, join_auto: auto, host_create: false, quiet_invite: false })
     }
 
     fn ready(m: &mut Machine, own: u64, t: Instant) {
@@ -797,6 +881,9 @@ mod tests {
     fn quiet_machine() -> Machine {
         Machine::new(MachineCfg {
             need: 2,
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly: false,
             game: "1.3.3.0".into(),
             sc: "1.1.3".into(),
             join: true,
@@ -829,6 +916,9 @@ mod tests {
         // mm_join off: no.
         let mut nojoin = Machine::new(MachineCfg {
             need: 2,
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly: false,
             game: "1.3.3.0".into(),
             sc: "1.1.3".into(),
             join: false,
@@ -1375,6 +1465,9 @@ mod host_create_tests {
     fn machine(host_create: bool) -> Machine {
         Machine::new(MachineCfg {
             need: 2,
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly: false,
             game: "1.3.3.0".into(),
             sc: "1.1.3".into(),
             join: true,
@@ -1615,5 +1708,356 @@ mod host_create_tests {
         let lobby = s.next_lobby;
         m.leave(&mut s, "test", t);
         assert!(s.writes_to(lobby).is_empty(), "{:?}", s.writes);
+    }
+}
+
+/// MM-4: matches with 3 and 6 players (the gate must handle up to 5 joiners), the "you can start" line, the joiner's give-up and the
+/// player-words lines.
+#[cfg(test)]
+mod multi_tests {
+    use super::super::{MachineCfg, Party, Ticket};
+    use super::*;
+    use crate::mm::join::JoinAuto;
+    use crate::mm::proto::RosterEntry;
+    use crate::mm::Mode;
+    use crate::steam::queue::fake::{FakeSteam, Write};
+    use crate::steam::queue::{LobbyText, KEY_SC_TYPE};
+
+    const HOST: u64 = 7001;
+    const Q: u64 = 77;
+    const SC: u64 = 5555;
+
+    /// The roster of an `n` player match: the host first, then 7002, 7003, ...
+    fn ids(n: usize) -> Vec<u64> {
+        (0..n as u64).map(|i| HOST + i).collect()
+    }
+
+    fn machine(friendly: bool) -> Machine {
+        Machine::new(MachineCfg {
+            need: 6,
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            join: true,
+            join_auto: JoinAuto::InviteLink,
+            host_create: false,
+            quiet_invite: true,
+        })
+    }
+
+    fn ready(m: &mut Machine, own: u64, t: Instant, n: usize) {
+        m.state = State::MatchReady(Box::new(Ready {
+            ticket: Ticket { mode: Mode::Solo, party: Party { id: own, size: 1, leader: true, sc: None } },
+            queue_id: Q,
+            lobby: Some(QueueLobby::for_test(Q)),
+            roster: ids(n).into_iter().map(|id| RosterEntry { id, party: id }).collect(),
+            host_name: "h".into(),
+            host: HOST,
+            gate: Gate::new(t),
+        }));
+    }
+
+    fn world(own: u64, n: usize) -> FakeSteam {
+        let mut s = FakeSteam::new(own);
+        s.add_lobby(Q, HOST, 6, &ids(n), &[("nrpvp", "1"), ("host", "7001"), ("state", "go")]);
+        s
+    }
+
+    fn add_sc(s: &mut FakeSteam, members: &[u64]) {
+        s.add_lobby(SC, HOST, 6, members, &[(KEY_SC_TYPE, "x")]);
+    }
+
+    fn sc() -> Option<ScLobby> {
+        Some(ScLobby::for_test(SC))
+    }
+
+    fn tick(m: &mut Machine, s: &mut FakeSteam, t: &mut Instant, n: usize) {
+        for _ in 0..n {
+            *t += Duration::from_millis(600);
+            m.tick(s, *t);
+        }
+    }
+
+    fn line(m: &Machine) -> String {
+        m.status().line
+    }
+
+    fn invites(s: &FakeSteam) -> Vec<(u64, u64)> {
+        s.writes
+            .iter()
+            .filter_map(|w| match w {
+                Write::Invite(l, who) => Some((*l, *who)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_host_invites_up_to_five_joiners_once_each_and_all_present_needs_everybody_loaded() {
+        for n in [3usize, 6] {
+            let all = ids(n);
+            let mut m = machine(false);
+            let mut s = world(HOST, n);
+            add_sc(&mut s, &[HOST]);
+            let mut t = Instant::now();
+            ready(&mut m, HOST, t, n);
+            m.set_env(sc(), Ok(()), None, 1);
+            tick(&mut m, &mut s, &mut t, 8);
+            let want: Vec<(u64, u64)> = all[1..].iter().map(|&j| (SC, j)).collect();
+            assert_eq!(invites(&s), want, "n={n}: one invite per absent joiner, once");
+            assert_eq!(s.lobby_data(Q, "sc_lobby"), SC.to_string());
+            assert_eq!(s.lobby_data(Q, "present"), format!("1/{n}"));
+            assert_eq!(s.lobby_data(Q, "invited").split(',').count(), n - 1, "n={n}");
+            // The joiners arrive one by one; the ChrSet fills a step later.
+            for (i, &j) in all[1..].iter().enumerate() {
+                s.lobbies.get_mut(&SC).expect("sc").members.push(j);
+                let here = i + 2;
+                m.set_env(sc(), Ok(()), None, here - 1);
+                tick(&mut m, &mut s, &mut t, 3);
+                assert!(!s.writes.contains(&Write::Leave(Q)), "n={n}: not before everybody is loaded (here {here})");
+                if here < n {
+                    assert!(line(&m).starts_with("MATCH READY - waiting for"), "n={n} here {here}: {}", line(&m));
+                    assert_eq!(s.lobby_data(Q, "present"), format!("{here}/{n}"));
+                }
+            }
+            assert!(line(&m).starts_with(&format!("in the lobby {n}/{n}, waiting for")), "n={n}: {}", line(&m));
+            m.set_env(sc(), Ok(()), None, n);
+            tick(&mut m, &mut s, &mut t, 3);
+            assert_eq!(line(&m), format!("ALL PRESENT {n}/{n} - host: start the expedition"));
+            assert!(s.writes.contains(&Write::Leave(Q)));
+            assert_eq!(invites(&s).len(), n - 1, "n={n}: no re-invites");
+            assert_eq!(m.team_override(), Some(1));
+        }
+    }
+
+    #[test]
+    fn the_last_joiner_of_three_and_of_six_opens_the_link_once_and_reaches_all_present() {
+        for n in [3usize, 6] {
+            let me = *ids(n).last().expect("id");
+            let mut m = machine(false);
+            let mut s = world(me, n);
+            add_sc(&mut s, &[HOST]);
+            s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+            let mut t = Instant::now();
+            ready(&mut m, me, t, n);
+            m.set_env(None, Ok(()), None, 1);
+            tick(&mut m, &mut s, &mut t, 4);
+            let opens = s.writes.iter().filter(|w| matches!(w, Write::OpenUrl(_))).count();
+            assert_eq!(opens, 1, "n={n}: the automatic link runs once");
+            assert!(line(&m).starts_with("joining the host's lobby..."), "n={n}: {}", line(&m));
+            // Everybody ends up in the host's lobby; the game loads the ChrSet last.
+            add_sc(&mut s, &ids(n));
+            m.set_env(sc(), Ok(()), None, n - 1);
+            tick(&mut m, &mut s, &mut t, 3);
+            assert_eq!(line(&m), "in the host's lobby, loading in...", "n={n}");
+            m.set_env(sc(), Ok(()), None, n);
+            tick(&mut m, &mut s, &mut t, 3);
+            assert_eq!(line(&m), "ALL PRESENT - waiting for the host to start", "n={n}");
+            assert_eq!(s.writes.iter().filter(|w| matches!(w, Write::OpenUrl(_))).count(), 1);
+        }
+    }
+
+    #[test]
+    fn the_host_may_start_without_the_missing_players_after_60_s_when_the_minimum_is_here() {
+        for friendly in [false, true] {
+            // 6 players, 3 of them (host + 2) in the lobby and loaded.
+            let n = 6;
+            let all = ids(n);
+            let mut m = machine(friendly);
+            let mut s = world(HOST, n);
+            add_sc(&mut s, &all[..3]);
+            let mut t = Instant::now();
+            ready(&mut m, HOST, t, n);
+            m.set_env(sc(), Ok(()), None, 3);
+            tick(&mut m, &mut s, &mut t, 3);
+            assert!(!line(&m).contains("you can start"), "{}", line(&m));
+            t += Duration::from_secs(57);
+            m.tick(&mut s, t);
+            assert!(!line(&m).contains("you can start"), "58 s after publishing: {}", line(&m));
+            t += Duration::from_secs(4);
+            m.tick(&mut s, t);
+            assert_eq!(line(&m), "3/6 here - you can start; P7004, P7005, P7006 did not arrive");
+            // A late arrival changes the count; everybody here ends it.
+            s.lobbies.get_mut(&SC).expect("sc").members.push(all[3]);
+            m.set_env(sc(), Ok(()), None, 4);
+            tick(&mut m, &mut s, &mut t, 2);
+            assert_eq!(line(&m), "4/6 here - you can start; P7005, P7006 did not arrive");
+            for &j in &all[4..] {
+                s.lobbies.get_mut(&SC).expect("sc").members.push(j);
+            }
+            m.set_env(sc(), Ok(()), None, 6);
+            tick(&mut m, &mut s, &mut t, 2);
+            let expect = if friendly { "Everyone is here - host: start the expedition" } else { "ALL PRESENT 6/6 - host: start the expedition" };
+            assert_eq!(line(&m), expect);
+        }
+    }
+
+    #[test]
+    fn the_start_line_needs_the_minimum_loaded_and_never_shows_for_joiners() {
+        let n = 3;
+        let all = ids(n);
+        // Only the host is here: below `mm_min_players` = 2.
+        let mut m = machine(false);
+        let mut s = world(HOST, n);
+        add_sc(&mut s, &all[..1]);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t, n);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 2);
+        t += Duration::from_secs(90);
+        m.tick(&mut s, t);
+        assert!(!line(&m).contains("you can start"), "{}", line(&m));
+        // In the Steam lobby but not loaded yet counts as not here.
+        add_sc(&mut s, &all[..2]);
+        m.set_env(sc(), Ok(()), None, 1);
+        t += Duration::from_secs(2);
+        m.tick(&mut s, t);
+        assert!(!line(&m).contains("you can start"), "{}", line(&m));
+        m.set_env(sc(), Ok(()), None, 2);
+        t += Duration::from_secs(2);
+        m.tick(&mut s, t);
+        assert_eq!(line(&m), "2/3 here - you can start; P7003 did not arrive");
+        // A joiner never sees it.
+        let mut mj = machine(false);
+        let mut sj = world(all[1], n);
+        add_sc(&mut sj, &all[..2]);
+        sj.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+        let mut tj = Instant::now();
+        ready(&mut mj, all[1], tj, n);
+        mj.set_env(sc(), Ok(()), None, 2);
+        tick(&mut mj, &mut sj, &mut tj, 2);
+        tj += Duration::from_secs(90);
+        mj.tick(&mut sj, tj);
+        assert!(!line(&mj).contains("you can start"), "{}", line(&mj));
+    }
+
+    #[test]
+    fn a_joiner_not_in_the_hosts_lobby_120_s_after_go_gives_up_and_can_queue_again() {
+        for friendly in [false, true] {
+            let n = 3;
+            let me = ids(n)[2];
+            let mut m = machine(friendly);
+            let mut s = world(me, n);
+            add_sc(&mut s, &[HOST]);
+            s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+            let t0 = Instant::now();
+            let mut t = t0;
+            ready(&mut m, me, t0, n);
+            m.set_env(sc(), Ok(()), None, 1);
+            tick(&mut m, &mut s, &mut t, 2);
+            t = t0 + Duration::from_secs(119);
+            m.tick(&mut s, t);
+            assert!(matches!(m.state, State::MatchReady(_)), "119 s: still trying");
+            t = t0 + Duration::from_secs(120);
+            m.tick(&mut s, t);
+            assert!(m.is_idle(), "120 s: gave up");
+            assert!(s.writes.contains(&Write::Leave(Q)), "left the queue lobby");
+            let want = if friendly { "match missed - queue again" } else { "Queue: idle (match missed - queue again)" };
+            assert_eq!(line(&m), want);
+            assert!(!m.status().active);
+            assert_eq!(m.team_override(), None);
+            // Queueing again clears it.
+            m.queue(&mut s, Mode::Solo, Party { id: me, size: 1, leader: true, sc: None }, t);
+            assert!(!line(&m).contains("missed"), "{}", line(&m));
+        }
+    }
+
+    #[test]
+    fn the_give_up_never_hits_a_joiner_that_is_in_the_hosts_lobby_the_host_or_a_running_expedition() {
+        let n = 3;
+        let all = ids(n);
+        // In the host's Steam lobby (just not loaded yet): waits as long as it takes.
+        let mut m = machine(false);
+        let mut s = world(all[2], n);
+        add_sc(&mut s, &[HOST, all[2]]);
+        s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+        let t0 = Instant::now();
+        ready(&mut m, all[2], t0, n);
+        m.set_env(sc(), Ok(()), None, 1);
+        m.tick(&mut s, t0 + Duration::from_secs(1));
+        m.tick(&mut s, t0 + Duration::from_secs(600));
+        assert!(matches!(m.state, State::MatchReady(_)));
+        // The host waits for the others for as long as it likes.
+        let mut mh = machine(false);
+        let mut sh = world(HOST, n);
+        add_sc(&mut sh, &[HOST]);
+        ready(&mut mh, HOST, t0, n);
+        mh.set_env(sc(), Ok(()), None, 1);
+        mh.tick(&mut sh, t0 + Duration::from_secs(1));
+        mh.tick(&mut sh, t0 + Duration::from_secs(600));
+        assert!(matches!(mh.state, State::MatchReady(_)));
+        // A joiner whose expedition already started keeps its match (the SC-gone rule is the only one that ends it).
+        let mut mx = machine(false);
+        let mut sx = world(all[2], n);
+        add_sc(&mut sx, &[HOST]);
+        sx.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+        ready(&mut mx, all[2], t0, n);
+        mx.set_env(sc(), Ok(()), Some(Phase::Expedition), 1);
+        mx.tick(&mut sx, t0 + Duration::from_secs(1));
+        mx.tick(&mut sx, t0 + Duration::from_secs(130));
+        assert!(matches!(mx.state, State::MatchReady(_)));
+    }
+
+    #[test]
+    fn player_words_for_the_host_of_three() {
+        let n = 3;
+        let all = ids(n);
+        let mut m = machine(true);
+        let mut s = world(HOST, n);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t, n);
+        assert_eq!(line(&m), "Match found!", "before the first gate pass");
+        m.set_env(None, Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(
+            line(&m),
+            "Match found! Press Matchmaking Settings > Invite Members to open your lobby (no Steam window will open)"
+        );
+        add_sc(&mut s, &all[..1]);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! Waiting for players to join your lobby (1/3 here)");
+        s.lobbies.get_mut(&SC).expect("sc").members.extend_from_slice(&all[1..]);
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! Everyone is in your lobby, waiting for P7002, P7003 to load in...");
+        m.set_env(sc(), Ok(()), None, 3);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Everyone is here - host: start the expedition");
+        m.set_env(sc(), Ok(()), Some(Phase::Expedition), 3);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(line(&m), "In match");
+    }
+
+    #[test]
+    fn player_words_for_a_joiner_of_three() {
+        let n = 3;
+        let all = ids(n);
+        let me = all[1];
+        let mut m = machine(true);
+        let mut s = world(me, n);
+        let mut t = Instant::now();
+        ready(&mut m, me, t, n);
+        m.set_env(None, Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! Waiting for the host...");
+        add_sc(&mut s, &all[..1]);
+        s.lobbies.get_mut(&Q).expect("q").data.insert("sc_lobby".into(), SC.to_string());
+        m.set_env(None, Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! Joining the host...");
+        s.lobbies.get_mut(&SC).expect("sc").members.push(me);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! In the host's lobby, waiting for the others (2/3 here)");
+        s.lobbies.get_mut(&SC).expect("sc").members.push(all[2]);
+        m.set_env(sc(), Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Match found! Loading in...");
+        m.set_env(sc(), Ok(()), None, 3);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(line(&m), "Everyone is here - waiting for the host to start");
     }
 }

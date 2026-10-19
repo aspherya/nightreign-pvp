@@ -28,6 +28,9 @@ THE PANEL
 * Use the buttons. Do not press the F1, F2, F3 or F5 keys: they do the same as the buttons.
 * Do not press any button in the "Join methods" block, nor "test quiet invite".
   The mod joins the host's lobby by itself.
+* While you are searching, quitting to the title screen or leaving the Roundtable
+  leaves the queue by itself ("Queue: left (you left the Roundtable)"). Press the
+  Queue button again when you are back.
 
 
 TEST 1 - TEAMMATES

@@ -36,6 +36,8 @@ const TICKET_TIMEOUT: Duration = Duration::from_secs(45);
 const MAX_FAILS: u32 = 3;
 const ORPHAN_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_CANDIDATES: i32 = 50;
+/// MM-4: how long the player must be away from the Roundtable (while queued) before the queue is left by itself.
+pub(crate) const AWAY_LEAVE: Duration = Duration::from_secs(3);
 
 /// `1234 (0x4D2)`
 pub(crate) fn idt(v: u64) -> String {
@@ -93,6 +95,8 @@ struct InQueue {
     next_hb: Instant,
     incomplete_since: Option<Instant>,
     members: u32,
+    /// MM-4 (owner): since when the lobby has had 2 or more members (starts the fill wait).
+    second_since: Option<Instant>,
 }
 
 struct Ready {
@@ -143,8 +147,14 @@ struct Orphan {
 }
 
 pub(crate) struct MachineCfg {
-    /// Players for a match (`mm_match_players`, 2..=6).
+    /// Queue lobby size (`mm_max_players`, 2..=6): the lobby is created with this many slots and is full at this many players.
     pub need: u32,
+    /// MM-4: the smallest match (`mm_min_players`): once the lobby has a 2nd member and `fill_wait` has passed, it starts with this many or more.
+    pub min: u32,
+    /// MM-4: `mm_fill_wait_s`.
+    pub fill_wait: Duration,
+    /// MM-4: the player build: status lines in player words (S9 6, MM-4 step 5). Dev builds keep the detailed lines.
+    pub friendly: bool,
     pub game: String,
     pub sc: String,
     /// MM-3: `mm_join`. Off = exactly MM-2 (a ready match just stays ready).
@@ -170,6 +180,10 @@ pub(crate) struct Machine {
     env: Env,
     /// MM-3: queue lobby id of the match that just ended; a party follower does not follow a stale `nrpvp_q` pointing at it.
     ignore_q: Option<u64>,
+    /// MM-4: why the queue was left by itself (shown as `Queue: left (...)` while idle).
+    left_note: Option<String>,
+    /// MM-4: since when the player has been away from the Roundtable while Searching / InQueue.
+    away_since: Option<Instant>,
 }
 
 impl Machine {
@@ -185,6 +199,8 @@ impl Machine {
             follow_block_until: None,
             env: Env::default(),
             ignore_q: None,
+            left_note: None,
+            away_since: None,
         }
     }
 
@@ -209,20 +225,32 @@ impl Machine {
 
     pub(crate) fn status(&self) -> super::Status {
         let need = self.cfg.need;
+        let friendly = self.cfg.friendly;
         let (line, active) = match &self.state {
             State::Idle => (
-                match &self.last_error {
-                    Some(e) => format!("Queue: idle ({e})"),
-                    None => "Queue: idle".to_string(),
+                match (&self.last_error, &self.left_note) {
+                    (Some(e), _) if friendly => e.clone(),
+                    (Some(e), _) => format!("Queue: idle ({e})"),
+                    (None, Some(n)) => format!("Queue: left ({n})"),
+                    (None, None) if friendly => "Not in a queue".to_string(),
+                    (None, None) => "Queue: idle".to_string(),
                 },
                 false,
             ),
+            State::Searching { .. } | State::Creating { .. } | State::Joining { .. } if friendly => {
+                ("Searching for players...".to_string(), true)
+            }
+            State::InQueue(q) if friendly => (format!("Searching for players... {}/{need}", q.members), true),
             State::Searching { ticket, .. } => (format!("Queue: {} searching for a lobby", ticket.mode.label()), true),
             State::Creating { ticket, .. } => (format!("Queue: {} creating a lobby", ticket.mode.label()), true),
             State::Joining { ticket, target, .. } => {
                 (format!("Queue: {} joining lobby {}", ticket.mode.label(), target.id()), true)
             }
             State::InQueue(q) => (format!("Queue: {} {}/{need} searching", q.ticket.mode.label(), q.members), true),
+            State::MatchReady(r) if self.cfg.join && friendly => {
+                (if r.gate.player_line().is_empty() { "Match found!".to_string() } else { r.gate.player_line().to_string() }, true)
+            }
+            State::MatchReady(_) if friendly => ("Match found!".to_string(), true),
             State::MatchReady(r) if self.cfg.join && !r.gate.line().is_empty() => (r.gate.line().to_string(), true),
             State::MatchReady(r) => (
                 format!(
@@ -308,6 +336,8 @@ impl Machine {
             return;
         }
         self.last_error = None;
+        self.left_note = None;
+        self.away_since = None;
         tracing::info!(
             "mm_queue: queue requested: mode={} party_leader={} size={} leader={} sc_lobby={:?} need={}",
             mode.label(),
@@ -354,6 +384,23 @@ impl Machine {
         self.event_list = None;
         self.event_enter = None;
         tracing::info!("mm_queue: state {from} -> Idle");
+    }
+
+    /// MM-4: leave the queue by itself when the player has left the Roundtable (`away`: an expedition, or the world was unloaded: quit to the
+    /// title, a loading screen) for [`AWAY_LEAVE`], but only while Searching / Creating / Joining / InQueue. NOT in MatchReady: a joiner's
+    /// world reloads when it enters the host's lobby (S9 5g). The worker calls this every tick.
+    pub(crate) fn world_tick(&mut self, api: &mut dyn QueueSteam, away: bool, now: Instant) {
+        let queued = matches!(self.state, State::Searching { .. } | State::Creating { .. } | State::Joining { .. } | State::InQueue(_));
+        if !(queued && away) {
+            self.away_since = None;
+            return;
+        }
+        let since = *self.away_since.get_or_insert(now);
+        if now.saturating_duration_since(since) >= AWAY_LEAVE {
+            self.leave(api, "the player left the Roundtable (expedition or world unloaded)", now);
+            self.left_note = Some("you left the Roundtable".to_string());
+            self.away_since = None;
+        }
     }
 
     /// `LeaveLobby` on the queue lobby, plus clearing the party leader's `nrpvp_q` value.
@@ -740,7 +787,8 @@ impl Machine {
             hb: None,
             next_hb: now + HEARTBEAT_EVERY,
             incomplete_since: None,
-            members: 0,
+            members: 1,
+            second_since: None,
         }))
     }
 
@@ -814,9 +862,27 @@ impl Machine {
             iq.incomplete_since = None;
         }
 
+        // MM-4: the fill wait runs from the moment the lobby has 2 or more members.
+        if n >= 2 {
+            iq.second_since.get_or_insert(now);
+        } else {
+            iq.second_since = None;
+        }
         if owner {
-            // 6a. Full of complete tickets: close and start.
-            if report.complete_players >= self.cfg.need && report.incomplete_parties.is_empty() && report.unknown == 0 {
+            // 6a. Full of complete tickets, or the fill wait is over and the lobby holds at least `min`: close and start.
+            let clean = report.incomplete_parties.is_empty() && report.unknown == 0;
+            let full = report.complete_players >= self.cfg.need;
+            let waited = iq.second_since.is_some_and(|t| now.saturating_duration_since(t) >= self.cfg.fill_wait);
+            if clean && (full || (waited && report.complete_players >= self.cfg.min)) {
+                if !full {
+                    tracing::info!(
+                        "mm_queue: starting with {} of {} players: the fill wait of {} s is over and the minimum is {}",
+                        report.complete_players,
+                        self.cfg.need,
+                        self.cfg.fill_wait.as_secs(),
+                        self.cfg.min
+                    );
+                }
                 api.set_joinable(&iq.lobby, false);
                 api.set_data(&iq.lobby, proto::K_HOST, &own.to_string());
                 api.set_data(&iq.lobby, proto::K_ROSTER, &proto::encode_roster(&report.roster));
@@ -924,7 +990,7 @@ mod tests {
     const OTHER: u64 = 7002;
 
     fn cfg() -> MachineCfg {
-        MachineCfg { need: 2, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite, host_create: false, quiet_invite: false }
+        MachineCfg { need: 2, min: 2, fill_wait: Duration::from_secs(90), friendly: false, game: "1.3.3.0".into(), sc: "1.1.3".into(), join: false, join_auto: JoinAuto::Invite, host_create: false, quiet_invite: false }
     }
 
     fn tag_data() -> Vec<(&'static str, &'static str)> {
@@ -1036,6 +1102,7 @@ mod tests {
             next_hb: t2,
             incomplete_since: None,
             members: 0,
+            second_since: None,
         }));
         run(&mut m2, &mut s2, &mut t2, |m| matches!(m.state, State::MatchReady(_)));
         match (&m.state, &m2.state) {
@@ -1140,6 +1207,7 @@ mod tests {
             next_hb: t,
             incomplete_since: None,
             members: 2,
+            second_since: None,
         }));
         m.tick(&mut s, t);
         assert!(s.writes.contains(&Write::Leave(1500)));
@@ -1255,10 +1323,242 @@ mod tests {
             next_hb: t + Duration::from_secs(3600),
             incomplete_since: None,
             members: 0,
+            second_since: None,
         }));
         m.tick(&mut s, t);
         assert!(matches!(m.state, State::InQueue(_)));
         assert!(s.lobby_data(77, "state").is_empty());
+    }
+
+    // ---- MM-4: lobby size, fill wait, player words, auto-leave ----
+
+    fn cfg_n(need: u32, min: u32, friendly: bool) -> MachineCfg {
+        MachineCfg { need, min, fill_wait: Duration::from_secs(90), friendly, ..cfg() }
+    }
+
+    /// `ME` queued and sitting in its own lobby; returns the lobby id.
+    fn owner_in_queue(m: &mut Machine, s: &mut FakeSteam, t: &mut Instant) -> u64 {
+        m.queue(s, Mode::Solo, solo(ME), *t);
+        run(m, s, t, |m| matches!(m.state, State::InQueue(_)));
+        match &m.state {
+            State::InQueue(q) => q.lobby.id(),
+            _ => panic!("not in queue: {}", m.state.name()),
+        }
+    }
+
+    /// Another Solo player enters the lobby with a published ticket.
+    fn join_solo(s: &mut FakeSteam, id: u64, who: u64) {
+        s.lobbies.get_mut(&id).expect("lobby").members.push(who);
+        s.set_member(id, who, "nrpvp_party", &who.to_string());
+        s.set_member(id, who, "nrpvp_size", "1");
+    }
+
+    fn secs(m: &mut Machine, s: &mut FakeSteam, t: &mut Instant, n: u32) {
+        for _ in 0..n {
+            *t += Duration::from_secs(1);
+            m.tick(s, *t);
+        }
+    }
+
+    #[test]
+    fn a_full_six_player_lobby_starts_at_once_with_all_six_in_the_roster() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        assert!(s.writes.contains(&Write::Create(6)), "the lobby is created with `mm_max_players` slots");
+        secs(&mut m, &mut s, &mut t, 1);
+        assert_eq!(s.lobby_data(id, "need"), "6");
+        for who in [OTHER, 7003, 7004, 7005] {
+            join_solo(&mut s, id, who);
+        }
+        secs(&mut m, &mut s, &mut t, 3);
+        assert!(matches!(m.state, State::InQueue(_)), "5 of 6: still waiting for the fill wait");
+        join_solo(&mut s, id, 7006);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert!(matches!(m.state, State::MatchReady(_)), "6 of 6 starts at once, no 90 s wait");
+        assert_eq!(s.lobby_data(id, "state"), "go");
+        assert_eq!(s.lobby_data(id, "roster").split(',').count(), 6, "{}", s.lobby_data(id, "roster"));
+        assert!(s.writes.contains(&Write::Joinable(id, false)));
+    }
+
+    #[test]
+    fn three_players_start_after_the_fill_wait_counted_from_the_second_member() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        // Alone for a long time: never starts (the wait starts with the 2nd member).
+        secs(&mut m, &mut s, &mut t, 200);
+        assert!(matches!(m.state, State::InQueue(_)));
+        join_solo(&mut s, id, OTHER);
+        secs(&mut m, &mut s, &mut t, 60);
+        join_solo(&mut s, id, 7003);
+        secs(&mut m, &mut s, &mut t, 25);
+        assert!(matches!(m.state, State::InQueue(_)), "85 s after the 2nd member: not yet");
+        secs(&mut m, &mut s, &mut t, 10);
+        assert!(matches!(m.state, State::MatchReady(_)), "90 s after the 2nd member with 3 players: go");
+        assert_eq!(s.lobby_data(id, "roster"), format!("{ME}:{ME},{OTHER}:{OTHER},7003:7003"));
+        assert_eq!(s.lobby_data(id, "host"), ME.to_string());
+    }
+
+    #[test]
+    fn the_fill_wait_needs_the_minimum_and_resets_when_the_lobby_drops_below_two() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 3, false));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        join_solo(&mut s, id, OTHER);
+        secs(&mut m, &mut s, &mut t, 120);
+        assert!(matches!(m.state, State::InQueue(_)), "2 players, minimum 3: waits however long it takes");
+        join_solo(&mut s, id, 7003);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert!(matches!(m.state, State::MatchReady(_)), "the wait was over already, so the 3rd player starts it");
+        // The wait restarts from the next 2nd member once everybody else left.
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        join_solo(&mut s, id, OTHER);
+        secs(&mut m, &mut s, &mut t, 80);
+        s.lobbies.get_mut(&id).expect("lobby").members.retain(|x| *x == ME);
+        secs(&mut m, &mut s, &mut t, 5);
+        join_solo(&mut s, id, 7003);
+        secs(&mut m, &mut s, &mut t, 60);
+        assert!(matches!(m.state, State::InQueue(_)), "the 90 s count began again with the new 2nd member");
+        secs(&mut m, &mut s, &mut t, 40);
+        assert!(matches!(m.state, State::MatchReady(_)));
+    }
+
+    #[test]
+    fn an_incomplete_ticket_blocks_the_timed_start_too() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        join_solo(&mut s, id, OTHER);
+        // A third member whose ticket is not published yet.
+        s.lobbies.get_mut(&id).expect("lobby").members.push(7003);
+        secs(&mut m, &mut s, &mut t, 100);
+        assert!(matches!(m.state, State::InQueue(_)));
+        s.set_member(id, 7003, "nrpvp_party", "7003");
+        s.set_member(id, 7003, "nrpvp_size", "1");
+        secs(&mut m, &mut s, &mut t, 2);
+        assert!(matches!(m.state, State::MatchReady(_)));
+    }
+
+    #[test]
+    fn player_words_for_the_queue_and_dev_lines_unchanged() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, true));
+        assert_eq!(m.status().line, "Not in a queue");
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Solo, solo(ME), t);
+        assert_eq!(m.status().line, "Searching for players...");
+        let id = owner_in_queue_after(&mut m, &mut s, &mut t);
+        assert_eq!(m.status().line, "Searching for players... 1/6");
+        join_solo(&mut s, id, OTHER);
+        join_solo(&mut s, id, 7003);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert_eq!(m.status().line, "Searching for players... 3/6");
+        assert!(m.status().active);
+        m.leave(&mut s, "test", t);
+        assert_eq!(m.status().line, "Not in a queue");
+        // A match without the join step: "Match found!".
+        let mut m2 = Machine::new(cfg_n(2, 2, true));
+        let mut s2 = FakeSteam::new(ME);
+        let mut t2 = Instant::now();
+        let id2 = owner_in_queue(&mut m2, &mut s2, &mut t2);
+        join_solo(&mut s2, id2, OTHER);
+        secs(&mut m2, &mut s2, &mut t2, 3);
+        assert_eq!(m2.status().line, "Match found!");
+        // Dev lines keep the detailed text.
+        let mut s3 = FakeSteam::new(ME);
+        let mut m3 = Machine::new(cfg_n(6, 2, false));
+        let mut t3 = Instant::now();
+        owner_in_queue(&mut m3, &mut s3, &mut t3);
+        assert_eq!(m3.status().line, "Queue: solo 1/6 searching");
+    }
+
+    /// Like `owner_in_queue` but for a machine that already called `queue`.
+    fn owner_in_queue_after(m: &mut Machine, s: &mut FakeSteam, t: &mut Instant) -> u64 {
+        run(m, s, t, |m| matches!(m.state, State::InQueue(_)));
+        match &m.state {
+            State::InQueue(q) => q.lobby.id(),
+            _ => panic!("not in queue: {}", m.state.name()),
+        }
+    }
+
+    #[test]
+    fn a_failed_queue_shows_the_reason_in_plain_words_in_the_player_build() {
+        let mut s = FakeSteam::new(ME);
+        s.create_fails = true;
+        let mut m = Machine::new(cfg_n(6, 2, true));
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Solo, solo(ME), t);
+        for _ in 0..40 {
+            t += Duration::from_secs(4);
+            m.tick(&mut s, t);
+        }
+        assert!(m.is_idle());
+        assert!(m.status().line.contains("CreateLobby failed"), "{}", m.status().line);
+        assert!(!m.status().line.starts_with("Queue:"));
+    }
+
+    #[test]
+    fn leaving_the_roundtable_while_searching_or_in_queue_leaves_after_a_short_debounce() {
+        for friendly in [false, true] {
+            // Searching.
+            let mut s = FakeSteam::new(ME);
+            let mut m = Machine::new(cfg_n(6, 2, friendly));
+            let mut t = Instant::now();
+            m.queue(&mut s, Mode::Solo, solo(ME), t);
+            assert!(matches!(m.state, State::Searching { .. }));
+            m.world_tick(&mut s, true, t);
+            m.world_tick(&mut s, true, t + Duration::from_secs(2));
+            assert!(!m.is_idle(), "2 s away: still queued");
+            m.world_tick(&mut s, false, t + Duration::from_secs(2));
+            m.world_tick(&mut s, true, t + Duration::from_secs(4));
+            m.world_tick(&mut s, true, t + Duration::from_secs(6));
+            assert!(!m.is_idle(), "back for a moment: the debounce starts again");
+            m.world_tick(&mut s, true, t + Duration::from_secs(7));
+            assert!(m.is_idle());
+            assert_eq!(m.status().line, "Queue: left (you left the Roundtable)");
+            assert!(!m.status().active);
+            // InQueue: our lobby is left too.
+            let mut s = FakeSteam::new(ME);
+            let mut m = Machine::new(cfg_n(6, 2, friendly));
+            t = Instant::now();
+            let id = owner_in_queue(&mut m, &mut s, &mut t);
+            m.world_tick(&mut s, true, t);
+            m.world_tick(&mut s, true, t + AWAY_LEAVE);
+            assert!(m.is_idle());
+            assert!(s.writes.contains(&Write::Leave(id)), "{:?}", s.writes);
+            assert_eq!(m.status().line, "Queue: left (you left the Roundtable)");
+            // Queueing again clears the note.
+            m.queue(&mut s, Mode::Solo, solo(ME), t);
+            assert!(!m.status().line.contains("left"), "{}", m.status().line);
+        }
+    }
+
+    #[test]
+    fn a_ready_match_never_leaves_by_itself_when_the_world_reloads() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(2, 2, true));
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        join_solo(&mut s, id, OTHER);
+        run(&mut m, &mut s, &mut t, |m| matches!(m.state, State::MatchReady(_)));
+        for i in 0..60 {
+            m.world_tick(&mut s, true, t + Duration::from_secs(i));
+        }
+        assert!(matches!(m.state, State::MatchReady(_)), "S9 5g: a joiner's world reloads when it enters the host's lobby");
+        // An idle machine does nothing either.
+        let mut idle = Machine::new(cfg());
+        idle.world_tick(&mut s, true, t);
+        idle.world_tick(&mut s, true, t + Duration::from_secs(60));
+        assert!(idle.is_idle());
+        assert_eq!(idle.status().line, "Queue: idle");
     }
 
     #[test]
