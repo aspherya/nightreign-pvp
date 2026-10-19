@@ -53,20 +53,20 @@ const EF_MAP_SIZE: usize = 0x40;
 /// `CSEventFlagMan.world_type` (u32), right after the 0x78-byte `CSFD4VirtualMemoryFlag`.
 const EF_WORLD_TYPE: usize = 0x78;
 /// Bytes read of the manager header.
-const EF_HEADER_LEN: usize = 0x80;
+pub(crate) const EF_HEADER_LEN: usize = 0x80;
 
 // ---- MSVC std::map node (fsrs shared/stl rb_tree.rs `RbNode<Pair<u32, FlagBlockDescriptor>>`) ----
 const NODE_LEFT: usize = 0x00;
 const NODE_PARENT: usize = 0x08;
 const NODE_RIGHT: usize = 0x10;
-const NODE_IS_NIL: usize = 0x19;
+pub(crate) const NODE_IS_NIL: usize = 0x19;
 /// `Pair.first` (the group id, u32).
 const NODE_KEY: usize = 0x20;
 /// `FlagBlockDescriptor.location_mode` (u32).
 const NODE_MODE: usize = 0x28;
 /// The 8-byte location union (holder offset u32, or an external block pointer).
 const NODE_LOC: usize = 0x30;
-const NODE_LEN: usize = 0x38;
+pub(crate) const NODE_LEN: usize = 0x38;
 /// Depth guard for the tree walk (a red-black tree of 10^6 nodes is under 40 deep).
 const TREE_MAX_DEPTH: usize = 128;
 
@@ -115,8 +115,8 @@ pub(crate) fn watched_flags() -> Vec<u32> {
     v
 }
 
-/// UI-0 step 5: every group key of the descriptor map in order (in-order walk of the MSVC tree), at most `limit` keys.
-fn all_groups(rc: &mut RegionCache, head: usize, limit: usize) -> Result<Vec<u32>, &'static str> {
+/// UI-0 step 5: every node of the descriptor map in key order (in-order walk of the MSVC tree), at most `limit` nodes.
+pub(crate) fn all_groups(rc: &mut RegionCache, head: usize, limit: usize) -> Result<Vec<Node>, &'static str> {
     let head_node = read_node(rc, head).ok_or("map head unreadable")?;
     let mut out = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
@@ -136,7 +136,7 @@ fn all_groups(rc: &mut RegionCache, head: usize, limit: usize) -> Result<Vec<u32
         }
         let Some(top) = stack.pop() else { break };
         let n = read_node(rc, top).ok_or("tree node unreadable")?;
-        out.push(n.key);
+        out.push(n);
         steps += 1;
         if steps >= limit {
             break;
@@ -1066,7 +1066,7 @@ impl Probes {
             self.flag_checks_ok = Some(ok);
             // UI-0 step 5: which groups have storage (a flag in a group without a block cannot be set), once per instance.
             if ok {
-                match all_groups(rc, layout.head, 200_000) {
+                match all_groups(rc, layout.head, 200_000).map(|v| v.iter().map(|n| n.key).collect::<Vec<u32>>()) {
                     Ok(g) => tracing::info!(
                         "{TAG}: flag groups with a descriptor ({} of map size {}; flag = group * {} + n): {}",
                         g.len(),

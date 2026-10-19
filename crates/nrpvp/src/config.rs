@@ -171,6 +171,10 @@ mm_lobby_trace = false
 # off while it is on.
 ui_text_trace = false
 
+# UI-1 step 0 (dev mode only; the player build forces it off): log every event flag that changes (all flag groups with storage, every
+# 50 ms) as \"ui_flag_watch: flag <id>: off -> ON\". Read-only. Flags that flip more than 20 times in 10 s are muted.
+ui_flag_watch = false
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -280,6 +284,8 @@ pub(crate) struct Config {
     pub mm_lobby_trace: bool,
     /// UI-0: text-id tracer (developer mode only; forced off in the player build; turns `mm_quiet_invite` and `mm_lobby_trace` off).
     pub ui_text_trace: bool,
+    /// UI-1 step 0: fast all-groups flag-change logger (developer mode only; forced off in the player build).
+    pub ui_flag_watch: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -347,6 +353,7 @@ impl Default for Config {
             mm_join_auto: "invite".to_string(),
             mm_lobby_trace: false,
             ui_text_trace: false,
+            ui_flag_watch: false,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
@@ -565,6 +572,7 @@ fn enforce_player_mode(
     cfg.mm_lobby_trace = false;
     // UI-0: and the text-id tracer.
     cfg.ui_text_trace = false;
+    cfg.ui_flag_watch = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.
@@ -1304,6 +1312,12 @@ ui_text_trace = true
         let (cfg, _) = parse("ui_text_trace = true
 ").expect("ok");
         assert!(!cfg.dev_mode && !cfg.ui_text_trace);
+        let (cfg, w) = parse_dev("ui_flag_watch = true
+").expect("ok");
+        assert!(cfg.ui_flag_watch && w.is_empty(), "{w:?}");
+        let (cfg, _) = parse("ui_flag_watch = true
+").expect("ok");
+        assert!(!cfg.ui_flag_watch);
     }
 
     #[test]

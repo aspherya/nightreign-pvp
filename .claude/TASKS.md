@@ -780,6 +780,14 @@ is no "Leave" entry. Trio = 2 teams of 3 (called Squad elsewhere). No ImGui for 
    Solo Mission. Also answer: does pressing start with SC loaded begin SC's own hosting or the game's offline path, and can our queue run
    instead without breaking SC (S9: the game's own session code must still make the SC lobby, MM-3f)? Pick the signal (a flag, best; else
    a text id as a last resort) and write it here before step 2.
+   **Built (2026-10-19):** `game/flagwatch.rs`, dev config `ui_flag_watch = true` (own thread, every 50 ms, all groups with storage,
+   read-only, flags flipping >20×/10 s muted; lines `ui_flag_watch: flag <id>: off -> ON`); `dist
+rpvp.toml` also has `ui_text_trace = true`,
+   `mm_probe`/`mm_join` on (Steam lobby events logged). 427 tests pass, clippy clean.
+   **Runbook (Leonardo, solo, ~5 min, `.\scripts\launch.ps1`, normal SC profile):** press **F10** before each step and wait 3 s after it.
+   1. Load into the Roundtable. 2. Table → expedition menu. 3. Number of Players = **Up to 6 players**; press **Commence Expedition**;
+   wait 10 s; note in one line what the screen shows. 4. Cancel it the game's way (whatever it offers; "Cancel matchmaking?" → yes);
+   note what you pressed. 5. Number of Players = **Solo Mission**; Commence; let it load. 6. Quit. Tell Claude the two notes from 3 and 4.
 1. **Game-data sources in git, built by a script.** New `gamedata/` folder with only our own material: the edit of `t600001000` as a
    patch against the esdtool decompile, and our FMG entries as a small table (`id`, English text). New `scripts/build-gamedata.ps1`: from
    `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into `dist\gamedata\script\talk\`, add our

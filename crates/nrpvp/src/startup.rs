@@ -77,6 +77,10 @@ pub(crate) fn run() {
             if cfg.dev_mode && cfg.ui_text_trace {
                 game::texttrace::spawn(m.base, m.size);
             }
+            // UI-1 step 0: dev-only fast flag-change logger (read-only).
+            if cfg.dev_mode && cfg.ui_flag_watch {
+                game::flagwatch::spawn(m.base);
+            }
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();
                 overlay::spawn(
