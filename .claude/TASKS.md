@@ -767,31 +767,41 @@ EventTextForTalk texts, our flag 10007000 set by the list and read by the DLL, S
 EMEVD Generic Dialog with EventTextForMap ids is the status-text route. Dev tools added: `ui_text_trace`, lobby-flag watch, flag-group census,
 `experiments/UI-0/map_text.py`, profiles `nrpvp-ui0a/ui0b`. Two-player check: FS-UI1 (TESTING.md §6).
 
-### UI-1 — Battle Royale mode choice at the Roundtable table (replaces the Insert panel's queue button)
-Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo), then FS | Status: ready | Depends: UI-0 | Replaces: MM-5
-Goal: the player starts matchmaking from the table, in the game's own list, with no ImGui. Proven pieces: UI-0 step 6.
+### UI-1 — Battle Royale at the Roundtable table: Solo / Duo / Trio, then the stock boss menu
+Owner: OPUS (spike + spec) → SONNET/implementer → HUMAN (solo), then FS | Status: spike first (step 0) | Depends: UI-0 | Replaces: MM-5
+**Flow (Leonardo, 2026-10-19):** press the table → the game's own list shows **Solo / Duo / Trio** (Battle Royale only; the normal
+expedition is not offered while the mod is installed) → the stock expedition menu opens (pick the Nightlord) → pressing start begins **our**
+matchmaking → the match starts by itself. To stop, the player uses the game's own cancel ("Cancel matchmaking?", CL_Dialogues 506012); there
+is no "Leave" entry. Trio = 2 teams of 3 (called Squad elsewhere). No ImGui for players.
+0. **Spike (Opus + HUMAN solo, before any building): how does the DLL see "start" and "cancel" inside the stock menu?** UI-0 saw the game
+   look up 336900 "Matchmaking...", 336902 "Ready to commence expedition", 336904 "Matchmaking cancelled", 506012 "Cancel matchmaking?"
+   (step 5 trace), but no flag change at 1 s sampling. Dev build: snapshot the whole blocks of flag groups 10000..10009 every 100 ms and log
+   every bit that changes, keep `ui_text_trace` on; Leonardo, with SC, picks each Number of Players option, presses start, cancels, starts a
+   Solo Mission. Also answer: does pressing start with SC loaded begin SC's own hosting or the game's offline path, and can our queue run
+   instead without breaking SC (S9: the game's own session code must still make the SC lobby, MM-3f)? Pick the signal (a flag, best; else
+   a text id as a last resort) and write it here before step 2.
 1. **Game-data sources in git, built by a script.** New `gamedata/` folder with only our own material: the edit of `t600001000` as a
-   patch against the esdtool decompile (not the whole game script), and our FMG entries as a small table (`id`, English text). New
-   `scripts/build-gamedata.ps1`: from `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into
-   `dist\gamedata\script\talk\`, add our entries to `EventTextForTalk` in **every** `msg/<lang>/menu_dlc01.msgbnd.dcx` (English text in all
-   languages for now) with WitchyBND, and print the hashes. It refuses to run if the unpacked `m10_00_00_00.talkesdbnd.dcx` hash differs
-   from the pinned 1.03.3 hash (`43D5005F…`), so a game patch cannot silently produce a broken file (Q8).
-2. **The list** (in `t600001000`, before `x4`): "Solo Battle Royale" (flag 10007001), "Expedition" (stock menu), and, only while the DLL
-   holds flag **10007010 = "in a queue"** ON, "Leave Battle Royale queue" (flag 10007002). Choosing Solo or Leave closes the talk (no menu).
-   Duo/Squad entries come with MM-6. Text ids: 99100000.. in EventTextForTalk.
-3. **DLL: production flag access** (`game/flags.rs`, out of `probe2.rs`, cheap reads with `mem::read`, no `RegionCache::new()` on the main
-   loop): `get(flag)` and `set(flag, on)`, with `set` refusing any flag outside 10007000..=10007999. First flag **write** in the project:
-   test it on a synthetic manager like probe2's tests. Each main-loop tick: 10007001 ON → `MmQueue(Solo)` and set it OFF; 10007002 ON →
-   `MmLeave` and set it OFF; keep 10007010 equal to "queued or matched". Log every change (`ui_flags:`).
-4. **Launch with the package.** The launcher / me3 profile the player zip uses gains a `[[packages]]` entry for `gamedata\`; the player build
-   keeps the Insert panel for now (removed in UI-2 once the status text is in game). With `matchmaking = false` the list still shows (the
-   DLL just ignores the flags; say so in the how-to).
-5. Before shipping the game files in a public zip: list exactly which game files we ship (two) and note the SC-author question (S9 §8).
-Acceptance (implementer): `cargo test` (flag set/get on the synthetic manager; refusal outside our range; tick logic), clippy clean,
-`build-gamedata.ps1` output hashes recorded in this card, player zip contains `gamedata\` and the profile entry.
-Acceptance (HUMAN, solo): player zip: table → "Solo Battle Royale" → `Searching for players... 1/6` (badge); table again shows "Leave
-Battle Royale queue" → leaves. Relaunch: list has no "Leave" (10007010 not stuck ON in the save).
-Two-player: add to the next FS after FS-UI1 passes.
+   patch against the esdtool decompile, and our FMG entries as a small table (`id`, English text). New `scripts/build-gamedata.ps1`: from
+   `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into `dist\gamedata\script\talk\`, add our
+   entries to `EventTextForTalk` in **every** `msg/<lang>/menu_dlc01.msgbnd.dcx` (English text everywhere for now) with WitchyBND, print the
+   hashes. It refuses to run if the unpacked `m10_00_00_00.talkesdbnd.dcx` hash differs from the pinned 1.03.3 hash (`43D5005F…`) (Q8).
+2. **The list** (in `t600001000`, before `x4`): "Solo Battle Royale" (sets 10007001), "Duo Battle Royale" (10007002), "Trio Battle
+   Royale" (10007003); each choice sets its mode flag (the others OFF) and then opens the stock menu (`x4`); Back on the list = nothing.
+   Text ids 99100000.. in EventTextForTalk.
+3. **DLL: production flag access** (`game/flags.rs`, out of `probe2.rs`; cheap `mem::read`, no `RegionCache::new()` on the main loop):
+   `get(flag)` and `set(flag, on)`; `set` refuses anything outside 10007000..=10007999. First flag write in the project: tests on a synthetic
+   manager like probe2's.
+4. **Start and cancel** (with the step 0 signal): start pressed with mode M chosen → `MmQueue(M)`; the game's cancel → `MmLeave`; leaving
+   the Roundtable keeps MM-4's auto-leave. Duo/Trio need MM-6: until then the DLL logs and ignores them (UI-2 shows "coming soon").
+   The mode flags are cleared by the DLL once consumed, and at startup (not left ON in the save).
+5. **Launch with the package.** The launcher / me3 profile of the player zip gains a `[[packages]]` entry for `gamedata\`; the Insert panel
+   stays until UI-2 brings the status text into the game.
+6. Before a public zip ships game files: list exactly which ones (two) and note the SC-author question (S9 §8).
+Acceptance (implementer): `cargo test` (flag get/set + range refusal on the synthetic manager; start/cancel logic), clippy clean, hashes from
+`build-gamedata.ps1` recorded here, player zip contains `gamedata\` and the profile entry.
+Acceptance (HUMAN, solo): player zip: table shows exactly Solo / Duo / Trio; Solo → boss menu → start → `Searching for players... 1/6`
+(badge); the game's cancel → queue left; relaunch: no mode flag left ON.
+Two-player: next FS after FS-UI1 passes.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
