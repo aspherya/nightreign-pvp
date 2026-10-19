@@ -178,12 +178,22 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 | Phase from team type | local player `ChrIns+0x74` (§4): 1 at the Roundtable, 2 in an expedition | The gate uses it for "match started" and "match over" | FS-MM1, FS-MM3 |
 | Join link | `steam://joinlobby/2622380/<lobby>/<host>` | Steam passes it to the running game as `GameLobbyJoinRequested_t`; the game joins by itself (works only for a lobby made by the game) | FS-MM1, FS-MM3 |
 
+## 13. Text and event flags (UI-0, game 1.03.3)
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| `LookupEntry(repo, slot, category, id)` | `exe+0x27F4D20` | Returns the text of FMG `category` (the FMG file id in the msgbnd: 200 CL_MenuText, 33 EventTextForTalk, 34 EventTextForMap, 500+ the `_dlc01` twins) entry `id`. Every lookup asks the `_dlc01` FMG first, then the base one. **Seamless Co-op hooks it** (first 5 bytes = `jmp` into memory outside any module) and swaps the Number of Players labels 130409/130417/130408 | `[VERIFIED: disassembly + UI-0 step 5 trace]`; which ids SC swaps `[HYPOTHESIS]` |
+| FMG search `(fmg, id)` | `exe+0x27F5710` | `LookupEntry` tail-jumps here; not hooked | `[VERIFIED: entry bytes]` |
+| `MsgRepository` table | `[exe+0x3C246A8]`: `+0x8` table, `+0x10` slot count, `+0x14` category count; FMG = `[[+8] + slot*8] + category*8` | Read by `game/texttrace.rs` to map FMG pointers back to categories | `[VERIFIED: LookupEntry bounds checks; trace mapped every FMG]` |
+| `CSEventFlagMan` | slot `exe+0x3C115A8` | ER layout holds: divisor 1000, a red-black map of group → block; 143 groups have storage (list in `research/UI-0-ingame-ui.md` step 5). Flag 6001 ON / 6000 OFF, 7500 ON at DAY I | `[VERIFIED: UI-0 step 5 probe]` |
+| Our flags | group **10007** (10007000..10007999), 10008 spare | Storage present, no use in any NR talk ESD or EMEVD. 10007000 set by our table list and read by the DLL | `[VERIFIED: UI-0 step 6]`; use by the exe or params UNKNOWN |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).
 - Level and rune count (expected inside `CS::PlayerGameData`; not read yet).
 - Inventory and the game's "drop item" function.
-- The expedition clock and the day/night flags (the flag system's layout checked out structurally; no flag has been read on purpose).
+- The expedition clock (the day/night flags are readable since UI-0: 7500 ON at DAY I, §13).
 - Each player's Steam ID inside the game (needed to map the queue roster to expedition players for Duo/Squad teams, MM-6). The
   Steam IDs themselves are known from the lobbies.
 - The game function behind Invite Members that we could call ourselves (MM-3g); only its call chain is known (§12).

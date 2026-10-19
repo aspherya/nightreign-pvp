@@ -1,6 +1,6 @@
 # UI-0: in-game UI instead of ImGui (handoff and plan, 2026-10-19)
 
-**Status:** started (plan + first facts). **Owner:** Opus plans; a researcher/implementer runs the steps; Leonardo gives screenshots and
+**Status:** DONE 2026-10-19 (answers in §10; follow-up cards UI-1, UI-2, MM-3g in TASKS.md). **Owner:** Opus plans; a researcher/implementer runs the steps; Leonardo gives screenshots and
 in-game checks. **Card:** `TASKS.md` UI-0. **Read first:** this file, then `research/S7-mode-menu.md` (the earlier menu research: layers,
 tools, ranked routes A–D), `MATCHMAKING.md` (what the menu must drive), `re/MEMORY_MAP.md` §12.
 
@@ -173,7 +173,7 @@ loads params for names (SHA-256 `876A3CA2…2C91E0268`). Work copies are in `Z:\
   `01_080_emergencynotice`, `01_090_summonmessage`, `01_060_caption` `[VERIFIED: unpacked listing]`. The messagebox, systemtoast and caption files
   are candidates for Q4.
 
-### Step 3, the table (2026-10-19, tools part done; Leonardo's screenshots pending)
+### Step 3, the table (2026-10-19, done; screenshots replaced by the step 5 text trace)
 
 Tools: esdtool needs `oo2core_6_win64.dll` (copied from `ELDEN RING\Game` into the esdtool folder) and `-basedir` with `regulation.bin`.
 Command: `esdtool.exe -nr -basedir Z:\Tools\nr-unpacked\1.03.3 -i <talkesdbnd> -writepy <dir>\%e.py`. Do not pipe it into `select -First`,
@@ -207,7 +207,7 @@ because that kills it partway.
 - **Leonardo, still needed for step 3:** screenshots into `.claude/experiments/UI-0/`: (1) "Commence expedition" prompt at the table,
   (2) the expedition menu under SC, (3) Number of Players list, (4) Matchmaking Settings, (5) the "Matchmaking…" status while searching.
 
-### Step 5, flags and text ids (2026-10-19, built; Leonardo's run pending)
+### Step 5, flags and text ids (2026-10-19, done)
 
 Leonardo's screenshots (`experiments/UI-0/s0`, `s3`, `s4`) are kept but **not read**, to save tokens (Leonardo, 2026-10-19). The text-id
 logger below replaces them and gives exact ids, which a picture cannot.
@@ -283,7 +283,7 @@ Read with `map_text.py dist\nrpvp.log`: 234 unique texts, 0 dropped, all through
   one of our FMG entries at its own string `[HYPOTHESIS: FMG string offsets are 64-bit and relative, as in DS3-format FMGs]`, or a hook like
   SC's, which we avoid. Whether a Generic Dialog / Status Message draws in the Roundtable and during matchmaking: UNKNOWN until UI-2.
 
-### Step 6, smallest proof (2026-10-19, built; Leonardo's run pending)
+### Step 6, smallest proof (2026-10-19, PASS solo)
 
 Built from the 1.03.3 unpack; packages in `dist\` (gitignored, game content); save folders backed up to `Z:\Tools\save-backups\2026-10-19-ui0-step6`.
 - **6a** `dist\ui0-pkg-a\script\talk\m10_00_00_00.talkesdbnd.dcx` (340304 bytes): esdtool recompile of the **unchanged** `t600001000` (the other
@@ -303,3 +303,26 @@ Built from the 1.03.3 unpack; packages in `dist\` (gitignored, game content); sa
    list. Then start a Solo Mission from the menu; does it load? Quit.
 3. Tell Claude what you saw in each. Claude reads `dist\nrpvp.log` (flag 10007000 lines, `ui_text_trace` ids 99100000/1, me3 package lines).
 If the game crashes or the table does nothing, quit and say at which step. The vanilla files are untouched; the next normal launch is unaffected.
+
+#### Step 6 result (Leonardo, solo, 2026-10-19 ~22:00 UTC): **PASS**
+
+- **6a** (recompiled, unchanged table script via the me3 package, SC loaded): table → normal expedition menu → Solo Mission loaded `[VERIFIED: Leonardo]`.
+- **6b**: pressing the table's interact showed the list "Expedition" / "Battle Royale (test)"; each choice opened the stock expedition
+  menu; then Leonardo quit `[VERIFIED: Leonardo]`. Log (`dist\nrpvp.log`, 22:05): the game looked up EventTextForTalk 99100000 and 99100001
+  (507 first, then 33; it also asks for **id + 10000000** (109100000/109100001), an alternate-text slot we do not need to fill);
+  **flag 10007000 off → ON at 22:05:37 ("Battle Royale (test)"), ON → off at 22:05:41 ("Expedition")** `[VERIFIED: probe lines]`. No crash.
+  Not exercised: Back on the list, and a Solo Mission start in 6b (6a covers the start with the same bundle minus the list).
+  Whether 10007000 is saved: UNKNOWN (it was set OFF at the end of the run; check the next launch's `initial flags` after leaving it ON).
+
+## 10. Answers (UI-0 closed 2026-10-19)
+
+| # | Answer | Evidence |
+|---|---|---|
+| Q1 | Yes. Unpack (Nuxe), ESD decompile/compile (esdtool), FMG/BND repack (WitchyBND) all work; recompiles are equal in meaning, not byte-identical; the game runs both | step 3, step 6 `[VERIFIED]` |
+| Q2 | `t600001000` opens `OpenCommenceExpeditionMenu()` directly; a talk list put in front of it works and sets our flag | step 3, step 6 `[VERIFIED]` |
+| Q3 | No talk command opens Matchmaking Settings / Invite Members / party; MM-3g is a DLL job | step 3 `[VERIFIED: all NR ESDs + esdtool command list]` |
+| Q4 | EMEVD Display Generic Dialog / Status Message / Blinking Message exist and are used in m10 with EventTextForMap ids; ESD has OpenGenericDialog. Fixed texts + our flags is the route; live counters = one entry per count | step 4 `[VERIFIED: data]`; drawing during matchmaking UNKNOWN |
+| Q5 | Yes, read (ER layout holds on NR). Our group: 10007xxx. Writing a flag from the DLL: not done yet (UI-1) | step 5 `[VERIFIED]` |
+| Q6 | Solo: SC works with our m10 talk + menu_dlc01 overrides (table, menu, expedition start). With a friend: UNKNOWN, goes into the next FS | step 6 `[VERIFIED: solo]` |
+| Q7 | Party size is inside native menu 34. SC hooks `LookupEntry` and swaps 130409/130417/130408 ("Solo Mission"/"Up to 6 players"). Our labels must be new ids | step 5 `[VERIFIED: ids + hook bytes; HYPOTHESIS: which ids SC swaps]` |
+| Q8 | UNKNOWN until the next game patch. Plan: re-unpack, re-run the hash table of step 2, rebuild packages from our sources | maintenance, in UI-1 |

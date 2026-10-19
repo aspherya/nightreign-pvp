@@ -190,6 +190,12 @@ Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS (steps 1–4).** `mode: PLAYER`, only 
 Solo Battle Royale: queue lobby (Invisible, 6), `Searching for players... 1/6`; Leave: `Not in a queue`. Not run: step 5 (auto-leave on quit to
 title, refusal at the title); check it in FS-MM4.
 
+### 2026-10-19 — UI-0 step 5 text trace + step 6 table list (Leonardo, solo, dev build, me3 profiles sc / ui0a / ui0b). Logs: `.claude/experiments/UI-0/step5-nrpvp.log`, `dist
+rpvp.log` (ui0b)
+Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS.** Step 5: 234 text ids traced (SC hooks `LookupEntry`), flags read right (6001 ON, 7500 ON at
+DAY I). Step 6a: recompiled table script through an me3 package, normal menu, Solo Mission loaded. Step 6b: list "Expedition" / "Battle
+Royale (test)" at the table, each opens the stock menu, flag 10007000 ON then off. Details: `research/UI-0-ingame-ui.md` §9–10.
+
 ## 4. Known bugs
 
 _None yet._
@@ -201,6 +207,13 @@ Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once i
 ---
 
 ## 6. Friend Session runbooks
+
+### FS-UI1 — Seamless Co-op with our table files, two PCs (add to the next friend session, ≈10 min)
+Leonardo launches `.\scripts\launch.ps1 -Profile ui0b` (our m10 talk + menu_dlc01 overrides) and hosts; the friend uses the normal player zip.
+1. Friend joins Leonardo's Roundtable the usual way (Invite Members). Does SC's party list at the table look normal on both screens?
+2. Leonardo: table → "Battle Royale (test)" → menu → start "Up to 6 players". Do both load into the expedition?
+3. Back at the Roundtable: friend presses the table. The friend has no overrides, so the friend sees no list (expected).
+Pass = join, table, expedition start all work with the host's overrides. Answers UI-0 Q6 for two players.
 
 ### FS-1 — First two-player session (≈90 min). **Status: final draft. Ready once T-015 and T-016 are done.**
 **Before the session (friend, ~15 min, async):** follow `README-FRIEND.md` in the friend kit: install me3 0.11.0 + SC v1.1.3, back up saves,

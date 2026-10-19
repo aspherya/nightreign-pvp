@@ -45,8 +45,11 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 
 ## 3. Next human tasks, in order
 
-### Next building work: UI-0 (in-game UI, no ImGui for players)
-Handoff file: `research/UI-0-ingame-ui.md` (plan, questions, steps). Step 1 needs Leonardo's OK to download the modding tools.
+### Next building work: UI-1 (Battle Royale choice at the table), then UI-2 (status in game messages) and MM-3g
+UI-0 is DONE (2026-10-19, `research/UI-0-ingame-ui.md` §10): a talk list at the Roundtable table works with SC (solo), our texts load, and
+our flag range 10007xxx is set by the list and read by the DLL. Cards UI-1, UI-2, MM-3g in `TASKS.md`. Modding tools live in `Z:\Tools\`,
+the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Test profiles: `.\scripts\launch.ps1 -Profile ui0a | ui0b`. Two-player check of our game
+files with SC: FS-UI1 (TESTING.md §6), add it to the next friend session.
 
 ### Task E (next): FS-MM4, two PCs on the player zip
 Zip: `dist\NightreignPvP.zip` (MM-4 with the pre-release 2-player flag `package-release.ps1 -MatchPlayers 2`, nrpvp.dll 86A7396A604E94FD, also installed in Leonardo's game folder; build with `-MatchPlayers 6` for the final game). Both: Insert → Solo Battle
@@ -87,7 +90,7 @@ candidate), repeat for 6 candidates. Tell Claude which one snapped the player ba
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
-6. "Battle Royale" menu entry (`research/S7-mode-menu.md`) and public queues. **Queue design decided 2026-10-12:**
+6. "Battle Royale" menu entry: UI-1 (proven route, UI-0) and public queues. **Queue design decided 2026-10-12:**
    `research/S9-matchmaking-decision.md` (Steam queue lobby, no server of ours, Solo first). Cards MM-1 … MM-6 in `TASKS.md`.
    **State 2026-10-19:** Solo works end to end with one human step (FS-MM3). Path: queue lobby match → host presses Invite Members →
    the game makes the Seamless Co-op lobby → MM-3f skips the Steam invite window (hardware breakpoint, no patch) → host's mod invites, the

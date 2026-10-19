@@ -755,14 +755,71 @@ Acceptance (FS-MM4): two PCs on the player zip: Solo match with only the host's 
 Result (implementer, 2026-10-19): built, awaiting HUMAN-solo. Config (`config.rs`): player setting `matchmaking` (default true; in the player build it forces `mm_queue`, `mm_join`, `mm_quiet_invite` to follow it and `mm_join_auto = "invite+link"`; `mm_probe`, `mm_host_create`, `mm_lobby_trace`, `mm_sc_create` stay forced off; no effect in dev mode), `mm_max_players` 6 (2..=6, the queue lobby size/`need` tag), `mm_min_players` 2 (2..=max), `mm_fill_wait_s` 90 (5..=600); `mm_match_players` in the file sets min = max (mmtest keeps 2). The default `nrpvp.toml` text no longer sets `mm_match_players` (it would override the new defaults). Machine (`mm/machine.rs`): owner starts when `complete_players >= max`, or when the lobby has had >= 2 members for `fill_wait` and holds >= `min` (both need all tickets complete); `world_tick` leaves Searching/Creating/Joining/InQueue after 3 s away (never MatchReady) with idle line `Queue: left (you left the Roundtable)`; `MachineCfg.friendly` gives player words. Gate (`mm/machine/gate.rs`): host line `N/M here - you can start; <names> did not arrive` 60 s after publishing `sc_lobby` when >= min are here AND loaded (here = min(Steam members, ChrSet players)); joiner not in the host's SC lobby 120 s after `state=go` (not after ALL PRESENT/expedition) leaves, idle line `match missed - queue again`; `Gate.pline` = player-words line. Signal for step 4 (`mm/mod.rs`): `World::{Never,Gone,Present(phase)}` from the time of the game loop's last local-player read (`Gone` = no read for max(4 s, 3 x watch_interval_ms)). Worker also refuses a queue request with `load into the Roundtable first` (no world) / `go back to the Roundtable first` (expedition). Player UI (`overlay/`, `startup.rs`, `config.rs::binding`): the player build keeps the read-only badge and gains ONE hotkey (the overlay toggle, default Insert, hotkey thread starts only for it) that opens a small interactive panel `Battle Royale matchmaking` with the status line, `Solo Battle Royale` and `Leave` (no Duo/Squad, no dev buttons); the badge gets a third line with the queue status or `[Insert] Battle Royale matchmaking`; the game loop accepts only `MmQueue(Solo)`/`MmLeave` from the player overlay. Probe (`steam/probe.rs`): `spawn(queue, evidence, verbose)`; player build verbose = false (callbacks registered, startup dump and per-event lobby dumps dropped, one `mm_probe: quiet mode` line); mm_queue/mm_join/mm_quiet_invite/mm_host_create log lines unchanged. Tests now 419 (418 pass, 1 ignored hudhook smoke; the MM-3f card counted 396) with new ones for config, lobby size/fill wait, 3 and 6 player gate, start line, give-up, player words, auto-leave, world state, overlay tones, command whitelist, `cargo clippy --all-targets` clean, release build OK. Zips (this worktree's `dist\`, 2026-10-19 15:49 local = 18:49 UTC, nrpvp.dll 5AA3CF20AF48B3A9): `NightreignPvP.zip` toml = `team_size = 1`, `matchmaking = true`, `team_candidates`; `NightreignPvP-mmtest.zip` toml unchanged (dev_mode, `mm_match_players = 2`, `mm_quiet_invite = true`, `mm_host_create = false`, `mm_lobby_trace = false`, `mm_sc_create = false`). How-to text: new FIND PLAYERS section (the mmtest zip carries the same HOW TO INSTALL.txt). Left for the HUMAN: the solo check in the Acceptance (HUMAN) line, then FS-MM4. Risks/UNKNOWN: (1) the leave-by-itself signal is the `team_type` read once per watcher period; a long stall of the game loop in the Roundtable could look like `Gone` (3 s debounce after 4 s); (2) the player panel needs the Insert key, which Seamless Co-op or another mod might also use (configurable through `overlay_toggle_key`); (3) up to 5 invites/links are only proven by FakeSteam, the real 2-player path is FS-MM3's; (4) dev builds without `mm_match_players` in their toml now get lobby size 6 / min 2 / 90 s instead of 2.
 
 ### UI-0 — In-game UI instead of ImGui: map the Roundtable menus, messages and flags
-Owner: OPUS → researcher/implementer → HUMAN (screenshots, solo checks) | Status: started 2026-10-19 (plan + first facts) | Feeds: MM-5, MM-3g, UI-1, UI-2
+Owner: OPUS → researcher/implementer → HUMAN (screenshots, solo checks) | Status: **DONE 2026-10-19** (step 6 PASS solo; two-player part = FS-UI1) | Feeds: MM-3g, UI-1, UI-2
 Plan, questions Q1–Q8, steps 1–7 and results log: `research/UI-0-ingame-ui.md`. Decision behind it (Leonardo, 2026-10-19): no ImGui for
 players in the final product; we must be able to add/replace game menu options and change their behaviour.
 Acceptance: as in that file §7 (Q1–Q7 answered with evidence tags, the round-trip + "Battle Royale (test)" table entry proven or ruled
 out, cards UI-1, UI-2 and MM-3g written).
+Result (Opus, 2026-10-19): answers table in `research/UI-0-ingame-ui.md` §10. Toolchain in `Z:\Tools\` (Nuxe, WitchyBND, esdtool, DarkScript3,
+Smithbox), unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Proven solo: a talk list at the table before the stock expedition menu, our own
+EventTextForTalk texts, our flag 10007000 set by the list and read by the DLL, SC unaffected (table, menu, Solo start). Learned: SC hooks
+`LookupEntry` (`exe+0x27F4D20`) and swaps the Number of Players labels; no talk command opens Matchmaking Settings / Invite Members;
+EMEVD Generic Dialog with EventTextForMap ids is the status-text route. Dev tools added: `ui_text_trace`, lobby-flag watch, flag-group census,
+`experiments/UI-0/map_text.py`, profiles `nrpvp-ui0a/ui0b`. Two-player check: FS-UI1 (TESTING.md §6).
+
+### UI-1 — Battle Royale mode choice at the Roundtable table (replaces the Insert panel's queue button)
+Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo), then FS | Status: ready | Depends: UI-0 | Replaces: MM-5
+Goal: the player starts matchmaking from the table, in the game's own list, with no ImGui. Proven pieces: UI-0 step 6.
+1. **Game-data sources in git, built by a script.** New `gamedata/` folder with only our own material: the edit of `t600001000` as a
+   patch against the esdtool decompile (not the whole game script), and our FMG entries as a small table (`id`, English text). New
+   `scripts/build-gamedata.ps1`: from `Z:\Tools\nr-unpacked\<build>\` decompile `t600001000`, apply the patch, compile with esdtool into
+   `dist\gamedata\script\talk\`, add our entries to `EventTextForTalk` in **every** `msg/<lang>/menu_dlc01.msgbnd.dcx` (English text in all
+   languages for now) with WitchyBND, and print the hashes. It refuses to run if the unpacked `m10_00_00_00.talkesdbnd.dcx` hash differs
+   from the pinned 1.03.3 hash (`43D5005F…`), so a game patch cannot silently produce a broken file (Q8).
+2. **The list** (in `t600001000`, before `x4`): "Solo Battle Royale" (flag 10007001), "Expedition" (stock menu), and, only while the DLL
+   holds flag **10007010 = "in a queue"** ON, "Leave Battle Royale queue" (flag 10007002). Choosing Solo or Leave closes the talk (no menu).
+   Duo/Squad entries come with MM-6. Text ids: 99100000.. in EventTextForTalk.
+3. **DLL: production flag access** (`game/flags.rs`, out of `probe2.rs`, cheap reads with `mem::read`, no `RegionCache::new()` on the main
+   loop): `get(flag)` and `set(flag, on)`, with `set` refusing any flag outside 10007000..=10007999. First flag **write** in the project:
+   test it on a synthetic manager like probe2's tests. Each main-loop tick: 10007001 ON → `MmQueue(Solo)` and set it OFF; 10007002 ON →
+   `MmLeave` and set it OFF; keep 10007010 equal to "queued or matched". Log every change (`ui_flags:`).
+4. **Launch with the package.** The launcher / me3 profile the player zip uses gains a `[[packages]]` entry for `gamedata\`; the player build
+   keeps the Insert panel for now (removed in UI-2 once the status text is in game). With `matchmaking = false` the list still shows (the
+   DLL just ignores the flags; say so in the how-to).
+5. Before shipping the game files in a public zip: list exactly which game files we ship (two) and note the SC-author question (S9 §8).
+Acceptance (implementer): `cargo test` (flag set/get on the synthetic manager; refusal outside our range; tick logic), clippy clean,
+`build-gamedata.ps1` output hashes recorded in this card, player zip contains `gamedata\` and the profile entry.
+Acceptance (HUMAN, solo): player zip: table → "Solo Battle Royale" → `Searching for players... 1/6` (badge); table again shows "Leave
+Battle Royale queue" → leaves. Relaunch: list has no "Leave" (10007010 not stuck ON in the save).
+Two-player: add to the next FS after FS-UI1 passes.
+
+### UI-2 — Matchmaking status in the game's own messages
+Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
+Goal: "Searching 3/6", "Match found", the host prompt, "Joining the host", "Everyone is here", "Left the queue" without ImGui.
+1. **Spike first: which instruction draws in the Roundtable while the player walks around**, and how we author EMEVD. Options in
+   order: (a) an EMEVD event in `m10_00_00_00.emevd.dcx` that waits on our flag and runs Display Status Message / Display Blinking Message /
+   Display Generic Dialog (2007[3]/[4]/[1]) with our EventTextForMap entries, then clears the flag (DarkScript3 is a GUI: find out whether
+   its library or Smithbox can save EMEVD without hands; else Leonardo saves it once and we keep the source in `gamedata/`); (b) the
+   same message through ESD `OpenGenericDialog` (only while talking: not enough alone). Test solo with a dev hotkey that sets the flag.
+2. Texts as EventTextForMap entries in our range (one per count for "Searching N/6", N = 1..6), all languages English for now.
+3. DLL: one flag per message (10007100..), set by the matchmaking worker on each status change, rate-limited (one message on screen at a time).
+4. Then remove the Insert panel and the badge from the player build (keep the dev overlay).
+Acceptance (HUMAN, solo): queue from the table; the in-game message shows "Searching for players 1/6"; Leave shows "Left the queue".
+
+### MM-3g — No host click: trigger Invite Members from the mod
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3
+UI-0 settled that **no talk command opens Matchmaking Settings or Invite Members** (all NR ESDs + esdtool's command list), so the data route
+is closed. The action is the game's menu code: S9 §5d has the chain (menu functor calls `+0x80D743` → `+0x80E32A` → `+0x213B4F`, session
+code `+0x258568B` / `+0x257F5DA`, the latter obfuscated with no `.pdata`).
+1. Spike (Opus, read-only): with the MM-3c trace and `experiments/UI-0/disfunc.py`, find the highest frame that is "Invite Members was
+   chosen" and has `.pdata` (`+0x80D743` / `+0x80E32A` are candidates) and what its arguments are (menu object, item id). A hardware-breakpoint
+   trace on it while Leonardo presses Invite Members gives the live registers (reuse `ui_text_trace`'s VEH pattern).
+2. If a callable entry exists: the host's mod calls it on the main thread at MATCH READY (dev flag first), with MM-3f's quiet invite armed.
+   If not: fall back to opening the Matchmaking Settings menu for the host (still one click) and record why.
+Acceptance (HUMAN, solo): dev button "invite now (test)" makes the game's lobby (`inviteParam`) with no menu and no Steam window.
 
 ### MM-5 — Table entry "Battle Royale" (S7 route B) replaces the overlay button
-Owner: OPUS to card in detail | Status: later
+Owner: — | Status: **superseded by UI-1** (2026-10-19)
 
 ### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
 Owner: OPUS to card in detail | Status: later | Settles: S9 U7
