@@ -45,7 +45,7 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 ## 3. Next human tasks, in order
 
 ### Task E (next): FS-MM4, two PCs on the player zip
-Zip: `dist\NightreignPvP.zip` (MM-4 build 5AA3CF20AF48B3A9, also installed in Leonardo's game folder). Both: Insert → Solo Battle
+Zip: `dist\NightreignPvP.zip` (MM-4 with the pre-release 2-player flag `package-release.ps1 -MatchPlayers 2`, nrpvp.dll 86A7396A604E94FD, also installed in Leonardo's game folder; build with `-MatchPlayers 6` for the final game). Both: Insert → Solo Battle
 Royale. Host: Matchmaking Settings > Invite Members when the line asks. Expedition, back to the Roundtable. Also MM-4 solo step 5 (quit to
 title while queued: queue left by itself). Logs: both `<Game>\NightreignPvP\logs`.
 
