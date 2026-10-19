@@ -803,7 +803,19 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
    end on the **first "Up to 6 players"**. 3. Back, **Commence Expedition** → the offline message → OK. 4. Number of Players → the
    **second "Up to 6 players"** → Commence → OK. 5. Number of Players → **Solo Mission** → Commence; if a cancel is offered, cancel once,
    then Commence again and let it load. 6. Quit. Then tell Claude "menu trace done".
-2..n. Implementation steps are written after the trace answers A/B/C.
+   **Trace result (Leonardo solo, 2026-10-19 22:56–22:59 UTC, log `experiments/UI-0/ui1-menutrace-nrpvp.log`):**
+   - **A** `[VERIFIED]`: the Number of Players list (`0x9FB020`) uses settings `[rcx+0x3E08]`; the byte `+0x49` changed 2 → 0 when Leonardo
+     changed the option. Commence with **0** → 506023 offline + "Matchmaking failed"; Commence with **2** → departure (flags 2307/2330),
+     so **2 = One player**, 0 and 1 = the two multiplayer options (which is Two vs Three: not needed). Commence reads the same byte through
+     `[menu+0xFC8]` (the menu object is new each time the menu opens).
+   - **B** `[VERIFIED]`: DR0 `0x9EEBE0` hit once per Commence with `rcx` = the menu; called from `exe+0x9E81AE` / `exe+0xA4246E` (vtable
+     calls). It is the place to start our queue before the offline dialog.
+   - **C** `[VERIFIED: stacks]`: the "Matchmaking..." (336900) and counter (336905) lookups come from `exe+0xB4E80D` / `0xB4E892` /
+     `0x133816D` / `0x12E0567`, which have **no `.pdata` (obfuscated)**, like the S9 session code. Driving the game's own matchmaking screen
+     is a roadblock. Alternatives put to Leonardo: C1 the game's own Commence dialog with our live text ("Searching for players 3/6", its
+     button = cancel), C2 an on-screen message (UI-2), C3 keep digging (later polish). Recommended C1.
+   - Not exercised: Cancel matchmaking (`0x9EE750`, no hit: offline fails at once, there is nothing to cancel).
+2..n. Implementation steps are written once Leonardo picks C1/C2/C3.
 
 ### UI-2 — Matchmaking status in the game's own messages
 Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
