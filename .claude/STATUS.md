@@ -25,7 +25,7 @@ traps we already fell into. Details live in the other docs; this file points to 
 | Teams from player IDs (`team_size` 1, 2 or 3) | **Works** for `team_size` 1 and 2 (Nucleus run 21: 3 players, 2 v 1, all three games agreed). `team_size = 3` not run |
 | Teammate revive | **Works** (Nucleus run 21: 3 of 3) |
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader) | **Works** on Leonardo's PC. Not yet tried on a second PC |
-| Player build: PvP always on, no keys, small "BATTLE ROYALE" label | **Works** (solo check) |
+| Player build: PvP always on, no keys, **no overlay** (2026-10-20: badge and Insert panel removed; the in-game menu and messages are the only UI) | Built; untested in game (FS-UI2) |
 | **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Player build has it (MM-4: Insert panel, Solo Battle Royale; 2-player matches until release, 6 in the final game); 3–6 players only in automated tests |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
@@ -38,7 +38,7 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 | Place | Mode | Settings |
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | developer (panel does not draw under Nucleus; logs to `dist\nucleus-logs\Instance<N>\`) | `team_size = 2` (set for run 21), PvP on, probes off |
-| `dist\NightreignPvP.zip` | player (no keys, label only) | `team_size = 1` |
+| `dist\NightreignPvP.zip` | player (no keys, no overlay; in-game menu + messages) | `team_size = 1` |
 | `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) | developer, full panel | `team_size = 1`, probes on |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
@@ -166,7 +166,7 @@ Watch a player's downed block live (replace the address with `PlayerIns+0x710` f
 - **The table offers only Solo / Duo / Trio Battle Royale** (Leonardo, 2026-10-19): no normal expedition while the mod is installed. The
   choice opens the stock boss menu; pressing start begins our matchmaking; the game's own "Cancel matchmaking" stops it (no Leave entry). UI-1.
 - **No ImGui for players in the final product** (Leonardo, 2026-10-19): menus and status messages must be the game's own UI. The
-  Insert panel is a stop-gap for testing.
+  Insert panel was a stop-gap; **removed from the player build on 2026-10-20** (the overlay is a developer tool only).
 - **Every match has 6 players** (Seamless Co-op's limit; Leonardo, 2026-10-19): Solo 6 × 1, Duo 3 × 2, Squad 2 × 3. Pre-release zips use 2 for testing.
 - PvP is always on for rivals; players cannot switch it off. Launching with `nrpvp_launcher.exe` is the mode, until a menu entry exists.
 - Hostility: each game keeps itself and teammates on the normal value and marks only rivals (value 29).

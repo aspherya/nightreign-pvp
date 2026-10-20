@@ -96,7 +96,7 @@ if ($MatchmakingTest) {
     $toml = @(
         '# Nightreign PvP settings. You do not need to change anything here.',
         "team_size = $TeamSize",
-        '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence (the Insert panel still works too).',
+        '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence.',
         '# Set to false to turn it off.',
         'matchmaking = true',
         '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',

@@ -58,9 +58,6 @@ Everything happens in the game's own menus; messages appear on screen.
 6. In the expedition the other players are your rivals. After the expedition, back at
    the Roundtable, do steps 1 to 3 again for another match.
 
-(The old way still works too: press Insert in the Roundtable for a small panel with a
-"Solo Battle Royale" button.)
-
 To turn this off, open the file "nrpvp.toml" inside the NightreignPvP folder and
 write this line: matchmaking = false
 

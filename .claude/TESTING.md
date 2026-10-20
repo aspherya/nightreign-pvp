@@ -229,7 +229,7 @@ Number of Players. Does the list read **Solo / Duo / Trio** on both PCs? Pick **
 anywhere in the menus? Pass = both see the three labels.
 
 **1. Stop Searching, one side (Leonardo, 3 min; the friend does not search).** Commence → box "Battle Royale: searching for players (Solo)…"
-→ OK. Within ~10 s a blinking "Battle Royale: searching for players…" / "(1 of 2)"; it repeats about every 15 s. The button now reads
+→ OK. Within ~10 s a blinking "Battle Royale: searching for players…" / "(1 of 2)"; it comes back every ~6 s while searching (as soon as the previous one has faded). The button now reads
 **Stop Searching**: press it → box "stopped searching for players" → OK, blinking "Battle Royale: stopped searching." The button reads
 Commence again. Pass = all of that, and no match found (the friend was not searching).
 
@@ -244,12 +244,12 @@ host and every message each side saw (which ones were missing or came late).
 for the host to start." (joiner). Does SC's party list at the table look normal on both screens (FS-UI1)?
 
 **4. Host's Commence (host only, 5 min): the hypothesis.** Host: table → Number of Players still **Solo** → first boss → **Commence**.
-Pass = the departure starts **for both** and both load into the same expedition (rivals; the BATTLE ROYALE badge says "1 rival").
+Pass = the departure starts **for both** and both load into the same expedition (rivals: you can hurt each other; the player build has no overlay any more, so the logs show the rival write).
 If it fails, write down exactly what each screen showed (a box? which text? solo expedition for the host only?), then try once:
 (a) host sets Number of Players = **Duo** (one of the old "Up to 6 players" options), Commence (the DLL passes it unchanged in this
 phase); if that fails, the same with **Trio**;
-(b) if that fails too: host presses Insert → Leave in the panel, Number of Players = Solo → Commence (a plain Solo start with the joiner in
-the lobby): does the joiner come along?
+(b) if that fails too: stop here and write down what each screen showed; Claude reads both logs (`br_menu: Commence pressed … queue phase 2`,
+`mm_join:` lines). (The player build has no Insert panel any more: the in-game menu and messages are the only UI.)
 After the expedition (or a short walk + quit to the Roundtable), both: does the search start again with Solo → Commence? (One round is enough.)
 
 **5. Friend stops searching (friend, 2 min).** Friend alone: Commence → Stop Searching, same checks as step 1 on the friend's PC.

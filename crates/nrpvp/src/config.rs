@@ -83,11 +83,11 @@ persist_interval_ms = 50
 # How often the watcher logs PlayerIns changes (milliseconds, 100..60000).
 watch_interval_ms = 1000
 
-# T-030: false (default) = player build: PvP always on, no hotkeys, no debug panel (only a small BATTLE ROYALE badge).
+# T-030: false (default) = player build: PvP always on, no hotkeys, no overlay (menus and messages are the game's own UI).
 # true = developer mode (all hotkeys, the debug panel, discovery, pause/resume).
 dev_mode = false
 
-# In-game debug overlay (ImGui via hudhook, Direct3D 12). false = no overlay; the hotkeys below still work.
+# In-game debug overlay (ImGui via hudhook, Direct3D 12), developer mode only. false = no overlay; the hotkeys below still work.
 overlay_enabled = true
 
 # Wait this long after the game window appears before hooking Direct3D 12 (0..600000 ms). Raise it (e.g. 60000) under
@@ -518,10 +518,8 @@ impl Config {
     /// T-030: always `None` outside dev mode, so no key is ever bound in the player build. MM-4: the one exception is the toggle of
     /// the matchmaking panel, while matchmaking is on.
     pub(crate) fn binding(&self, a: Action) -> Option<KeyBind> {
+        // The player build binds no key at all (no overlay to toggle since the in-game UI replaced the panel).
         if !self.dev_mode {
-            if a == Action::ToggleOverlay && self.mm_queue {
-                return hotkey::parse_key(self.key_text(a));
-            }
             return None;
         }
         // MM-2: the queue keys exist only while the queue feature is on, so nothing new is bound otherwise.
@@ -590,6 +588,9 @@ fn enforce_player_mode(
     if cfg.dev_mode {
         return;
     }
+    // No ImGui for players (Leonardo, 2026-10-19/20): no badge, no matchmaking panel, no overlay at all in the player build. Menus and
+    // status are the game's own UI (UI-1 br_menu, UI-2 ui_messages). The overlay stays a developer tool.
+    cfg.overlay_enabled = false;
     if explicit_off {
         warnings.push("pvpve = false is ignored: PvP is always on in the player build".to_string());
     }
@@ -1109,6 +1110,8 @@ mod tests {
             mm_join_auto: "invite+link".to_string(),
             mm_quiet_invite: true,
             br_menu: true,
+            // No ImGui for players: the overlay is a developer tool.
+            overlay_enabled: false,
             ..Config::default()
         }
     }
@@ -1606,14 +1609,12 @@ probes = true
             assert!(cfg.binding(a).is_none(), "{a:?}");
         }
         assert_eq!(cfg.describe_bindings(), "none (player mode)");
-        // MM-4: with matchmaking on, the one key is the panel toggle; every other key stays unbound.
-        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\n").expect("ok");
-        let bound: Vec<_> = cfg.bindings().into_iter().map(|(a, k)| (a, k.name)).collect();
-        assert_eq!(bound, vec![(Action::ToggleOverlay, "Home".to_string())]);
-        assert_eq!(cfg.describe_bindings(), "overlay-toggle=Home (matchmaking panel; player mode)");
-        // ... and an unbound toggle leaves no key.
-        let (cfg, _) = parse("overlay_toggle_key = \"\"\n").expect("ok");
+        // With matchmaking on there is no key either: no overlay in the player build (the in-game UI replaced the panel), and the
+        // overlay itself is off whatever the file says.
+        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\noverlay_enabled = true\n").expect("ok");
         assert!(cfg.bindings().is_empty());
+        assert!(!cfg.overlay_enabled);
+        assert_eq!(cfg.describe_bindings(), "none (player mode)");
     }
 
     #[test]

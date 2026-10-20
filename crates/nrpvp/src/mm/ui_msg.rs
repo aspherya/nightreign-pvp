@@ -20,7 +20,8 @@ pub(crate) const FLAG_BASE: u32 = 10_007_200;
 /// Text (EventTextForMap_dlc01) and event id of message 0.
 pub(crate) const TEXT_BASE: u32 = 99_100_500;
 const MIN_GAP: Duration = Duration::from_secs(6);
-const REPEAT_EVERY: Duration = Duration::from_secs(15);
+/// Leonardo (2026-10-20): repeat as soon as the previous blinking text is gone, so the player never feels stuck.
+const REPEAT_EVERY: Duration = MIN_GAP;
 const READBACK_AFTER: Duration = Duration::from_secs(1);
 
 pub(crate) const SEARCHING: u32 = 0;
@@ -249,10 +250,10 @@ mod tests {
         let s = Sched { current: Some(count_msg(1, 2).unwrap()), pending: count_msg(1, 2), last_sent: Some(t0) };
         assert_eq!(next_to_show(&s, at(3)), None);
         assert_eq!(next_to_show(&s, at(6)), count_msg(1, 2));
-        // An ongoing message repeats after 15 s; a one-off does not.
+        // An ongoing message repeats as soon as the gap has passed; a one-off does not.
         let s = Sched { current: count_msg(1, 2), pending: None, last_sent: Some(t0) };
-        assert_eq!(next_to_show(&s, at(14)), None);
-        assert_eq!(next_to_show(&s, at(15)), count_msg(1, 2));
+        assert_eq!(next_to_show(&s, at(5)), None);
+        assert_eq!(next_to_show(&s, at(6)), count_msg(1, 2));
         let s = Sched { current: Some(STOPPED), pending: None, last_sent: Some(t0) };
         assert_eq!(next_to_show(&s, at(60)), None);
         // No current message: nothing repeats.

@@ -23,8 +23,7 @@ pub(crate) fn run() {
             let cfg = config::load(&dll_dir);
             // T-013: hotkey polling thread (also delivers the overlay toggle), then the overlay install
             // thread. Both fail safe: the mod carries on without them.
-            // T-030: the player build has no hotkey thread at all.
-            // MM-4: the player build with matchmaking has exactly one key, the toggle of the matchmaking panel.
+            // T-030: the player build has no hotkey thread at all (MM-4's panel key went with the overlay: in-game UI instead).
             let bindings = cfg.bindings();
             if !bindings.is_empty() {
                 hotkey::spawn(bindings);
