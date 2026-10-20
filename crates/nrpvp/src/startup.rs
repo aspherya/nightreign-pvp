@@ -118,6 +118,11 @@ pub(crate) fn run() {
             if cfg.dev_mode && cfg.ui_flag_watch {
                 game::flagwatch::spawn(m.base);
             }
+            // CON-2: the developer console (named pipe for nrcon.exe). Dev builds, dev mode only.
+            #[cfg(feature = "dev")]
+            if cfg.dev_mode {
+                crate::console::spawn(dll_dir.display().to_string());
+            }
             #[cfg(feature = "dev")]
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();

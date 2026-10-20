@@ -561,6 +561,20 @@ fn watch(
                 }
             }
         }
+        // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
+        #[cfg(feature = "dev")]
+        for (req, reply) in crate::console::take() {
+            let mut snap = Snapshot {
+                wcm_instance: wcm_inst,
+                busy: disc.gate.is_busy(),
+                ..Snapshot::default()
+            };
+            team.fill_snapshot(&mut snap);
+            let text = crate::console::answer(req, &snap, &mut |c| {
+                run_command(c, "console", &mut team, &mut disc, wcm_inst)
+            });
+            let _ = reply.send(text);
+        }
         // T-032: a MARK this tick starts the dump job (dev mode only; `take_new_mark` is always None in the player build) and
         // the downed-state change tracker's 2 s window.
         if let Some(n) = team.take_new_mark() {

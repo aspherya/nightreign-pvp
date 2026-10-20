@@ -12,6 +12,8 @@
 #![cfg_attr(not(feature = "dev"), allow(dead_code))]
 
 mod config;
+#[cfg(feature = "dev")]
+mod console;
 mod dr;
 mod game;
 mod hotkey;

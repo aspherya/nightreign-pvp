@@ -1,8 +1,45 @@
-# Developer console (design, 2026-10-20)
+# Developer console
 
-**Status: design accepted (Leonardo, 2026-10-20: "whatever you decide"; decisions in §7). Starts after refactor card R1.**
-Replaces the ImGui debug panel and the F-key hotkeys with text commands, CS2 style. Developer builds only: the player zip never
-has it.
+**Status (2026-10-20): CON-1 and CON-2 built** (command core, named pipe, `nrcon.exe`); not yet run against a live game. CON-3..5
+planned. Replaces the ImGui debug panel and the F-key hotkeys with text commands, CS2 style. Developer builds only (`dev` feature +
+`dev_mode = true`): the player zip never has it.
+
+## 0. Use it now
+
+Start a developer game (`.\scripts\launch.ps1`, or Nucleus after `scripts\deploy-nucleus.ps1`), then in any terminal:
+
+```
+dist\nrcon.exe list                      running games (Nucleus: index 0 = Instance0)
+dist\nrcon.exe status                    the only running game
+dist\nrcon.exe -i 1 players              game 1 from `list`
+dist\nrcon.exe --all "echo hello"        every game
+dist\nrcon.exe                           interactive prompt (exit to leave)
+```
+
+Every command and its reply is also logged (`console: <line> -> <reply>`). From Git Bash, a leading `/` gets rewritten into a path:
+leave it out there (`kill`, not `/kill`).
+
+### Commands available now
+
+The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help` prints the same list).
+
+| Command | Args | What it does |
+|---|---|---|
+| `help` | `[name]` | List the commands, or one command's help |
+| `echo` | `text…` | Write `console: echo: text` to the log (a note for whoever reads the log) |
+| `mark` | `[text…]` | Write `MARK #n: text` to the log; dev mode also starts the MARK dump (the old Mark key) |
+| `status` | | World loaded or not, local player and its team value, PvP mode, matchmaking line, pid |
+| `players` | | Every player in this game's ChrSet: slot, `pN`, id, team value, relation (me / ally / rival) |
+| `team_set` | `<value> [target]` | Write team_type on this game's copy of the target's players (default `me`) |
+| `team_restore` | `[target]` | Put back the team_type captured before the first write (default `me`) |
+| `pvp` | `0\|1` | Pause (0) or resume (1) the automatic rival marking |
+| `mm_queue_solo` / `mm_queue_duo` / `mm_queue_squad` | | Join that matchmaking queue |
+| `mm_leave` | | Leave the queue or the ready match |
+| `mm_status` | | The matchmaking status line |
+| `discover` | | Run the character discovery and dump (the old F9) |
+| `whoami` (pipe only) | | `pid <pid> <DLL folder>`; `nrcon list` uses it |
+
+Targets: `me`, `all`, `allies`, `rivals`, `p1`…`p6`, `s0`…`s5` (§3.1).
 
 ---
 
@@ -52,7 +89,7 @@ It reuses hudhook in dev builds only. Nice for solo play; not needed for testing
 **Frontend 3: `autoexec.cfg`.** Commands next to the DLL, run on world load (`mm_queue_solo`, `rival_hit_seconds 2`). It makes
 repeatable test setups a file instead of instructions.
 
-## 3. Command shape
+## 3. Command shape (design; built commands are in §0)
 
 CS style (Leonardo, 2026-10-20): **a command name is one word with underscores, never spaces** (`mm_queue_solo`, `team_set`,
 `bleed_clock`). Only values follow after a space, as in CS (`sv_cheats 1`, `team_set 29 all`). `;` chains commands, quotes wrap text

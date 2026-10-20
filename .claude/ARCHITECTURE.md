@@ -171,3 +171,5 @@ header before the body.
 | How does matchmaking decide? | `mm/machine.rs` (pure), then `mm/worker.rs` (glue), `MATCHMAKING.md` |
 | How do our menus and messages appear in game? | `game/menuflow.rs`, `mm/ui_msg.rs`, `gamedata/*.json`, `scripts/build-gamedata.ps1` |
 | Which settings exist? | `config.rs` (the default toml text at the top lists and explains every key) |
+| How does a console command reach the game? | `console/mod.rs` (registry, `answer`), `console/pipe.rs`, the `console::take()` block in `game/mod.rs`; client `crates/nrcon` |
+| What is dev-only? | Anything behind `#[cfg(feature = "dev")]`: `overlay/panel.rs`, `console/`, `steam/lobtrace.rs`, `game/{menutrace,texttrace,c1proto,flagwatch}.rs` |

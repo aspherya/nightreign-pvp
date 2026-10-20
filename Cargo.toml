@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/nrpvp", "crates/nrpvp-launcher", "crates/nrscan"]
+members = ["crates/nrpvp", "crates/nrpvp-launcher", "crates/nrscan", "crates/nrcon"]
 
 [workspace.package]
 version = "0.1.0"

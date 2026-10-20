@@ -1,0 +1,10 @@
+[package]
+name = "nrcon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "CON-2: client for the nrpvp developer console (named pipe \\\\.\\pipe\\nrpvp-<pid>). Lets a human or an agent type commands into running games."
+
+[[bin]]
+name = "nrcon"
+path = "src/main.rs"

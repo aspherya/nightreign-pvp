@@ -26,6 +26,9 @@ try {
     # Keep the PDB beside the DLL so crash addresses can be symbolised.
     $pdb = Join-Path $repo 'target\release\nrpvp.pdb'
     if (Test-Path $pdb) { Copy-Item $pdb (Join-Path $dist 'nrpvp.pdb') -Force }
+    # CON-2: the console client next to the DLL (`dist\nrcon.exe status` talks to a running developer game).
+    $nrcon = Join-Path $repo 'target\release\nrcon.exe'
+    if (Test-Path $nrcon) { Copy-Item $nrcon (Join-Path $dist 'nrcon.exe') -Force }
 
     Write-Host "OK: $(Join-Path $dist 'nrpvp.dll')"
 }

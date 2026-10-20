@@ -33,7 +33,7 @@ our thread that rewrites debug registers and the overlay's teardown are suspects
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-12 02:31) | developer (panel does not draw under Nucleus; logs to `dist\nucleus-logs\Instance<N>\`) | `team_size = 2` (set for run 21), PvP on, probes off |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
-| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) | developer, full panel | `team_size = 1`, probes on |
+| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer, full panel + console. **Branch `eng/r0-r1-console` build of 2026-10-20 20:43** (R0, R1, CON-1/2), not run in game yet | `team_size = 1`, probes on |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
@@ -41,8 +41,16 @@ our thread that rewrites debug registers and the overlay's teardown are suspects
 
 1. **FS-UI2** (HUMAN + friend; runbook TESTING.md §6): both PCs on the new zip, match started from the table, checks the match-ready
    Commence `[HYPOTHESIS]` (one player is switched to two first) and our game files next to SC on two PCs.
-2. **Engineering health (agents, no game needed):** refactor card R0 (format + CI) now, then R1 (dev cargo feature) and the console
-   CON-1/CON-2, so agents can send commands to a running game. Plan: `ARCHITECTURE.md` §6, `CONSOLE.md` §6.
+2. **SMOKE-1: the `eng/r0-r1-console` branch, solo, ~10 min** (HUMAN). Built: R0 (format + CI), R1 (dev feature: the player DLL has
+   no overlay or tracers), CON-1/CON-2 (console + `nrcon.exe`). `dist\nrpvp.dll` is already this build.
+   1. `.\scripts\launch.ps1`, load to the Roundtable. Check nothing changed: the table menu still offers Solo / Duo / Trio, Commence
+      shows "searching", Stop Searching stops it (UI-1/UI-2 regression).
+   2. In the Roundtable, tell Claude "game is up": Claude runs `dist\nrcon.exe status`, `players`, `mm_status`, `echo` and reads the
+      log. (Or run them yourself in a terminal.)
+   3. Optional, in a solo expedition: Claude runs `team_set 6` (enemies should ignore you), then `team_restore` (back to normal).
+   4. Quit. Nothing to send: Claude reads `dist\logs\`.
+   Rollback if anything is off: `git checkout main`, then `scripts\build.ps1`. The player zip for FS-UI2 is untouched (built from
+   `main`); the R1 player DLL gets its own check before the next zip.
 3. **MM-3g** (no Invite Members click), then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
 4. **Task D: position snap-back test** (T-028, needed for separate spawns). Never run. Developer build in Nucleus: stand still, **F7**
    (save spot), walk ~20 m, **F6** (try to return), note the result, **F9** (next candidate), repeat for 6 candidates. Tell Claude which

@@ -45,7 +45,8 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 
 ## Engineering (accepted 2026-10-20; cards are written out in full when they start)
 
-Done: **R0** (fmt + CI, 2026-10-20), **R1** first pass (dev feature, 2026-10-20). Order: FS-UI2 → **CON-1, CON-2** → R5 → R2 → R3 → R4 → R6 → CON-3, CON-4 → (CON-5 optional).
+Done (branch `eng/r0-r1-console`, awaiting SMOKE-1 in STATUS §3): **R0** (fmt + CI), **R1** first pass (dev feature), **CON-1, CON-2**
+(console + `nrcon.exe`), all 2026-10-20. Order: SMOKE-1 → FS-UI2 → R5 → R2 → R3 → R4 → R6 → CON-3, CON-4 → (CON-5 optional).
 - **R0–R6 — Refactor plan.** Behaviour-preserving; scope, acceptance and rules in `ARCHITECTURE.md` §6–§7. Owner: SONNET/implementer →
   OPUS review → HUMAN solo smoke run.
 - **CON-1–CON-5 — Developer console.** Scope and acceptance in `CONSOLE.md` §6–§7. Owner: SONNET/implementer → HUMAN solo.
