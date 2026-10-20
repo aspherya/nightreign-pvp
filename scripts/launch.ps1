@@ -1,18 +1,15 @@
 # Launch ELDEN RING NIGHTREIGN through me3 (no EAC, official servers blocked).
 # Run ./scripts/build.ps1 first. Never go online with a modded game.
 #
-#   ./scripts/launch.ps1                 # -Profile sc (default): Seamless Co-op + nrpvp.dll
-#   ./scripts/launch.ps1 -Profile dev    # nrpvp.dll only, no SC
-#   ./scripts/launch.ps1 -Profile br     # SC + nrpvp.dll + our game-data package (run ./scripts/build-gamedata.ps1 first)
-#   ./scripts/launch.ps1 -Profile ui0a   # UI-0 step 6a: SC + nrpvp.dll + recompiled table script (dist\ui0-pkg-a)
-#   ./scripts/launch.ps1 -Profile ui0b   # UI-0 step 6b: SC + nrpvp.dll + "Battle Royale (test)" list at the table (dist\ui0-pkg-b)
+#   ./scripts/launch.ps1                 # -Profile sc (default): Seamless Co-op + nrpvp.dll + our game-data package (dist\gamedata)
+#   ./scripts/launch.ps1 -Profile dev    # nrpvp.dll only, no SC, no package
 #   ./scripts/launch.ps1 -DisableArxan   # troubleshooting: adds me3's --disable-arxan
 #
 # CLI used: `me3 launch -g nightreign -p <profile> [--disable-arxan]` (from `me3 launch --help`, me3 0.11.0).
 # Profiles: profiles\nrpvp-sc.me3.toml (sc) and profiles\nrpvp-dev.me3.toml (dev).
 [CmdletBinding()]
 param(
-    [ValidateSet('sc', 'br', 'dev', 'ui0a', 'ui0b')]
+    [ValidateSet('sc', 'dev')]
     [string]$Profile = 'sc',
 
     # Troubleshooting only. Not needed by default: see the comments in profiles\nrpvp-sc.me3.toml.
@@ -28,6 +25,11 @@ $scDll = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\SeamlessCo
 if (-not (Test-Path $dll)) { throw "dist\nrpvp.dll not found. Run ./scripts/build.ps1 first." }
 if (-not (Test-Path $profilePath)) { throw "Profile not found: $profilePath" }
 if ($Profile -ne 'dev' -and -not (Test-Path $scDll)) { throw "Seamless Co-op not found at $scDll (profile '$Profile' needs it)." }
+# UI-1: the sc profile loads our game-data package; build it once if it is missing (needs the unpacked game, see build-gamedata.ps1).
+if ($Profile -eq 'sc' -and -not (Test-Path (Join-Path $repo 'dist\gamedata\msg'))) {
+    Write-Host 'dist\gamedata missing: building it (scripts\build-gamedata.ps1)...'
+    & (Join-Path $PSScriptRoot 'build-gamedata.ps1')
+}
 
 $me3 = (Get-Command me3 -ErrorAction SilentlyContinue).Source
 if (-not $me3) {

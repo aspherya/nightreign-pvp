@@ -874,7 +874,8 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
      130409→99100100, 130417→99100101, 130408→99100102 before the lookup, so SC's `LookupEntry` hook never sees those ids. Armed only once
      99100100 and 99100102 are found in the live CL_MenuText_dlc01 FMG (no package → SC's labels stay). All four hardware slots are now
      used (0/1 quiet invite, 2 Commence, 3 labels).
-   - Profile `profiles/nrpvp-br.me3.toml` (SC + DLL + `[[packages]] dist/gamedata`), `scripts\launch.ps1 -Profile br`. 443 tests, clippy clean.
+   - Profile: the package is in the **default** profile `profiles/nrpvp-sc.me3.toml` (Leonardo, 2026-10-19: one profile; `br`, `ui0a`,
+     `ui0b` removed; `launch.ps1` builds `dist\gamedata` when missing). 443 tests, clippy clean.
    **Runbook (Leonardo, solo, ~3 min):** `.\scripts\launch.ps1 -Profile br`. 1. Table → Matchmaking Settings → Number of Players: the
    three options should read **Solo / Duo / Trio** (also check how the chosen value shows on the settings page). 2. Pick Solo → back →
    Commence: the searching box; Commence again: stopped. 3. Quit; tell Claude what the list showed.

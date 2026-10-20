@@ -48,7 +48,7 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 ### Next building work: UI-1 (Battle Royale choice at the table), then UI-2 (status in game messages) and MM-3g
 UI-0 is DONE (2026-10-19, `research/UI-0-ingame-ui.md` §10): a talk list at the Roundtable table works with SC (solo), our texts load, and
 our flag range 10007xxx is set by the list and read by the DLL. Cards UI-1, UI-2, MM-3g in `TASKS.md`. Modding tools live in `Z:\Tools\`,
-the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Test profiles: `.\scripts\launch.ps1 -Profile ui0a | ui0b`. Two-player check of our game
+the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Launch: `.\scripts\launch.ps1` (default profile = SC + DLL + our game-data package `dist\gamedata`, built by `scripts\build-gamedata.ps1`; the UI-0 test profiles were removed). Two-player check of our game
 files with SC: FS-UI1 (TESTING.md §6), add it to the next friend session.
 
 ### Task E (next): FS-MM4, two PCs on the player zip

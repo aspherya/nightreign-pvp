@@ -293,7 +293,7 @@ Built from the 1.03.3 unpack; packages in `dist\` (gitignored, game content); sa
   (`x4`); cancel opens nothing. Plus `msg\engus\menu_dlc01.msgbnd.dcx` with those two entries added. Only `EventTextForTalk.fmg` differs
   from vanilla `[VERIFIED: unpack + byte compare of all FMGs]`, so the 3020/3021 whitespace issue does not apply. Edited source:
   `Z:\Tools\nr-unpacked\work\ui0-step6\b\t600001000.py`. The DLL watches 10007000 (probe line `flag 10007000: off -> ON`).
-- `scripts\launch.ps1 -Profile ui0a | ui0b`.
+- `scripts\launch.ps1 -Profile ui0a | ui0b` (removed 2026-10-19 when the game-data package moved into the default profile).
 
 **Runbook for Leonardo (solo, about 6 min):**
 1. `.\scripts\launch.ps1 -Profile ui0a`. Roundtable loads? Go to the table, "Commence expedition": does the normal expedition menu

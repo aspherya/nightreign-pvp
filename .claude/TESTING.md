@@ -209,7 +209,7 @@ Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once i
 ## 6. Friend Session runbooks
 
 ### FS-UI1 — Seamless Co-op with our table files, two PCs (add to the next friend session, ≈10 min)
-Leonardo launches `.\scripts\launch.ps1 -Profile ui0b` (our m10 talk + menu_dlc01 overrides) and hosts; the friend uses the normal player zip.
+Leonardo launches `.\scripts\launch.ps1` (default profile: our menu_dlc01 package; the m10 talk override of UI-0 is retired) and hosts; the friend uses the player zip.
 1. Friend joins Leonardo's Roundtable the usual way (Invite Members). Does SC's party list at the table look normal on both screens?
 2. Leonardo: table → "Battle Royale (test)" → menu → start "Up to 6 players". Do both load into the expedition?
 3. Back at the Roundtable: friend presses the table. The friend has no overrides, so the friend sees no list (expected).
