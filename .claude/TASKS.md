@@ -924,6 +924,10 @@ to `br_menu = true`, `ui_text_trace = false`, `ui_msg_test = false`.
 **Runbook (Leonardo, solo, ~3 min, `.\scripts\launch.ps1`):** Roundtable → table → Number of Players = Solo → Commence (the searching
 box) → OK. Within a few seconds: "Battle Royale: searching for players..." then "... (1 of 2)". Press Stop Searching: "Battle Royale:
 stopped searching." Quit; tell Claude which messages appeared. The match messages need two players (next friend session).
+**Solo result (Leonardo, 2026-10-20 00:53–00:56 UTC, log `experiments/UI-0/ui2-solo-nrpvp.log`): PASS.** Commence (Solo) → queue →
+message 0 "searching for players...", 3 s later message 20 "(1 of 2)"; Stop Searching → message 1 "stopped searching"; again search;
+quit to title → queue left ("you left the Roundtable"; the world unloaded before that message could show). hwbp slots 2+3 on 131 threads,
+0 failed. Not yet seen: the match messages (two players).
 
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3

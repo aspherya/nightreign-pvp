@@ -45,9 +45,23 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
 
 ## 3. Next human tasks, in order
 
-### Next building work: UI-1 (Battle Royale choice at the table), then UI-2 (status in game messages) and MM-3g
-UI-0 is DONE (2026-10-19, `research/UI-0-ingame-ui.md` §10): a talk list at the Roundtable table works with SC (solo), our texts load, and
-our flag range 10007xxx is set by the list and read by the DLL. Cards UI-1, UI-2, MM-3g in `TASKS.md`. Modding tools live in `Z:\Tools\`,
+### Where the in-game UI stands (2026-10-20, dev build; details in TASKS.md UI-1 / UI-2)
+- **UI-1 (Leonardo's flow) works solo:** table → boss menu → Matchmaking Settings → Number of Players shows **Solo / Duo / Trio** →
+  **Commence** starts our Solo queue and the game's own box says so → the button reads **Stop Searching** while searching → pressing it
+  stops. Duo/Trio say "coming soon" (MM-6). Once a match is ready Commence runs normally (host starts; one player is switched to two first:
+  [HYPOTHESIS], check in the friend session). Mechanism: hardware breakpoints (shared owner `src/hwbp.rs`: slots 0/1 quiet invite,
+  2 Commence, 3 labels), no code patched.
+- **UI-2 works solo:** matchmaking status as the game's blinking messages ("searching (N of M)", "stopped", "match found", host "open
+  Invite Members", "everyone is here"...): our events appended to the Roundtable event script + flags 10007200+k set by the DLL.
+- **Game-data package** `dist\gamedata` (texts in all 15 languages + the Roundtable event script), built from `gamedata\*.json` by
+  `scripts\build-gamedata.ps1` (needs the unpack and Python). One launch profile: `.\scripts\launch.ps1` loads it.
+- **Not in the player zip yet:** `br_menu` is forced off in the player build and the zip/launcher do not carry `dist\gamedata`.
+- **Next building work, in order:** (1) player zip with `br_menu` on + the package (launcher loads it) and a friend-session runbook
+  (Solo search on both → match found → host Invite Members → everyone here → host Commence; watch the messages; FS-UI1 folds in);
+  (2) MM-3g (no Invite Members click); (3) MM-6 Duo/Trio. Later polish: live count inside the searching box / the game's real
+  matchmaking screen (UI-1 C3).
+- Known: the game crashes on quit (0xC0000374) on every run since 2026-10-10; pre-existing, separate issue.
+UI-0 is DONE (2026-10-19, `research/UI-0-ingame-ui.md` §10). Modding tools live in `Z:\Tools\`,
 the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Launch: `.\scripts\launch.ps1` (default profile = SC + DLL + our game-data package `dist\gamedata`, built by `scripts\build-gamedata.ps1`; the UI-0 test profiles were removed). Two-player check of our game
 files with SC: FS-UI1 (TESTING.md §6), add it to the next friend session.
 
