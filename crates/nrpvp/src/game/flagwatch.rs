@@ -16,8 +16,7 @@ use super::probe2::{
     NODE_LEN,
 };
 
-/// `CSEventFlagMan` slot (game 1.03.3, exe 1.3.3.0; TC-004, UI-0 step 5).
-pub(crate) const RVA_FLAGMAN_SLOT: usize = 0x3C1_15A8;
+use super::flags::RVA_FLAGMAN_SLOT;
 const PERIOD: Duration = Duration::from_millis(50);
 /// Groups and their block addresses are re-resolved this often (blocks can be reallocated on area loads).
 const RESOLVE_EVERY: Duration = Duration::from_secs(2);

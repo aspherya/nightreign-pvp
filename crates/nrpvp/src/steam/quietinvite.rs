@@ -25,10 +25,8 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 
-use super::lobtrace::{
-    EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS,
-};
 use super::Flat;
+use crate::dr::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
 
 const FLAT_NAME: &str = "SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog\0";
 const TICK: Duration = Duration::from_millis(100);
@@ -198,7 +196,7 @@ pub(crate) fn spawn(base: usize, size: usize) {
 /// The code behind the flat export's vtable slot, read from the live `ISteamFriends` object (`iface`).
 fn vtable_target(flat: usize, iface: usize) -> Option<usize> {
     let bytes = crate::game::mem::read::<[u8; 24]>(flat)?;
-    let disp = super::lobtrace::decode_vtable_disp(&bytes)?;
+    let disp = crate::dr::decode_vtable_disp(&bytes)?;
     if iface == 0 {
         return None;
     }

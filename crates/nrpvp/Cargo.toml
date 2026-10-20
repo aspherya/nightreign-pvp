@@ -9,6 +9,13 @@ description = "PvPvE mod for ELDEN RING NIGHTREIGN (me3 native DLL)"
 name = "nrpvp"
 crate-type = ["cdylib"]
 
+[features]
+# R1 (ARCHITECTURE.md §6): developer tooling (ImGui overlay, tracers, prototypes, later the console) is compiled only with `dev`.
+# scripts/build.ps1 builds the developer DLL (default features); scripts/package-release.ps1 builds the player DLL with
+# `--no-default-features`, which has none of it.
+default = ["dev"]
+dev = ["dep:hudhook"]
+
 [dependencies]
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
@@ -21,7 +28,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 toml = "1.1.8"
 # T-013: in-game ImGui overlay. Pinned to the version whose source was read (programmatic Hudhook builder API,
 # Direct3D 12 hooks only; no inject helpers). It pulls in imgui 0.12 and uses the same `windows` 0.62 as we do.
-hudhook = { version = "=0.9.3", default-features = false, features = ["dx12"] }
+hudhook = { version = "=0.9.3", default-features = false, features = ["dx12"], optional = true }
 
 [dependencies.windows]
 version = "0.62"

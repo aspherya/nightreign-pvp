@@ -12,7 +12,7 @@ use super::probe2::{
 };
 
 /// `CSEventFlagMan` slot (game 1.03.3, exe 1.3.3.0; TC-004, UI-0 step 5).
-pub(crate) const RVA_FLAGMAN_SLOT: usize = super::flagwatch::RVA_FLAGMAN_SLOT;
+pub(crate) const RVA_FLAGMAN_SLOT: usize = 0x3C1_15A8;
 pub(crate) const OUR_FIRST: u32 = 10_007_000;
 pub(crate) const OUR_LAST: u32 = 10_007_999;
 

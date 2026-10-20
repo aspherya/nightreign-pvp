@@ -411,6 +411,7 @@ fn ptr_text(p: Option<usize>) -> String {
 
 fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     // MM-3c: lets the lobby tracer label our own queue-lobby `CreateLobby` calls (harmless when the tracer is off).
+    #[cfg(feature = "dev")]
     super::lobtrace::note_steam_thread();
     if !verbose {
         tracing::info!("mm_probe: quiet mode (player build): callbacks are registered, the startup dump and lobby dumps are not logged");

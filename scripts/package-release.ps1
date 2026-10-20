@@ -7,7 +7,9 @@
 #                                 messages, UI-1/UI-2); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
-# Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
+# R1: the player zip gets a PLAYER nrpvp.dll, built here with `--no-default-features` (no developer tooling: no overlay, tracers or
+#   prototypes) into target\player\. -MatchmakingTest still packages the developer dist\nrpvp.dll from scripts\build.ps1, because it
+#   runs dev_mode. The script also builds the launcher.
 # -MatchmakingTest (MM-2/MM-3 friend session): instead of the player settings, the packaged nrpvp.toml turns on developer mode with the
 #   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite+link", mm_host_create = false, mm_quiet_invite = true, mm_match_players = 2,
 #   probes = false, team_size = 1).
@@ -24,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $repo 'dist'
 $dll = Join-Path $dist 'nrpvp.dll'
-if (-not (Test-Path -LiteralPath $dll)) { throw 'dist\nrpvp.dll not found. Run scripts\build.ps1 first.' }
+if ($MatchmakingTest -and -not (Test-Path -LiteralPath $dll)) { throw 'dist\nrpvp.dll not found. Run scripts\build.ps1 first.' }
 # UI-1/UI-2: the game-data package (our texts in every language + the Roundtable event script). Built by scripts\build-gamedata.ps1
 # (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry.
 $gamedata = Join-Path $dist 'gamedata'
@@ -43,6 +45,14 @@ $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # cargo wr
 & $cargo build --release -p nrpvp-launcher --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the launcher failed ($code)" }
+if (-not $MatchmakingTest) {
+    $playerTarget = Join-Path $repo 'target\player'
+    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+    & $cargo build --release -p nrpvp --no-default-features --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
+    $code = $LASTEXITCODE; $ErrorActionPreference = $prev
+    if ($code -ne 0) { throw "cargo build of the player nrpvp.dll failed ($code)" }
+    $dll = Join-Path $playerTarget 'release\nrpvp.dll'
+}
 $launcher = Join-Path $repo 'target\release\nrpvp_launcher.exe'
 
 $stage = Join-Path $dist 'release-stage'

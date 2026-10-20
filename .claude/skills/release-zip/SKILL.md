@@ -20,8 +20,9 @@ is written down.
 1. `powershell -NoProfile -File scripts\build.ps1`: builds `dist\nrpvp.dll` (+ `.pdb`).
 2. If `gamedata\*.json` changed or `dist\gamedata` is missing: `powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1`
    (needs WitchyBND and the 1.03.3 unpack in `Z:\Tools\`, and Python).
-3. `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2`. It does **not** rebuild the DLL; it builds
-   the launcher and packs. Use `-MatchPlayers 6` only for the final game, `-TeamSize N` for team tests, `-MatchmakingTest` for a
+3. `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2`. It builds the **player** DLL itself
+   (`--no-default-features`: no overlay, tracers or prototypes) into `target\player\`, builds the launcher and packs. Step 1 is
+   only needed for `-MatchmakingTest`. Use `-MatchPlayers 6` only for the final game, `-TeamSize N` for team tests, `-MatchmakingTest` for a
    developer zip (dev mode, debug panel). Everyone who should meet needs the same `-MatchPlayers`.
 
 For Nucleus instead: `powershell -ExecutionPolicy Bypass -File scripts\deploy-nucleus.ps1 [-TeamSize N]` (close Nucleus first; it

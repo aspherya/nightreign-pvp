@@ -27,3 +27,8 @@ jobs:
         run: cargo clippy --workspace --all-targets --release -- -D warnings
       - name: Test
         run: cargo test --workspace --release
+      # R1: the player DLL (no `dev` feature) must build lint-clean too, and must refuse dev_mode.
+      - name: Player build
+        run: |
+          cargo clippy -p nrpvp --release --no-default-features --all-targets -- -D warnings
+          cargo test -p nrpvp --release --no-default-features -- dev_mode_needs

@@ -662,6 +662,14 @@ fn peek_pvpve_overrides(text: &str) -> (bool, bool) {
 pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
     let mut cfg: Config = toml::from_str(text).map_err(|e| e.to_string())?;
     let mut warnings = Vec::new();
+    // R1: a player DLL (built without the `dev` feature) has no developer tooling, so it never runs in developer mode, whatever the
+    // file says.
+    if !cfg!(feature = "dev") && cfg.dev_mode {
+        warnings.push(
+            "dev_mode = true is ignored: this is a player build (no developer tooling)".to_string(),
+        );
+        cfg.dev_mode = false;
+    }
     if cfg.team_candidates.is_empty() {
         warnings.push("team_candidates is empty; using the defaults".to_string());
         cfg.team_candidates = DEFAULT_CANDIDATES.to_vec();
@@ -1733,6 +1741,19 @@ probes = true
         // The fallback used for a missing or broken file obeys the same rules.
         let f = fallback();
         assert!(f.pvpve && !f.dev_mode && f.pvpve_team == DEFAULT_PVPVE_TEAM);
+    }
+
+    /// R1: only a developer DLL (`dev` feature) honours `dev_mode = true`; a player DLL ignores it with a warning. The rest of this
+    /// module's dev-mode tests run on the developer build only (`cargo test`); the player build is checked by `cargo clippy
+    /// --no-default-features` plus this test under `cargo test --no-default-features -- dev_mode_needs`.
+    #[test]
+    fn dev_mode_needs_the_dev_build() {
+        let (c, w) = parse("dev_mode = true\n").unwrap();
+        assert_eq!(c.dev_mode, cfg!(feature = "dev"));
+        assert_eq!(
+            w.iter().any(|x| x.contains("player build")),
+            !cfg!(feature = "dev")
+        );
     }
 
     #[test]

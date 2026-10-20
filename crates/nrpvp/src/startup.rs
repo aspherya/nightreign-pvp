@@ -2,7 +2,10 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::hotkey::{self, Action};
+use crate::hotkey;
+#[cfg(feature = "dev")]
+use crate::hotkey::Action;
+#[cfg(feature = "dev")]
 use crate::overlay::{self, shared::Shared};
 use crate::{config, game, logging, sysinfo};
 
@@ -78,6 +81,7 @@ pub(crate) fn run() {
                 crate::steam::quietinvite::spawn(m.base, m.size);
             }
             // MM-3c: dev-only call-stack tracer for the creation of Seamless Co-op's lobby A (hardware breakpoints, no patching).
+            #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.mm_lobby_trace {
                 crate::steam::lobtrace::spawn();
             }
@@ -96,20 +100,25 @@ pub(crate) fn run() {
                 game::menuflow::spawn(m.base);
             }
             // UI-1 C1: dev-only prototype of the Commence dialog with live text.
+            #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_c1_proto {
                 game::c1proto::spawn(m.base);
             }
             // UI-1 A/B/C: dev-only expedition-menu tracer (hardware breakpoints, no patching).
+            #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_menu_trace {
                 game::menutrace::spawn(m.base, m.size);
             }
+            #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_text_trace {
                 game::texttrace::spawn(m.base, m.size);
             }
             // UI-1 step 0: dev-only fast flag-change logger (read-only).
+            #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_flag_watch {
                 game::flagwatch::spawn(m.base);
             }
+            #[cfg(feature = "dev")]
             let ui = if cfg.overlay_enabled {
                 let shared = Shared::new();
                 overlay::spawn(
@@ -125,6 +134,9 @@ pub(crate) fn run() {
                 tracing::info!("overlay: disabled by overlay_enabled = false in nrpvp.toml");
                 None
             };
+            // R1: the player DLL has no overlay code at all.
+            #[cfg(not(feature = "dev"))]
+            let ui = None;
             // T-006 singleton discovery, T-007a RTTI + character discovery and the T-008 controls. Never
             // returns.
             game::run(&m, &cfg, ui);

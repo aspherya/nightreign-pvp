@@ -80,7 +80,7 @@ players goes into the next FS runbook (TESTING.md §6), not into the card's own 
 ```powershell
 ./scripts/build.ps1          # cargo build --release, copies DLL to dist/
 ./scripts/launch.ps1         # me3 launch: SC + nrpvp.dll + dist/gamedata (profiles/nrpvp-sc.me3.toml)
-./scripts/package-release.ps1  # player zip dist/NightreignPvP.zip (does not rebuild the DLL)
+./scripts/package-release.ps1  # player zip dist/NightreignPvP.zip (builds the player DLL: --no-default-features)
 ```
 
 ## Conventions

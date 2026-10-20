@@ -4,7 +4,7 @@
 //! registers hold.
 //!
 //! A feature calls [`set`] / [`clear`] for its slot; one thread ([`spawn`], started on first use) rewrites the debug registers of every
-//! thread whenever the wanted set changes, and at least every [`APPLY_EVERY`] for new threads, through `steam::lobtrace::apply_all`
+//! thread whenever the wanted set changes, and at least every [`APPLY_EVERY`] for new threads, through `dr::apply_all`
 //! (suspend, GetThreadContext, SetThreadContext, resume; nothing allocates while a thread is suspended). The dev tracers that take all
 //! four registers (`mm_lobby_trace`, `ui_text_trace`, `ui_menu_trace`, `ui_c1_proto`) do not use this module; the config switches the
 //! features that do off while one of them is on.
@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::steam::lobtrace::{apply_all, TARGETS};
+use crate::dr::{apply_all, TARGETS};
 
 /// Slot of MM-3f's flat `ActivateGameOverlayInviteDialog` export.
 pub(crate) const SLOT_QUIET_FLAT: usize = 0;

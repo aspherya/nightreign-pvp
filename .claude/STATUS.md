@@ -82,7 +82,7 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
 |---|---|---|
 | Build the mod | `powershell -NoProfile -File scripts\build.ps1` | Fails to copy if a game using `dist\nrpvp.dll` is open |
 | Deploy to Nucleus | `powershell -ExecutionPolicy Bypass -File scripts\deploy-nucleus.ps1 [-TeamSize N]` | Close Nucleus instances first. Resets the handler's settings |
-| Build the player zip | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 [-TeamSize N]` | Packages the current `dist\nrpvp.dll` |
+| Build the player zip | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 [-TeamSize N]` | Builds the player DLL itself (`--no-default-features`, no dev tooling) into `target\player\` |
 | Developer launch (one PC) | `.\scripts\launch.ps1` | Full debug panel (Insert toggles) |
 | Scanner | `dist\nrscan.exe list / peek / poke / clock / bar / explain` | Reads (and with `poke`, writes) a **Nucleus** game from outside. Refuses to write to any other install |
 
@@ -119,8 +119,11 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 
 - `main`: UI-1/UI-2 in the player zip (2026-10-20). Leonardo pushes.
 - Branch `t-028-snapback` (Leonardo): T-028 snap-back/teleport runs and F3 team spawns, 3 commits not on `main`. Resolve when spawns start.
-- Tests: `cargo test --workspace` → 481 pass (452 nrpvp, 3 launcher, 26 nrscan; 1 ignored hudhook smoke); clippy clean; `cargo fmt
-  --check` fails in 29 files until R0.
+- Tests: `cargo test --workspace` → 481 pass (453 nrpvp, 3 launcher, 25 nrscan; ignored: the hudhook smoke test and the
+  timing-dependent `nrscan` self-scan `poke_add_is_followed`). fmt, clippy `-D warnings` (dev and player builds) clean; the same checks
+  run in GitHub Actions (`.github/workflows/ci.yml`) on every push.
+- Builds: `cargo build --release` = developer DLL (feature `dev`, default); `--no-default-features` = player DLL (no overlay, tracers,
+  prototypes; refuses `dev_mode`). Building needs the MSVC Build Tools (Visual Studio in `D:\Programs\Microsoft Visual Studio`).
 - Pins: game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0.
 - Friend-session logs are gitignored (`*.log`); they live in `.claude/experiments/<session>/` on Leonardo's PC only.
 

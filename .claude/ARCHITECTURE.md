@@ -108,7 +108,7 @@ Every R-card is **behaviour-preserving**: same log lines, same tests green, plus
 | Card | What | Unblocks | Size |
 |---|---|---|---|
 | R0 | `cargo fmt` once; CI on GitHub Actions (fmt, clippy `-D warnings`, test) | everything | XS |
-| R1 | Cargo feature `dev`: move dev tooling under `dev/`, `#[cfg]` out of the player build; `build.ps1` builds with it, `package-release.ps1` without. Move `apply_all` into `hwbp` (P8) | P6, P8, console | M |
+| R1 ✅ | **Done 2026-10-20 (first pass):** feature `dev` (default on) gates the ImGui panel, `lobtrace`, `menutrace`, `texttrace`, `c1proto`, `flagwatch`; shared helpers moved to `dr.rs` (debug registers), `game/fmg.rs` (text tables), `menuflow`/`flags`; player DLL refuses `dev_mode`; package-release builds the player DLL (3.2 → 2.0 MB). Probes, scans and `poswrite` are still compiled: they go in R5. Original scope: Cargo feature `dev`: move dev tooling under `dev/`, `#[cfg]` out of the player build; `build.ps1` builds with it, `package-release.ps1` without. Move `apply_all` into `hwbp` (P8) | P6, P8, console | M |
 | R2 | `game/layout/` + typed views + one `GameMem` trait; migrate `team`, `combat_state`, `downed` to it | P2, P3 | M |
 | R3 | `World` read model + `Feature` trait; split `TeamCtl` into hostility/roster/persist-debug and `combat_state` into tracker/rule; startup loop | P1, P4, P7 | L |
 | R4 | Sectioned config with old flat keys still accepted (migration + log warning) | P5 | S |

@@ -28,12 +28,20 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 
-use super::c1proto::{
-    dialogues_fmg, offset_slot, AFTER_PROLOGUE_BYTES, NOTICE_BRANCH_BYTES, NOTICE_ID,
-    RVA_AFTER_PROLOGUE, RVA_NOTICE_BRANCH,
-};
+use super::fmg::{dialogues_fmg, offset_slot};
+use crate::dr::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
 use crate::mm::{PHASE_MATCHED, PHASE_SEARCHING};
-use crate::steam::lobtrace::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
+
+// R1: moved here from the dev-only C1 prototype (`c1proto`), which now imports them.
+/// First instruction after the prologue of the Commence checks: `mov rcx,[rip+3A3FCA6h]` (game 1.03.3).
+pub(crate) const RVA_AFTER_PROLOGUE: usize = 0x9E_EBFB;
+pub(crate) const AFTER_PROLOGUE_BYTES: [u8; 7] = [0x48, 0x8B, 0x0D, 0xA6, 0xFC, 0xA3, 0x03];
+/// The 506040 notice-dialog branch: `lea rax,[rbp+50h]` … `mov edx,7B8B8h` (game 1.03.3).
+pub(crate) const RVA_NOTICE_BRANCH: usize = 0x9E_EC1D;
+pub(crate) const NOTICE_BRANCH_BYTES: [u8; 13] = [
+    0x48, 0x8D, 0x45, 0x50, 0x48, 0x89, 0x45, 0x58, 0xBA, 0xB8, 0xB8, 0x07, 0x00,
+];
+pub(crate) const NOTICE_ID: u32 = 506_040;
 
 /// The CL_MenuText getter `getter(out, id)` (game 1.03.3): `mov [rsp+8],rcx; push rbx; sub rsp,30h`.
 pub(crate) const RVA_MENUTEXT_GETTER: usize = 0x7A_C800;
@@ -307,7 +315,7 @@ fn run(base: usize) {
         }
         // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
         if labels_ok && !labels_armed && resolve_tick {
-            if let Some(f) = super::c1proto::fmg_for(base, CAT_MENUTEXT_DLC) {
+            if let Some(f) = super::fmg::fmg_for(base, CAT_MENUTEXT_DLC) {
                 if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP]
                     .iter()
                     .all(|id| offset_slot(f, *id).is_some())

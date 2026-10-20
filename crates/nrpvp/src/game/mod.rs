@@ -12,16 +12,20 @@
 //! are executed here, on the main loop thread, by [`run_command`]; the overlay's render thread never touches
 //! game memory. After each tick the loop publishes a [`Snapshot`] for the overlay.
 
+#[cfg(feature = "dev")]
 pub(crate) mod c1proto;
 pub(crate) mod combat_state;
 pub(crate) mod discover;
 pub(crate) mod downed;
 pub(crate) mod flags;
+#[cfg(feature = "dev")]
 pub(crate) mod flagwatch;
+pub(crate) mod fmg;
 pub(crate) mod image;
 pub(crate) mod mark_dump;
 pub(crate) mod mem;
 pub(crate) mod menuflow;
+#[cfg(feature = "dev")]
 pub(crate) mod menutrace;
 pub(crate) mod poswrite;
 pub(crate) mod probe2;
@@ -31,6 +35,7 @@ pub(crate) mod probe_scan;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
 pub(crate) mod team;
+#[cfg(feature = "dev")]
 pub(crate) mod texttrace;
 pub(crate) mod wide_scan;
 
