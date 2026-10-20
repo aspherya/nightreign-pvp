@@ -18,14 +18,19 @@ pub(crate) const GAME_UNKNOWN: &str = "unknown";
 
 /// MM-4: the world state in which the player has left the Roundtable: an expedition, or the world was unloaded.
 pub(crate) fn away_from_roundtable(w: super::World) -> bool {
-    matches!(w, super::World::Gone | super::World::Present(Some(super::join::Phase::Expedition)))
+    matches!(
+        w,
+        super::World::Gone | super::World::Present(Some(super::join::Phase::Expedition))
+    )
 }
 
 /// MM-4: why a queue request is refused for this world state (`None` = fine).
 pub(crate) fn world_refusal(w: super::World) -> Option<&'static str> {
     match w {
         super::World::Never | super::World::Gone => Some("load into the Roundtable first"),
-        super::World::Present(Some(super::join::Phase::Expedition)) => Some("go back to the Roundtable first"),
+        super::World::Present(Some(super::join::Phase::Expedition)) => {
+            Some("go back to the Roundtable first")
+        }
         super::World::Present(_) => None,
     }
 }
@@ -96,7 +101,10 @@ impl Worker {
         };
         let exports_ok = steam.missing.is_empty();
         if !exports_ok {
-            tracing::warn!("mm_queue: these Steam exports did not resolve, queuing is refused: {:?}", steam.missing);
+            tracing::warn!(
+                "mm_queue: these Steam exports did not resolve, queuing is refused: {:?}",
+                steam.missing
+            );
         }
         tracing::info!(
             "mm_queue: worker started: own Steam id {}, lobby size (mm_max_players)={}, mm_min_players={}, mm_fill_wait_s={}, player build={}, game tag {:?}, sc tag {:?} (pinned until an SC lobby is seen)",
@@ -165,7 +173,9 @@ impl Worker {
             c.on_event(ev);
         }
         let lobby = match ev {
-            Event::LobbyEnter { lobby, .. } | Event::LobbyDataUpdate { lobby, .. } | Event::LobbyChatUpdate { lobby, .. } => *lobby,
+            Event::LobbyEnter { lobby, .. }
+            | Event::LobbyDataUpdate { lobby, .. }
+            | Event::LobbyChatUpdate { lobby, .. } => *lobby,
             _ => 0,
         };
         if lobby == 0 {
@@ -178,7 +188,11 @@ impl Worker {
             if let Some(p) = self.machine.preferred_sc_alive(&self.steam) {
                 if p != lobby {
                     if self.ignored_sc != Some(lobby) {
-                        tracing::info!("mm_host_create: second SC lobby ignored: {} (env.sc stays on {})", idt(lobby), idt(p));
+                        tracing::info!(
+                            "mm_host_create: second SC lobby ignored: {} (env.sc stays on {})",
+                            idt(lobby),
+                            idt(p)
+                        );
                         self.ignored_sc = Some(lobby);
                     }
                     return;
@@ -200,7 +214,10 @@ impl Worker {
         // MM-3e: stay on the lobby the match is bound to, whatever was seen last.
         if let Some(p) = self.machine.preferred_sc_alive(&self.steam) {
             if self.sc_seen != Some(p) {
-                tracing::info!("mm_queue: Seamless Co-op lobby follows the match's lobby: {}", idt(p));
+                tracing::info!(
+                    "mm_queue: Seamless Co-op lobby follows the match's lobby: {}",
+                    idt(p)
+                );
                 self.sc_seen = Some(p);
             }
         }
@@ -212,7 +229,10 @@ impl Worker {
         match sc {
             Some(sc) if n > 0 && member => Some((sc, self.steam.owner(id), n as u32)),
             _ => {
-                tracing::info!("mm_queue: Seamless Co-op lobby {} is gone or we are not in it", idt(id));
+                tracing::info!(
+                    "mm_queue: Seamless Co-op lobby {} is gone or we are not in it",
+                    idt(id)
+                );
                 self.sc_seen = None;
                 None
             }
@@ -248,7 +268,8 @@ impl Worker {
         self.next_env = now + Duration::from_millis(500);
         let sc = self.current_sc().map(|(sc, _, _)| sc);
         let guard = self.guard(now);
-        self.machine.set_env(sc, guard, super::local_phase(), super::local_players());
+        self.machine
+            .set_env(sc, guard, super::local_phase(), super::local_players());
     }
 
     fn refuse(&mut self, why: String) {
@@ -292,7 +313,8 @@ impl Worker {
             }
             Cmd::Leave => {
                 self.refusal = None;
-                self.machine.leave(&mut self.steam, "user pressed Leave", now);
+                self.machine
+                    .leave(&mut self.steam, "user pressed Leave", now);
             }
             Cmd::Queue(mode) => {
                 if !self.machine.is_idle() {
@@ -326,7 +348,10 @@ impl Worker {
             return;
         }
         let test_active = self.quiet_test_until.is_some_and(|t| now < t);
-        let raw = qi::arm_wanted(self.machine.quiet_invite_wanted(self.steam.own_id()), test_active);
+        let raw = qi::arm_wanted(
+            self.machine.quiet_invite_wanted(self.steam.own_id()),
+            test_active,
+        );
         if raw {
             self.quiet_raw_at = Some(now);
         }
@@ -353,7 +378,10 @@ impl Worker {
         if let Some(t) = self.quiet_test_until.filter(|t| now < *t) {
             let left = t.saturating_duration_since(now).as_secs();
             return if sup > self.quiet_seen_sup {
-                format!("quiet invite: SUPPRESSED {} Steam window(s) ({left} s left)", sup - self.quiet_seen_sup)
+                format!(
+                    "quiet invite: SUPPRESSED {} Steam window(s) ({left} s left)",
+                    sup - self.quiet_seen_sup
+                )
             } else {
                 format!("quiet invite: test armed, {left} s left: press Matchmaking Settings > Invite Members")
             };
@@ -397,7 +425,11 @@ impl Worker {
         }
         let ov = self.machine.team_override();
         if ov != self.last_override {
-            tracing::info!("mm_queue: team size override {:?} -> {:?}", self.last_override, ov);
+            tracing::info!(
+                "mm_queue: team size override {:?} -> {:?}",
+                self.last_override,
+                ov
+            );
             super::set_team_override(ov);
             self.last_override = ov;
         }
@@ -437,10 +469,17 @@ mod tests {
 
     #[test]
     fn away_means_an_expedition_or_an_unloaded_world_never_a_title_screen_or_unknown_team() {
-        assert!(!away_from_roundtable(World::Present(Some(Phase::Roundtable))));
-        assert!(away_from_roundtable(World::Present(Some(Phase::Expedition))));
+        assert!(!away_from_roundtable(World::Present(Some(
+            Phase::Roundtable
+        ))));
+        assert!(away_from_roundtable(World::Present(Some(
+            Phase::Expedition
+        ))));
         assert!(away_from_roundtable(World::Gone));
-        assert!(!away_from_roundtable(World::Present(None)), "a team_type that tells nothing is not a reason to leave");
+        assert!(
+            !away_from_roundtable(World::Present(None)),
+            "a team_type that tells nothing is not a reason to leave"
+        );
         assert!(!away_from_roundtable(World::Never));
     }
 

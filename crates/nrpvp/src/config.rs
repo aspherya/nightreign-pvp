@@ -475,12 +475,14 @@ impl Config {
 
     /// MM-3: the automatic join action (an unknown text, only possible on an unvalidated `Config`, means `invite`).
     pub(crate) fn join_auto(&self) -> crate::mm::join::JoinAuto {
-        crate::mm::join::JoinAuto::parse(&self.mm_join_auto).unwrap_or(crate::mm::join::JoinAuto::Invite)
+        crate::mm::join::JoinAuto::parse(&self.mm_join_auto)
+            .unwrap_or(crate::mm::join::JoinAuto::Invite)
     }
 
     /// MM-3d: the lobby type of the create test (an unknown text, only possible on an unvalidated `Config`, means public).
     pub(crate) fn sc_create_type(&self) -> crate::steam::queue::ScType {
-        crate::steam::queue::ScType::parse_create(&self.mm_sc_create_type).unwrap_or(crate::steam::queue::ScType::Public)
+        crate::steam::queue::ScType::parse_create(&self.mm_sc_create_type)
+            .unwrap_or(crate::steam::queue::ScType::Public)
     }
 
     /// T-026: players per team, within 1..=3.
@@ -692,11 +694,27 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         PVPVE_INTERVAL_MS_RANGE,
     );
     clamp("team_size", &mut cfg.team_size, TEAM_SIZE_RANGE);
-    clamp("mm_match_players", &mut cfg.mm_match_players, MM_MATCH_PLAYERS_RANGE);
+    clamp(
+        "mm_match_players",
+        &mut cfg.mm_match_players,
+        MM_MATCH_PLAYERS_RANGE,
+    );
     // MM-4: lobby size, smallest match, fill wait (the older `mm_match_players`, when the file sets it, is applied below).
-    clamp("mm_max_players", &mut cfg.mm_max_players, MM_MATCH_PLAYERS_RANGE);
-    clamp("mm_min_players", &mut cfg.mm_min_players, MM_MATCH_PLAYERS_RANGE);
-    clamp("mm_fill_wait_s", &mut cfg.mm_fill_wait_s, MM_FILL_WAIT_RANGE);
+    clamp(
+        "mm_max_players",
+        &mut cfg.mm_max_players,
+        MM_MATCH_PLAYERS_RANGE,
+    );
+    clamp(
+        "mm_min_players",
+        &mut cfg.mm_min_players,
+        MM_MATCH_PLAYERS_RANGE,
+    );
+    clamp(
+        "mm_fill_wait_s",
+        &mut cfg.mm_fill_wait_s,
+        MM_FILL_WAIT_RANGE,
+    );
     clamp(
         "probe_interval_ms",
         &mut cfg.probe_interval_ms,
@@ -764,11 +782,17 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.mm_join = false;
         }
         if cfg.dev_mode && cfg.mm_host_create && !cfg.mm_join {
-            warnings.push("mm_host_create = true needs mm_join = true; the host-side lobby creation is off".to_string());
+            warnings.push(
+                "mm_host_create = true needs mm_join = true; the host-side lobby creation is off"
+                    .to_string(),
+            );
             cfg.mm_host_create = false;
         }
         if cfg.dev_mode && cfg.mm_quiet_invite && !cfg.mm_join {
-            warnings.push("mm_quiet_invite = true needs mm_join = true; the invite-window suppression is off".to_string());
+            warnings.push(
+                "mm_quiet_invite = true needs mm_join = true; the invite-window suppression is off"
+                    .to_string(),
+            );
             cfg.mm_quiet_invite = false;
         }
         // MM-3f: both use the four debug registers of every thread; the tracer would overwrite the suppression's.
@@ -778,16 +802,23 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         }
         // UI-1 option 1: br_menu shares the debug registers through crate::hwbp (with mm_quiet_invite); the dev tools that take all
         // four registers win, and br_menu needs the queue worker.
-        if cfg.dev_mode && cfg.br_menu && (cfg.ui_c1_proto || cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_lobby_trace) {
+        if cfg.dev_mode
+            && cfg.br_menu
+            && (cfg.ui_c1_proto || cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_lobby_trace)
+        {
             warnings.push("br_menu is off while ui_c1_proto, ui_menu_trace, ui_text_trace or mm_lobby_trace is on (they own all debug registers)".to_string());
             cfg.br_menu = false;
         }
         if cfg.dev_mode && cfg.br_menu && !cfg.mm_queue {
-            warnings.push("br_menu = true needs mm_queue = true; Commence is left alone".to_string());
+            warnings
+                .push("br_menu = true needs mm_queue = true; Commence is left alone".to_string());
             cfg.br_menu = false;
         }
         // UI-1 C1 prototype: owns DR0 on every thread; every other debug-register user is switched off.
-        if cfg.dev_mode && cfg.ui_c1_proto && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
+        if cfg.dev_mode
+            && cfg.ui_c1_proto
+            && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace)
+        {
             warnings.push("ui_c1_proto uses the hardware breakpoints; ui_menu_trace, ui_text_trace, mm_quiet_invite and mm_lobby_trace are off while it is on".to_string());
             cfg.ui_menu_trace = false;
             cfg.ui_text_trace = false;
@@ -795,7 +826,10 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.mm_lobby_trace = false;
         }
         // UI-1: the menu tracer owns all four debug registers.
-        if cfg.dev_mode && cfg.ui_menu_trace && (cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace) {
+        if cfg.dev_mode
+            && cfg.ui_menu_trace
+            && (cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace)
+        {
             warnings.push("ui_menu_trace uses all hardware breakpoints; ui_text_trace, mm_quiet_invite and mm_lobby_trace are off while it is on".to_string());
             cfg.ui_text_trace = false;
             cfg.mm_quiet_invite = false;
@@ -821,7 +855,8 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             }
         }
         if cfg.dev_mode && cfg.mm_sc_create && !cfg.mm_queue {
-            warnings.push("mm_sc_create = true needs mm_queue = true; the button is off".to_string());
+            warnings
+                .push("mm_sc_create = true needs mm_queue = true; the button is off".to_string());
             cfg.mm_sc_create = false;
         }
     }
@@ -974,10 +1009,26 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         &mut cfg.hotkey_restore_all,
         DEFAULT_HOTKEY_RESTORE_ALL,
     );
-    key("hotkey_mm_solo", &mut cfg.hotkey_mm_solo, DEFAULT_HOTKEY_MM_SOLO);
-    key("hotkey_mm_duo", &mut cfg.hotkey_mm_duo, DEFAULT_HOTKEY_MM_DUO);
-    key("hotkey_mm_squad", &mut cfg.hotkey_mm_squad, DEFAULT_HOTKEY_MM_SQUAD);
-    key("hotkey_mm_leave", &mut cfg.hotkey_mm_leave, DEFAULT_HOTKEY_MM_LEAVE);
+    key(
+        "hotkey_mm_solo",
+        &mut cfg.hotkey_mm_solo,
+        DEFAULT_HOTKEY_MM_SOLO,
+    );
+    key(
+        "hotkey_mm_duo",
+        &mut cfg.hotkey_mm_duo,
+        DEFAULT_HOTKEY_MM_DUO,
+    );
+    key(
+        "hotkey_mm_squad",
+        &mut cfg.hotkey_mm_squad,
+        DEFAULT_HOTKEY_MM_SQUAD,
+    );
+    key(
+        "hotkey_mm_leave",
+        &mut cfg.hotkey_mm_leave,
+        DEFAULT_HOTKEY_MM_LEAVE,
+    );
 
     let (explicit_off, explicit_all) = peek_pvpve_overrides(text);
     enforce_player_mode(&mut cfg, explicit_off, explicit_all, &mut warnings);
@@ -1281,28 +1332,55 @@ mod tests {
         // Off: no MM key is bound, so nothing new exists.
         assert!(c.binding(Action::MmSolo).is_none() && c.binding(Action::MmLeave).is_none());
         assert!(!c.describe_bindings().contains("mm_"));
-        let (cfg, w) = parse_dev("mm_queue = true
+        let (cfg, w) = parse_dev(
+            "mm_queue = true
 mm_match_players = 3
-").expect("ok");
-        assert!(cfg.mm_queue && cfg.mm_match_players == 3 && w.is_empty(), "{w:?}");
-        let names: Vec<_> = [Action::MmSolo, Action::MmDuo, Action::MmSquad, Action::MmLeave]
-            .iter()
-            .map(|a| cfg.binding(*a).map(|k| k.name))
-            .collect();
-        assert_eq!(names, vec![Some("F1".into()), Some("F2".into()), Some("F3".into()), Some("F5".into())]);
-        assert!(cfg.describe_bindings().ends_with("mm_solo=F1 mm_duo=F2 mm_squad=F3 mm_leave=F5"));
+",
+        )
+        .expect("ok");
+        assert!(
+            cfg.mm_queue && cfg.mm_match_players == 3 && w.is_empty(),
+            "{w:?}"
+        );
+        let names: Vec<_> = [
+            Action::MmSolo,
+            Action::MmDuo,
+            Action::MmSquad,
+            Action::MmLeave,
+        ]
+        .iter()
+        .map(|a| cfg.binding(*a).map(|k| k.name))
+        .collect();
+        assert_eq!(
+            names,
+            vec![
+                Some("F1".into()),
+                Some("F2".into()),
+                Some("F3".into()),
+                Some("F5".into())
+            ]
+        );
+        assert!(cfg
+            .describe_bindings()
+            .ends_with("mm_solo=F1 mm_duo=F2 mm_squad=F3 mm_leave=F5"));
         // No default collides with a key that is already bound.
         assert!(w.is_empty());
         // Range and key validation.
-        let (cfg, w) = parse_dev("mm_queue = true
+        let (cfg, w) = parse_dev(
+            "mm_queue = true
 mm_match_players = 9
 hotkey_mm_duo = \"banana\"
-").expect("ok");
+",
+        )
+        .expect("ok");
         assert_eq!(cfg.mm_match_players, 6);
         assert_eq!(cfg.hotkey_mm_duo, "F2");
         assert_eq!(w.len(), 2, "{w:?}");
-        let (cfg, _) = parse_dev("mm_match_players = 1
-").expect("ok");
+        let (cfg, _) = parse_dev(
+            "mm_match_players = 1
+",
+        )
+        .expect("ok");
         assert_eq!(cfg.mm_match_players, 2);
         // Player build: the queue follows `matchmaking`, not `mm_queue`.
         let (cfg, _) = parse("mm_queue = true\nmatchmaking = false\n").expect("ok");
@@ -1315,9 +1393,18 @@ hotkey_mm_duo = \"banana\"
         use crate::mm::join::JoinAuto;
         let c = dev_default();
         assert!(!c.mm_join && c.join_auto() == JoinAuto::Invite);
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_join_auto = \"Invite+Link\"\n").expect("ok");
-        assert!(cfg.mm_join && cfg.join_auto() == JoinAuto::InviteLink && w.is_empty(), "{w:?}");
-        for (t, a) in [("link", JoinAuto::Link), ("none", JoinAuto::None), ("invite", JoinAuto::Invite)] {
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_join = true\nmm_join_auto = \"Invite+Link\"\n")
+                .expect("ok");
+        assert!(
+            cfg.mm_join && cfg.join_auto() == JoinAuto::InviteLink && w.is_empty(),
+            "{w:?}"
+        );
+        for (t, a) in [
+            ("link", JoinAuto::Link),
+            ("none", JoinAuto::None),
+            ("invite", JoinAuto::Invite),
+        ] {
             let (cfg, _) = parse_dev(&format!("mm_join_auto = \"{t}\"\n")).expect("ok");
             assert_eq!(cfg.join_auto(), a);
         }
@@ -1338,14 +1425,16 @@ hotkey_mm_duo = \"banana\"
     fn mm_host_create_defaults_off_is_dev_only_and_needs_mm_join() {
         assert!(!Config::default().mm_host_create);
         assert!(!dev_default().mm_host_create);
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
         assert!(cfg.mm_host_create && w.is_empty(), "{w:?}");
         // Without mm_join the creation has no gate to run in.
         let (cfg, w) = parse_dev("mm_queue = true\nmm_host_create = true\n").expect("ok");
         assert!(!cfg.mm_host_create && w.len() == 1, "{w:?}");
         assert!(parse_dev("mm_host_create = \"yes\"").is_err());
         // The player build (no dev_mode) forces it off even when the file asks for it.
-        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
+        let (cfg, _) =
+            parse("mm_queue = true\nmm_join = true\nmm_host_create = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_host_create);
     }
 
@@ -1353,14 +1442,23 @@ hotkey_mm_duo = \"banana\"
     fn mm_quiet_invite_defaults_off_is_dev_only_needs_mm_join_and_excludes_the_tracer() {
         assert!(!Config::default().mm_quiet_invite);
         assert!(!dev_default().mm_quiet_invite);
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\n").expect("ok");
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\n").expect("ok");
         assert!(cfg.mm_quiet_invite && w.is_empty(), "{w:?}");
         let (cfg, w) = parse_dev("mm_queue = true\nmm_quiet_invite = true\n").expect("ok");
         assert!(!cfg.mm_quiet_invite && w.len() == 1, "{w:?}");
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\n").expect("ok");
-        assert!(!cfg.mm_quiet_invite && cfg.mm_lobby_trace && w.len() == 1, "{w:?}");
+        let (cfg, w) = parse_dev(
+            "mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\n",
+        )
+        .expect("ok");
+        assert!(
+            !cfg.mm_quiet_invite && cfg.mm_lobby_trace && w.len() == 1,
+            "{w:?}"
+        );
         assert!(parse_dev("mm_quiet_invite = \"yes\"").is_err());
-        let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmatchmaking = false\n").expect("ok");
+        let (cfg, _) =
+            parse("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmatchmaking = false\n")
+                .expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_quiet_invite);
     }
 
@@ -1379,13 +1477,19 @@ hotkey_mm_duo = \"banana\"
     #[test]
     fn ui_text_trace_is_dev_only_and_takes_the_debug_registers() {
         assert!(!Config::default().ui_text_trace);
-        let (cfg, w) = parse_dev("ui_text_trace = true
-").expect("ok");
+        let (cfg, w) = parse_dev(
+            "ui_text_trace = true
+",
+        )
+        .expect("ok");
         assert!(cfg.ui_text_trace && w.is_empty(), "{w:?}");
         let (cfg, w) =
             parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nmm_lobby_trace = true\nui_text_trace = true\n")
                 .expect("ok");
-        assert!(cfg.ui_text_trace && !cfg.mm_quiet_invite && !cfg.mm_lobby_trace, "{w:?}");
+        assert!(
+            cfg.ui_text_trace && !cfg.mm_quiet_invite && !cfg.mm_lobby_trace,
+            "{w:?}"
+        );
         let (cfg, _) = parse("ui_text_trace = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.ui_text_trace);
         let (cfg, w) = parse_dev("ui_flag_watch = true\n").expect("ok");
@@ -1393,11 +1497,17 @@ hotkey_mm_duo = \"banana\"
         let (cfg, _) = parse("ui_flag_watch = true\n").expect("ok");
         assert!(!cfg.ui_flag_watch);
         let (cfg, w) = parse_dev("ui_text_trace = true\nui_menu_trace = true\n").expect("ok");
-        assert!(cfg.ui_menu_trace && !cfg.ui_text_trace && w.len() == 1, "{w:?}");
+        assert!(
+            cfg.ui_menu_trace && !cfg.ui_text_trace && w.len() == 1,
+            "{w:?}"
+        );
         let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
         let (cfg, w) = parse_dev("ui_menu_trace = true\nui_c1_proto = true\n").expect("ok");
-        assert!(cfg.ui_c1_proto && !cfg.ui_menu_trace && w.len() == 1, "{w:?}");
+        assert!(
+            cfg.ui_c1_proto && !cfg.ui_menu_trace && w.len() == 1,
+            "{w:?}"
+        );
         let (cfg, _) = parse("ui_c1_proto = true\n").expect("ok");
         assert!(!cfg.ui_c1_proto);
     }
@@ -1409,17 +1519,32 @@ hotkey_mm_duo = \"banana\"
         assert!(cfg.br_menu && w.is_empty(), "{w:?}");
         let (cfg, w) = parse_dev("br_menu = true\n").expect("ok");
         assert!(!cfg.br_menu && w.len() == 1, "{w:?}");
-        let (cfg, _) = parse_dev("mm_queue = true\nbr_menu = true\nui_menu_trace = true\n").expect("ok");
+        let (cfg, _) =
+            parse_dev("mm_queue = true\nbr_menu = true\nui_menu_trace = true\n").expect("ok");
         assert!(!cfg.br_menu);
-        let (cfg, _) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nbr_menu = true\n").expect("ok");
+        let (cfg, _) =
+            parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nbr_menu = true\n")
+                .expect("ok");
         assert!(cfg.br_menu && cfg.mm_quiet_invite);
         // The player build: on with matchmaking (whatever the file says), next to the quiet invite; off without matchmaking.
         let (cfg, _) = parse("br_menu = false\n").expect("ok");
         assert!(cfg.br_menu && cfg.mm_queue && cfg.mm_quiet_invite && cfg.ui_messages);
-        assert!(!cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_c1_proto && !cfg.ui_msg_test && !cfg.mm_lobby_trace);
+        assert!(
+            !cfg.ui_text_trace
+                && !cfg.ui_menu_trace
+                && !cfg.ui_c1_proto
+                && !cfg.ui_msg_test
+                && !cfg.mm_lobby_trace
+        );
         let (cfg, _) = parse("ui_text_trace = true\nui_menu_trace = true\nui_c1_proto = true\nui_msg_test = true\nmm_lobby_trace = true\n").expect("ok");
         assert!(cfg.br_menu && cfg.mm_quiet_invite);
-        assert!(!cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_c1_proto && !cfg.ui_msg_test && !cfg.mm_lobby_trace);
+        assert!(
+            !cfg.ui_text_trace
+                && !cfg.ui_menu_trace
+                && !cfg.ui_c1_proto
+                && !cfg.ui_msg_test
+                && !cfg.mm_lobby_trace
+        );
         let (cfg, _) = parse("matchmaking = false\nbr_menu = true\n").expect("ok");
         assert!(!cfg.br_menu && !cfg.mm_queue);
     }
@@ -1442,10 +1567,20 @@ hotkey_mm_duo = \"banana\"
         let c = Config::default();
         assert!(!c.mm_sc_create && c.sc_create_type() == ScType::Public);
         assert!(!dev_default().mm_sc_create);
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_sc_create = true\nmm_sc_create_type = \"Friends\"\n").expect("ok");
-        assert!(cfg.mm_sc_create && cfg.sc_create_type() == ScType::Friends && w.is_empty(), "{w:?}");
-        let (cfg, w) = parse_dev("mm_queue = true\nmm_sc_create_type = \"invisible\"\n").expect("ok");
-        assert_eq!((cfg.sc_create_type(), w.len()), (ScType::Public, 1), "{w:?}");
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_sc_create = true\nmm_sc_create_type = \"Friends\"\n")
+                .expect("ok");
+        assert!(
+            cfg.mm_sc_create && cfg.sc_create_type() == ScType::Friends && w.is_empty(),
+            "{w:?}"
+        );
+        let (cfg, w) =
+            parse_dev("mm_queue = true\nmm_sc_create_type = \"invisible\"\n").expect("ok");
+        assert_eq!(
+            (cfg.sc_create_type(), w.len()),
+            (ScType::Public, 1),
+            "{w:?}"
+        );
         // Without the queue worker there is nothing to run it on.
         let (cfg, w) = parse_dev("mm_sc_create = true\n").expect("ok");
         assert!(!cfg.mm_sc_create && w.len() == 1, "{w:?}");
@@ -1603,7 +1738,9 @@ probes = true
     #[test]
     fn player_mode_has_no_key_bindings() {
         // MM-4: with matchmaking = false no key at all (T-030).
-        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Insert\"\nmatchmaking = false\n").expect("ok");
+        let (cfg, _) =
+            parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Insert\"\nmatchmaking = false\n")
+                .expect("ok");
         assert!(cfg.bindings().is_empty());
         for a in hotkey::ALL_ACTIONS {
             assert!(cfg.binding(a).is_none(), "{a:?}");
@@ -1611,7 +1748,9 @@ probes = true
         assert_eq!(cfg.describe_bindings(), "none (player mode)");
         // With matchmaking on there is no key either: no overlay in the player build (the in-game UI replaced the panel), and the
         // overlay itself is off whatever the file says.
-        let (cfg, _) = parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\noverlay_enabled = true\n").expect("ok");
+        let (cfg, _) =
+            parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\noverlay_enabled = true\n")
+                .expect("ok");
         assert!(cfg.bindings().is_empty());
         assert!(!cfg.overlay_enabled);
         assert_eq!(cfg.describe_bindings(), "none (player mode)");
@@ -1623,23 +1762,43 @@ probes = true
         let (cfg, w) = parse("").expect("ok");
         assert!(w.is_empty(), "{w:?}");
         assert!(cfg.matchmaking && cfg.mm_queue && cfg.mm_join && cfg.mm_quiet_invite);
-        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (6, 2, 90));
+        assert_eq!(
+            (cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s),
+            (6, 2, 90)
+        );
         assert!(!cfg.mm_probe && !cfg.mm_host_create && !cfg.mm_lobby_trace && !cfg.mm_sc_create);
         // Off: nothing runs.
         let (cfg, _) = parse("matchmaking = false\n").expect("ok");
         assert!(!cfg.mm_queue && !cfg.mm_join && !cfg.mm_quiet_invite);
         // Dev-only switches stay forced off whatever the file says.
-        let (cfg, _) = parse("mm_probe = true\nmm_host_create = true\nmm_lobby_trace = true\nmm_sc_create = true\n").expect("ok");
-        assert!(cfg.mm_queue && !cfg.mm_probe && !cfg.mm_host_create && !cfg.mm_lobby_trace && !cfg.mm_sc_create);
+        let (cfg, _) = parse(
+            "mm_probe = true\nmm_host_create = true\nmm_lobby_trace = true\nmm_sc_create = true\n",
+        )
+        .expect("ok");
+        assert!(
+            cfg.mm_queue
+                && !cfg.mm_probe
+                && !cfg.mm_host_create
+                && !cfg.mm_lobby_trace
+                && !cfg.mm_sc_create
+        );
         // Developer mode ignores `matchmaking`.
         let (cfg, _) = parse_dev("matchmaking = true\n").expect("ok");
         assert!(!cfg.mm_queue && !cfg.mm_join);
         // Lobby rules: ranges, min <= max.
-        let (cfg, w) = parse("mm_max_players = 4\nmm_min_players = 3\nmm_fill_wait_s = 30\n").expect("ok");
-        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (4, 3, 30));
+        let (cfg, w) =
+            parse("mm_max_players = 4\nmm_min_players = 3\nmm_fill_wait_s = 30\n").expect("ok");
+        assert_eq!(
+            (cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s),
+            (4, 3, 30)
+        );
         assert!(w.is_empty(), "{w:?}");
-        let (cfg, w) = parse("mm_max_players = 9\nmm_min_players = 1\nmm_fill_wait_s = 1\n").expect("ok");
-        assert_eq!((cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s), (6, 2, 5));
+        let (cfg, w) =
+            parse("mm_max_players = 9\nmm_min_players = 1\nmm_fill_wait_s = 1\n").expect("ok");
+        assert_eq!(
+            (cfg.mm_max_players, cfg.mm_min_players, cfg.mm_fill_wait_s),
+            (6, 2, 5)
+        );
         assert_eq!(w.len(), 3, "{w:?}");
         let (cfg, w) = parse("mm_max_players = 3\nmm_min_players = 5\n").expect("ok");
         assert_eq!((cfg.mm_max_players, cfg.mm_min_players), (3, 3));

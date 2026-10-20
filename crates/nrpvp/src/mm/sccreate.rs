@@ -15,7 +15,9 @@ use std::time::{Duration, Instant};
 
 use super::machine::idt;
 use crate::steam::probe::Event;
-use crate::steam::queue::{CallData, CallKind, CallPoll, QueueLobby, QueueSteam, ScType, KEY_SC_TYPE};
+use crate::steam::queue::{
+    CallData, CallKind, CallPoll, QueueLobby, QueueSteam, ScType, KEY_SC_TYPE,
+};
 
 /// The member limit of the lobby the game itself creates (S9 §5d: `CreateLobby(2, 6)`).
 pub(crate) const MAX_MEMBERS: i32 = 6;
@@ -29,7 +31,11 @@ pub(crate) const CREATE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_EARLY: usize = 16;
 
 /// Why the button does nothing, or `None` when it may run. Pure, so the rules are tested.
-pub(crate) fn refuse_reason(guard: &Result<(), String>, in_sc: Option<u64>, running: bool) -> Option<String> {
+pub(crate) fn refuse_reason(
+    guard: &Result<(), String>,
+    in_sc: Option<u64>,
+    running: bool,
+) -> Option<String> {
     if running {
         return Some("a create test is already running".to_string());
     }
@@ -37,7 +43,10 @@ pub(crate) fn refuse_reason(guard: &Result<(), String>, in_sc: Option<u64>, runn
         return Some(format!("safety guard: {e}"));
     }
     if let Some(id) = in_sc {
-        return Some(format!("already in Seamless Co-op lobby {}: refusing to create another", idt(id)));
+        return Some(format!(
+            "already in Seamless Co-op lobby {}: refusing to create another",
+            idt(id)
+        ));
     }
     None
 }
@@ -61,8 +70,16 @@ pub(crate) fn verdict(carries_sc_type: bool) -> Verdict {
 
 enum Phase {
     Idle,
-    Creating { handle: u64, started: Instant },
-    Watching { lobby: QueueLobby, since: Instant, next_sample: Instant, adopted_seen_at: Option<Duration> },
+    Creating {
+        handle: u64,
+        started: Instant,
+    },
+    Watching {
+        lobby: QueueLobby,
+        since: Instant,
+        next_sample: Instant,
+        adopted_seen_at: Option<Duration>,
+    },
 }
 
 /// The test state machine. One run at a time; after the verdict it is idle again.
@@ -76,7 +93,12 @@ pub(crate) struct ScCreate {
 
 impl ScCreate {
     pub(crate) fn new(ty: ScType) -> ScCreate {
-        ScCreate { ty, phase: Phase::Idle, enters: Vec::new(), line: String::new() }
+        ScCreate {
+            ty,
+            phase: Phase::Idle,
+            enters: Vec::new(),
+            line: String::new(),
+        }
     }
 
     pub(crate) fn running(&self) -> bool {
@@ -89,7 +111,13 @@ impl ScCreate {
     }
 
     /// The button. `guard` is the MM-2 safety guard, `in_sc` the Seamless Co-op lobby the local player is in (if any).
-    pub(crate) fn press(&mut self, api: &mut dyn QueueSteam, guard: &Result<(), String>, in_sc: Option<u64>, now: Instant) {
+    pub(crate) fn press(
+        &mut self,
+        api: &mut dyn QueueSteam,
+        guard: &Result<(), String>,
+        in_sc: Option<u64>,
+        now: Instant,
+    ) {
         if let Some(why) = refuse_reason(guard, in_sc, self.running()) {
             tracing::warn!("mm_sc_create: REFUSED: {why}");
             if !self.running() {
@@ -101,8 +129,14 @@ impl ScCreate {
         match api.begin_create_sc(self.ty, MAX_MEMBERS) {
             Ok(handle) => {
                 tracing::info!("mm_sc_create: pressed: CreateLobby({}, {MAX_MEMBERS}) started, handle {handle}", self.ty.label());
-                self.line = format!("SC create test: creating a {} lobby...", self.ty.create_name());
-                self.phase = Phase::Creating { handle, started: now };
+                self.line = format!(
+                    "SC create test: creating a {} lobby...",
+                    self.ty.create_name()
+                );
+                self.phase = Phase::Creating {
+                    handle,
+                    started: now,
+                };
             }
             Err(e) => {
                 tracing::warn!("mm_sc_create: CreateLobby not started: {e}");
@@ -117,7 +151,12 @@ impl ScCreate {
             return;
         }
         match ev {
-            Event::LobbyEnter { lobby, locked, response, .. } => {
+            Event::LobbyEnter {
+                lobby,
+                locked,
+                response,
+                ..
+            } => {
                 if self.enters.len() < MAX_EARLY {
                     self.enters.push((*lobby, *locked));
                 }
@@ -125,15 +164,24 @@ impl ScCreate {
                     tracing::info!("mm_sc_create: event LobbyEnter lobby={} locked={locked} response={response}", idt(*lobby));
                 }
             }
-            Event::LobbyCreated { result, lobby } if matches!(self.phase, Phase::Creating { .. }) => {
-                tracing::info!("mm_sc_create: event LobbyCreated result={result} lobby={}", idt(*lobby));
+            Event::LobbyCreated { result, lobby }
+                if matches!(self.phase, Phase::Creating { .. }) =>
+            {
+                tracing::info!(
+                    "mm_sc_create: event LobbyCreated result={result} lobby={}",
+                    idt(*lobby)
+                );
             }
             _ => {}
         }
     }
 
     fn locked_of(&self, lobby: u64) -> Option<bool> {
-        self.enters.iter().rev().find(|(l, _)| *l == lobby).map(|(_, locked)| *locked)
+        self.enters
+            .iter()
+            .rev()
+            .find(|(l, _)| *l == lobby)
+            .map(|(_, locked)| *locked)
     }
 
     /// Called every worker pass. `sc_reports` is the Seamless Co-op lobby the worker's detection (`env.sc`) currently reports.
@@ -149,13 +197,27 @@ impl ScCreate {
                     self.line = "SC create test: failed - no result from Steam".to_string();
                 }
                 CallPoll::Pending => self.phase = Phase::Creating { handle, started },
-                CallPoll::Done(CallData::Created { lobby: Some(q), result }) => {
-                    tracing::info!("mm_sc_create: LobbyCreated result={result} lobby={}", idt(q.id()));
+                CallPoll::Done(CallData::Created {
+                    lobby: Some(q),
+                    result,
+                }) => {
+                    tracing::info!(
+                        "mm_sc_create: LobbyCreated result={result} lobby={}",
+                        idt(q.id())
+                    );
                     self.line = format!("SC create test: lobby {} created, watching 20 s", q.id());
-                    self.phase = Phase::Watching { lobby: q, since: now, next_sample: now, adopted_seen_at: None };
+                    self.phase = Phase::Watching {
+                        lobby: q,
+                        since: now,
+                        next_sample: now,
+                        adopted_seen_at: None,
+                    };
                     self.watch(api, now, sc_reports);
                 }
-                CallPoll::Done(CallData::Created { result, lobby: None }) => {
+                CallPoll::Done(CallData::Created {
+                    result,
+                    lobby: None,
+                }) => {
                     tracing::warn!("mm_sc_create: CreateLobby failed: result={result} (1 = OK)");
                     self.line = format!("SC create test: failed - EResult {result}");
                 }
@@ -163,7 +225,10 @@ impl ScCreate {
                     tracing::warn!("mm_sc_create: unexpected call result {other:?}");
                     self.line = "SC create test: failed - unexpected result".to_string();
                 }
-                CallPoll::Failed { reason, invalid_handle } => {
+                CallPoll::Failed {
+                    reason,
+                    invalid_handle,
+                } => {
                     tracing::warn!(
                         "mm_sc_create: CreateLobby call result failed: {reason} (invalid handle: {invalid_handle}; if true the game's callback \
                          pump may have consumed it, then a lobby may exist that this test does not track - check the LobbyCreated event line)"
@@ -180,7 +245,15 @@ impl ScCreate {
 
     /// One pass of the watch phase: sample every 2 s, decide after 20 s.
     fn watch(&mut self, api: &mut dyn QueueSteam, now: Instant, sc_reports: Option<u64>) {
-        let Phase::Watching { lobby, since, next_sample, adopted_seen_at } = &mut self.phase else { return };
+        let Phase::Watching {
+            lobby,
+            since,
+            next_sample,
+            adopted_seen_at,
+        } = &mut self.phase
+        else {
+            return;
+        };
         let elapsed = now.saturating_duration_since(*since);
         let finished = elapsed >= WATCH;
         if now < *next_sample && !finished {
@@ -191,7 +264,11 @@ impl ScCreate {
         let carries = !api.lobby_data(id, KEY_SC_TYPE).is_empty();
         if carries && adopted_seen_at.is_none() {
             *adopted_seen_at = Some(elapsed);
-            tracing::info!("mm_sc_create: nrsc_lobby_type appeared on lobby {} at +{:.1} s", idt(id), elapsed.as_secs_f32());
+            tracing::info!(
+                "mm_sc_create: nrsc_lobby_type appeared on lobby {} at +{:.1} s",
+                idt(id),
+                elapsed.as_secs_f32()
+            );
         }
         let n = api.member_count(id).clamp(0, 64);
         let members: Vec<u64> = (0..n).map(|i| api.member_by_index(id, i)).collect();
@@ -262,9 +339,15 @@ mod tests {
     #[test]
     fn refuse_rules() {
         assert_eq!(refuse_reason(&ok(), None, false), None);
-        assert!(refuse_reason(&Err("EAC".into()), None, false).expect("r").contains("safety guard: EAC"));
-        assert!(refuse_reason(&ok(), Some(5), false).expect("r").contains("already in Seamless Co-op lobby"));
-        assert!(refuse_reason(&ok(), None, true).expect("r").contains("already running"));
+        assert!(refuse_reason(&Err("EAC".into()), None, false)
+            .expect("r")
+            .contains("safety guard: EAC"));
+        assert!(refuse_reason(&ok(), Some(5), false)
+            .expect("r")
+            .contains("already in Seamless Co-op lobby"));
+        assert!(refuse_reason(&ok(), None, true)
+            .expect("r")
+            .contains("already running"));
     }
 
     #[test]
@@ -295,10 +378,17 @@ mod tests {
         assert_eq!(s.writes, vec![Write::CreateSc(ScType::Public, 6)]);
         run(&mut c, &mut s, t0, 19.0, None);
         assert!(c.running());
-        assert!(!s.writes.iter().any(|w| matches!(w, Write::Leave(_))), "no leave before 20 s");
+        assert!(
+            !s.writes.iter().any(|w| matches!(w, Write::Leave(_))),
+            "no leave before 20 s"
+        );
         run(&mut c, &mut s, t0, 21.0, None);
         let lobby = s.next_lobby;
-        assert_eq!(s.writes_to(lobby), vec![&Write::Leave(lobby)], "only a LeaveLobby on our own lobby");
+        assert_eq!(
+            s.writes_to(lobby),
+            vec![&Write::Leave(lobby)],
+            "only a LeaveLobby on our own lobby"
+        );
         assert!(!c.running());
         assert!(c.line().contains("not adopted"), "{}", c.line());
     }
@@ -326,7 +416,11 @@ mod tests {
         c.press(&mut s, &ok(), None, t0);
         let lobby = s.next_lobby;
         run(&mut c, &mut s, t0, 10.0, None);
-        s.lobbies.get_mut(&lobby).expect("lobby").data.insert(KEY_SC_TYPE.into(), "x".into());
+        s.lobbies
+            .get_mut(&lobby)
+            .expect("lobby")
+            .data
+            .insert(KEY_SC_TYPE.into(), "x".into());
         run(&mut c, &mut s, t0, 22.0, None);
         assert!(s.writes_to(lobby).is_empty());
         assert!(c.line().contains("ADOPTED"), "{}", c.line());
@@ -367,7 +461,12 @@ mod tests {
         let mut c = ScCreate::new(ScType::Public);
         c.press(&mut s, &ok(), None, t0);
         let lobby = s.next_lobby;
-        c.on_event(&Event::LobbyEnter { lobby, permissions: 0, locked: true, response: 1 });
+        c.on_event(&Event::LobbyEnter {
+            lobby,
+            permissions: 0,
+            locked: true,
+            response: 1,
+        });
         c.press(&mut s, &ok(), None, t0);
         assert_eq!(s.writes.len(), 1, "no second CreateLobby");
         c.tick(&mut s, t0, None);

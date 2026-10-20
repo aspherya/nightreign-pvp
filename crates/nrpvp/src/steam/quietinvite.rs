@@ -25,7 +25,9 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 
-use super::lobtrace::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
+use super::lobtrace::{
+    EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS,
+};
 use super::Flat;
 
 const FLAT_NAME: &str = "SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog\0";
@@ -116,13 +118,19 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rip = (*ctx).Rip as usize;
-        if rip == 0 || (ADDR[0].load(Ordering::Relaxed) != rip && ADDR[1].load(Ordering::Relaxed) != rip) {
+        if rip == 0
+            || (ADDR[0].load(Ordering::Relaxed) != rip && ADDR[1].load(Ordering::Relaxed) != rip)
+        {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rsp = (*ctx).Rsp;
         if ARMED.load(Ordering::Relaxed) && rsp != 0 && rsp.is_multiple_of(8) {
             let ret = *(rsp as *const u64);
-            match decide(ret, EXE_BASE.load(Ordering::Relaxed), EXE_SIZE.load(Ordering::Relaxed)) {
+            match decide(
+                ret,
+                EXE_BASE.load(Ordering::Relaxed),
+                EXE_SIZE.load(Ordering::Relaxed),
+            ) {
                 Action::Skip => {
                     LAST_LOBBY.store((*ctx).Rdx, Ordering::Relaxed);
                     LAST_RET.store(ret, Ordering::Relaxed);
@@ -195,7 +203,8 @@ fn vtable_target(flat: usize, iface: usize) -> Option<usize> {
         return None;
     }
     // [iface] = vtable pointer, [vtable + disp] = the function (S9 5d: slot 33, target in steamclient64.dll).
-    let t = crate::game::mem::read::<u64>(iface).and_then(|vt| crate::game::mem::read::<u64>(vt as usize + disp as usize))?;
+    let t = crate::game::mem::read::<u64>(iface)
+        .and_then(|vt| crate::game::mem::read::<u64>(vt as usize + disp as usize))?;
     (t != 0 && t as usize != flat).then_some(t as usize)
 }
 
@@ -207,7 +216,10 @@ fn run() {
             break;
         }
         if start.elapsed() >= WAIT_TOTAL {
-            tracing::warn!("mm_quiet_invite: gave up after {} s waiting for Steam; nothing installed", WAIT_TOTAL.as_secs());
+            tracing::warn!(
+                "mm_quiet_invite: gave up after {} s waiting for Steam; nothing installed",
+                WAIT_TOTAL.as_secs()
+            );
             return;
         }
         std::thread::sleep(WAIT_STEP);
@@ -258,7 +270,10 @@ fn run() {
         let want = WANT.load(Ordering::Relaxed);
         if want && !is_armed {
             ARMED.store(true, Ordering::Relaxed);
-            for (i, slot) in [crate::hwbp::SLOT_QUIET_FLAT, crate::hwbp::SLOT_QUIET_VTABLE].into_iter().enumerate() {
+            for (i, slot) in [crate::hwbp::SLOT_QUIET_FLAT, crate::hwbp::SLOT_QUIET_VTABLE]
+                .into_iter()
+                .enumerate()
+            {
                 if mask & (1 << i) != 0 {
                     crate::hwbp::set(slot, addrs[i] as usize);
                 }
@@ -273,7 +288,10 @@ fn run() {
             tracing::info!("mm_quiet_invite: disarmed (hwbp slots 0/1 freed)");
         }
         // Log from the counters (never inside the handler).
-        let (sup, pass) = (SUPPRESSED.load(Ordering::Relaxed), PASSED.load(Ordering::Relaxed));
+        let (sup, pass) = (
+            SUPPRESSED.load(Ordering::Relaxed),
+            PASSED.load(Ordering::Relaxed),
+        );
         if sup != seen_sup {
             tracing::info!(
                 "mm_quiet_invite: invite dialog suppressed (lobby {}) - call from nightreign.exe+0x{:X}, {} suppressed so far",
@@ -336,13 +354,19 @@ mod tests {
 
     #[test]
     fn a_skip_returns_to_the_caller_and_pops_the_return_address() {
-        assert_eq!(skip_registers(0x7FF6_0000_1234, 0x1000), (0x7FF6_0000_1234, 0x1008));
+        assert_eq!(
+            skip_registers(0x7FF6_0000_1234, 0x1000),
+            (0x7FF6_0000_1234, 0x1008)
+        );
     }
 
     #[test]
     fn handler_ignores_null_and_foreign_exceptions() {
         // SAFETY: null is explicitly handled.
-        assert_eq!(unsafe { veh(std::ptr::null_mut()) }, EXCEPTION_CONTINUE_SEARCH);
+        assert_eq!(
+            unsafe { veh(std::ptr::null_mut()) },
+            EXCEPTION_CONTINUE_SEARCH
+        );
     }
 
     #[repr(C, align(16))]
@@ -367,27 +391,44 @@ mod tests {
             c.0.Rdx = 0x0186_0000_0000_0042;
             let mut r: EXCEPTION_RECORD = unsafe { std::mem::zeroed() };
             r.ExceptionCode = STATUS_SINGLE_STEP;
-            let mut p = EXCEPTION_POINTERS { ExceptionRecord: &mut r, ContextRecord: &mut c.0 };
+            let mut p = EXCEPTION_POINTERS {
+                ExceptionRecord: &mut r,
+                ContextRecord: &mut c.0,
+            };
             // SAFETY: `p` points at a valid record and a 16-byte-aligned CONTEXT; Rsp points at `stack`, which outlives the call.
             let code = unsafe { veh(&mut p) };
-            (c.0.Rip, c.0.Rsp.wrapping_sub(stack.as_ptr() as u64), c.0.EFlags, code)
+            (
+                c.0.Rip,
+                c.0.Rsp.wrapping_sub(stack.as_ptr() as u64),
+                c.0.EFlags,
+                code,
+            )
         };
         let before = SUPPRESSED.load(Ordering::Relaxed);
         // In-image caller, armed: Rip = return address, Rsp popped by 8, RF set, counted, lobby id recorded.
         let ret = (BASE + 0x258_568B) as u64;
         let (rip, rsp_delta, eflags, code) = fire(ret, true);
-        assert_eq!((rip, rsp_delta, code), (ret, 8, EXCEPTION_CONTINUE_EXECUTION));
+        assert_eq!(
+            (rip, rsp_delta, code),
+            (ret, 8, EXCEPTION_CONTINUE_EXECUTION)
+        );
         assert_ne!(eflags & EFLAGS_RF, 0);
         assert_eq!(SUPPRESSED.load(Ordering::Relaxed), before + 1);
         assert_eq!(LAST_LOBBY.load(Ordering::Relaxed), 0x0186_0000_0000_0042);
         // Foreign caller (inside steamclient64.dll's range): runs unchanged, RF set, not counted as suppressed.
         let (rip, rsp_delta, eflags, code) = fire(0x7FFD_0000_1000, true);
-        assert_eq!((rip, rsp_delta, code), (ENTRY as u64, 0, EXCEPTION_CONTINUE_EXECUTION));
+        assert_eq!(
+            (rip, rsp_delta, code),
+            (ENTRY as u64, 0, EXCEPTION_CONTINUE_EXECUTION)
+        );
         assert_ne!(eflags & EFLAGS_RF, 0);
         assert_eq!(SUPPRESSED.load(Ordering::Relaxed), before + 1);
         // Disarmed (stray hit while the registers are being cleared): resumes normally.
         let (rip, rsp_delta, _, code) = fire(ret, false);
-        assert_eq!((rip, rsp_delta, code), (ENTRY as u64, 0, EXCEPTION_CONTINUE_EXECUTION));
+        assert_eq!(
+            (rip, rsp_delta, code),
+            (ENTRY as u64, 0, EXCEPTION_CONTINUE_EXECUTION)
+        );
         assert_eq!(SUPPRESSED.load(Ordering::Relaxed), before + 1);
         // A single-step at some other address is not ours.
         ADDR[1].store(0, Ordering::Relaxed);

@@ -64,11 +64,15 @@ pub(crate) fn clear(slot: usize) {
 
 fn ensure_thread() {
     START.call_once(|| {
-        let r = std::thread::Builder::new().name("nrpvp-hwbp".into()).spawn(|| {
-            if std::panic::catch_unwind(run).is_err() {
-                tracing::error!("hwbp: arming thread panicked; breakpoints are no longer updated");
-            }
-        });
+        let r = std::thread::Builder::new()
+            .name("nrpvp-hwbp".into())
+            .spawn(|| {
+                if std::panic::catch_unwind(run).is_err() {
+                    tracing::error!(
+                        "hwbp: arming thread panicked; breakpoints are no longer updated"
+                    );
+                }
+            });
         if r.is_err() {
             tracing::warn!("hwbp: could not spawn the arming thread");
         }
@@ -96,7 +100,8 @@ fn run() {
         if changed {
             applied.clear(); // every thread gets the new set
         }
-        let (written, failed, first) = apply_all(pid, own, &addrs, mask, changed, &mut applied, &mut scratch);
+        let (written, failed, first) =
+            apply_all(pid, own, &addrs, mask, changed, &mut applied, &mut scratch);
         if changed {
             tracing::info!(
                 "hwbp: debug registers now {:?} (mask {mask:#06b}): {written} thread(s) written, {failed} failed{}",

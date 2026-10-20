@@ -40,8 +40,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::hotkey::{self, Action};
 use crate::logring;
 use shared::{
-    badge_lines, badge_mm_line, queue_tone, Tone, short_id, team_name, Command, PlayerRow, PvpveState, Relation, Role, Shared,
-    Snapshot,
+    badge_lines, badge_mm_line, queue_tone, short_id, team_name, Command, PlayerRow, PvpveState,
+    Relation, Role, Shared, Snapshot, Tone,
 };
 
 /// How long to wait for the game window before giving up on the overlay.
@@ -96,7 +96,13 @@ pub(crate) fn spawn(
     }
 }
 
-fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, player: bool, queue_panel: bool) {
+fn run(
+    shared: Arc<Shared>,
+    toggle_name: Option<String>,
+    settle: Duration,
+    player: bool,
+    queue_panel: bool,
+) {
     let t0 = Instant::now();
     if !wait_for_game_window() {
         tracing::warn!(
@@ -123,7 +129,12 @@ fn run(shared: Arc<Shared>, toggle_name: Option<String>, settle: Duration, playe
 
 /// Apply the hudhook DX12 hooks. Panics inside hudhook (it uses `expect` while creating hooks) become an
 /// `Err` here.
-fn install(shared: Arc<Shared>, toggle_name: Option<String>, player: bool, queue_panel: bool) -> Result<(), String> {
+fn install(
+    shared: Arc<Shared>,
+    toggle_name: Option<String>,
+    player: bool,
+    queue_panel: bool,
+) -> Result<(), String> {
     let mut app = OverlayApp::new(shared, toggle_name, player);
     app.queue_panel = queue_panel;
     let applied = catch_unwind(AssertUnwindSafe(|| {
@@ -239,7 +250,10 @@ impl OverlayApp {
         // MM-4: with matchmaking on, a third line shows the queue status (or the key that opens the panel).
         let mm_line = if self.queue_panel {
             let st = crate::mm::status();
-            let key = self.toggle_name.clone().unwrap_or_else(|| "Insert".to_string());
+            let key = self
+                .toggle_name
+                .clone()
+                .unwrap_or_else(|| "Insert".to_string());
             badge_mm_line(&st.line, st.active, self.panel_open, &key)
         } else {
             None
@@ -272,13 +286,27 @@ impl OverlayApp {
     fn draw_queue_panel(&self, ui: &Ui) {
         let st = crate::mm::status();
         let screen = ui.io().display_size;
-        let key = self.toggle_name.clone().unwrap_or_else(|| "Insert".to_string());
+        let key = self
+            .toggle_name
+            .clone()
+            .unwrap_or_else(|| "Insert".to_string());
         ui.window("Battle Royale matchmaking###nrpvp_mm_panel")
-            .flags(WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_COLLAPSE | WindowFlags::NO_SAVED_SETTINGS)
-            .position([screen[0] - BADGE_MARGIN, BADGE_MARGIN + 90.0], Condition::FirstUseEver)
+            .flags(
+                WindowFlags::ALWAYS_AUTO_RESIZE
+                    | WindowFlags::NO_COLLAPSE
+                    | WindowFlags::NO_SAVED_SETTINGS,
+            )
+            .position(
+                [screen[0] - BADGE_MARGIN, BADGE_MARGIN + 90.0],
+                Condition::FirstUseEver,
+            )
             .position_pivot([1.0, 0.0])
             .build(|| {
-                let line = if st.line.is_empty() { "Starting...".to_string() } else { st.line.clone() };
+                let line = if st.line.is_empty() {
+                    "Starting...".to_string()
+                } else {
+                    st.line.clone()
+                };
                 ui.text_colored(tone_colour(queue_tone(&line, st.active)), line);
                 {
                     let _off = ui.begin_disabled(st.active);
@@ -519,7 +547,11 @@ impl OverlayApp {
         }
         let st = crate::mm::status();
         ui.separator();
-        let line = if st.line.is_empty() { "Queue: starting (waiting for Steam)".to_string() } else { st.line.clone() };
+        let line = if st.line.is_empty() {
+            "Queue: starting (waiting for Steam)".to_string()
+        } else {
+            st.line.clone()
+        };
         let colour = if line.starts_with("MATCH READY") || line.starts_with("ALL PRESENT") {
             GREEN_TEXT
         } else if line.contains("REFUSED") || line.contains("failed") {
@@ -559,7 +591,9 @@ impl OverlayApp {
             if !st.sc_create_line.is_empty() {
                 let c = if st.sc_create_line.contains("ADOPTED") {
                     GREEN_TEXT
-                } else if st.sc_create_line.contains("REFUSED") || st.sc_create_line.contains("failed") {
+                } else if st.sc_create_line.contains("REFUSED")
+                    || st.sc_create_line.contains("failed")
+                {
                     RED
                 } else {
                     AMBER
@@ -573,14 +607,21 @@ impl OverlayApp {
                 self.send(Command::MmQuietTest);
             }
             if !st.quiet_line.is_empty() {
-                let c = if st.quiet_line.contains("SUPPRESSED") { GREEN_TEXT } else { AMBER };
+                let c = if st.quiet_line.contains("SUPPRESSED") {
+                    GREEN_TEXT
+                } else {
+                    AMBER
+                };
                 ui.text_colored(c, &st.quiet_line);
             }
         }
         // MM-3 (dev only, `mm_join`): the join methods, one attempt per press, usable once the host's lobby id is known.
         if st.join_ui {
             use crate::mm::join::JoinCmd;
-            ui.text_colored(GREY, "Join methods (each press is logged as mm_join: method ...):");
+            ui.text_colored(
+                GREY,
+                "Join methods (each press is logged as mm_join: method ...):",
+            );
             {
                 let _off = ui.begin_disabled(!st.sc_known);
                 if ui.button("(a) link") {
@@ -793,7 +834,10 @@ impl ImguiRenderLoop for OverlayApp {
             if self.queue_panel {
                 if hotkey::take(Action::ToggleOverlay) {
                     self.panel_open = !self.panel_open;
-                    tracing::info!("overlay: matchmaking panel {}", if self.panel_open { "opened" } else { "closed" });
+                    tracing::info!(
+                        "overlay: matchmaking panel {}",
+                        if self.panel_open { "opened" } else { "closed" }
+                    );
                 }
                 ctx.io_mut().mouse_draw_cursor = self.panel_open && !os_cursor_showing();
             }

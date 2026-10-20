@@ -192,7 +192,9 @@ mod tests {
         assert!(t.contains(r#"load_after = [{ id = "nrsc.dll", optional = false }]"#));
         // SC must come first.
         assert!(t.find("nrsc.dll'").unwrap() < t.find("nrpvp.dll'").unwrap());
-        assert!(t.contains("[[packages]]\nid = \"nrpvp-gamedata\"\npath = 'S:\\G\\NightreignPvP\\gamedata'\n"));
+        assert!(t.contains(
+            "[[packages]]\nid = \"nrpvp-gamedata\"\npath = 'S:\\G\\NightreignPvP\\gamedata'\n"
+        ));
     }
 
     #[test]

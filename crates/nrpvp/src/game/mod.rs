@@ -452,7 +452,10 @@ fn watch(
             let since = *null_since.get_or_insert_with(Instant::now);
             if !null_logged && since.elapsed() >= NULL_LOADING_LOG {
                 null_logged = true;
-                tracing::info!("{TARGET} null for {} s (loading)", since.elapsed().as_secs());
+                tracing::info!(
+                    "{TARGET} null for {} s (loading)",
+                    since.elapsed().as_secs()
+                );
             }
         }
         if !wcm_live && !dumped && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
@@ -755,7 +758,10 @@ fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
 
 /// MM-4: the commands the player build's matchmaking panel may send: queue Solo, leave the queue. Nothing else.
 fn player_may_send(cmd: &Command) -> bool {
-    matches!(cmd, Command::MmQueue(crate::mm::Mode::Solo) | Command::MmLeave)
+    matches!(
+        cmd,
+        Command::MmQueue(crate::mm::Mode::Solo) | Command::MmLeave
+    )
 }
 
 /// Execute one command on the main loop thread. `src` is the trigger for the log ("F5", "overlay", ...).
@@ -784,12 +790,17 @@ fn run_command(
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
-                tracing::info!("mm_queue: {src}: queue {} not sent (queue feature off or command queue full)", mode.label());
+                tracing::info!(
+                    "mm_queue: {src}: queue {} not sent (queue feature off or command queue full)",
+                    mode.label()
+                );
             }
         }
         Command::MmJoin(j) => {
             if !crate::mm::send(crate::mm::Cmd::Join(j)) {
-                tracing::info!("mm_join: {src}: {j:?} not sent (queue feature off or command queue full)");
+                tracing::info!(
+                    "mm_join: {src}: {j:?} not sent (queue feature off or command queue full)"
+                );
             }
         }
         Command::MmScCreate => {
@@ -804,7 +815,9 @@ fn run_command(
         }
         Command::MmLeave => {
             if !crate::mm::send(crate::mm::Cmd::Leave) {
-                tracing::info!("mm_queue: {src}: leave not sent (queue feature off or command queue full)");
+                tracing::info!(
+                    "mm_queue: {src}: leave not sent (queue feature off or command queue full)"
+                );
             }
         }
         Command::RunDiscovery => {
@@ -1107,7 +1120,9 @@ mod mm4_tests {
         assert!(!player_may_send(&Command::MmQueue(crate::mm::Mode::Squad)));
         assert!(!player_may_send(&Command::MmScCreate));
         assert!(!player_may_send(&Command::MmQuietTest));
-        assert!(!player_may_send(&Command::MmJoin(crate::mm::join::JoinCmd::Direct)));
+        assert!(!player_may_send(&Command::MmJoin(
+            crate::mm::join::JoinCmd::Direct
+        )));
         assert!(!player_may_send(&Command::SetAll(29)));
         assert!(!player_may_send(&Command::RunDiscovery));
         assert!(!player_may_send(&Command::Mark(None)));

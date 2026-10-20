@@ -6,7 +6,10 @@
 //! script, UI-0 step 5), so the game never writes the same byte concurrently. One byte read-modify-write through `mem::write_u8`.
 
 use super::mem::RegionCache;
-use super::probe2::{block_addr, checks_ok, find_group, flag_split, parse_layout, structural_checks, EF_HEADER_LEN, NODE_IS_NIL, NODE_LEN};
+use super::probe2::{
+    block_addr, checks_ok, find_group, flag_split, parse_layout, structural_checks, EF_HEADER_LEN,
+    NODE_IS_NIL, NODE_LEN,
+};
 
 /// `CSEventFlagMan` slot (game 1.03.3, exe 1.3.3.0; TC-004, UI-0 step 5).
 pub(crate) const RVA_FLAGMAN_SLOT: usize = super::flagwatch::RVA_FLAGMAN_SLOT;
@@ -30,7 +33,10 @@ pub(crate) fn with_bit(byte: u8, bit: u32, on: bool) -> u8 {
 /// Address of the byte holding `flag` and its bit, through the live manager.
 fn locate(base: usize, flag: u32) -> Result<(usize, u32), &'static str> {
     let mut rc = RegionCache::direct();
-    let inst = rc.read::<usize>(base + RVA_FLAGMAN_SLOT).filter(|p| *p != 0).ok_or("flag manager not live")?;
+    let inst = rc
+        .read::<usize>(base + RVA_FLAGMAN_SLOT)
+        .filter(|p| *p != 0)
+        .ok_or("flag manager not live")?;
     let hdr = rc.read_prefix(inst, EF_HEADER_LEN);
     let mut l = parse_layout(&hdr).ok_or("flag manager header unreadable")?;
     l.blocks_readable = rc.readable_len(l.blocks, 1) > 0;
@@ -44,7 +50,8 @@ fn locate(base: usize, flag: u32) -> Result<(usize, u32), &'static str> {
         return Err("byte index outside the block");
     }
     let node = find_group(&mut rc, l.head, group)?.ok_or("the flag's group has no storage")?;
-    let block = block_addr(node.mode, node.loc, l.blocks, l.holder_size).ok_or("no block for the group")?;
+    let block =
+        block_addr(node.mode, node.loc, l.blocks, l.holder_size).ok_or("no block for the group")?;
     Ok((block + byte as usize, bit))
 }
 
@@ -72,7 +79,11 @@ pub(crate) fn set(base: usize, flag: u32, on: bool) -> Result<bool, &'static str
 /// UI-2 spike (dev, `ui_msg_test = true`): after the flag manager is live in a world, set each test flag of
 /// `gamedata/emevd-events.json` in turn and read it back 2 s later (our event clears it once it has shown its message).
 pub(crate) fn spawn_msg_test(base: usize) {
-    const TEST: [(u32, &str); 3] = [(10_007_100, "dialog"), (10_007_101, "blinking"), (10_007_102, "status")];
+    const TEST: [(u32, &str); 3] = [
+        (10_007_100, "dialog"),
+        (10_007_101, "blinking"),
+        (10_007_102, "status"),
+    ];
     let r = std::thread::Builder::new().name("nrpvp-msgtest".into()).spawn(move || {
         tracing::info!("ui_msg_test: waiting for the flag manager and 25 s of world time");
         let mut live_for = 0u32;

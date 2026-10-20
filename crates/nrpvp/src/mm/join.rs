@@ -70,7 +70,11 @@ pub(crate) fn link_url(app_id: u32, lobby: u64, host: u64) -> String {
 
 /// Method (a) may only run when Steam will deliver the join to THIS running game: the process app id is Nightreign's and the
 /// overlay is enabled for it, and the MM-2 safety guard passes. Otherwise Steam could start a second, vanilla copy of the game.
-pub(crate) fn link_guard(app_id: u32, overlay_enabled: bool, safety: &Result<(), String>) -> Result<(), String> {
+pub(crate) fn link_guard(
+    app_id: u32,
+    overlay_enabled: bool,
+    safety: &Result<(), String>,
+) -> Result<(), String> {
     if let Err(e) = safety {
         return Err(format!("safety guard: {e}"));
     }
@@ -107,7 +111,10 @@ mod tests {
 
     #[test]
     fn url_has_the_documented_shape() {
-        assert_eq!(link_url(2622380, 109775241234567890, 76561198000000000), "steam://joinlobby/2622380/109775241234567890/76561198000000000");
+        assert_eq!(
+            link_url(2622380, 109775241234567890, 76561198000000000),
+            "steam://joinlobby/2622380/109775241234567890/76561198000000000"
+        );
     }
 
     #[test]
@@ -116,9 +123,13 @@ mod tests {
         assert_eq!(link_guard(NIGHTREIGN_APP_ID, true, &ok), Ok(()));
         assert!(link_guard(480, true, &ok).unwrap_err().contains("GetAppID"));
         assert!(link_guard(0, true, &ok).unwrap_err().contains("GetAppID"));
-        assert!(link_guard(NIGHTREIGN_APP_ID, false, &ok).unwrap_err().contains("IsOverlayEnabled"));
+        assert!(link_guard(NIGHTREIGN_APP_ID, false, &ok)
+            .unwrap_err()
+            .contains("IsOverlayEnabled"));
         let bad: Result<(), String> = Err("no nrsc".into());
-        assert!(link_guard(NIGHTREIGN_APP_ID, true, &bad).unwrap_err().contains("safety guard"));
+        assert!(link_guard(NIGHTREIGN_APP_ID, true, &bad)
+            .unwrap_err()
+            .contains("safety guard"));
     }
 
     #[test]

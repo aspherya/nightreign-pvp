@@ -134,7 +134,10 @@ pub(crate) fn phase() -> u8 {
 }
 
 fn hub() -> &'static Hub {
-    HUB.get_or_init(|| Hub { cmds: Mutex::new(VecDeque::new()), status: Mutex::new(Status::default()) })
+    HUB.get_or_init(|| Hub {
+        cmds: Mutex::new(VecDeque::new()),
+        status: Mutex::new(Status::default()),
+    })
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -237,7 +240,9 @@ pub(crate) fn classify_world(team: u8, age: Option<Duration>, stale_after: Durat
 /// Worker: the local player's world state now. `stale_after` should be a few watcher periods (the game loop reads once per period).
 pub(crate) fn world_state(stale_after: Duration) -> World {
     let at = LOCAL_AT_MS.load(Ordering::Relaxed);
-    let age = at.checked_sub(1).map(|ms| epoch().elapsed().saturating_sub(Duration::from_millis(ms)));
+    let age = at
+        .checked_sub(1)
+        .map(|ms| epoch().elapsed().saturating_sub(Duration::from_millis(ms)));
     classify_world(LOCAL_TEAM.load(Ordering::Relaxed), age, stale_after)
 }
 
@@ -276,16 +281,36 @@ mod tests {
         use super::join::Phase;
         let stale = Duration::from_secs(4);
         assert_eq!(classify_world(1, None, stale), World::Never);
-        assert_eq!(classify_world(1, Some(Duration::from_secs(1)), stale), World::Present(Some(Phase::Roundtable)));
-        assert_eq!(classify_world(2, Some(Duration::from_secs(1)), stale), World::Present(Some(Phase::Expedition)));
-        assert_eq!(classify_world(29, Some(Duration::from_secs(1)), stale), World::Present(None));
-        assert_eq!(classify_world(1, Some(Duration::from_secs(5)), stale), World::Gone, "no read for longer than the limit");
-        assert_eq!(classify_world(1, Some(stale), stale), World::Present(Some(Phase::Roundtable)));
+        assert_eq!(
+            classify_world(1, Some(Duration::from_secs(1)), stale),
+            World::Present(Some(Phase::Roundtable))
+        );
+        assert_eq!(
+            classify_world(2, Some(Duration::from_secs(1)), stale),
+            World::Present(Some(Phase::Expedition))
+        );
+        assert_eq!(
+            classify_world(29, Some(Duration::from_secs(1)), stale),
+            World::Present(None)
+        );
+        assert_eq!(
+            classify_world(1, Some(Duration::from_secs(5)), stale),
+            World::Gone,
+            "no read for longer than the limit"
+        );
+        assert_eq!(
+            classify_world(1, Some(stale), stale),
+            World::Present(Some(Phase::Roundtable))
+        );
     }
 
     #[test]
     fn team_size_override_applies_only_when_set() {
-        assert_eq!(pick_team_size(3, 0), 3, "no override: the configured value, unchanged");
+        assert_eq!(
+            pick_team_size(3, 0),
+            3,
+            "no override: the configured value, unchanged"
+        );
         assert_eq!(pick_team_size(1, 2), 2);
         assert_eq!(pick_team_size(3, 1), 1);
     }
@@ -311,7 +336,18 @@ mod tests {
         }
         assert!(!send(Cmd::Leave));
         assert_eq!(take_cmds().len(), MAX_CMDS);
-        publish(Status { line: "x".into(), active: true, ..Default::default() });
-        assert_eq!(status(), Status { line: "x".into(), active: true, ..Default::default() });
+        publish(Status {
+            line: "x".into(),
+            active: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            status(),
+            Status {
+                line: "x".into(),
+                active: true,
+                ..Default::default()
+            }
+        );
     }
 }

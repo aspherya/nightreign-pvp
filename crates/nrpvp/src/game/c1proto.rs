@@ -22,14 +22,18 @@ use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::steam::lobtrace::{apply_all, EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
+use crate::steam::lobtrace::{
+    apply_all, EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS,
+};
 
 /// First instruction after the prologue of the Commence checks: `mov rcx,[rip+3A3FCA6h]` (game 1.03.3).
 pub(crate) const RVA_AFTER_PROLOGUE: usize = 0x9E_EBFB;
 pub(crate) const AFTER_PROLOGUE_BYTES: [u8; 7] = [0x48, 0x8B, 0x0D, 0xA6, 0xFC, 0xA3, 0x03];
 /// The 506040 notice-dialog branch: `lea rax,[rbp+50h]` … `mov edx,7B8B8h` (game 1.03.3).
 pub(crate) const RVA_NOTICE_BRANCH: usize = 0x9E_EC1D;
-pub(crate) const NOTICE_BRANCH_BYTES: [u8; 13] = [0x48, 0x8D, 0x45, 0x50, 0x48, 0x89, 0x45, 0x58, 0xBA, 0xB8, 0xB8, 0x07, 0x00];
+pub(crate) const NOTICE_BRANCH_BYTES: [u8; 13] = [
+    0x48, 0x8D, 0x45, 0x50, 0x48, 0x89, 0x45, 0x58, 0xBA, 0xB8, 0xB8, 0x07, 0x00,
+];
 /// `MsgRepository` slot (game 1.03.3; TC-004).
 const RVA_MSGREPO: usize = 0x3C2_46A8;
 const CAT_DIALOGUES: u32 = 204;
@@ -56,7 +60,10 @@ static BUF: Buf = Buf(UnsafeCell::new([0; BUF_UNITS]));
 /// Index into the FMG's string-offset table for `id`, from the groups `(offset_index, first_id, last_id)` (SoulsFormats FMG; the same
 /// search as `exe+0x27F5710`).
 pub(crate) fn fmg_index(groups: &[(u32, u32, u32)], id: u32) -> Option<u32> {
-    groups.iter().find(|g| id >= g.1 && id <= g.2).map(|g| g.0 + (id - g.1))
+    groups
+        .iter()
+        .find(|g| id >= g.1 && id <= g.2)
+        .map(|g| g.0 + (id - g.1))
 }
 
 /// Whether a Commence with this Number of Players byte is redirected.
@@ -74,7 +81,10 @@ pub(crate) fn live_part(n: u32) -> String {
 
 /// The text shown for search tick `n`.
 pub(crate) fn text_for(n: u32) -> String {
-    format!("Battle Royale (prototype)\n{NEEDLE}{}\nPress OK to stop searching", live_part(n))
+    format!(
+        "Battle Royale (prototype)\n{NEEDLE}{}\nPress OK to stop searching",
+        live_part(n)
+    )
 }
 
 /// Every start offset of `needle` in `hay`.
@@ -85,7 +95,10 @@ pub(crate) fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
     let mut out = Vec::new();
     let mut i = 0;
     while i + needle.len() <= hay.len() {
-        match hay[i..=hay.len() - needle.len()].iter().position(|b| *b == needle[0]) {
+        match hay[i..=hay.len() - needle.len()]
+            .iter()
+            .position(|b| *b == needle[0])
+        {
             None => break,
             Some(p) => {
                 let at = i + p;
@@ -116,8 +129,15 @@ fn encode(s: &str, wide: bool) -> Vec<u8> {
 
 /// Scan every committed, private, read-write region of the process for the needle (UTF-16 and UTF-8), skipping
 /// `[skip, skip+skip_len)`, for at most `limit`. Logs its start and every 2 GiB.
-fn scan_copies(skip: usize, skip_len: usize, max: usize, limit: Duration) -> (Vec<TextCopy>, usize) {
-    use windows::Win32::System::Memory::{VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, MEM_PRIVATE, PAGE_READWRITE};
+fn scan_copies(
+    skip: usize,
+    skip_len: usize,
+    max: usize,
+    limit: Duration,
+) -> (Vec<TextCopy>, usize) {
+    use windows::Win32::System::Memory::{
+        VirtualQuery, MEMORY_BASIC_INFORMATION, MEM_COMMIT, MEM_PRIVATE, PAGE_READWRITE,
+    };
     const CHUNK: usize = 16 << 20;
     let n16 = encode(NEEDLE, true);
     let n8 = encode(NEEDLE, false);
@@ -129,17 +149,28 @@ fn scan_copies(skip: usize, skip_len: usize, max: usize, limit: Duration) -> (Ve
     tracing::info!("ui_c1_proto: scan for copies of our text started");
     while addr < 0x7FFF_FFFF_0000 && out.len() < max {
         if t0.elapsed() >= limit {
-            tracing::info!("ui_c1_proto: scan stopped at the time limit ({} MiB scanned)", scanned >> 20);
+            tracing::info!(
+                "ui_c1_proto: scan stopped at the time limit ({} MiB scanned)",
+                scanned >> 20
+            );
             break;
         }
         if scanned >= next_report {
-            tracing::info!("ui_c1_proto: scan progress {} MiB, {} copies so far", scanned >> 20, out.len());
+            tracing::info!(
+                "ui_c1_proto: scan progress {} MiB, {} copies so far",
+                scanned >> 20,
+                out.len()
+            );
             next_report += 2usize << 30;
         }
         let mut mbi = MEMORY_BASIC_INFORMATION::default();
         // SAFETY: valid out-buffer; VirtualQuery tolerates any address.
         let got = unsafe {
-            VirtualQuery(Some(addr as *const core::ffi::c_void), &mut mbi, std::mem::size_of::<MEMORY_BASIC_INFORMATION>())
+            VirtualQuery(
+                Some(addr as *const core::ffi::c_void),
+                &mut mbi,
+                std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
+            )
         };
         if got == 0 {
             break;
@@ -155,7 +186,8 @@ fn scan_copies(skip: usize, skip_len: usize, max: usize, limit: Duration) -> (Ve
                 for (needle, wide) in [(&n16, true), (&n8, false)] {
                     for off in find_all(&b, needle) {
                         let at = a + off;
-                        if (at >= skip && at < skip + skip_len) || out.iter().any(|c| c.addr == at) {
+                        if (at >= skip && at < skip + skip_len) || out.iter().any(|c| c.addr == at)
+                        {
                             continue;
                         }
                         out.push(TextCopy { addr: at, wide });
@@ -212,8 +244,16 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let menu = (*ctx).R14 as usize;
-        let settings = if menu > 0x10000 { *((menu + MENU_SETTINGS_OFF) as *const usize) } else { 0 };
-        let players = if settings > 0x10000 { *((settings + PLAYERS_BYTE) as *const u8) } else { ONE_PLAYER };
+        let settings = if menu > 0x10000 {
+            *((menu + MENU_SETTINGS_OFF) as *const usize)
+        } else {
+            0
+        };
+        let players = if settings > 0x10000 {
+            *((settings + PLAYERS_BYTE) as *const u8)
+        } else {
+            ONE_PLAYER
+        };
         LAST_VALUE.store(u32::from(players), Ordering::Relaxed);
         if redirect(players) {
             REDIRECTS.fetch_add(1, Ordering::Relaxed);
@@ -228,11 +268,13 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
 
 /// Start the prototype thread (developer mode with `ui_c1_proto = true`).
 pub(crate) fn spawn(base: usize) {
-    let r = std::thread::Builder::new().name("nrpvp-c1proto".into()).spawn(move || {
-        if std::panic::catch_unwind(|| run(base)).is_err() {
-            tracing::error!("ui_c1_proto: thread panicked");
-        }
-    });
+    let r = std::thread::Builder::new()
+        .name("nrpvp-c1proto".into())
+        .spawn(move || {
+            if std::panic::catch_unwind(|| run(base)).is_err() {
+                tracing::error!("ui_c1_proto: thread panicked");
+            }
+        });
     if r.is_err() {
         tracing::warn!("ui_c1_proto: could not spawn the thread");
     }
@@ -290,8 +332,12 @@ fn write_text(s: &str) {
 }
 
 fn run(base: usize) {
-    let check = |rva: usize, want: &[u8]| super::mem::read::<[u8; 13]>(base + rva).is_some_and(|b| b[..want.len()] == *want);
-    if !check(RVA_AFTER_PROLOGUE, &AFTER_PROLOGUE_BYTES) || !check(RVA_NOTICE_BRANCH, &NOTICE_BRANCH_BYTES) {
+    let check = |rva: usize, want: &[u8]| {
+        super::mem::read::<[u8; 13]>(base + rva).is_some_and(|b| b[..want.len()] == *want)
+    };
+    if !check(RVA_AFTER_PROLOGUE, &AFTER_PROLOGUE_BYTES)
+        || !check(RVA_NOTICE_BRANCH, &NOTICE_BRANCH_BYTES)
+    {
         tracing::warn!("ui_c1_proto: code bytes differ from game 1.03.3; not armed");
         return;
     }
@@ -341,13 +387,22 @@ fn run(base: usize) {
         if scan_at.is_some_and(|t| now >= t) {
             scan_at = None;
             let t0 = Instant::now();
-            let (found, scanned) = scan_copies(BUF.0.get() as usize, BUF_UNITS * 2, 32, Duration::from_secs(30));
+            let (found, scanned) = scan_copies(
+                BUF.0.get() as usize,
+                BUF_UNITS * 2,
+                32,
+                Duration::from_secs(30),
+            );
             tracing::info!(
                 "ui_c1_proto: scan for copies of our text: {} found in {} MiB ({} ms): {}",
                 found.len(),
                 scanned >> 20,
                 t0.elapsed().as_millis(),
-                found.iter().map(|c| format!("0x{:X}{}", c.addr, if c.wide { " utf16" } else { " utf8" })).collect::<Vec<_>>().join(", ")
+                found
+                    .iter()
+                    .map(|c| format!("0x{:X}{}", c.addr, if c.wide { " utf16" } else { " utf8" }))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             );
             // Each copy holds the text of the tick it was made at: bring it to `n` once, then it follows every tick.
             copies = found
@@ -356,7 +411,10 @@ fn run(base: usize) {
                 .filter(|(c, k)| update_copy(c, *k, n).is_ok())
                 .map(|(c, _)| c)
                 .collect();
-            tracing::info!("ui_c1_proto: {} copies are being updated every second", copies.len());
+            tracing::info!(
+                "ui_c1_proto: {} copies are being updated every second",
+                copies.len()
+            );
         }
         // Keep 506040 pointing at our buffer (the FMG can be reloaded, e.g. on a language change).
         if let Some(fmg) = dialogues_fmg(base) {
@@ -372,14 +430,21 @@ fn run(base: usize) {
                                 );
                                 patched = Some((fmg, slot, old));
                             }
-                            Err(e) => tracing::warn!("ui_c1_proto: could not redirect entry {NOTICE_ID}: {e}"),
+                            Err(e) => tracing::warn!(
+                                "ui_c1_proto: could not redirect entry {NOTICE_ID}: {e}"
+                            ),
                         }
                     }
-                    None => tracing::warn!("ui_c1_proto: entry {NOTICE_ID} not found in CL_Dialogues FMG 0x{fmg:X}"),
+                    None => tracing::warn!(
+                        "ui_c1_proto: entry {NOTICE_ID} not found in CL_Dialogues FMG 0x{fmg:X}"
+                    ),
                 }
             }
         }
-        let (red, pass) = (REDIRECTS.load(Ordering::Relaxed), PASSED.load(Ordering::Relaxed));
+        let (red, pass) = (
+            REDIRECTS.load(Ordering::Relaxed),
+            PASSED.load(Ordering::Relaxed),
+        );
         if red != seen_red || pass != seen_pass {
             tracing::info!(
                 "ui_c1_proto: Commence pressed (Number of Players byte {}): {} redirected to our dialog, {} left alone (one player)",

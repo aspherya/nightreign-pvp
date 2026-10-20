@@ -37,8 +37,9 @@ use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HMODULE, STATUS_SINGLE_STEP};
 use windows::Win32::System::Diagnostics::Debug::{
-    AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, RtlLookupFunctionEntry, RtlVirtualUnwind, CONTEXT,
-    CONTEXT_DEBUG_REGISTERS_AMD64, EXCEPTION_POINTERS, UNW_FLAG_NHANDLER,
+    AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, RtlLookupFunctionEntry,
+    RtlVirtualUnwind, CONTEXT, CONTEXT_DEBUG_REGISTERS_AMD64, EXCEPTION_POINTERS,
+    UNW_FLAG_NHANDLER,
 };
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
@@ -48,8 +49,8 @@ use windows::Win32::System::LibraryLoader::{
     GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 };
 use windows::Win32::System::Threading::{
-    GetCurrentThreadId, GetCurrentThreadStackLimits, OpenThread, THREAD_GET_CONTEXT, THREAD_SET_CONTEXT,
-    THREAD_SUSPEND_RESUME,
+    GetCurrentThreadId, GetCurrentThreadStackLimits, OpenThread, THREAD_GET_CONTEXT,
+    THREAD_SET_CONTEXT, THREAD_SUSPEND_RESUME,
 };
 
 use super::Flat;
@@ -87,8 +88,18 @@ const LABELS: [&str; TARGETS] = [
 ];
 
 // Shared with the VEH: plain atomics and a static ring, nothing that allocates or locks.
-static ADDRS: [AtomicUsize; TARGETS] = [AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0), AtomicUsize::new(0)];
-static HITS: [AtomicU32; TARGETS] = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+static ADDRS: [AtomicUsize; TARGETS] = [
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+    AtomicUsize::new(0),
+];
+static HITS: [AtomicU32; TARGETS] = [
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
 static OWN_TID: AtomicU32 = AtomicU32::new(0);
 static SEQ: AtomicU32 = AtomicU32::new(0);
 static DROPPED: AtomicU32 = AtomicU32::new(0);
@@ -132,7 +143,9 @@ pub(crate) fn note_steam_thread() {
 /// DR7 for execute breakpoints: local-enable bit `2*i` for every set bit `i` of `mask`; RW and LEN fields stay 00 (execute, 1 byte)
 /// (Intel SDM vol. 3, 17.2.4).
 pub(crate) fn dr7_for(mask: u8) -> u64 {
-    (0..TARGETS as u32).filter(|i| mask & (1 << i) != 0).fold(0u64, |acc, i| acc | (1u64 << (2 * i)))
+    (0..TARGETS as u32)
+        .filter(|i| mask & (1 << i) != 0)
+        .fold(0u64, |acc, i| acc | (1u64 << (2 * i)))
 }
 
 /// The mask after removing every slot that reached `max` hits.
@@ -163,7 +176,11 @@ pub(crate) fn decode_vtable_disp(b: &[u8]) -> Option<u32> {
         return None;
     }
     let rest = &b[3..];
-    let rest = if rest.first() == Some(&0x48) { &rest[1..] } else { rest };
+    let rest = if rest.first() == Some(&0x48) {
+        &rest[1..]
+    } else {
+        rest
+    };
     match rest {
         [0xFF, 0x60, d, ..] => Some(u32::from(*d)),
         [0xFF, 0xA0, a, b2, c, d, ..] => Some(u32::from_le_bytes([*a, *b2, *c, *d])),
@@ -172,7 +189,10 @@ pub(crate) fn decode_vtable_disp(b: &[u8]) -> Option<u32> {
 }
 
 fn hex(b: &[u8]) -> String {
-    b.iter().map(|x| format!("{x:02X}")).collect::<Vec<_>>().join(" ")
+    b.iter()
+        .map(|x| format!("{x:02X}"))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// File name part of a module path.
@@ -265,10 +285,14 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rip = (*ctx).Rip as usize;
-        let Some(target) = (0..TARGETS).find(|i| rip != 0 && ADDRS[*i].load(Ordering::Relaxed) == rip) else {
+        let Some(target) =
+            (0..TARGETS).find(|i| rip != 0 && ADDRS[*i].load(Ordering::Relaxed) == rip)
+        else {
             return EXCEPTION_CONTINUE_SEARCH;
         };
-        let hit_no = HITS[target].fetch_add(1, Ordering::Relaxed).saturating_add(1);
+        let hit_no = HITS[target]
+            .fetch_add(1, Ordering::Relaxed)
+            .saturating_add(1);
         if should_record(hit_no, MAX_HITS) {
             record(target, hit_no, &*ctx);
         }
@@ -284,7 +308,15 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
 unsafe fn record(target: usize, hit_no: u32, ctx: &CONTEXT) {
     #[allow(clippy::needless_range_loop)] // the index selects both STATE[i] and the ring slot i
     for i in 0..RING_SLOTS {
-        if STATE[i].compare_exchange(SLOT_FREE, SLOT_WRITING, Ordering::Acquire, Ordering::Relaxed).is_err() {
+        if STATE[i]
+            .compare_exchange(
+                SLOT_FREE,
+                SLOT_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_err()
+        {
             continue;
         }
         // SAFETY: we own slot `i` (state WRITING); see `impl Sync for Ring`.
@@ -299,11 +331,21 @@ unsafe fn record(target: usize, hit_no: u32, ctx: &CONTEXT) {
         unsafe { GetCurrentThreadStackLimits(&mut lo, &mut hi) };
         let rsp = ctx.Rsp as usize;
         // Only bytes between Rsp and the stack's high limit are copied: committed and in use (null/range checked).
-        let n = if rsp >= lo && rsp < hi { (hi - rsp).min(STACK_BYTES) } else { 0 };
+        let n = if rsp >= lo && rsp < hi {
+            (hi - rsp).min(STACK_BYTES)
+        } else {
+            0
+        };
         slot.stack_len = n;
         if n != 0 {
             // SAFETY: `[rsp, rsp+n)` lies inside the current thread's stack (checked above); the destination holds STACK_BYTES.
-            unsafe { std::ptr::copy_nonoverlapping(rsp as *const u8, slot.stack.as_mut_ptr().cast::<u8>(), n) };
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    rsp as *const u8,
+                    slot.stack.as_mut_ptr().cast::<u8>(),
+                    n,
+                )
+            };
         }
         STATE[i].store(SLOT_READY, Ordering::Release);
         return;
@@ -330,7 +372,13 @@ struct AlignedContext(CONTEXT);
 /// Write `addrs` / `mask` into the debug registers of thread `tid`. No allocation while the thread is suspended.
 fn set_debug_regs(tid: u32, addrs: &[u64; TARGETS], mask: u8) -> Result<(), &'static str> {
     // SAFETY: OpenThread has no memory preconditions; the returned handle is closed below.
-    let h = match unsafe { OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT, false, tid) } {
+    let h = match unsafe {
+        OpenThread(
+            THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_SET_CONTEXT,
+            false,
+            tid,
+        )
+    } {
         Ok(h) => h,
         Err(_) => return Err("OpenThread failed"),
     };
@@ -368,8 +416,13 @@ fn thread_ids(pid: u32, out: &mut Vec<u32>) -> bool {
     out.clear();
     // SAFETY: Toolhelp snapshot of threads; the entry struct is initialised with its size as the API requires.
     unsafe {
-        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) else { return false };
-        let mut e = THREADENTRY32 { dwSize: size_of::<THREADENTRY32>() as u32, ..Default::default() };
+        let Ok(snap) = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) else {
+            return false;
+        };
+        let mut e = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
         let mut ok = Thread32First(snap, &mut e).is_ok();
         while ok {
             if e.th32OwnerProcessID == pid {
@@ -438,7 +491,10 @@ pub(crate) fn module_of(addr: u64) -> Option<(String, u64)> {
             return None;
         }
         let path = String::from_utf16_lossy(&buf[..n]);
-        Some((short_module_name(&path).to_string(), addr.wrapping_sub(h.0 as u64)))
+        Some((
+            short_module_name(&path).to_string(),
+            addr.wrapping_sub(h.0 as u64),
+        ))
     }
 }
 
@@ -477,7 +533,16 @@ fn unwind(d: &SlotData) -> Vec<u64> {
             // frame registers point into `buf`, which has PAD_QWORDS of zero padding behind the copied bytes. The unwinder
             // reads the (static) unwind info of the image and the stack copy only.
             unsafe {
-                RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, pc, fe, &mut c.0, &mut handler_data, &mut establisher, None);
+                RtlVirtualUnwind(
+                    UNW_FLAG_NHANDLER,
+                    image_base,
+                    pc,
+                    fe,
+                    &mut c.0,
+                    &mut handler_data,
+                    &mut establisher,
+                    None,
+                );
             }
         }
         if c.0.Rip == 0 || c.0.Rsp < copy_base || c.0.Rsp > copy_end {
@@ -514,7 +579,10 @@ fn drain_ring() -> usize {
         let frames = unwind(d);
         for (n, a) in frames.iter().enumerate() {
             let m = module_of(*a);
-            tracing::info!("{}", format_frame(n, *a, m.as_ref().map(|(s, o)| (s.as_str(), *o))));
+            tracing::info!(
+                "{}",
+                format_frame(n, *a, m.as_ref().map(|(s, o)| (s.as_str(), *o)))
+            );
         }
         if d.stack_len == 0 {
             tracing::warn!("mm_lobby_trace: no stack bytes were captured for this hit (Rsp outside the thread's stack limits)");
@@ -530,11 +598,13 @@ fn drain_ring() -> usize {
 
 /// Start the tracer thread. Call only in developer mode with `mm_lobby_trace = true`.
 pub(crate) fn spawn() {
-    let r = std::thread::Builder::new().name("nrpvp-lobtrace".into()).spawn(|| {
-        if catch_unwind(AssertUnwindSafe(run)).is_err() {
-            tracing::error!("mm_lobby_trace: tracer thread panicked");
-        }
-    });
+    let r = std::thread::Builder::new()
+        .name("nrpvp-lobtrace".into())
+        .spawn(|| {
+            if catch_unwind(AssertUnwindSafe(run)).is_err() {
+                tracing::error!("mm_lobby_trace: tracer thread panicked");
+            }
+        });
     if r.is_err() {
         tracing::warn!("mm_lobby_trace: could not spawn the tracer thread");
     }
@@ -549,13 +619,22 @@ struct ExportProbe {
 fn probe_export(name: &'static str, iface: usize) -> ExportProbe {
     let flat = super::export(name);
     let Some(addr) = flat else {
-        tracing::warn!("mm_lobby_trace: export {} missing in steam_api64.dll", name.trim_end_matches('\0'));
-        return ExportProbe { flat: None, vtable_target: None };
+        tracing::warn!(
+            "mm_lobby_trace: export {} missing in steam_api64.dll",
+            name.trim_end_matches('\0')
+        );
+        return ExportProbe {
+            flat: None,
+            vtable_target: None,
+        };
     };
     let bytes = crate::game::mem::read::<[u8; 24]>(addr);
     let n = name.trim_end_matches('\0');
     match &bytes {
-        Some(b) => tracing::info!("mm_lobby_trace: {n} @ 0x{addr:X}, first 24 bytes: {}", hex(b)),
+        Some(b) => tracing::info!(
+            "mm_lobby_trace: {n} @ 0x{addr:X}, first 24 bytes: {}",
+            hex(b)
+        ),
         None => tracing::warn!("mm_lobby_trace: {n} @ 0x{addr:X}: first bytes unreadable"),
     }
     let mut vtable_target = None;
@@ -579,7 +658,10 @@ fn probe_export(name: &'static str, iface: usize) -> ExportProbe {
         Some(_) => tracing::warn!("mm_lobby_trace: {n}: interface pointer is null; only the flat export is armed"),
         None => tracing::warn!("mm_lobby_trace: {n}: not the 'mov rax,[rcx]; jmp [rax+disp]' shape; read the bytes above by hand; only the flat export is armed"),
     }
-    ExportProbe { flat, vtable_target }
+    ExportProbe {
+        flat,
+        vtable_target,
+    }
 }
 
 fn run() {
@@ -591,11 +673,17 @@ fn run() {
     let (flat, _resolved) = Flat::resolve();
     loop {
         if super::steam_dll_loaded() && flat.hsteam_user() != 0 {
-            tracing::info!("mm_lobby_trace: Steam is initialised after {:.1} s", start.elapsed().as_secs_f32());
+            tracing::info!(
+                "mm_lobby_trace: Steam is initialised after {:.1} s",
+                start.elapsed().as_secs_f32()
+            );
             break;
         }
         if start.elapsed() >= WAIT_TOTAL {
-            tracing::warn!("mm_lobby_trace: gave up after {} s waiting for Steam; nothing armed", WAIT_TOTAL.as_secs());
+            tracing::warn!(
+                "mm_lobby_trace: gave up after {} s waiting for Steam; nothing armed",
+                WAIT_TOTAL.as_secs()
+            );
             return;
         }
         std::thread::sleep(WAIT_STEP);
@@ -603,8 +691,16 @@ fn run() {
     let mm = Flat::call_accessor(flat.matchmaking).unwrap_or(0);
     let fr = Flat::call_accessor(flat.friends).unwrap_or(0);
     let create = probe_export("SteamAPI_ISteamMatchmaking_CreateLobby\0", mm);
-    let invite = probe_export("SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog\0", fr);
-    let slots = [create.flat, create.vtable_target, invite.flat, invite.vtable_target];
+    let invite = probe_export(
+        "SteamAPI_ISteamFriends_ActivateGameOverlayInviteDialog\0",
+        fr,
+    );
+    let slots = [
+        create.flat,
+        create.vtable_target,
+        invite.flat,
+        invite.vtable_target,
+    ];
     let mut mask = 0u8;
     let mut addrs = [0u64; TARGETS];
     for (i, a) in slots.iter().enumerate() {
@@ -637,7 +733,8 @@ fn run() {
     loop {
         let now = Instant::now();
         if now >= next_apply || mask_changed {
-            let (written, failed, first) = apply_all(pid, own, &addrs, mask, false, &mut applied, &mut scratch);
+            let (written, failed, first) =
+                apply_all(pid, own, &addrs, mask, false, &mut applied, &mut scratch);
             if written > 0 || failed > 0 {
                 tracing::info!(
                     "mm_lobby_trace: armed {written} thread(s) (mask 0x{mask:X}, {} armed in total), {failed} failed{}",
@@ -715,31 +812,78 @@ mod tests {
     #[test]
     fn thunk_decoder_reads_the_vtable_displacement() {
         // mov rax,[rcx]; jmp qword ptr [rax+0x70]  (both REX.W and plain forms)
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0x60, 0x70, 0xCC]), Some(0x70));
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0x60, 0x08]), Some(8));
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0x60, 0x70, 0xCC]),
+            Some(0x70)
+        );
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0x60, 0x08]),
+            Some(8)
+        );
         // disp32 forms
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0xA0, 0x40, 0x01, 0x00, 0x00]), Some(0x140));
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0xA0, 0x00, 0x02, 0x00, 0x00]), Some(0x200));
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0xA0, 0x40, 0x01, 0x00, 0x00]),
+            Some(0x140)
+        );
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0xA0, 0x00, 0x02, 0x00, 0x00]),
+            Some(0x200)
+        );
         // other shapes and short input
         assert_eq!(decode_vtable_disp(&[0x48, 0x89, 0x5C, 0x24, 0x08]), None);
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0xE0]), None);
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0x48, 0xFF, 0xE0]),
+            None
+        );
         assert_eq!(decode_vtable_disp(&[0x48, 0x8B]), None);
-        assert_eq!(decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0xA0, 0x00]), None);
+        assert_eq!(
+            decode_vtable_disp(&[0x48, 0x8B, 0x01, 0xFF, 0xA0, 0x00]),
+            None
+        );
     }
 
     #[test]
     fn frames_and_hits_are_formatted() {
-        assert_eq!(format_frame(2, 0x7FF0_0000_1234, Some(("nrsc.dll", 0x1234))), "mm_lobby_trace:   #2 nrsc.dll+0x1234 (0x7FF000001234)");
-        assert_eq!(format_frame(0, 0x10, None), "mm_lobby_trace:   #0 0x10 (no module)");
-        assert_eq!(short_module_name("Z:\\Game\\SeamlessCoop\\nrsc.dll"), "nrsc.dll");
+        assert_eq!(
+            format_frame(2, 0x7FF0_0000_1234, Some(("nrsc.dll", 0x1234))),
+            "mm_lobby_trace:   #2 nrsc.dll+0x1234 (0x7FF000001234)"
+        );
+        assert_eq!(
+            format_frame(0, 0x10, None),
+            "mm_lobby_trace:   #0 0x10 (no module)"
+        );
+        assert_eq!(
+            short_module_name("Z:\\Game\\SeamlessCoop\\nrsc.dll"),
+            "nrsc.dll"
+        );
         assert_eq!(short_module_name("plain.dll"), "plain.dll");
-        let h = HitInfo { target: 0, hit_no: 1, tid: 77, own_tid: 77, rip: 0xABC, regs: [0x10, 3, 6, 0] };
+        let h = HitInfo {
+            target: 0,
+            hit_no: 1,
+            tid: 77,
+            own_tid: 77,
+            rip: 0xABC,
+            regs: [0x10, 3, 6, 0],
+        };
         let l = format_hit(&h);
         assert!(l.starts_with("mm_lobby_trace: HIT 1/3 flat ISteamMatchmaking::CreateLobby at 0xABC thread=77 (OUR Steam thread"), "{l}");
-        assert!(l.contains("rdx=0x3") && l.contains("ELobbyType=3 (Invisible), cMaxMembers=6"), "{l}");
-        let h = HitInfo { target: 3, hit_no: 2, tid: 5, own_tid: 77, rip: 1, regs: [0, 0x0018_6000_0000_0001, 0, 0] };
+        assert!(
+            l.contains("rdx=0x3") && l.contains("ELobbyType=3 (Invisible), cMaxMembers=6"),
+            "{l}"
+        );
+        let h = HitInfo {
+            target: 3,
+            hit_no: 2,
+            tid: 5,
+            own_tid: 77,
+            rip: 1,
+            regs: [0, 0x0018_6000_0000_0001, 0, 0],
+        };
         let l = format_hit(&h);
-        assert!(l.contains("game / Seamless Co-op thread") && l.contains("steamIDLobby="), "{l}");
+        assert!(
+            l.contains("game / Seamless Co-op thread") && l.contains("steamIDLobby="),
+            "{l}"
+        );
         assert_eq!(thread_label(5, 0), "game / Seamless Co-op thread");
     }
 
@@ -756,7 +900,10 @@ mod tests {
     fn handler_ignores_foreign_exceptions() {
         // Nothing is armed in the test process: a null pointer and a pointer with no matching address both continue the search.
         // SAFETY: null is explicitly handled by the handler.
-        assert_eq!(unsafe { veh(std::ptr::null_mut()) }, EXCEPTION_CONTINUE_SEARCH);
+        assert_eq!(
+            unsafe { veh(std::ptr::null_mut()) },
+            EXCEPTION_CONTINUE_SEARCH
+        );
     }
 
     #[test]
@@ -778,12 +925,19 @@ mod tests {
             let mut slot: Box<SlotData> = uninit.assume_init();
             slot.ctx = c.0;
             slot.stack_len = n;
-            std::ptr::copy_nonoverlapping(rsp as *const u8, slot.stack.as_mut_ptr().cast::<u8>(), n);
+            std::ptr::copy_nonoverlapping(
+                rsp as *const u8,
+                slot.stack.as_mut_ptr().cast::<u8>(),
+                n,
+            );
             let frames = unwind(&slot);
             assert!(frames.len() >= 3, "{frames:x?}");
             assert_eq!(frames[0], c.0.Rip);
             // Every frame must lie inside some loaded module.
-            assert!(frames.iter().take(3).all(|a| module_of(*a).is_some()), "{frames:x?}");
+            assert!(
+                frames.iter().take(3).all(|a| module_of(*a).is_some()),
+                "{frames:x?}"
+            );
         }
     }
 }

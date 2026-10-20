@@ -15,8 +15,8 @@
 pub(crate) mod callback;
 pub(crate) mod lobtrace;
 pub(crate) mod probe;
-pub(crate) mod quietinvite;
 pub(crate) mod queue;
+pub(crate) mod quietinvite;
 
 use std::ffi::{c_char, c_int, c_void, CStr};
 
@@ -44,8 +44,15 @@ type FnUserGetSteamId = unsafe extern "system" fn(*mut c_void) -> u64;
 type FnLobbyU64 = unsafe extern "system" fn(*mut c_void, u64) -> u64;
 type FnLobbyInt = unsafe extern "system" fn(*mut c_void, u64) -> c_int;
 type FnLobbyMemberByIndex = unsafe extern "system" fn(*mut c_void, u64, c_int) -> u64;
-type FnLobbyDataByIndex =
-    unsafe extern "system" fn(*mut c_void, u64, c_int, *mut c_char, c_int, *mut c_char, c_int) -> bool;
+type FnLobbyDataByIndex = unsafe extern "system" fn(
+    *mut c_void,
+    u64,
+    c_int,
+    *mut c_char,
+    c_int,
+    *mut c_char,
+    c_int,
+) -> bool;
 /// `steam_api_internal.h`: `void SteamAPI_RegisterCallback( class CCallbackBase *pCallback, int iCallback )`.
 pub(crate) type FnRegisterCallback = unsafe extern "system" fn(*mut c_void, c_int);
 

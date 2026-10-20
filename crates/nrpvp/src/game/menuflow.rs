@@ -28,13 +28,17 @@ use std::time::{Duration, Instant};
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 
-use super::c1proto::{dialogues_fmg, offset_slot, AFTER_PROLOGUE_BYTES, NOTICE_BRANCH_BYTES, NOTICE_ID, RVA_AFTER_PROLOGUE, RVA_NOTICE_BRANCH};
+use super::c1proto::{
+    dialogues_fmg, offset_slot, AFTER_PROLOGUE_BYTES, NOTICE_BRANCH_BYTES, NOTICE_ID,
+    RVA_AFTER_PROLOGUE, RVA_NOTICE_BRANCH,
+};
 use crate::mm::{PHASE_MATCHED, PHASE_SEARCHING};
 use crate::steam::lobtrace::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
 
 /// The CL_MenuText getter `getter(out, id)` (game 1.03.3): `mov [rsp+8],rcx; push rbx; sub rsp,30h`.
 pub(crate) const RVA_MENUTEXT_GETTER: usize = 0x7A_C800;
-pub(crate) const MENUTEXT_GETTER_BYTES: [u8; 10] = [0x48, 0x89, 0x4C, 0x24, 0x08, 0x53, 0x48, 0x83, 0xEC, 0x30];
+pub(crate) const MENUTEXT_GETTER_BYTES: [u8; 10] =
+    [0x48, 0x89, 0x4C, 0x24, 0x08, 0x53, 0x48, 0x83, 0xEC, 0x30];
 /// CL_MenuText_dlc01 (FMG file id in menu_dlc01.msgbnd).
 const CAT_MENUTEXT_DLC: u32 = 504;
 /// Our label ids (gamedata/fmg-entries.json).
@@ -94,7 +98,10 @@ pub(crate) enum Decision {
 /// The decision for a Commence press (pure; unit tested).
 pub(crate) fn decide(players: u8, phase: u8, mm_on: bool) -> Decision {
     if !mm_on {
-        return Decision::Dialog { text: T_OFF, request: REQ_NONE };
+        return Decision::Dialog {
+            text: T_OFF,
+            request: REQ_NONE,
+        };
     }
     match phase {
         PHASE_MATCHED => {
@@ -104,10 +111,19 @@ pub(crate) fn decide(players: u8, phase: u8, mm_on: bool) -> Decision {
                 Decision::Pass
             }
         }
-        PHASE_SEARCHING => Decision::Dialog { text: T_STOPPED, request: REQ_LEAVE },
+        PHASE_SEARCHING => Decision::Dialog {
+            text: T_STOPPED,
+            request: REQ_LEAVE,
+        },
         _ => match players {
-            PLAYERS_ONE => Decision::Dialog { text: T_SEARCHING, request: REQ_QUEUE_SOLO },
-            _ => Decision::Dialog { text: T_SOON, request: REQ_NONE },
+            PLAYERS_ONE => Decision::Dialog {
+                text: T_SEARCHING,
+                request: REQ_QUEUE_SOLO,
+            },
+            _ => Decision::Dialog {
+                text: T_SOON,
+                request: REQ_NONE,
+            },
         },
     }
 }
@@ -179,7 +195,11 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let menu = (*ctx).R14 as usize;
-        let settings = if menu > 0x10000 { *((menu + MENU_SETTINGS_OFF) as *const usize) } else { 0 };
+        let settings = if menu > 0x10000 {
+            *((menu + MENU_SETTINGS_OFF) as *const usize)
+        } else {
+            0
+        };
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
         if settings > 0x10000 && fmg != 0 && slot != 0 {
             let pbyte = (settings + PLAYERS_BYTE) as *mut u8;
@@ -187,7 +207,10 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             let phase = crate::mm::phase();
             let d = decide(players, phase, crate::mm::enabled());
             PRESSES.fetch_add(1, Ordering::Relaxed);
-            LAST.store((u64::from(players) << 32) | (u64::from(phase) << 24) | decision_code(d), Ordering::Relaxed);
+            LAST.store(
+                (u64::from(players) << 32) | (u64::from(phase) << 24) | decision_code(d),
+                Ordering::Relaxed,
+            );
             match d {
                 Decision::Pass => {}
                 Decision::PassMultiplayer => *pbyte = PLAYERS_TWO,
@@ -207,20 +230,26 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
 
 /// Start the thread (`br_menu = true` with the queue: developer mode with `mm_queue`, or the player build with `matchmaking`).
 pub(crate) fn spawn(base: usize) {
-    let r = std::thread::Builder::new().name("nrpvp-brmenu".into()).spawn(move || {
-        if std::panic::catch_unwind(|| run(base)).is_err() {
-            crate::hwbp::clear(crate::hwbp::SLOT_COMMENCE);
-            tracing::error!("br_menu: thread panicked; Commence is back to normal");
-        }
-    });
+    let r = std::thread::Builder::new()
+        .name("nrpvp-brmenu".into())
+        .spawn(move || {
+            if std::panic::catch_unwind(|| run(base)).is_err() {
+                crate::hwbp::clear(crate::hwbp::SLOT_COMMENCE);
+                tracing::error!("br_menu: thread panicked; Commence is back to normal");
+            }
+        });
     if r.is_err() {
         tracing::warn!("br_menu: could not spawn the thread");
     }
 }
 
 fn run(base: usize) {
-    let check = |rva: usize, want: &[u8]| super::mem::read::<[u8; 13]>(base + rva).is_some_and(|b| b[..want.len()] == *want);
-    if !check(RVA_AFTER_PROLOGUE, &AFTER_PROLOGUE_BYTES) || !check(RVA_NOTICE_BRANCH, &NOTICE_BRANCH_BYTES) {
+    let check = |rva: usize, want: &[u8]| {
+        super::mem::read::<[u8; 13]>(base + rva).is_some_and(|b| b[..want.len()] == *want)
+    };
+    if !check(RVA_AFTER_PROLOGUE, &AFTER_PROLOGUE_BYTES)
+        || !check(RVA_NOTICE_BRANCH, &NOTICE_BRANCH_BYTES)
+    {
         tracing::warn!("br_menu: code bytes differ from game 1.03.3; Commence left alone");
         return;
     }
@@ -240,7 +269,9 @@ fn run(base: usize) {
         return;
     }
     crate::hwbp::set(crate::hwbp::SLOT_COMMENCE, base + RVA_AFTER_PROLOGUE);
-    tracing::info!("br_menu: Commence handler armed (hwbp slot 2); waiting for the CL_Dialogues FMG");
+    tracing::info!(
+        "br_menu: Commence handler armed (hwbp slot 2); waiting for the CL_Dialogues FMG"
+    );
     let labels_ok = check(RVA_MENUTEXT_GETTER, &MENUTEXT_GETTER_BYTES);
     if !labels_ok {
         tracing::warn!("br_menu: menu text getter bytes differ from game 1.03.3; Number of Players labels stay as they are");
@@ -267,7 +298,9 @@ fn run(base: usize) {
                 None => {
                     if FMG.swap(0, Ordering::AcqRel) != 0 {
                         SLOT.store(0, Ordering::Release);
-                        tracing::info!("br_menu: CL_Dialogues FMG gone; Commence left alone until it is back");
+                        tracing::info!(
+                            "br_menu: CL_Dialogues FMG gone; Commence left alone until it is back"
+                        );
                     }
                 }
             }
@@ -275,7 +308,10 @@ fn run(base: usize) {
         // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
         if labels_ok && !labels_armed && resolve_tick {
             if let Some(f) = super::c1proto::fmg_for(base, CAT_MENUTEXT_DLC) {
-                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP].iter().all(|id| offset_slot(f, *id).is_some()) {
+                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP]
+                    .iter()
+                    .all(|id| offset_slot(f, *id).is_some())
+                {
                     LABEL_ADDR.store(base + RVA_MENUTEXT_GETTER, Ordering::Relaxed);
                     crate::hwbp::set(crate::hwbp::SLOT_LABELS, base + RVA_MENUTEXT_GETTER);
                     labels_armed = true;
@@ -291,11 +327,21 @@ fn run(base: usize) {
         match REQUEST.swap(REQ_NONE, Ordering::AcqRel) {
             REQ_QUEUE_SOLO => {
                 let ok = crate::mm::send(crate::mm::Cmd::Queue(crate::mm::Mode::Solo));
-                tracing::info!("br_menu: Commence -> queue Solo ({})", if ok { "sent" } else { "NOT sent: queue off or full" });
+                tracing::info!(
+                    "br_menu: Commence -> queue Solo ({})",
+                    if ok {
+                        "sent"
+                    } else {
+                        "NOT sent: queue off or full"
+                    }
+                );
             }
             REQ_LEAVE => {
                 let ok = crate::mm::send(crate::mm::Cmd::Leave);
-                tracing::info!("br_menu: Commence -> stop searching ({})", if ok { "sent" } else { "NOT sent" });
+                tracing::info!(
+                    "br_menu: Commence -> stop searching ({})",
+                    if ok { "sent" } else { "NOT sent" }
+                );
             }
             _ => {}
         }
@@ -320,27 +366,60 @@ mod tests {
 
     #[test]
     fn idle_solo_queues_and_duo_trio_are_coming_soon() {
-        assert_eq!(decide(PLAYERS_ONE, PHASE_IDLE, true), Decision::Dialog { text: T_SEARCHING, request: REQ_QUEUE_SOLO });
-        assert_eq!(decide(PLAYERS_TWO, PHASE_IDLE, true), Decision::Dialog { text: T_SOON, request: REQ_NONE });
-        assert_eq!(decide(PLAYERS_THREE, PHASE_IDLE, true), Decision::Dialog { text: T_SOON, request: REQ_NONE });
+        assert_eq!(
+            decide(PLAYERS_ONE, PHASE_IDLE, true),
+            Decision::Dialog {
+                text: T_SEARCHING,
+                request: REQ_QUEUE_SOLO
+            }
+        );
+        assert_eq!(
+            decide(PLAYERS_TWO, PHASE_IDLE, true),
+            Decision::Dialog {
+                text: T_SOON,
+                request: REQ_NONE
+            }
+        );
+        assert_eq!(
+            decide(PLAYERS_THREE, PHASE_IDLE, true),
+            Decision::Dialog {
+                text: T_SOON,
+                request: REQ_NONE
+            }
+        );
     }
 
     #[test]
     fn searching_commence_stops() {
         for p in [PLAYERS_ONE, PLAYERS_TWO, PLAYERS_THREE] {
-            assert_eq!(decide(p, PHASE_SEARCHING, true), Decision::Dialog { text: T_STOPPED, request: REQ_LEAVE });
+            assert_eq!(
+                decide(p, PHASE_SEARCHING, true),
+                Decision::Dialog {
+                    text: T_STOPPED,
+                    request: REQ_LEAVE
+                }
+            );
         }
     }
 
     #[test]
     fn matched_commence_runs_as_multiplayer() {
-        assert_eq!(decide(PLAYERS_ONE, PHASE_MATCHED, true), Decision::PassMultiplayer);
+        assert_eq!(
+            decide(PLAYERS_ONE, PHASE_MATCHED, true),
+            Decision::PassMultiplayer
+        );
         assert_eq!(decide(PLAYERS_TWO, PHASE_MATCHED, true), Decision::Pass);
     }
 
     #[test]
     fn matchmaking_off_says_so() {
-        assert_eq!(decide(PLAYERS_ONE, PHASE_IDLE, false), Decision::Dialog { text: T_OFF, request: REQ_NONE });
+        assert_eq!(
+            decide(PLAYERS_ONE, PHASE_IDLE, false),
+            Decision::Dialog {
+                text: T_OFF,
+                request: REQ_NONE
+            }
+        );
     }
 
     #[test]

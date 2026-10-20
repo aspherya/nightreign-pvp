@@ -163,7 +163,11 @@ pub(crate) enum Tone {
 pub(crate) fn queue_tone(line: &str, active: bool) -> Tone {
     if line.contains("REFUSED") || line.contains("failed") || line.contains("missed") {
         Tone::Bad
-    } else if line.starts_with("Match found") || line.starts_with("Everyone is here") || line == "In match" || line.contains("you can start") {
+    } else if line.starts_with("Match found")
+        || line.starts_with("Everyone is here")
+        || line == "In match"
+        || line.contains("you can start")
+    {
         Tone::Good
     } else if active {
         Tone::Busy
@@ -174,7 +178,12 @@ pub(crate) fn queue_tone(line: &str, active: bool) -> Tone {
 
 /// MM-4: the third badge line while the matchmaking panel is available: the queue status when there is something to say, else a hint
 /// naming the key that opens the panel (not shown while it is open).
-pub(crate) fn badge_mm_line(line: &str, active: bool, panel_open: bool, key: &str) -> Option<(String, Tone)> {
+pub(crate) fn badge_mm_line(
+    line: &str,
+    active: bool,
+    panel_open: bool,
+    key: &str,
+) -> Option<(String, Tone)> {
     let hint = || (!panel_open).then(|| (format!("[{key}] Battle Royale matchmaking"), Tone::Idle));
     if line.is_empty() || (!active && line == "Not in a queue") {
         return hint();
@@ -529,20 +538,50 @@ mod tests {
     #[test]
     fn queue_tones_and_the_badge_queue_line() {
         assert_eq!(queue_tone("Searching for players... 3/6", true), Tone::Busy);
-        assert_eq!(queue_tone("Match found! Joining the host...", true), Tone::Good);
-        assert_eq!(queue_tone("Everyone is here - host: start the expedition", true), Tone::Good);
+        assert_eq!(
+            queue_tone("Match found! Joining the host...", true),
+            Tone::Good
+        );
+        assert_eq!(
+            queue_tone("Everyone is here - host: start the expedition", true),
+            Tone::Good
+        );
         assert_eq!(queue_tone("In match", true), Tone::Good);
-        assert_eq!(queue_tone("2/3 here - you can start; X did not arrive", true), Tone::Good);
-        assert_eq!(queue_tone("Queue: REFUSED - no Seamless Co-op", false), Tone::Bad);
+        assert_eq!(
+            queue_tone("2/3 here - you can start; X did not arrive", true),
+            Tone::Good
+        );
+        assert_eq!(
+            queue_tone("Queue: REFUSED - no Seamless Co-op", false),
+            Tone::Bad
+        );
         assert_eq!(queue_tone("match missed - queue again", false), Tone::Bad);
         assert_eq!(queue_tone("Not in a queue", false), Tone::Idle);
         // Idle: a hint while the panel is closed, nothing while it is open.
-        assert_eq!(badge_mm_line("Not in a queue", false, false, "Insert"), Some(("[Insert] Battle Royale matchmaking".to_string(), Tone::Idle)));
+        assert_eq!(
+            badge_mm_line("Not in a queue", false, false, "Insert"),
+            Some(("[Insert] Battle Royale matchmaking".to_string(), Tone::Idle))
+        );
         assert_eq!(badge_mm_line("Not in a queue", false, true, "Insert"), None);
-        assert_eq!(badge_mm_line("", false, false, "Home").map(|x| x.0), Some("[Home] Battle Royale matchmaking".to_string()));
+        assert_eq!(
+            badge_mm_line("", false, false, "Home").map(|x| x.0),
+            Some("[Home] Battle Royale matchmaking".to_string())
+        );
         // Anything to say is shown whether the panel is open or not.
-        assert_eq!(badge_mm_line("Searching for players... 1/6", true, true, "Insert"), Some(("Searching for players... 1/6".to_string(), Tone::Busy)));
-        assert_eq!(badge_mm_line("Queue: left (you left the Roundtable)", false, false, "Insert").map(|x| x.1), Some(Tone::Idle));
+        assert_eq!(
+            badge_mm_line("Searching for players... 1/6", true, true, "Insert"),
+            Some(("Searching for players... 1/6".to_string(), Tone::Busy))
+        );
+        assert_eq!(
+            badge_mm_line(
+                "Queue: left (you left the Roundtable)",
+                false,
+                false,
+                "Insert"
+            )
+            .map(|x| x.1),
+            Some(Tone::Idle)
+        );
     }
 
     #[test]

@@ -11,7 +11,10 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use super::mem::RegionCache;
-use super::probe2::{all_groups, block_addr, checks_ok, parse_layout, structural_checks, EF_HEADER_LEN, NODE_IS_NIL, NODE_LEN};
+use super::probe2::{
+    all_groups, block_addr, checks_ok, parse_layout, structural_checks, EF_HEADER_LEN, NODE_IS_NIL,
+    NODE_LEN,
+};
 
 /// `CSEventFlagMan` slot (game 1.03.3, exe 1.3.3.0; TC-004, UI-0 step 5).
 pub(crate) const RVA_FLAGMAN_SLOT: usize = 0x3C1_15A8;
@@ -68,11 +71,13 @@ impl Noise {
 
 /// Start the watcher thread (developer mode with `ui_flag_watch = true`). `base`: the image base of `nightreign.exe`.
 pub(crate) fn spawn(base: usize) {
-    let r = std::thread::Builder::new().name("nrpvp-flagwatch".into()).spawn(move || {
-        if std::panic::catch_unwind(|| run(base)).is_err() {
-            tracing::error!("ui_flag_watch: watcher thread panicked; stopped");
-        }
-    });
+    let r = std::thread::Builder::new()
+        .name("nrpvp-flagwatch".into())
+        .spawn(move || {
+            if std::panic::catch_unwind(|| run(base)).is_err() {
+                tracing::error!("ui_flag_watch: watcher thread panicked; stopped");
+            }
+        });
     if r.is_err() {
         tracing::warn!("ui_flag_watch: could not spawn the watcher thread");
     }
@@ -99,7 +104,11 @@ fn resolve(rc: &mut RegionCache, inst: usize) -> Option<(u32, Vec<Group>)> {
         .filter_map(|n| {
             let addr = block_addr(n.mode, n.loc, l.blocks, l.holder_size)?;
             let last = rc.read_prefix(addr, l.holder_size as usize);
-            (last.len() == l.holder_size as usize).then_some(Group { key: n.key, addr, last })
+            (last.len() == l.holder_size as usize).then_some(Group {
+                key: n.key,
+                addr,
+                last,
+            })
         })
         .collect();
     Some((l.divisor, groups))
@@ -107,7 +116,10 @@ fn resolve(rc: &mut RegionCache, inst: usize) -> Option<(u32, Vec<Group>)> {
 
 fn run(base: usize) {
     let slot = base + RVA_FLAGMAN_SLOT;
-    tracing::info!("ui_flag_watch: started (every {} ms, all flag groups with storage, slot 0x{slot:X})", PERIOD.as_millis());
+    tracing::info!(
+        "ui_flag_watch: started (every {} ms, all flag groups with storage, slot 0x{slot:X})",
+        PERIOD.as_millis()
+    );
     let mut inst = 0usize;
     let mut divisor = 0u32;
     let mut groups: Vec<Group> = Vec::new();
@@ -121,7 +133,9 @@ fn run(base: usize) {
         let now = Instant::now();
         if cur == 0 {
             if inst != 0 {
-                tracing::info!("ui_flag_watch: flag manager gone ({changes} changes logged so far)");
+                tracing::info!(
+                    "ui_flag_watch: flag manager gone ({changes} changes logged so far)"
+                );
                 inst = 0;
                 groups.clear();
             }
@@ -136,12 +150,16 @@ fn run(base: usize) {
                         groups = g;
                     } else {
                         // Keep the previous bytes of groups whose block did not move; take new ones silently.
-                        let old: HashMap<u32, Group> = groups.drain(..).map(|x| (x.key, x)).collect();
+                        let old: HashMap<u32, Group> =
+                            groups.drain(..).map(|x| (x.key, x)).collect();
                         let mut moved = 0;
                         groups = g
                             .into_iter()
                             .map(|n| match old.get(&n.key) {
-                                Some(o) if o.addr == n.addr => Group { last: o.last.clone(), ..n },
+                                Some(o) if o.addr == n.addr => Group {
+                                    last: o.last.clone(),
+                                    ..n
+                                },
                                 _ => {
                                     moved += 1;
                                     n
@@ -157,7 +175,9 @@ fn run(base: usize) {
                 }
                 None => {
                     if fresh {
-                        tracing::warn!("ui_flag_watch: flag manager 0x{cur:X}: layout checks failed; retrying");
+                        tracing::warn!(
+                            "ui_flag_watch: flag manager 0x{cur:X}: layout checks failed; retrying"
+                        );
                     }
                 }
             }
@@ -172,9 +192,14 @@ fn run(base: usize) {
                 match noise.admit(flag, now) {
                     (true, _) => {
                         changes += 1;
-                        tracing::info!("ui_flag_watch: flag {flag}: {}", if on { "off -> ON" } else { "ON -> off" });
+                        tracing::info!(
+                            "ui_flag_watch: flag {flag}: {}",
+                            if on { "off -> ON" } else { "ON -> off" }
+                        );
                     }
-                    (false, true) => tracing::info!("ui_flag_watch: flag {flag} flips too often; muted"),
+                    (false, true) => {
+                        tracing::info!("ui_flag_watch: flag {flag} flips too often; muted")
+                    }
                     _ => {}
                 }
             }
@@ -192,8 +217,14 @@ mod tests {
         // byte 0 bit 7 = n 0; byte 1 bit 0 = n 15.
         let old = [0u8, 0, 0];
         let new = [0x80u8, 0x01, 0];
-        assert_eq!(diff_bits(&old, &new, 10_007, 1000), vec![(10_007_000, true), (10_007_015, true)]);
-        assert_eq!(diff_bits(&new, &old, 10_007, 1000), vec![(10_007_000, false), (10_007_015, false)]);
+        assert_eq!(
+            diff_bits(&old, &new, 10_007, 1000),
+            vec![(10_007_000, true), (10_007_015, true)]
+        );
+        assert_eq!(
+            diff_bits(&new, &old, 10_007, 1000),
+            vec![(10_007_000, false), (10_007_015, false)]
+        );
         assert!(diff_bits(&new, &new, 1, 1000).is_empty());
     }
 

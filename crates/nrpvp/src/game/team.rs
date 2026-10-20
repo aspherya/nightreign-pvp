@@ -3262,7 +3262,6 @@ mod tests {
         assert!(plan.writes.is_empty());
     }
 
-
     #[test]
     fn mm_team_size_override_changes_the_rosters_only_when_set() {
         // MM-2: the size passed to `build_view` comes from `mm::pick_team_size(configured, override)`.
@@ -3280,7 +3279,11 @@ mod tests {
         assert_eq!(duo.relation[&players[2].0], Relation::Rival);
         // Solo match over a configured team_size of 2 forces free-for-all.
         let (players2, _) = synth(&[1, 2, 3, 4], 0, 2);
-        let solo = build_view(&players2, Some(players2[0].0), crate::mm::pick_team_size(2, 1));
+        let solo = build_view(
+            &players2,
+            Some(players2[0].0),
+            crate::mm::pick_team_size(2, 1),
+        );
         assert_eq!(solo.relation[&players2[1].0], Relation::Rival);
     }
     #[test]

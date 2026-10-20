@@ -45,7 +45,9 @@ pub(crate) fn run() {
                     // Player words in the player build; the detailed lines in developer mode.
                     friendly: !cfg.dev_mode,
                     // The game loop reads the local player once per watcher period; a few periods without a read = world unloaded.
-                    world_stale: std::time::Duration::from_millis(cfg.watch_interval_ms.saturating_mul(3).max(4000)),
+                    world_stale: std::time::Duration::from_millis(
+                        cfg.watch_interval_ms.saturating_mul(3).max(4000),
+                    ),
                     join: cfg.mm_join,
                     join_auto: cfg.join_auto(),
                     // MM-3e: the host's mod creates the SC lobby at MATCH READY.
@@ -55,13 +57,20 @@ pub(crate) fn run() {
                     // MM-3d: the "create SC lobby (test)" dev button.
                     sc_create: cfg.mm_sc_create.then(|| cfg.sc_create_type()),
                     // The game build string the banner logs (exe FileVersion); TODO MM-4: a sturdier build id if needed.
-                    game: m.file_version.clone().unwrap_or_else(|| crate::mm::worker::GAME_UNKNOWN.to_string()),
+                    game: m
+                        .file_version
+                        .clone()
+                        .unwrap_or_else(|| crate::mm::worker::GAME_UNKNOWN.to_string()),
                 }
             });
             if cfg.mm_probe || cfg.mm_queue || cfg.mm_join {
                 // MM-3: `mm_join` or `mm_probe` also turn on the evidence logging (per-lobby membership lines) even without the queue worker.
                 // MM-4: the player build keeps the callbacks the queue needs but not the probe's lobby dumps (both flags are dev only).
-                crate::steam::probe::spawn(queue, cfg.dev_mode && (cfg.mm_join || cfg.mm_probe), cfg.dev_mode);
+                crate::steam::probe::spawn(
+                    queue,
+                    cfg.dev_mode && (cfg.mm_join || cfg.mm_probe),
+                    cfg.dev_mode,
+                );
             }
             // MM-3f: the invite-window suppression (hardware breakpoints, no patching). The config already turned it off when
             // mm_lobby_trace is on (both own the debug registers).

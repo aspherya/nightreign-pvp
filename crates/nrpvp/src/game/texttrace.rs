@@ -25,10 +25,15 @@ use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
-use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, EXCEPTION_POINTERS};
+use windows::Win32::System::Diagnostics::Debug::{
+    AddVectoredExceptionHandler, RemoveVectoredExceptionHandler, EXCEPTION_POINTERS,
+};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::steam::lobtrace::{apply_all, module_of, EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH, TARGETS};
+use crate::steam::lobtrace::{
+    apply_all, module_of, EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH,
+    TARGETS,
+};
 
 /// `LookupEntry` (game 1.03.3, exe 1.3.3.0; UI-0 step 5).
 pub(crate) const RVA_LOOKUP: usize = 0x27F_4D20;
@@ -37,9 +42,13 @@ pub(crate) const RVA_FMG: usize = 0x27F_5710;
 /// The `MsgRepository` singleton slot (game 1.03.3, exe 1.3.3.0; TC-004).
 pub(crate) const RVA_MSGREPO: usize = 0x3C2_46A8;
 /// `cmp edx,[rcx+10h]; jae; cmp r8d,[rcx+14h]; jae; mov rax,[rcx+8]`.
-pub(crate) const LOOKUP_BYTES: [u8; 15] = [0x3B, 0x51, 0x10, 0x73, 0x29, 0x44, 0x3B, 0x41, 0x14, 0x73, 0x23, 0x48, 0x8B, 0x41, 0x08];
+pub(crate) const LOOKUP_BYTES: [u8; 15] = [
+    0x3B, 0x51, 0x10, 0x73, 0x29, 0x44, 0x3B, 0x41, 0x14, 0x73, 0x23, 0x48, 0x8B, 0x41, 0x08,
+];
 /// `xor r9d,r9d; mov r11,rcx; cmp edx,[rcx+2Ch]; jb`.
-pub(crate) const FMG_BYTES: [u8; 11] = [0x45, 0x33, 0xC9, 0x4C, 0x8B, 0xD9, 0x3B, 0x51, 0x2C, 0x72, 0x42];
+pub(crate) const FMG_BYTES: [u8; 11] = [
+    0x45, 0x33, 0xC9, 0x4C, 0x8B, 0xD9, 0x3B, 0x51, 0x2C, 0x72, 0x42,
+];
 
 const TRACE_DURATION: Duration = Duration::from_secs(20 * 60);
 const APPLY_EVERY: Duration = Duration::from_secs(2);
@@ -57,7 +66,8 @@ const KIND_FMG: u64 = 2;
 // Shared with the VEH.
 static ADDR: [AtomicUsize; 2] = [AtomicUsize::new(0), AtomicUsize::new(0)];
 static SEEN: [AtomicU64; SEEN_SLOTS] = [const { AtomicU64::new(0) }; SEEN_SLOTS];
-static RING: [[AtomicU64; 3]; RING_SLOTS] = [const { [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)] }; RING_SLOTS];
+static RING: [[AtomicU64; 3]; RING_SLOTS] =
+    [const { [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)] }; RING_SLOTS];
 static RING_STATE: [AtomicU32; RING_SLOTS] = [const { AtomicU32::new(0) }; RING_SLOTS];
 static RING_NEXT: AtomicUsize = AtomicUsize::new(0);
 static HITS: AtomicU64 = AtomicU64::new(0);
@@ -111,7 +121,12 @@ pub(crate) enum Entry {
 }
 
 /// Classify `bytes` (read at `addr`) against `expected`.
-pub(crate) fn classify(bytes: &[u8], expected: &[u8], addr: u64, read_u64: impl Fn(u64) -> Option<u64>) -> Entry {
+pub(crate) fn classify(
+    bytes: &[u8],
+    expected: &[u8],
+    addr: u64,
+    read_u64: impl Fn(u64) -> Option<u64>,
+) -> Entry {
     if bytes.len() >= expected.len() && bytes[..expected.len()] == *expected {
         return Entry::Expected;
     }
@@ -122,7 +137,8 @@ pub(crate) fn classify(bytes: &[u8], expected: &[u8], addr: u64, read_u64: impl 
         }
         [0xFF, 0x25, a, b, c, d, ..] => {
             let rel = i32::from_le_bytes([*a, *b, *c, *d]);
-            read_u64(addr.wrapping_add(6).wrapping_add(rel as i64 as u64)).map_or(Entry::Unknown, Entry::Hooked)
+            read_u64(addr.wrapping_add(6).wrapping_add(rel as i64 as u64))
+                .map_or(Entry::Unknown, Entry::Hooked)
         }
         _ => Entry::Unknown,
     }
@@ -223,7 +239,11 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         let rip = (*ctx).Rip as usize;
         let (kind, a, id) = if rip != 0 && rip == ADDR[0].load(Ordering::Relaxed) {
             // LookupEntry(repo, slot, category, id): (slot, category) packed in `a`.
-            (KIND_LOOKUP, ((*ctx).Rdx & 0xFFFF) << 16 | ((*ctx).R8 & 0xFFFF), (*ctx).R9 as u32)
+            (
+                KIND_LOOKUP,
+                ((*ctx).Rdx & 0xFFFF) << 16 | ((*ctx).R8 & 0xFFFF),
+                (*ctx).R9 as u32,
+            )
         } else if rip != 0 && rip == ADDR[1].load(Ordering::Relaxed) {
             (KIND_FMG, (*ctx).Rcx, (*ctx).Rdx as u32)
         } else {
@@ -246,7 +266,15 @@ fn push(kind: u64, a: u64, id: u32) {
     let start = RING_NEXT.fetch_add(1, Ordering::Relaxed);
     for j in 0..8 {
         let i = (start + j) % RING_SLOTS;
-        if RING_STATE[i].compare_exchange(SLOT_FREE, SLOT_WRITING, Ordering::Acquire, Ordering::Relaxed).is_ok() {
+        if RING_STATE[i]
+            .compare_exchange(
+                SLOT_FREE,
+                SLOT_WRITING,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
+            .is_ok()
+        {
             RING[i][0].store(kind, Ordering::Relaxed);
             RING[i][1].store(a, Ordering::Relaxed);
             RING[i][2].store(u64::from(id), Ordering::Relaxed);
@@ -285,11 +313,15 @@ fn check_entry(name: &str, addr: usize, expected: &[u8]) -> bool {
     let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02X}")).collect();
     match classify(&bytes, expected, addr as u64, read_u64) {
         Entry::Expected => {
-            tracing::info!("ui_text_trace: {name} at 0x{addr:X}: bytes as in game 1.03.3 (not hooked): {}", hex.join(" "));
+            tracing::info!(
+                "ui_text_trace: {name} at 0x{addr:X}: bytes as in game 1.03.3 (not hooked): {}",
+                hex.join(" ")
+            );
             true
         }
         Entry::Hooked(t) => {
-            let m = module_of(t).map_or("no module".to_string(), |(n, off)| format!("{n}+0x{off:X}"));
+            let m =
+                module_of(t).map_or("no module".to_string(), |(n, off)| format!("{n}+0x{off:X}"));
             tracing::info!(
                 "ui_text_trace: {name} at 0x{addr:X} starts with a JUMP to 0x{t:X} ({m}): another module hooks it; the breakpoint still fires at the entry. Bytes: {}",
                 hex.join(" ")
@@ -309,7 +341,9 @@ fn check_entry(name: &str, addr: usize, expected: &[u8]) -> bool {
 /// FMG pointer -> (slot, category), read from the repository table.
 fn fmg_map(base: usize) -> HashMap<u64, (u32, u32)> {
     let mut m = HashMap::new();
-    let Some(repo) = read_u64((base + RVA_MSGREPO) as u64).filter(|p| *p != 0) else { return m };
+    let Some(repo) = read_u64((base + RVA_MSGREPO) as u64).filter(|p| *p != 0) else {
+        return m;
+    };
     let (Some(table), Some(slots), Some(cats)) = (
         read_u64(repo + 8),
         super::mem::read::<u32>(repo as usize + 0x10),
@@ -318,7 +352,9 @@ fn fmg_map(base: usize) -> HashMap<u64, (u32, u32)> {
         return m;
     };
     for s in 0..slots.min(MAX_SLOTS) {
-        let Some(row) = read_u64(table + u64::from(s) * 8).filter(|p| *p != 0) else { continue };
+        let Some(row) = read_u64(table + u64::from(s) * 8).filter(|p| *p != 0) else {
+            continue;
+        };
         for c in 0..cats.min(MAX_CATS) {
             if let Some(f) = read_u64(row + u64::from(c) * 8).filter(|p| *p != 0) {
                 m.insert(f, (s, c));
@@ -379,7 +415,8 @@ fn run(base: usize, size: usize) {
             break;
         }
         if now >= next_apply {
-            let (written, failed, first) = apply_all(pid, own, &addrs, mask, false, &mut applied, &mut scratch);
+            let (written, failed, first) =
+                apply_all(pid, own, &addrs, mask, false, &mut applied, &mut scratch);
             if written > 0 || failed > 0 {
                 tracing::debug!(
                     "ui_text_trace: armed {written} new thread(s), {} in total, {failed} failed{}",
@@ -398,7 +435,10 @@ fn run(base: usize, size: usize) {
             let id = RING[i][2].load(Ordering::Relaxed) as u32;
             RING_STATE[i].store(SLOT_FREE, Ordering::Release);
             let (cat, how) = if kind == KIND_LOOKUP {
-                ((a & 0xFFFF) as u32, format!("LookupEntry slot {}", (a >> 16) & 0xFFFF))
+                (
+                    (a & 0xFFFF) as u32,
+                    format!("LookupEntry slot {}", (a >> 16) & 0xFFFF),
+                )
             } else {
                 if !map.contains_key(&a) && map_built.elapsed() > Duration::from_secs(1) {
                     map = fmg_map(base);
@@ -416,7 +456,10 @@ fn run(base: usize, size: usize) {
                 }
             };
             if logged.insert((cat, id)) {
-                tracing::info!("ui_text_trace: TEXT {} {cat} id {id} [{how}]", category_name(cat));
+                tracing::info!(
+                    "ui_text_trace: TEXT {} {cat} id {id} [{how}]",
+                    category_name(cat)
+                );
             }
         }
         if now >= next_stats {
@@ -452,7 +495,10 @@ mod tests {
         assert_ne!(key(KIND_LOOKUP, 0, 0), 0);
         assert_ne!(key(KIND_LOOKUP, 200, 130410), key(KIND_LOOKUP, 504, 130410));
         assert_ne!(key(KIND_LOOKUP, 200, 1), key(KIND_FMG, 200, 1));
-        assert_eq!(key(KIND_FMG, 0x7FF0_0000_1000, 5), key(KIND_FMG, 0x7FF0_0000_1000, 5));
+        assert_eq!(
+            key(KIND_FMG, 0x7FF0_0000_1000, 5),
+            key(KIND_FMG, 0x7FF0_0000_1000, 5)
+        );
     }
 
     #[test]
@@ -473,11 +519,20 @@ mod tests {
         b.push(0xCC);
         assert_eq!(classify(&b, &LOOKUP_BYTES, 0x1000, none), Entry::Expected);
         // jmp rel32 +0x10 from 0x1000 -> 0x1015
-        assert_eq!(classify(&[0xE9, 0x10, 0, 0, 0, 0x90], &LOOKUP_BYTES, 0x1000, none), Entry::Hooked(0x1015));
+        assert_eq!(
+            classify(&[0xE9, 0x10, 0, 0, 0, 0x90], &LOOKUP_BYTES, 0x1000, none),
+            Entry::Hooked(0x1015)
+        );
         // jmp [rip+0] at 0x1000 -> pointer read from 0x1006
         let rd = |a| (a == 0x1006).then_some(0xABCD);
-        assert_eq!(classify(&[0xFF, 0x25, 0, 0, 0, 0, 0x90], &LOOKUP_BYTES, 0x1000, rd), Entry::Hooked(0xABCD));
-        assert_eq!(classify(&[0x90; 16], &LOOKUP_BYTES, 0x1000, none), Entry::Unknown);
+        assert_eq!(
+            classify(&[0xFF, 0x25, 0, 0, 0, 0, 0x90], &LOOKUP_BYTES, 0x1000, rd),
+            Entry::Hooked(0xABCD)
+        );
+        assert_eq!(
+            classify(&[0x90; 16], &LOOKUP_BYTES, 0x1000, none),
+            Entry::Unknown
+        );
     }
 
     #[test]

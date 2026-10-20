@@ -116,7 +116,11 @@ pub(crate) fn watched_flags() -> Vec<u32> {
 }
 
 /// UI-0 step 5: every node of the descriptor map in key order (in-order walk of the MSVC tree), at most `limit` nodes.
-pub(crate) fn all_groups(rc: &mut RegionCache, head: usize, limit: usize) -> Result<Vec<Node>, &'static str> {
+pub(crate) fn all_groups(
+    rc: &mut RegionCache,
+    head: usize,
+    limit: usize,
+) -> Result<Vec<Node>, &'static str> {
     let head_node = read_node(rc, head).ok_or("map head unreadable")?;
     let mut out = Vec::new();
     let mut stack: Vec<usize> = Vec::new();
@@ -155,7 +159,11 @@ pub(crate) fn group_ranges(keys: &[u32]) -> String {
         while j + 1 < keys.len() && keys[j + 1] == keys[j].wrapping_add(1) {
             j += 1;
         }
-        parts.push(if i == j { keys[i].to_string() } else { format!("{}..{}", keys[i], keys[j]) });
+        parts.push(if i == j {
+            keys[i].to_string()
+        } else {
+            format!("{}..{}", keys[i], keys[j])
+        });
         i = j + 1;
     }
     parts.join(" ")
@@ -359,7 +367,11 @@ impl FlagState {
 
 /// Binary search of the map for `group` (MSVC `std::map`: `head.parent` is the root, children that are absent
 /// point at `head`, nodes have an `is_nil` byte). `Ok(None)` = group not in the map.
-pub(crate) fn find_group(rc: &mut RegionCache, head: usize, group: u32) -> Result<Option<Node>, &'static str> {
+pub(crate) fn find_group(
+    rc: &mut RegionCache,
+    head: usize,
+    group: u32,
+) -> Result<Option<Node>, &'static str> {
     let head_node = read_node(rc, head).ok_or("map head unreadable")?;
     let mut cur = head_node.parent;
     for _ in 0..TREE_MAX_DEPTH {
@@ -1201,7 +1213,9 @@ mod tests {
     #[test]
     fn watched_flags_include_the_lobby_set() {
         let w = watched_flags();
-        for f in [6000, 6001, 10_002_700, 10_002_707, 10_003_045, 69_990, 10_007_000] {
+        for f in [
+            6000, 6001, 10_002_700, 10_002_707, 10_003_045, 69_990, 10_007_000,
+        ] {
             assert!(w.contains(&f), "{f}");
         }
     }

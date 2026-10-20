@@ -68,14 +68,20 @@ pub(crate) struct RosterEntry {
 pub(crate) fn encode_roster(entries: &[RosterEntry]) -> String {
     let mut e = entries.to_vec();
     e.sort();
-    e.iter().map(|r| format!("{}:{}", r.id, r.party)).collect::<Vec<_>>().join(",")
+    e.iter()
+        .map(|r| format!("{}:{}", r.id, r.party))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 pub(crate) fn parse_roster(s: &str) -> Vec<RosterEntry> {
     s.split(',')
         .filter_map(|p| {
             let (a, b) = p.split_once(':')?;
-            Some(RosterEntry { id: a.trim().parse().ok()?, party: b.trim().parse().ok()? })
+            Some(RosterEntry {
+                id: a.trim().parse().ok()?,
+                party: b.trim().parse().ok()?,
+            })
         })
         .collect()
 }
@@ -107,11 +113,19 @@ pub(crate) fn tickets(members: &[(u64, Option<(u64, u32)>)]) -> TicketReport {
     parties.sort_unstable();
     parties.dedup();
     for p in parties {
-        let of_party: Vec<&(u64, Option<(u64, u32)>)> = members.iter().filter(|m| m.1.map(|t| t.0) == Some(p)).collect();
-        let size = of_party.iter().filter_map(|m| m.1.map(|t| t.1)).max().unwrap_or(1);
+        let of_party: Vec<&(u64, Option<(u64, u32)>)> = members
+            .iter()
+            .filter(|m| m.1.map(|t| t.0) == Some(p))
+            .collect();
+        let size = of_party
+            .iter()
+            .filter_map(|m| m.1.map(|t| t.1))
+            .max()
+            .unwrap_or(1);
         if of_party.len() as u32 >= size {
             r.complete_players += of_party.len() as u32;
-            r.roster.extend(of_party.iter().map(|m| RosterEntry { id: m.0, party: p }));
+            r.roster
+                .extend(of_party.iter().map(|m| RosterEntry { id: m.0, party: p }));
         } else {
             r.incomplete_parties.push(p);
         }
@@ -169,7 +183,12 @@ mod tests {
     use super::*;
 
     fn tags() -> Tags {
-        Tags { mode: Mode::Solo, game: "1.3.3.0".into(), sc: "1.1.3".into(), need: 2 }
+        Tags {
+            mode: Mode::Solo,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            need: 2,
+        }
     }
 
     #[test]
@@ -187,13 +206,23 @@ mod tests {
 
     #[test]
     fn roster_round_trips_and_is_sorted() {
-        let r = [RosterEntry { id: 30, party: 30 }, RosterEntry { id: 10, party: 10 }, RosterEntry { id: 20, party: 10 }];
+        let r = [
+            RosterEntry { id: 30, party: 30 },
+            RosterEntry { id: 10, party: 10 },
+            RosterEntry { id: 20, party: 10 },
+        ];
         let text = encode_roster(&r);
         assert_eq!(text, "10:10,20:10,30:30");
         assert_eq!(parse_roster(&text).len(), 3);
         assert_eq!(encode_roster(&parse_roster(&text)), text);
         assert!(parse_roster("").is_empty());
-        assert_eq!(parse_roster("1:2,junk,3:x,4:5"), vec![RosterEntry { id: 1, party: 2 }, RosterEntry { id: 4, party: 5 }]);
+        assert_eq!(
+            parse_roster("1:2,junk,3:x,4:5"),
+            vec![
+                RosterEntry { id: 1, party: 2 },
+                RosterEntry { id: 4, party: 5 }
+            ]
+        );
     }
 
     #[test]
@@ -209,11 +238,20 @@ mod tests {
     fn a_duo_ticket_needs_both_members() {
         let one = [(1, Some((1, 2)))];
         let r = tickets(&one);
-        assert_eq!((r.complete_players, r.incomplete_parties.clone()), (0, vec![1]));
+        assert_eq!(
+            (r.complete_players, r.incomplete_parties.clone()),
+            (0, vec![1])
+        );
         let both = [(1, Some((1, 2))), (2, Some((1, 2)))];
         assert_eq!(tickets(&both).complete_players, 2);
         // Two duos plus an unpublished member.
-        let m = [(1, Some((1, 2))), (2, Some((1, 2))), (3, Some((3, 2))), (4, Some((3, 2))), (5, None)];
+        let m = [
+            (1, Some((1, 2))),
+            (2, Some((1, 2))),
+            (3, Some((3, 2))),
+            (4, Some((3, 2))),
+            (5, None),
+        ];
         let r = tickets(&m);
         assert_eq!((r.complete_players, r.unknown), (4, 1));
     }
@@ -241,10 +279,22 @@ mod tests {
 
     #[test]
     fn queue_value_round_trips_and_rejects_junk() {
-        let q = QValue { lobby: 109775241234567890, mode: Mode::Duo, size: 2 };
+        let q = QValue {
+            lobby: 109775241234567890,
+            mode: Mode::Duo,
+            size: 2,
+        };
         assert_eq!(encode_q(&q), "109775241234567890:duo:2");
         assert_eq!(parse_q(&encode_q(&q)), Some(q));
-        for bad in ["", "0:duo:2", "5:trio:2", "5:duo:0", "5:duo", "5:duo:2:x", "x:solo:1"] {
+        for bad in [
+            "",
+            "0:duo:2",
+            "5:trio:2",
+            "5:duo:0",
+            "5:duo",
+            "5:duo:2:x",
+            "x:solo:1",
+        ] {
             assert_eq!(parse_q(bad), None, "{bad:?}");
         }
     }

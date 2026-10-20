@@ -10,14 +10,22 @@ pub(crate) const SC_DLL: &str = "nrsc.dll";
 
 /// `Ok(())` when queuing is allowed; `Err(reason)` (shown on screen and logged) when it is not.
 pub(crate) fn decide<S: AsRef<str>>(modules: &[S]) -> Result<(), String> {
-    if let Some(eac) = modules.iter().find(|m| m.as_ref().to_ascii_lowercase().contains("easyanticheat")) {
+    if let Some(eac) = modules
+        .iter()
+        .find(|m| m.as_ref().to_ascii_lowercase().contains("easyanticheat"))
+    {
         return Err(format!(
             "an EasyAntiCheat module is loaded ({}): refusing to queue; start the game through the mod launcher (no EAC)",
             eac.as_ref()
         ));
     }
-    if !modules.iter().any(|m| m.as_ref().eq_ignore_ascii_case(SC_DLL)) {
-        return Err(format!("{SC_DLL} (Seamless Co-op) is not loaded in this process: refusing to queue"));
+    if !modules
+        .iter()
+        .any(|m| m.as_ref().eq_ignore_ascii_case(SC_DLL))
+    {
+        return Err(format!(
+            "{SC_DLL} (Seamless Co-op) is not loaded in this process: refusing to queue"
+        ));
     }
     Ok(())
 }
@@ -68,7 +76,10 @@ mod tests {
 
     #[test]
     fn allows_seamless_coop_without_eac() {
-        assert_eq!(decide(&["nightreign.exe", "steam_api64.dll", "NRSC.dll", "nrpvp.dll"]), Ok(()));
+        assert_eq!(
+            decide(&["nightreign.exe", "steam_api64.dll", "NRSC.dll", "nrpvp.dll"]),
+            Ok(())
+        );
     }
 
     #[test]
@@ -80,12 +91,19 @@ mod tests {
 
     #[test]
     fn refuses_when_any_eac_module_is_loaded_in_any_case() {
-        for eac in ["EasyAntiCheat.dll", "easyanticheat_x64.dll", "EASYANTICHEAT_EOS.DLL", "EasyAntiCheat_EOS_Bootstrapper.exe"] {
+        for eac in [
+            "EasyAntiCheat.dll",
+            "easyanticheat_x64.dll",
+            "EASYANTICHEAT_EOS.DLL",
+            "EasyAntiCheat_EOS_Bootstrapper.exe",
+        ] {
             let e = decide(&["nrsc.dll", eac]).unwrap_err();
             assert!(e.contains("EasyAntiCheat") && e.contains(eac), "{e}");
         }
         // EAC wins even when SC is missing too.
-        assert!(decide(&["EasyAntiCheat.dll"]).unwrap_err().contains("EasyAntiCheat"));
+        assert!(decide(&["EasyAntiCheat.dll"])
+            .unwrap_err()
+            .contains("EasyAntiCheat"));
     }
 
     #[test]

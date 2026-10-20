@@ -85,7 +85,10 @@ impl Action {
 
     /// MM-2 queue actions: bound only when `mm_queue` is on, and consumed by the game loop as `Command`s.
     pub(crate) fn is_mm(self) -> bool {
-        matches!(self, Action::MmSolo | Action::MmDuo | Action::MmSquad | Action::MmLeave)
+        matches!(
+            self,
+            Action::MmSolo | Action::MmDuo | Action::MmSquad | Action::MmLeave
+        )
     }
 }
 

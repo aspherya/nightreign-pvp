@@ -51,7 +51,11 @@ pub(crate) const CALLBACKS: [(i32, usize, &str); 8] = [
     (ID_LOBBY_MATCH_LIST, 4, "LobbyMatchList_t"),
     (ID_LOBBY_CREATED, 16, "LobbyCreated_t"),
     (ID_GAME_LOBBY_JOIN_REQUESTED, 16, "GameLobbyJoinRequested_t"),
-    (ID_GAME_RICH_PRESENCE_JOIN_REQUESTED, 264, "GameRichPresenceJoinRequested_t"),
+    (
+        ID_GAME_RICH_PRESENCE_JOIN_REQUESTED,
+        264,
+        "GameRichPresenceJoinRequested_t",
+    ),
 ];
 
 /// How long we wait for the game to initialise Steam before giving up.
@@ -65,14 +69,43 @@ const SUMMARY_GAP: Duration = Duration::from_secs(1);
 /// A decoded callback.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Event {
-    LobbyEnter { lobby: u64, permissions: u32, locked: bool, response: u32 },
-    LobbyDataUpdate { lobby: u64, member: u64, success: bool },
-    LobbyChatUpdate { lobby: u64, user_changed: u64, making_change: u64, state_change: u32 },
-    LobbyMatchList { count: u32 },
-    LobbyCreated { result: i32, lobby: u64 },
-    LobbyInvite { user: u64, lobby: u64, game: u64 },
-    GameLobbyJoinRequested { lobby: u64, friend: u64 },
-    GameRichPresenceJoinRequested { friend: u64, connect: String },
+    LobbyEnter {
+        lobby: u64,
+        permissions: u32,
+        locked: bool,
+        response: u32,
+    },
+    LobbyDataUpdate {
+        lobby: u64,
+        member: u64,
+        success: bool,
+    },
+    LobbyChatUpdate {
+        lobby: u64,
+        user_changed: u64,
+        making_change: u64,
+        state_change: u32,
+    },
+    LobbyMatchList {
+        count: u32,
+    },
+    LobbyCreated {
+        result: i32,
+        lobby: u64,
+    },
+    LobbyInvite {
+        user: u64,
+        lobby: u64,
+        game: u64,
+    },
+    GameLobbyJoinRequested {
+        lobby: u64,
+        friend: u64,
+    },
+    GameRichPresenceJoinRequested {
+        friend: u64,
+        connect: String,
+    },
 }
 
 fn u64_at(b: &[u8], off: usize) -> Option<u64> {
@@ -89,7 +122,11 @@ pub(crate) fn decode(id: i32, b: &[u8]) -> Option<Event> {
         return None;
     }
     Some(match id {
-        ID_LOBBY_INVITE => Event::LobbyInvite { user: u64_at(b, 0)?, lobby: u64_at(b, 8)?, game: u64_at(b, 16)? },
+        ID_LOBBY_INVITE => Event::LobbyInvite {
+            user: u64_at(b, 0)?,
+            lobby: u64_at(b, 8)?,
+            game: u64_at(b, 16)?,
+        },
         ID_LOBBY_ENTER => Event::LobbyEnter {
             lobby: u64_at(b, 0)?,
             permissions: u32_at(b, 8)?,
@@ -107,11 +144,17 @@ pub(crate) fn decode(id: i32, b: &[u8]) -> Option<Event> {
             making_change: u64_at(b, 16)?,
             state_change: u32_at(b, 24)?,
         },
-        ID_LOBBY_MATCH_LIST => Event::LobbyMatchList { count: u32_at(b, 0)? },
-        ID_LOBBY_CREATED => Event::LobbyCreated { result: u32_at(b, 0)? as i32, lobby: u64_at(b, 8)? },
-        ID_GAME_LOBBY_JOIN_REQUESTED => {
-            Event::GameLobbyJoinRequested { lobby: u64_at(b, 0)?, friend: u64_at(b, 8)? }
-        }
+        ID_LOBBY_MATCH_LIST => Event::LobbyMatchList {
+            count: u32_at(b, 0)?,
+        },
+        ID_LOBBY_CREATED => Event::LobbyCreated {
+            result: u32_at(b, 0)? as i32,
+            lobby: u64_at(b, 8)?,
+        },
+        ID_GAME_LOBBY_JOIN_REQUESTED => Event::GameLobbyJoinRequested {
+            lobby: u64_at(b, 0)?,
+            friend: u64_at(b, 8)?,
+        },
         ID_GAME_RICH_PRESENCE_JOIN_REQUESTED => Event::GameRichPresenceJoinRequested {
             friend: u64_at(b, 0)?,
             connect: super::cstr_lossy(b.get(8..264)?),
@@ -135,7 +178,12 @@ impl Event {
     }
     /// Events after which the lobby summary is worth repeating.
     fn refreshes_summary(&self) -> bool {
-        matches!(self, Event::LobbyDataUpdate { .. } | Event::LobbyChatUpdate { .. } | Event::LobbyEnter { .. })
+        matches!(
+            self,
+            Event::LobbyDataUpdate { .. }
+                | Event::LobbyChatUpdate { .. }
+                | Event::LobbyEnter { .. }
+        )
     }
 }
 
@@ -197,7 +245,10 @@ pub(crate) fn summarize(api: &dyn LobbyApi, lobby: u64) -> Vec<String> {
     ));
     // Cap the loops so a garbage count cannot spin the thread.
     for i in 0..members.clamp(0, 64) {
-        out.push(format!("mm_probe: lobby {lobby} member[{i}]={}", id_text(api.member_by_index(lobby, i))));
+        out.push(format!(
+            "mm_probe: lobby {lobby} member[{i}]={}",
+            id_text(api.member_by_index(lobby, i))
+        ));
     }
     let n = api.data_count(lobby);
     out.push(format!("mm_probe: lobby {lobby} data entries={n}"));
@@ -252,7 +303,10 @@ const WATCH_PERIOD: Duration = Duration::from_secs(10);
 /// session lobby B (only `inviteParam`, MM-1 finding in S9 §5a), or something else.
 pub(crate) fn classify(api: &dyn LobbyApi, lobby: u64) -> &'static str {
     let n = api.data_count(lobby).clamp(0, 256);
-    let keys: Vec<String> = (0..n).filter_map(|i| api.data_by_index(lobby, i)).map(|(k, _)| k).collect();
+    let keys: Vec<String> = (0..n)
+        .filter_map(|i| api.data_by_index(lobby, i))
+        .map(|(k, _)| k)
+        .collect();
     if keys.iter().any(|k| k == "nrsc_lobby_type") {
         "SC lobby (A)"
     } else if keys.iter().any(|k| k == "nrpvp") {
@@ -273,24 +327,49 @@ pub(crate) struct LobbyWatch {
 }
 
 impl LobbyWatch {
-    pub(crate) fn tick(&mut self, api: &dyn LobbyApi, own: u64, known: &[u64], now: Instant, period: Duration) -> Vec<String> {
+    pub(crate) fn tick(
+        &mut self,
+        api: &dyn LobbyApi,
+        own: u64,
+        known: &[u64],
+        now: Instant,
+        period: Duration,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         for &lobby in known {
             let n = api.member_count(lobby);
             let (sig, member) = if n > 0 {
-                let ids: Vec<u64> = (0..n.clamp(0, 64)).map(|i| api.member_by_index(lobby, i)).collect();
+                let ids: Vec<u64> = (0..n.clamp(0, 64))
+                    .map(|i| api.member_by_index(lobby, i))
+                    .collect();
                 // MM-3a: a lobby we left still lists zeros (`members=[0]`); only a lobby we are a member of is repeated periodically.
                 let member = own != 0 && ids.contains(&own);
-                (format!("owner={} limit={} members={ids:?}", api.owner(lobby), api.member_limit(lobby)), member)
+                (
+                    format!(
+                        "owner={} limit={} members={ids:?}",
+                        api.owner(lobby),
+                        api.member_limit(lobby)
+                    ),
+                    member,
+                )
             } else {
-                ("members=none (we are not in it, or it is gone)".to_string(), false)
+                (
+                    "members=none (we are not in it, or it is gone)".to_string(),
+                    false,
+                )
             };
             let due = match self.last.get(&lobby) {
                 None => true,
-                Some((s, t)) => *s != sig || (member && now.saturating_duration_since(*t) >= period),
+                Some((s, t)) => {
+                    *s != sig || (member && now.saturating_duration_since(*t) >= period)
+                }
             };
             if due {
-                out.push(format!("mm_join: lobby {} [{}] {sig}", id_text(lobby), classify(api, lobby)));
+                out.push(format!(
+                    "mm_join: lobby {} [{}] {sig}",
+                    id_text(lobby),
+                    classify(api, lobby)
+                ));
                 self.last.insert(lobby, (sig, now));
             }
         }
@@ -302,18 +381,24 @@ impl LobbyWatch {
 /// otherwise. `queue` is `Some` when `mm_queue` is on: the MM-2 worker then runs inside this loop. `verbose = false` (MM-4, the player
 /// build) keeps the callbacks the queue needs and drops the startup dump and the per-event lobby dumps.
 pub(crate) fn spawn(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
-    let r = std::thread::Builder::new().name("nrpvp-mm-probe".into()).spawn(move || {
-        if catch_unwind(AssertUnwindSafe(|| run(queue, evidence, verbose))).is_err() {
-            tracing::error!("mm_probe: probe thread panicked");
-        }
-    });
+    let r = std::thread::Builder::new()
+        .name("nrpvp-mm-probe".into())
+        .spawn(move || {
+            if catch_unwind(AssertUnwindSafe(|| run(queue, evidence, verbose))).is_err() {
+                tracing::error!("mm_probe: probe thread panicked");
+            }
+        });
     if r.is_err() {
         tracing::warn!("mm_probe: could not spawn the probe thread");
     }
 }
 
 fn yes_no(b: bool) -> &'static str {
-    if b { "yes" } else { "NO" }
+    if b {
+        "yes"
+    } else {
+        "NO"
+    }
 }
 
 fn ptr_text(p: Option<usize>) -> String {
@@ -330,7 +415,8 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     if !verbose {
         tracing::info!("mm_probe: quiet mode (player build): callbacks are registered, the startup dump and lobby dumps are not logged");
     }
-    vinfo!(verbose, 
+    vinfo!(
+        verbose,
         "mm_probe: enabled (listen-only; waits up to {} s for the game to initialise Steam)",
         WAIT_TOTAL.as_secs()
     );
@@ -339,15 +425,25 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     loop {
         if flat.is_none() && steam_dll_loaded() {
             let (f, resolved) = Flat::resolve();
-            vinfo!(verbose, "mm_probe: steam_api64.dll loaded after {:.1} s", start.elapsed().as_secs_f32());
+            vinfo!(
+                verbose,
+                "mm_probe: steam_api64.dll loaded after {:.1} s",
+                start.elapsed().as_secs_f32()
+            );
             for r in &resolved {
-                vinfo!(verbose, "mm_probe: export {} resolved: {}", r.name, yes_no(r.found));
+                vinfo!(
+                    verbose,
+                    "mm_probe: export {} resolved: {}",
+                    r.name,
+                    yes_no(r.found)
+                );
             }
             flat = Some(f);
         }
         if let Some(f) = &flat {
             if f.hsteam_user() != 0 {
-                vinfo!(verbose, 
+                vinfo!(
+                    verbose,
                     "mm_probe: SteamAPI_GetHSteamUser() = {} after {:.1} s: Steam is initialised",
                     f.hsteam_user(),
                     start.elapsed().as_secs_f32()
@@ -370,14 +466,32 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     // (a) accessors and own Steam ID.
     let mm = Flat::call_accessor(flat.matchmaking);
     let user = Flat::call_accessor(flat.user);
-    vinfo!(verbose, "mm_probe: SteamAPI_SteamMatchmaking_v009(): {}", ptr_text(mm));
-    vinfo!(verbose, "mm_probe: SteamAPI_SteamUtils_v010(): {}", ptr_text(Flat::call_accessor(flat.utils)));
-    vinfo!(verbose, "mm_probe: SteamAPI_SteamUser_v021(): {}", ptr_text(user));
-    vinfo!(verbose, "mm_probe: SteamAPI_SteamFriends_v017(): {}", ptr_text(Flat::call_accessor(flat.friends)));
+    vinfo!(
+        verbose,
+        "mm_probe: SteamAPI_SteamMatchmaking_v009(): {}",
+        ptr_text(mm)
+    );
+    vinfo!(
+        verbose,
+        "mm_probe: SteamAPI_SteamUtils_v010(): {}",
+        ptr_text(Flat::call_accessor(flat.utils))
+    );
+    vinfo!(
+        verbose,
+        "mm_probe: SteamAPI_SteamUser_v021(): {}",
+        ptr_text(user)
+    );
+    vinfo!(
+        verbose,
+        "mm_probe: SteamAPI_SteamFriends_v017(): {}",
+        ptr_text(Flat::call_accessor(flat.friends))
+    );
     let own_id = flat.own_steam_id(user.unwrap_or(0)).unwrap_or(0);
     match Some(own_id).filter(|id| *id != 0) {
         Some(id) => vinfo!(verbose, "mm_probe: own Steam ID = {}", id_text(id)),
-        None => tracing::warn!("mm_probe: own Steam ID unavailable (user accessor null or GetSteamID export missing)"),
+        None => tracing::warn!(
+            "mm_probe: own Steam ID unavailable (user accessor null or GetSteamID export missing)"
+        ),
     }
     let mm_ok = flat.bind_matchmaking(mm.unwrap_or(0));
 
@@ -389,10 +503,16 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
             let results = unsafe { callback::register_all(reg, &wanted) };
             for (id, ok) in results {
                 let name = CALLBACKS.iter().find(|c| c.0 == id).map_or("?", |c| c.2);
-                vinfo!(verbose, "mm_probe: RegisterCallback {name} (id {id}): registered flag set = {}", yes_no(ok));
+                vinfo!(
+                    verbose,
+                    "mm_probe: RegisterCallback {name} (id {id}): registered flag set = {}",
+                    yes_no(ok)
+                );
             }
         }
-        None => tracing::warn!("mm_probe: SteamAPI_RegisterCallback missing; no events will be seen"),
+        None => {
+            tracing::warn!("mm_probe: SteamAPI_RegisterCallback missing; no events will be seen")
+        }
     }
     if !mm_ok {
         tracing::warn!("mm_probe: ISteamMatchmaking is null; events are logged but lobby summaries are skipped");
@@ -414,7 +534,11 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
                     // MM-4: the player build keeps the callbacks but drops the verbose lobby dumps (the queue worker logs what matters).
                     if verbose {
                         // Without matchmaking, log the event only.
-                        let lines = if mm_ok { tracker.handle(&flat, &ev, Instant::now()) } else { vec![describe(&ev)] };
+                        let lines = if mm_ok {
+                            tracker.handle(&flat, &ev, Instant::now())
+                        } else {
+                            vec![describe(&ev)]
+                        };
                         for l in lines {
                             tracing::info!("{l}");
                         }
@@ -428,7 +552,10 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
         }
         let d = callback::dropped();
         if d != dropped_seen {
-            tracing::warn!("mm_probe: {} callback(s) dropped because the queue was full", d - dropped_seen);
+            tracing::warn!(
+                "mm_probe: {} callback(s) dropped because the queue was full",
+                d - dropped_seen
+            );
             dropped_seen = d;
         }
         if let Some(w) = worker.as_mut() {
@@ -476,7 +603,12 @@ mod tests {
         put_u32(&mut b, 16, 1);
         assert_eq!(
             decode(ID_LOBBY_ENTER, &b),
-            Some(Event::LobbyEnter { lobby: 109775241234567890, permissions: 0, locked: true, response: 1 })
+            Some(Event::LobbyEnter {
+                lobby: 109775241234567890,
+                permissions: 0,
+                locked: true,
+                response: 1
+            })
         );
     }
 
@@ -488,7 +620,11 @@ mod tests {
         b[16] = 1;
         assert_eq!(
             decode(ID_LOBBY_DATA_UPDATE, &b),
-            Some(Event::LobbyDataUpdate { lobby: 7, member: 9, success: true })
+            Some(Event::LobbyDataUpdate {
+                lobby: 7,
+                member: 9,
+                success: true
+            })
         );
         let mut c = [0u8; 32];
         put_u64(&mut c, 0, 1);
@@ -497,18 +633,32 @@ mod tests {
         put_u32(&mut c, 24, 0x2);
         assert_eq!(
             decode(ID_LOBBY_CHAT_UPDATE, &c),
-            Some(Event::LobbyChatUpdate { lobby: 1, user_changed: 2, making_change: 3, state_change: 2 })
+            Some(Event::LobbyChatUpdate {
+                lobby: 1,
+                user_changed: 2,
+                making_change: 3,
+                state_change: 2
+            })
         );
         let mut d = [0u8; 16];
         put_u32(&mut d, 0, 1);
         put_u64(&mut d, 8, 55);
-        assert_eq!(decode(ID_LOBBY_CREATED, &d), Some(Event::LobbyCreated { result: 1, lobby: 55 }));
+        assert_eq!(
+            decode(ID_LOBBY_CREATED, &d),
+            Some(Event::LobbyCreated {
+                result: 1,
+                lobby: 55
+            })
+        );
         let mut e = [0u8; 16];
         put_u64(&mut e, 0, 11);
         put_u64(&mut e, 8, 12);
         assert_eq!(
             decode(ID_GAME_LOBBY_JOIN_REQUESTED, &e),
-            Some(Event::GameLobbyJoinRequested { lobby: 11, friend: 12 })
+            Some(Event::GameLobbyJoinRequested {
+                lobby: 11,
+                friend: 12
+            })
         );
     }
 
@@ -519,7 +669,10 @@ mod tests {
         b[8..8 + 5].copy_from_slice(b"hello");
         assert_eq!(
             decode(ID_GAME_RICH_PRESENCE_JOIN_REQUESTED, &b),
-            Some(Event::GameRichPresenceJoinRequested { friend: 42, connect: "hello".into() })
+            Some(Event::GameRichPresenceJoinRequested {
+                friend: 42,
+                connect: "hello".into()
+            })
         );
     }
 
@@ -555,7 +708,12 @@ mod tests {
     #[test]
     fn summary_lists_owner_members_and_data() {
         let s = summarize(&Fake, 77);
-        assert!(s[0].contains("owner=100 (0x64)") && s[0].contains("members=2") && s[0].contains("limit=4"), "{s:?}");
+        assert!(
+            s[0].contains("owner=100 (0x64)")
+                && s[0].contains("members=2")
+                && s[0].contains("limit=4"),
+            "{s:?}"
+        );
         assert!(s.iter().any(|l| l.contains("member[1]=201")));
         assert!(s.iter().any(|l| l.contains("data[0] \"k\" = \"v\"")));
         assert!(s.iter().any(|l| l.contains("data[1] unreadable")));
@@ -566,22 +724,43 @@ mod tests {
     fn tracker_summarises_new_lobbies_and_rate_limits_updates() {
         let mut t = Tracker::default();
         let t0 = Instant::now();
-        let upd = Event::LobbyDataUpdate { lobby: 5, member: 5, success: true };
+        let upd = Event::LobbyDataUpdate {
+            lobby: 5,
+            member: 5,
+            success: true,
+        };
         // First sight: event line + "new lobby" + summary.
         let l = t.handle(&Fake, &upd, t0);
-        assert!(l.iter().any(|x| x.contains("new lobby seen")) && l.len() > 2, "{l:?}");
+        assert!(
+            l.iter().any(|x| x.contains("new lobby seen")) && l.len() > 2,
+            "{l:?}"
+        );
         // Within a second: only the event line.
-        assert_eq!(t.handle(&Fake, &upd, t0 + Duration::from_millis(500)).len(), 1);
+        assert_eq!(
+            t.handle(&Fake, &upd, t0 + Duration::from_millis(500)).len(),
+            1
+        );
         // After a second: summary again, but not announced as new.
         let l = t.handle(&Fake, &upd, t0 + Duration::from_millis(1100));
-        assert!(l.len() > 1 && !l.iter().any(|x| x.contains("new lobby seen")), "{l:?}");
+        assert!(
+            l.len() > 1 && !l.iter().any(|x| x.contains("new lobby seen")),
+            "{l:?}"
+        );
         // A join request for a known lobby never re-summarises; an event without a lobby never summarises.
-        let join = Event::GameLobbyJoinRequested { lobby: 5, friend: 1 };
-        assert_eq!(t.handle(&Fake, &join, t0 + Duration::from_secs(10)).len(), 1);
-        let rp = Event::GameRichPresenceJoinRequested { friend: 1, connect: String::new() };
+        let join = Event::GameLobbyJoinRequested {
+            lobby: 5,
+            friend: 1,
+        };
+        assert_eq!(
+            t.handle(&Fake, &join, t0 + Duration::from_secs(10)).len(),
+            1
+        );
+        let rp = Event::GameRichPresenceJoinRequested {
+            friend: 1,
+            connect: String::new(),
+        };
         assert_eq!(t.handle(&Fake, &rp, t0).len(), 1);
     }
-
 
     #[test]
     fn decodes_lobby_invite() {
@@ -591,10 +770,15 @@ mod tests {
         put_u64(&mut b, 16, 2622380);
         assert_eq!(
             decode(ID_LOBBY_INVITE, &b),
-            Some(Event::LobbyInvite { user: 11, lobby: 22, game: 2622380 })
+            Some(Event::LobbyInvite {
+                user: 11,
+                lobby: 22,
+                game: 2622380
+            })
         );
         assert_eq!(decode(ID_LOBBY_INVITE, &b[..23]), None);
-        assert!(describe(&decode(ID_LOBBY_INVITE, &b).expect("ev")).contains("LobbyInvite_t from user=11"));
+        assert!(describe(&decode(ID_LOBBY_INVITE, &b).expect("ev"))
+            .contains("LobbyInvite_t from user=11"));
     }
 
     /// Lobby with chosen members and data keys, for the watch tests.
@@ -619,13 +803,23 @@ mod tests {
             self.keys.len() as i32
         }
         fn data_by_index(&self, _: u64, i: i32) -> Option<(String, String)> {
-            self.keys.get(i as usize).map(|k| ((*k).to_string(), "v".to_string()))
+            self.keys
+                .get(i as usize)
+                .map(|k| ((*k).to_string(), "v".to_string()))
         }
     }
 
     #[test]
     fn lobbies_are_classified_by_their_data_keys() {
-        let k = |keys: Vec<&'static str>| classify(&W { members: Default::default(), keys }, 1);
+        let k = |keys: Vec<&'static str>| {
+            classify(
+                &W {
+                    members: Default::default(),
+                    keys,
+                },
+                1,
+            )
+        };
         assert_eq!(k(vec!["nrsc_lobby_type", "inviteParam"]), "SC lobby (A)");
         assert_eq!(k(vec!["nrpvp", "mode"]), "queue lobby");
         assert_eq!(k(vec!["inviteParam"]), "game lobby (B, inviteParam only)");
@@ -635,34 +829,74 @@ mod tests {
 
     #[test]
     fn lobby_watch_logs_on_change_and_every_period_while_a_member() {
-        let w = W { members: std::cell::RefCell::new(vec![1, 2]), keys: vec!["nrsc_lobby_type"] };
+        let w = W {
+            members: std::cell::RefCell::new(vec![1, 2]),
+            keys: vec!["nrsc_lobby_type"],
+        };
         let mut lw = LobbyWatch::default();
         let t0 = Instant::now();
         let p = Duration::from_secs(10);
         let l = lw.tick(&w, 1, &[9], t0, p);
         assert_eq!(l.len(), 1);
-        assert!(l[0].starts_with("mm_join: lobby 9 (0x9) [SC lobby (A)] owner=1 limit=6 members=[1, 2]"), "{l:?}");
-        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(3), p).is_empty(), "unchanged and early");
+        assert!(
+            l[0].starts_with(
+                "mm_join: lobby 9 (0x9) [SC lobby (A)] owner=1 limit=6 members=[1, 2]"
+            ),
+            "{l:?}"
+        );
+        assert!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(3), p)
+                .is_empty(),
+            "unchanged and early"
+        );
         w.members.borrow_mut().push(3);
-        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(4), p).len(), 1, "membership changed");
-        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(15), p).len(), 1, "periodic");
+        assert_eq!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(4), p).len(),
+            1,
+            "membership changed"
+        );
+        assert_eq!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(15), p).len(),
+            1,
+            "periodic"
+        );
         // A lobby we are not in: one line when it changes to that, then silence.
         w.members.borrow_mut().clear();
-        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(16), p).len(), 1);
-        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(60), p).is_empty());
+        assert_eq!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(16), p).len(),
+            1
+        );
+        assert!(lw
+            .tick(&w, 1, &[9], t0 + Duration::from_secs(60), p)
+            .is_empty());
     }
 
     #[test]
     fn a_lobby_we_left_is_not_repeated_periodically() {
-        let w = W { members: std::cell::RefCell::new(vec![0, 0]), keys: vec!["nrsc_lobby_type"] };
+        let w = W {
+            members: std::cell::RefCell::new(vec![0, 0]),
+            keys: vec!["nrsc_lobby_type"],
+        };
         let mut lw = LobbyWatch::default();
         let t0 = Instant::now();
         let p = Duration::from_secs(10);
         assert_eq!(lw.tick(&w, 1, &[9], t0, p).len(), 1, "first sight");
-        assert!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(30), p).is_empty(), "left lobby: no periodic line");
+        assert!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(30), p)
+                .is_empty(),
+            "left lobby: no periodic line"
+        );
         w.members.borrow_mut().push(1);
-        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(31), p).len(), 1, "membership changed");
-        assert_eq!(lw.tick(&w, 1, &[9], t0 + Duration::from_secs(45), p).len(), 1, "member: periodic");
+        assert_eq!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(31), p).len(),
+            1,
+            "membership changed"
+        );
+        assert_eq!(
+            lw.tick(&w, 1, &[9], t0 + Duration::from_secs(45), p).len(),
+            1,
+            "member: periodic"
+        );
     }
     #[test]
     fn queue_round_trip_through_the_callback_object() {
@@ -674,7 +908,8 @@ mod tests {
             unsafe {
                 *p.add(8) |= 1;
                 let vt = *(obj as *const *const usize);
-                let run: unsafe extern "system" fn(*mut c_void, *const c_void) = std::mem::transmute(*vt);
+                let run: unsafe extern "system" fn(*mut c_void, *const c_void) =
+                    std::mem::transmute(*vt);
                 let payload = [0xABu8; 16];
                 run(obj, payload.as_ptr() as *const c_void);
             }
@@ -682,6 +917,8 @@ mod tests {
         let res = unsafe { callback::register_all(fake_register, &[(ID_LOBBY_CREATED, 16)]) };
         assert_eq!(res, vec![(ID_LOBBY_CREATED, true)]);
         let evs = callback::drain();
-        assert!(evs.iter().any(|e| e.id == ID_LOBBY_CREATED && e.len == 16 && e.data[0] == 0xAB));
+        assert!(evs
+            .iter()
+            .any(|e| e.id == ID_LOBBY_CREATED && e.len == 16 && e.data[0] == 0xAB));
     }
 }

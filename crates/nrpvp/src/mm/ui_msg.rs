@@ -61,13 +61,17 @@ pub(crate) fn for_gate_line(line: &str) -> Option<u32> {
         Some(ALL_HERE_HOST)
     } else if line.starts_with("Everyone is here - waiting") {
         Some(ALL_HERE_JOINER)
-    } else if line.contains("did not arrive: press") || line.starts_with("Match found! Press Matchmaking Settings") {
+    } else if line.contains("did not arrive: press")
+        || line.starts_with("Match found! Press Matchmaking Settings")
+    {
         Some(HOST_INVITE)
     } else if line.contains("you can start;") {
         Some(SOME_MISSING)
     } else if line.contains("to load in") || line == "Match found! Loading in..." {
         Some(LOADING_IN)
-    } else if line.starts_with("Match found! Waiting for players") || line.starts_with("Match found! In the host's lobby") {
+    } else if line.starts_with("Match found! Waiting for players")
+        || line.starts_with("Match found! In the host's lobby")
+    {
         Some(WAITING_OTHERS)
     } else if line == "Match found! Waiting for the host..." {
         Some(WAITING_HOST)
@@ -81,10 +85,18 @@ pub(crate) fn for_gate_line(line: &str) -> Option<u32> {
 /// What the queue state asks for (pure; the machine fills the inputs).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum QueueView {
-    Idle { error: Option<String>, left_note: Option<String> },
+    Idle {
+        error: Option<String>,
+        left_note: Option<String>,
+    },
     Searching,
-    InQueue { members: u32, need: u32 },
-    Matched { gate_line: String },
+    InQueue {
+        members: u32,
+        need: u32,
+    },
+    Matched {
+        gate_line: String,
+    },
 }
 
 /// The message for a queue view, given the previous one (pure). Stopping is a transition: active → idle without a note or error.
@@ -95,7 +107,8 @@ pub(crate) fn for_state(prev: Option<&QueueView>, cur: &QueueView) -> Option<u32
             if !was_active {
                 return None;
             }
-            let was_searching = prev.is_some_and(|p| matches!(p, QueueView::Searching | QueueView::InQueue { .. }));
+            let was_searching =
+                prev.is_some_and(|p| matches!(p, QueueView::Searching | QueueView::InQueue { .. }));
             match (error, left_note) {
                 (Some(e), _) if e.contains("missed") => Some(MISSED),
                 (Some(_), _) => Some(PROBLEM),
@@ -107,14 +120,24 @@ pub(crate) fn for_state(prev: Option<&QueueView>, cur: &QueueView) -> Option<u32
         }
         QueueView::Searching => Some(SEARCHING),
         QueueView::InQueue { members, need } => count_msg(*members, *need).or(Some(SEARCHING)),
-        QueueView::Matched { gate_line } => for_gate_line(gate_line).or_else(|| (gate_line.is_empty()).then_some(MATCH_FOUND)),
+        QueueView::Matched { gate_line } => {
+            for_gate_line(gate_line).or_else(|| (gate_line.is_empty()).then_some(MATCH_FOUND))
+        }
     }
 }
 
 /// Whether message `k` describes an ongoing state and is shown again every [`REPEAT_EVERY`] while current (pure).
 pub(crate) fn repeats(k: u32) -> bool {
-    matches!(k, SEARCHING | HOST_INVITE | WAITING_OTHERS | WAITING_HOST | ALL_HERE_HOST | ALL_HERE_JOINER | SOME_MISSING)
-        || (COUNT_FIRST..COUNT).contains(&k)
+    matches!(
+        k,
+        SEARCHING
+            | HOST_INVITE
+            | WAITING_OTHERS
+            | WAITING_HOST
+            | ALL_HERE_HOST
+            | ALL_HERE_JOINER
+            | SOME_MISSING
+    ) || (COUNT_FIRST..COUNT).contains(&k)
 }
 
 /// The sender's state between ticks.
@@ -160,7 +183,9 @@ pub(crate) fn post(k: Option<u32>) {
 
 /// Start the sender (`ui_messages`; needs the game-data package, default launch profile / player zip). `base`: `nightreign.exe`.
 pub(crate) fn spawn(base: usize) {
-    let hub = HUB.get_or_init(|| Hub { posted: Mutex::new(None) });
+    let hub = HUB.get_or_init(|| Hub {
+        posted: Mutex::new(None),
+    });
     let r = std::thread::Builder::new().name("nrpvp-uimsg".into()).spawn(move || {
         tracing::info!(
             "ui_msg: sender started (flags {FLAG_BASE}..{}, texts {TEXT_BASE}.., gap {} s, repeat {} s)",
@@ -244,29 +269,67 @@ mod tests {
         let t0 = Instant::now();
         let at = |s: u64| t0 + Duration::from_secs(s);
         // Nothing shown yet: a pending message goes at once.
-        let s = Sched { current: Some(SEARCHING), pending: Some(SEARCHING), last_sent: None };
+        let s = Sched {
+            current: Some(SEARCHING),
+            pending: Some(SEARCHING),
+            last_sent: None,
+        };
         assert_eq!(next_to_show(&s, t0), Some(SEARCHING));
         // Within the gap nothing goes, even a new pending message.
-        let s = Sched { current: Some(count_msg(1, 2).unwrap()), pending: count_msg(1, 2), last_sent: Some(t0) };
+        let s = Sched {
+            current: Some(count_msg(1, 2).unwrap()),
+            pending: count_msg(1, 2),
+            last_sent: Some(t0),
+        };
         assert_eq!(next_to_show(&s, at(3)), None);
         assert_eq!(next_to_show(&s, at(6)), count_msg(1, 2));
         // An ongoing message repeats as soon as the gap has passed; a one-off does not.
-        let s = Sched { current: count_msg(1, 2), pending: None, last_sent: Some(t0) };
+        let s = Sched {
+            current: count_msg(1, 2),
+            pending: None,
+            last_sent: Some(t0),
+        };
         assert_eq!(next_to_show(&s, at(5)), None);
         assert_eq!(next_to_show(&s, at(6)), count_msg(1, 2));
-        let s = Sched { current: Some(STOPPED), pending: None, last_sent: Some(t0) };
+        let s = Sched {
+            current: Some(STOPPED),
+            pending: None,
+            last_sent: Some(t0),
+        };
         assert_eq!(next_to_show(&s, at(60)), None);
         // No current message: nothing repeats.
-        let s = Sched { current: None, pending: None, last_sent: Some(t0) };
+        let s = Sched {
+            current: None,
+            pending: None,
+            last_sent: Some(t0),
+        };
         assert_eq!(next_to_show(&s, at(60)), None);
     }
 
     #[test]
     fn ongoing_states_repeat_and_one_offs_do_not() {
-        for k in [SEARCHING, HOST_INVITE, WAITING_OTHERS, WAITING_HOST, ALL_HERE_HOST, ALL_HERE_JOINER, SOME_MISSING, COUNT_FIRST, COUNT - 1] {
+        for k in [
+            SEARCHING,
+            HOST_INVITE,
+            WAITING_OTHERS,
+            WAITING_HOST,
+            ALL_HERE_HOST,
+            ALL_HERE_JOINER,
+            SOME_MISSING,
+            COUNT_FIRST,
+            COUNT - 1,
+        ] {
             assert!(repeats(k), "{k}");
         }
-        for k in [STOPPED, LEFT_ROUNDTABLE, MISSED, MATCH_FOUND, JOINING, LOADING_IN, PROBLEM] {
+        for k in [
+            STOPPED,
+            LEFT_ROUNDTABLE,
+            MISSED,
+            MATCH_FOUND,
+            JOINING,
+            LOADING_IN,
+            PROBLEM,
+        ] {
             assert!(!repeats(k), "{k}");
         }
     }
@@ -290,41 +353,127 @@ mod tests {
     #[test]
     fn gate_lines_map_to_messages() {
         assert_eq!(for_gate_line("In match"), None);
-        assert_eq!(for_gate_line("Everyone is here - host: start the expedition"), Some(ALL_HERE_HOST));
-        assert_eq!(for_gate_line("Everyone is here - waiting for the host to start"), Some(ALL_HERE_JOINER));
+        assert_eq!(
+            for_gate_line("Everyone is here - host: start the expedition"),
+            Some(ALL_HERE_HOST)
+        );
+        assert_eq!(
+            for_gate_line("Everyone is here - waiting for the host to start"),
+            Some(ALL_HERE_JOINER)
+        );
         assert_eq!(
             for_gate_line("Match found! Press Matchmaking Settings > Invite Members to open your lobby (no Steam window will open)"),
             Some(HOST_INVITE)
         );
-        assert_eq!(for_gate_line("Bob did not arrive: press Matchmaking Settings > Invite Members and invite them"), Some(HOST_INVITE));
-        assert_eq!(for_gate_line("2/3 here - you can start; Bob did not arrive"), Some(SOME_MISSING));
-        assert_eq!(for_gate_line("Match found! Everyone is in your lobby, waiting for Bob to load in..."), Some(LOADING_IN));
-        assert_eq!(for_gate_line("Match found! Loading in..."), Some(LOADING_IN));
-        assert_eq!(for_gate_line("Match found! Waiting for players to join your lobby (1/2 here)"), Some(WAITING_OTHERS));
-        assert_eq!(for_gate_line("Match found! In the host's lobby, waiting for the others (1/2 here)"), Some(WAITING_OTHERS));
-        assert_eq!(for_gate_line("Match found! Waiting for the host..."), Some(WAITING_HOST));
-        assert_eq!(for_gate_line("Match found! Joining the host..."), Some(JOINING));
-        assert_eq!(for_gate_line("Match found! Creating your lobby..."), Some(MATCH_FOUND));
+        assert_eq!(
+            for_gate_line(
+                "Bob did not arrive: press Matchmaking Settings > Invite Members and invite them"
+            ),
+            Some(HOST_INVITE)
+        );
+        assert_eq!(
+            for_gate_line("2/3 here - you can start; Bob did not arrive"),
+            Some(SOME_MISSING)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Everyone is in your lobby, waiting for Bob to load in..."),
+            Some(LOADING_IN)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Loading in..."),
+            Some(LOADING_IN)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Waiting for players to join your lobby (1/2 here)"),
+            Some(WAITING_OTHERS)
+        );
+        assert_eq!(
+            for_gate_line("Match found! In the host's lobby, waiting for the others (1/2 here)"),
+            Some(WAITING_OTHERS)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Waiting for the host..."),
+            Some(WAITING_HOST)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Joining the host..."),
+            Some(JOINING)
+        );
+        assert_eq!(
+            for_gate_line("Match found! Creating your lobby..."),
+            Some(MATCH_FOUND)
+        );
         assert_eq!(for_gate_line("Match found!"), Some(MATCH_FOUND));
     }
 
     #[test]
     fn queue_states_map_to_messages() {
-        let idle = QueueView::Idle { error: None, left_note: None };
+        let idle = QueueView::Idle {
+            error: None,
+            left_note: None,
+        };
         assert_eq!(for_state(None, &idle), None);
         assert_eq!(for_state(Some(&idle), &idle), None);
-        assert_eq!(for_state(Some(&idle), &QueueView::Searching), Some(SEARCHING));
-        assert_eq!(for_state(None, &QueueView::InQueue { members: 1, need: 2 }), count_msg(1, 2));
+        assert_eq!(
+            for_state(Some(&idle), &QueueView::Searching),
+            Some(SEARCHING)
+        );
+        assert_eq!(
+            for_state(
+                None,
+                &QueueView::InQueue {
+                    members: 1,
+                    need: 2
+                }
+            ),
+            count_msg(1, 2)
+        );
         assert_eq!(for_state(Some(&QueueView::Searching), &idle), Some(STOPPED));
-        let left = QueueView::Idle { error: None, left_note: Some("you left the Roundtable".into()) };
-        assert_eq!(for_state(Some(&QueueView::Searching), &left), Some(LEFT_ROUNDTABLE));
-        let missed = QueueView::Idle { error: Some("match missed - queue again".into()), left_note: None };
-        assert_eq!(for_state(Some(&QueueView::Matched { gate_line: String::new() }), &missed), Some(MISSED));
-        let err = QueueView::Idle { error: Some("lobby create failed".into()), left_note: None };
+        let left = QueueView::Idle {
+            error: None,
+            left_note: Some("you left the Roundtable".into()),
+        };
+        assert_eq!(
+            for_state(Some(&QueueView::Searching), &left),
+            Some(LEFT_ROUNDTABLE)
+        );
+        let missed = QueueView::Idle {
+            error: Some("match missed - queue again".into()),
+            left_note: None,
+        };
+        assert_eq!(
+            for_state(
+                Some(&QueueView::Matched {
+                    gate_line: String::new()
+                }),
+                &missed
+            ),
+            Some(MISSED)
+        );
+        let err = QueueView::Idle {
+            error: Some("lobby create failed".into()),
+            left_note: None,
+        };
         assert_eq!(for_state(Some(&QueueView::Searching), &err), Some(PROBLEM));
-        assert_eq!(for_state(None, &QueueView::Matched { gate_line: String::new() }), Some(MATCH_FOUND));
+        assert_eq!(
+            for_state(
+                None,
+                &QueueView::Matched {
+                    gate_line: String::new()
+                }
+            ),
+            Some(MATCH_FOUND)
+        );
         // The match ended: back to idle without a message.
-        assert_eq!(for_state(Some(&QueueView::Matched { gate_line: "In match".into() }), &idle), None);
+        assert_eq!(
+            for_state(
+                Some(&QueueView::Matched {
+                    gate_line: "In match".into()
+                }),
+                &idle
+            ),
+            None
+        );
     }
 
     /// Every message has its event (one line per event: id = text id, flag, text, blinking) in gamedata/emevd-events.json and its text
@@ -334,8 +483,20 @@ mod tests {
         let events = include_str!("../../../../gamedata/emevd-events.json");
         let texts = include_str!("../../../../gamedata/fmg-entries.json");
         let used: Vec<u32> = [
-            SEARCHING, STOPPED, LEFT_ROUNDTABLE, MISSED, MATCH_FOUND, HOST_INVITE, WAITING_OTHERS, WAITING_HOST, JOINING, LOADING_IN,
-            ALL_HERE_HOST, ALL_HERE_JOINER, SOME_MISSING, PROBLEM,
+            SEARCHING,
+            STOPPED,
+            LEFT_ROUNDTABLE,
+            MISSED,
+            MATCH_FOUND,
+            HOST_INVITE,
+            WAITING_OTHERS,
+            WAITING_HOST,
+            JOINING,
+            LOADING_IN,
+            ALL_HERE_HOST,
+            ALL_HERE_JOINER,
+            SOME_MISSING,
+            PROBLEM,
         ]
         .into_iter()
         .chain(COUNT_FIRST..COUNT)
@@ -347,8 +508,14 @@ mod tests {
                 FLAG_BASE + k,
                 TEXT_BASE + k
             );
-            assert!(events.contains(&line), "no event line for message {k}: {line}");
-            assert!(texts.contains(&format!("\"{}\": \"", TEXT_BASE + k)), "no text for message {k}");
+            assert!(
+                events.contains(&line),
+                "no event line for message {k}: {line}"
+            );
+            assert!(
+                texts.contains(&format!("\"{}\": \"", TEXT_BASE + k)),
+                "no text for message {k}"
+            );
         }
     }
 }
