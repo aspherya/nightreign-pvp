@@ -208,13 +208,13 @@ Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once i
 
 ## 6. Friend Session runbooks
 
-### FS-UI2 — In-game Battle Royale UI on the player zip, two PCs (≈40 min). **Status: ready (zip of 2026-10-20 01:18 UTC).**
+### FS-UI2 — In-game Battle Royale UI on the player zip, two PCs (≈40 min). **Status: ready (zip of 2026-10-20 01:22 UTC).**
 Tests UI-1 (Number of Players = Solo → Commence → our queue; Stop Searching; the host's Commence once the match is ready) and UI-2 (the
 blinking messages) with two players, and folds in FS-UI1 (Seamless Co-op with our game-data package on **both** PCs). Main open question:
 `[HYPOTHESIS]` at the match-ready Commence the DLL switches Number of Players from one player to two (byte 2 → 1) so the host's start is a
 multiplayer start that takes the joiner along (UI-1 step 3).
-**Zip:** `dist\NightreignPvP.zip`, built with `scripts\package-release.ps1 -MatchPlayers 2` (VERSION.txt: commit e658bda dirty = the UI player
-build changes before their commit, nrpvp.dll `0881264E03245444`, gamedata emevd `8B9459487BD2A5A3`, me3 0.11.0). Contains `nrpvp_launcher.exe`,
+**Zip:** `dist\NightreignPvP.zip`, built with `scripts\package-release.ps1 -MatchPlayers 2` (VERSION.txt: commit 79f0586 clean,
+nrpvp.dll `0881264E03245444`, gamedata emevd `8B9459487BD2A5A3`, me3 0.11.0). Contains `nrpvp_launcher.exe`,
 `HOW TO INSTALL.txt`, `NightreignPvP\` with nrpvp.dll, nrpvp.toml (`matchmaking = true`, `mm_max_players = mm_min_players = 2`), VERSION.txt,
 `gamedata\` (event\m10_00_00_00.emevd.dcx + 15 × msg\<lang>\menu_dlc01.msgbnd.dcx) and me3. If the build is rebuilt from a commit, use that zip
 and its VERSION line instead; both players need the same zip.
