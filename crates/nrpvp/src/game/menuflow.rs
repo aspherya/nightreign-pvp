@@ -41,13 +41,20 @@ const CAT_MENUTEXT_DLC: u32 = 504;
 pub(crate) const LABEL_SOLO: u32 = 99_100_100;
 pub(crate) const LABEL_DUO: u32 = 99_100_101;
 pub(crate) const LABEL_TRIO: u32 = 99_100_102;
+/// "Stop Searching": the Commence button while our queue is searching.
+pub(crate) const LABEL_STOP: u32 = 99_100_103;
+/// The Commence button's labels (`0x9EF3F0`): 130300 / 130302 "Commence Expedition", 130304 "Commence Solo Expedition", 130305
+/// "Commence Two-Player Expedition" (130301 / 130303 "Cancel" belong to the game's own standby and are left alone).
+pub(crate) const COMMENCE_LABELS: [u32; 4] = [130_300, 130_302, 130_304, 130_305];
 
-/// The id the Number of Players list should ask for instead of the game's (pure; unit tested).
-pub(crate) fn label_swap(id: u32) -> Option<u32> {
+/// The id the menu should ask for instead of the game's (pure; unit tested): our Solo / Duo / Trio for Number of Players, and "Stop
+/// Searching" for the Commence button while the queue is searching.
+pub(crate) fn label_swap(id: u32, phase: u8) -> Option<u32> {
     match id {
         130_409 => Some(LABEL_SOLO),
         130_417 => Some(LABEL_DUO),
         130_408 => Some(LABEL_TRIO),
+        _ if phase == PHASE_SEARCHING && COMMENCE_LABELS.contains(&id) => Some(LABEL_STOP),
         _ => None,
     }
 }
@@ -107,7 +114,7 @@ pub(crate) fn decide(players: u8, phase: u8, mm_on: bool) -> Decision {
 
 pub(crate) fn texts() -> [String; N_TEXTS] {
     [
-        "Battle Royale: searching for players (Solo).\nYou will be told when the match is found.\nPress Commence Expedition again to stop searching.".to_string(),
+        "Battle Royale: searching for players (Solo).\nYou will be told when the match is found.\nTo stop, press Stop Searching.".to_string(),
         "Battle Royale: stopped searching for players.".to_string(),
         "Duo and Trio Battle Royale are coming soon.\nChoose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale matchmaking is turned off (matchmaking = false).".to_string(),
@@ -161,7 +168,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         }
         let rip = (*ctx).Rip as usize;
         if rip != 0 && rip == LABEL_ADDR.load(Ordering::Relaxed) {
-            if let Some(ours) = label_swap((*ctx).Rdx as u32) {
+            if let Some(ours) = label_swap((*ctx).Rdx as u32, crate::mm::phase()) {
                 (*ctx).Rdx = u64::from(ours);
                 LABEL_SWAPS.fetch_add(1, Ordering::Relaxed);
             }
@@ -268,7 +275,7 @@ fn run(base: usize) {
         // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
         if labels_ok && !labels_armed && resolve_tick {
             if let Some(f) = super::c1proto::fmg_for(base, CAT_MENUTEXT_DLC) {
-                if offset_slot(f, LABEL_SOLO).is_some() && offset_slot(f, LABEL_TRIO).is_some() {
+                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP].iter().all(|id| offset_slot(f, *id).is_some()) {
                     LABEL_ADDR.store(base + RVA_MENUTEXT_GETTER, Ordering::Relaxed);
                     crate::hwbp::set(crate::hwbp::SLOT_LABELS, base + RVA_MENUTEXT_GETTER);
                     labels_armed = true;
@@ -338,11 +345,23 @@ mod tests {
 
     #[test]
     fn labels_swap_only_the_three_number_of_players_ids() {
-        assert_eq!(label_swap(130_409), Some(LABEL_SOLO));
-        assert_eq!(label_swap(130_417), Some(LABEL_DUO));
-        assert_eq!(label_swap(130_408), Some(LABEL_TRIO));
-        assert_eq!(label_swap(130_200), None);
-        assert_eq!(label_swap(130_407), None);
+        for ph in [PHASE_IDLE, PHASE_SEARCHING, PHASE_MATCHED] {
+            assert_eq!(label_swap(130_409, ph), Some(LABEL_SOLO));
+            assert_eq!(label_swap(130_417, ph), Some(LABEL_DUO));
+            assert_eq!(label_swap(130_408, ph), Some(LABEL_TRIO));
+            assert_eq!(label_swap(130_200, ph), None);
+            assert_eq!(label_swap(130_407, ph), None);
+        }
+    }
+
+    #[test]
+    fn commence_reads_stop_searching_only_while_searching() {
+        for id in COMMENCE_LABELS {
+            assert_eq!(label_swap(id, PHASE_SEARCHING), Some(LABEL_STOP));
+            assert_eq!(label_swap(id, PHASE_IDLE), None);
+            assert_eq!(label_swap(id, PHASE_MATCHED), None);
+        }
+        assert_eq!(label_swap(130_301, PHASE_SEARCHING), None);
     }
 
     #[test]
