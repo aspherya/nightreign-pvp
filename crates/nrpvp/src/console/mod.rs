@@ -296,7 +296,7 @@ fn status_text(s: &Snapshot) -> String {
     let pvp = match s.pvpve {
         PvpveState::Off => "off".to_string(),
         PvpveState::On => format!(
-            "on ({} rivals as team {}, {} writes)",
+            "on (scheme {}, rivals marked {}, {} writes)",
             s.pvpve_scheme, s.pvpve_team, s.pvpve_writes
         ),
         PvpveState::Paused => "paused".to_string(),

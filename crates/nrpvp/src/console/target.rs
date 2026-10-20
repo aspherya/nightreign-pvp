@@ -17,6 +17,20 @@ pub(crate) enum Target {
     Slot(usize),
 }
 
+impl Target {
+    /// How the user typed it (`p2`, `s0`, `rivals`).
+    pub(crate) fn label(self) -> String {
+        match self {
+            Target::Me => "me".into(),
+            Target::All => "all".into(),
+            Target::Allies => "allies".into(),
+            Target::Rivals => "rivals".into(),
+            Target::Session(n) => format!("p{n}"),
+            Target::Slot(i) => format!("s{i}"),
+        }
+    }
+}
+
 pub(crate) const TARGET_HELP: &str = "me | all | allies | rivals | p1..p6 | s0..s5";
 
 pub(crate) fn parse_target(t: Option<&str>) -> Result<Target, String> {
@@ -70,7 +84,7 @@ pub(crate) fn pick(t: Target, rows: &[PlayerRow]) -> Result<Vec<&PlayerRow>, Str
         } else {
             "no player matches"
         };
-        return Err(format!("{t:?}: {why}"));
+        return Err(format!("{}: {why}", t.label()));
     }
     Ok(sel)
 }
