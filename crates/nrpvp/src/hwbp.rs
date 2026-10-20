@@ -1,5 +1,5 @@
 //! One owner for the four hardware debug registers (DR0..DR3) of every thread, so several features can hold an execute breakpoint at
-//! the same time (MM-3f quiet invite: slots 0 and 1; UI-1 Commence handler: slot 2). Each feature keeps its own vectored exception
+//! the same time (MM-3f quiet invite: slots 0 and 1; UI-1 Commence handler: slot 2; UI-1 Number of Players labels: slot 3). Each feature keeps its own vectored exception
 //! handler that matches only its own addresses and returns CONTINUE_SEARCH for anything else; this module only decides what the debug
 //! registers hold.
 //!
@@ -83,7 +83,7 @@ fn run() {
     let mut scratch: Vec<u32> = Vec::with_capacity(2048);
     let mut last: Option<([u64; TARGETS], u8)> = None;
     let mut next_apply = Instant::now();
-    tracing::info!("hwbp: arming thread started (slots: 0/1 quiet invite, 2 Commence)");
+    tracing::info!("hwbp: arming thread started (slots: 0/1 quiet invite, 2 Commence, 3 labels)");
     loop {
         std::thread::sleep(TICK);
         let snap: [usize; TARGETS] = std::array::from_fn(|i| SLOTS[i].load(Ordering::Relaxed));

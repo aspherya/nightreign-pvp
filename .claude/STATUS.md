@@ -55,18 +55,19 @@ sudden death, winner's choice, menu entry, queues. See `PROJECT_PLAN.md` §2 and
   Invite Members", "everyone is here"...): our events appended to the Roundtable event script + flags 10007200+k set by the DLL.
 - **Game-data package** `dist\gamedata` (texts in all 15 languages + the Roundtable event script), built from `gamedata\*.json` by
   `scripts\build-gamedata.ps1` (needs the unpack and Python). One launch profile: `.\scripts\launch.ps1` loads it.
-- **Not in the player zip yet:** `br_menu` is forced off in the player build and the zip/launcher do not carry `dist\gamedata`.
-- **Next building work, in order:** (1) player zip with `br_menu` on + the package (launcher loads it) and a friend-session runbook
-  (Solo search on both → match found → host Invite Members → everyone here → host Commence; watch the messages; FS-UI1 folds in);
-  (2) MM-3g (no Invite Members click); (3) MM-6 Duo/Trio. Later polish: live count inside the searching box / the game's real
+- **In the player zip since 2026-10-20 (UI-1 step 5):** `br_menu` is on with `matchmaking = true`; the zip carries
+  `NightreignPvP\gamedata` and the launcher loads it as `[[packages]]`. `dist\NightreignPvP.zip` rebuilt with `-MatchPlayers 2`
+  (nrpvp.dll 0881264E03245444; **not** installed in Leonardo's game folder by the agent). Not run in game yet.
+- **Next:** **FS-UI2** (TESTING.md §6, both PCs on the new zip; FS-UI1 folded in; checks the match-ready Commence `[HYPOTHESIS]`).
+  Then (2) MM-3g (no Invite Members click); (3) MM-6 Duo/Trio. Later polish: live count inside the searching box / the game's real
   matchmaking screen (UI-1 C3).
 - Known: the game crashes on quit (0xC0000374) on every run since 2026-10-10; pre-existing, separate issue.
 UI-0 is DONE (2026-10-19, `research/UI-0-ingame-ui.md` §10). Modding tools live in `Z:\Tools\`,
 the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`. Launch: `.\scripts\launch.ps1` (default profile = SC + DLL + our game-data package `dist\gamedata`, built by `scripts\build-gamedata.ps1`; the UI-0 test profiles were removed). Two-player check of our game
-files with SC: FS-UI1 (TESTING.md §6), add it to the next friend session.
+files with SC: folded into FS-UI2 (TESTING.md §6).
 
-### Task E (next): FS-MM4, two PCs on the player zip
-Zip: `dist\NightreignPvP.zip` (MM-4 with the pre-release 2-player flag `package-release.ps1 -MatchPlayers 2`, nrpvp.dll 86A7396A604E94FD, also installed in Leonardo's game folder; build with `-MatchPlayers 6` for the final game). Both: Insert → Solo Battle
+### Task E: FS-MM4, two PCs on the player zip (superseded by FS-UI2, which runs the same match on the new zip from the table)
+Old zip: `dist\NightreignPvP.zip` (MM-4 with the pre-release 2-player flag `package-release.ps1 -MatchPlayers 2`, nrpvp.dll 86A7396A604E94FD, also installed in Leonardo's game folder; build with `-MatchPlayers 6` for the final game). Both: Insert → Solo Battle
 Royale. Host: Matchmaking Settings > Invite Members when the line asks. Expedition, back to the Roundtable. Also MM-4 solo step 5 (quit to
 title while queued: queue left by itself). Logs: both `<Game>\NightreignPvP\logs`.
 

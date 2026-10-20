@@ -3,6 +3,8 @@
 #   nrpvp_launcher.exe            double-click to play
 #   NightreignPvP\nrpvp.dll       the mod
 #   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4), mm_max_players = -MatchPlayers (default 2 until release); PvP is always on, no dev_mode)
+#   NightreignPvP\gamedata\...    our game-data package (dist\gamedata from scripts\build-gamedata.ps1: Battle Royale texts + Roundtable
+#                                 messages, UI-1/UI-2); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # Does not rebuild nrpvp.dll: it packages dist\nrpvp.dll as it is. It does build the launcher.
@@ -23,6 +25,14 @@ $repo = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $repo 'dist'
 $dll = Join-Path $dist 'nrpvp.dll'
 if (-not (Test-Path -LiteralPath $dll)) { throw 'dist\nrpvp.dll not found. Run scripts\build.ps1 first.' }
+# UI-1/UI-2: the game-data package (our texts in every language + the Roundtable event script). Built by scripts\build-gamedata.ps1
+# (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry.
+$gamedata = Join-Path $dist 'gamedata'
+$gdFiles = @(Get-ChildItem -LiteralPath $gamedata -Recurse -File -ErrorAction SilentlyContinue)
+$gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
+if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 16) {
+    throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx). Run scripts\build-gamedata.ps1 first."
+}
 foreach ($f in 'bin\me3.exe', 'bin\me3-launcher.exe', 'bin\me3_mod_host.dll', 'LICENSE-MIT', 'LICENSE-APACHE') {
     if (-not (Test-Path -LiteralPath (Join-Path $Me3Dir $f))) { throw "me3 file missing: $Me3Dir\$f" }
 }
@@ -43,6 +53,7 @@ New-Item -ItemType Directory -Force $me3 | Out-Null
 
 Copy-Item -LiteralPath $launcher -Destination $stage
 Copy-Item -LiteralPath $dll -Destination $mod
+Copy-Item -LiteralPath $gamedata -Destination (Join-Path $mod 'gamedata') -Recurse
 Copy-Item -LiteralPath (Join-Path $Me3Dir 'bin\me3.exe'), (Join-Path $Me3Dir 'bin\me3-launcher.exe'), (Join-Path $Me3Dir 'bin\me3_mod_host.dll') -Destination $me3
 Copy-Item -LiteralPath (Join-Path $Me3Dir 'LICENSE-MIT'), (Join-Path $Me3Dir 'LICENSE-APACHE') -Destination $me3
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\HOW TO INSTALL.txt') -Destination $stage
@@ -85,7 +96,8 @@ if ($MatchmakingTest) {
     $toml = @(
         '# Nightreign PvP settings. You do not need to change anything here.',
         "team_size = $TeamSize",
-        '# MM-4: Solo Battle Royale matchmaking (the panel opens with the Insert key). Set to false to turn it off.',
+        '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence (the Insert panel still works too).',
+        '# Set to false to turn it off.',
         'matchmaking = true',
         '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
         "mm_max_players = $MatchPlayers",
@@ -97,7 +109,8 @@ if ($MatchmakingTest) {
 
 $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
 $dirty = if (& git -C $repo status --porcelain 2>$null) { 'dirty' } else { 'clean' }
-$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), me3 0.11.0"
+$gdHash = (Get-FileHash (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx') -Algorithm SHA256).Hash.Substring(0,16)
+$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, me3 0.11.0"
 [IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
 
 $zipName = if ($MatchmakingTest) { 'NightreignPvP-mmtest.zip' } else { 'NightreignPvP.zip' }

@@ -205,7 +205,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
     EXCEPTION_CONTINUE_EXECUTION
 }
 
-/// Start the thread (`br_menu = true`, developer mode with `mm_queue` for now).
+/// Start the thread (`br_menu = true` with the queue: developer mode with `mm_queue`, or the player build with `matchmaking`).
 pub(crate) fn spawn(base: usize) {
     let r = std::thread::Builder::new().name("nrpvp-brmenu".into()).spawn(move || {
         if std::panic::catch_unwind(|| run(base)).is_err() {

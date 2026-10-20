@@ -83,7 +83,8 @@ pub(crate) fn run() {
                 game::flags::spawn_msg_test(m.base);
             }
             // UI-1 option 1: Commence Expedition drives the Battle Royale queue (shared hardware breakpoint, no patching).
-            if cfg.dev_mode && cfg.br_menu && cfg.mm_queue {
+            // The player build turns it on with matchmaking (config.rs).
+            if cfg.br_menu && cfg.mm_queue {
                 game::menuflow::spawn(m.base);
             }
             // UI-1 C1: dev-only prototype of the Commence dialog with live text.

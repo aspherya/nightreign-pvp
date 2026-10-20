@@ -16,6 +16,8 @@ INSTALL (one time)
       nrpvp_launcher.exe
       NightreignPvP          (the whole folder)
 
+   Already have an older version? Choose "Replace the files" when Windows asks.
+
 That's it.
 
 
@@ -33,26 +35,31 @@ PLAY
 
 FIND PLAYERS (SOLO BATTLE ROYALE)
 ---------------------------------
-You do not need to invite anyone first. The mod can find other players for you.
+You do not need to invite anyone first. The mod finds other players for you.
+Everything happens in the game's own menus; messages appear on screen.
 
-1. Go to the Roundtable. Press the Insert key: a small "Battle Royale matchmaking"
-   panel opens. (Insert closes it again.)
-2. Everybody who wants to play presses "Solo Battle Royale" in that panel.
-   It says "Searching for players... 1/2" while it looks. This test version
-   starts a match as soon as 2 players are found (the full game always has
-   6 players per match). Everyone needs the same version of the mod to find each other.
-   "Leave" stops the search. Leaving the Roundtable also stops it.
-3. When it says "Match found!", one player is the host. Only the host does anything:
-   the host's panel says "Press Matchmaking Settings > Invite Members to open your
-   lobby". Open that menu once and press Invite Members. No Steam window will open,
-   and you do not need to invite anyone by hand. Everybody else does nothing: they
-   are brought into the host's game by themselves (their panel says "Joining the
-   host...").
-4. When the panel says "Everyone is here - host: start the expedition", the host
-   starts the expedition at the table, as usual. If someone does not show up, the
-   host's panel says so after a minute and the host can start without them.
-5. In the expedition the other players are your rivals. After the expedition, back at
-   the Roundtable, press "Solo Battle Royale" again for another match.
+1. In the Roundtable, go to the table where you start an expedition.
+2. Open Matchmaking Settings and set Number of Players to "Solo".
+   (Duo and Trio are coming soon.)
+3. Press Commence. A box says "Battle Royale: searching for players (Solo)".
+   While it searches, a blinking message shows "searching for players (1 of 2)".
+   This test version starts a match as soon as 2 players are found (the full game
+   always has 6 players per match). Everyone needs the same version of the mod.
+   To stop, press the same button again: it now reads "Stop Searching".
+   Leaving the Roundtable also stops the search.
+4. When the message says "Match found!", one player is the host. Only the host
+   does something: the host's message says "Open Matchmaking Settings > Invite
+   Members". Open that menu once and press Invite Members. No Steam window opens
+   and you do not need to invite anyone by hand. Everybody else does nothing:
+   they are brought into the host's game by themselves ("Joining the host...").
+5. When the message says "Everyone is here", the host presses Commence and the
+   expedition starts for everyone. If someone does not show up, the host's
+   message says so after a minute and the host can start without them.
+6. In the expedition the other players are your rivals. After the expedition, back at
+   the Roundtable, do steps 1 to 3 again for another match.
+
+(The old way still works too: press Insert in the Roundtable for a small panel with a
+"Solo Battle Royale" button.)
 
 To turn this off, open the file "nrpvp.toml" inside the NightreignPvP folder and
 write this line: matchmaking = false

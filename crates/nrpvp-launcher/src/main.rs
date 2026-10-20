@@ -7,12 +7,14 @@
 //! <Game>\SeamlessCoop\nrsc.dll            (the player already has this)
 //! <Game>\nrpvp_launcher.exe               (this program)
 //! <Game>\NightreignPvP\nrpvp.dll, nrpvp.toml
+//! <Game>\NightreignPvP\gamedata\msg\..., event\...   (our game-data package: texts + Roundtable events, UI-1/UI-2)
 //! <Game>\NightreignPvP\me3\me3.exe, me3-launcher.exe, me3_mod_host.dll   (bundled me3, MIT/Apache-2.0)
 //! ```
 //!
 //! It writes an me3 profile with absolute paths and runs the bundled me3 with `--exe`, so nothing has
 //! to be installed and no Steam library lookup is needed. Profile shape verified in T-004 (TECHNICAL_NOTES §3):
-//! nrsc.dll `load_early = true` with no initializer, nrpvp.dll `load_after` it.
+//! nrsc.dll `load_early = true` with no initializer, nrpvp.dll `load_after` it. The game-data package is a `[[packages]]` entry,
+//! the same shape as profiles/nrpvp-sc.me3.toml (UI-1/UI-2 solo runs).
 #![windows_subsystem = "windows"]
 
 use std::fs;
@@ -23,6 +25,8 @@ use std::time::Duration;
 
 const TITLE: &str = "Nightreign PvP";
 const MOD_DIR: &str = "NightreignPvP";
+/// The game-data package inside [`MOD_DIR`] (built by scripts\build-gamedata.ps1, shipped by scripts\package-release.ps1).
+const GAMEDATA_DIR: &str = "gamedata";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// me3 keeps running while the game runs; if it exits with an error inside this window, tell the player.
 const EARLY_EXIT_WINDOW: Duration = Duration::from_secs(8);
@@ -59,15 +63,17 @@ fn toml_path(p: &Path) -> String {
 }
 
 /// The me3 profile text. Kept pure for the unit test.
-fn profile_text(nrsc: &Path, nrpvp: &Path) -> String {
+fn profile_text(nrsc: &Path, nrpvp: &Path, gamedata: &Path) -> String {
     format!(
         "# Written by nrpvp_launcher.exe on every start. Do not edit.\n\
          profileVersion = \"v1\"\n\n\
          [[supports]]\ngame = \"nightreign\"\n\n\
          [[natives]]\npath = {}\nload_early = true\n\n\
-         [[natives]]\npath = {}\nload_after = [{{ id = \"nrsc.dll\", optional = false }}]\n",
+         [[natives]]\npath = {}\nload_after = [{{ id = \"nrsc.dll\", optional = false }}]\n\n\
+         [[packages]]\nid = \"nrpvp-gamedata\"\npath = {}\n",
         toml_path(nrsc),
-        toml_path(nrpvp)
+        toml_path(nrpvp),
+        toml_path(gamedata)
     )
 }
 
@@ -89,6 +95,10 @@ fn check(game: &Path) -> Option<String> {
         (
             game.join(MOD_DIR).join("me3").join("me3.exe"),
             "The NightreignPvP\\me3 folder is missing.\n\nCopy the whole NightreignPvP folder again from the zip.",
+        ),
+        (
+            game.join(MOD_DIR).join(GAMEDATA_DIR).join("event").join("m10_00_00_00.emevd.dcx"),
+            "The NightreignPvP\\gamedata folder is missing or incomplete.\n\nCopy the whole NightreignPvP folder again from the zip.",
         ),
     ];
     need.iter()
@@ -113,6 +123,7 @@ fn run() -> Result<(), String> {
         profile_text(
             &game.join("SeamlessCoop").join("nrsc.dll"),
             &mod_dir.join("nrpvp.dll"),
+            &mod_dir.join(GAMEDATA_DIR),
         ),
     )
     .map_err(|e| {
@@ -174,12 +185,14 @@ mod tests {
         let t = profile_text(
             Path::new(r"S:\Games\ELDEN RING NIGHTREIGN\Game\SeamlessCoop\nrsc.dll"),
             Path::new(r"S:\G\NightreignPvP\nrpvp.dll"),
+            Path::new(r"S:\G\NightreignPvP\gamedata"),
         );
         assert!(t.contains(r"path = 'S:\Games\ELDEN RING NIGHTREIGN\Game\SeamlessCoop\nrsc.dll'"));
         assert!(t.contains("load_early = true"));
         assert!(t.contains(r#"load_after = [{ id = "nrsc.dll", optional = false }]"#));
         // SC must come first.
         assert!(t.find("nrsc.dll'").unwrap() < t.find("nrpvp.dll'").unwrap());
+        assert!(t.contains("[[packages]]\nid = \"nrpvp-gamedata\"\npath = 'S:\\G\\NightreignPvP\\gamedata'\n"));
     }
 
     #[test]
@@ -208,6 +221,10 @@ mod tests {
         fs::write(dir.join(MOD_DIR).join("nrpvp.dll"), b"x").unwrap();
         assert!(check(&dir).unwrap().contains("me3 folder is missing"));
         fs::write(dir.join(MOD_DIR).join("me3").join("me3.exe"), b"x").unwrap();
+        assert!(check(&dir).unwrap().contains("gamedata folder is missing"));
+        let event = dir.join(MOD_DIR).join(GAMEDATA_DIR).join("event");
+        fs::create_dir_all(&event).unwrap();
+        fs::write(event.join("m10_00_00_00.emevd.dcx"), b"x").unwrap();
         assert!(check(&dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }

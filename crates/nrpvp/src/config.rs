@@ -187,7 +187,7 @@ ui_menu_trace = false
 # mm_quiet_invite and mm_lobby_trace off).
 ui_c1_proto = false
 
-# UI-1 option 1 (dev mode + mm_queue for now; the player build forces it off until it is tested): Battle Royale from the stock
+# UI-1 option 1 (dev mode: needs mm_queue = true; the player build ignores this line and turns it on with matchmaking = true): Battle Royale from the stock
 # expedition menu. Commence Expedition with Number of Players = one player starts the Solo queue and the game's own dialog says
 # so; Commence again stops searching; once the match is ready Commence starts the expedition as normal. Duo/Trio say \"coming
 # soon\". Hardware breakpoint (shared slot 2, works next to mm_quiet_invite), no code patched. Logs \"br_menu:\".
@@ -318,8 +318,8 @@ pub(crate) struct Config {
     pub ui_menu_trace: bool,
     /// UI-1 C1 prototype (developer mode only; forced off in the player build; takes the debug registers).
     pub ui_c1_proto: bool,
-    /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; forced off in the player build
-    /// for now and while a dev tool that owns all debug registers is on).
+    /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; the player build turns it on with `matchmaking`;
+    /// off while a dev tool that owns all debug registers is on).
     pub br_menu: bool,
     /// UI-2 spike: set the test message flags in turn (developer mode only; forced off in the player build).
     pub ui_msg_test: bool,
@@ -619,7 +619,9 @@ fn enforce_player_mode(
     cfg.ui_flag_watch = false;
     cfg.ui_menu_trace = false;
     cfg.ui_c1_proto = false;
-    cfg.br_menu = false;
+    // UI-1 option 1: Battle Royale from the stock expedition menu comes with matchmaking (it needs the queue; the debug registers are
+    // shared with the quiet invite through crate::hwbp: slots 0/1 quiet invite, 2 Commence, 3 labels). UI-2 `ui_messages` stays as written.
+    cfg.br_menu = cfg.matchmaking;
     cfg.ui_msg_test = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
@@ -1098,13 +1100,15 @@ mod tests {
 
     /// What a player-mode parse of an empty file gives.
     fn player_default() -> Config {
-        // MM-4: matchmaking = true (the default) turns on the queue, the join step with invite+link and the quiet invite.
+        // MM-4: matchmaking = true (the default) turns on the queue, the join step with invite+link and the quiet invite; UI-1: and
+        // Battle Royale from the expedition menu.
         Config {
             pvpve: true,
             mm_queue: true,
             mm_join: true,
             mm_join_auto: "invite+link".to_string(),
             mm_quiet_invite: true,
+            br_menu: true,
             ..Config::default()
         }
     }
@@ -1406,8 +1410,15 @@ hotkey_mm_duo = \"banana\"
         assert!(!cfg.br_menu);
         let (cfg, _) = parse_dev("mm_queue = true\nmm_join = true\nmm_quiet_invite = true\nbr_menu = true\n").expect("ok");
         assert!(cfg.br_menu && cfg.mm_quiet_invite);
-        let (cfg, _) = parse("br_menu = true\n").expect("ok");
-        assert!(!cfg.br_menu);
+        // The player build: on with matchmaking (whatever the file says), next to the quiet invite; off without matchmaking.
+        let (cfg, _) = parse("br_menu = false\n").expect("ok");
+        assert!(cfg.br_menu && cfg.mm_queue && cfg.mm_quiet_invite && cfg.ui_messages);
+        assert!(!cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_c1_proto && !cfg.ui_msg_test && !cfg.mm_lobby_trace);
+        let (cfg, _) = parse("ui_text_trace = true\nui_menu_trace = true\nui_c1_proto = true\nui_msg_test = true\nmm_lobby_trace = true\n").expect("ok");
+        assert!(cfg.br_menu && cfg.mm_quiet_invite);
+        assert!(!cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_c1_proto && !cfg.ui_msg_test && !cfg.mm_lobby_trace);
+        let (cfg, _) = parse("matchmaking = false\nbr_menu = true\n").expect("ok");
+        assert!(!cfg.br_menu && !cfg.mm_queue);
     }
 
     #[test]

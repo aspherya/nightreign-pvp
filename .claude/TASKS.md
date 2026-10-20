@@ -768,7 +768,7 @@ EMEVD Generic Dialog with EventTextForMap ids is the status-text route. Dev tool
 `experiments/UI-0/map_text.py`, profiles `nrpvp-ui0a/ui0b`. Two-player check: FS-UI1 (TESTING.md §6).
 
 ### UI-1 — Battle Royale inside the stock expedition menu (Leonardo's flow)
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo), then FS | Status: investigating A/B/C | Depends: UI-0 | Replaces: MM-5
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo), then FS | Status: solo PASS (dev); in the player zip since 2026-10-20, FS-UI2 next | Depends: UI-0 | Replaces: MM-5
 **Flow (Leonardo, 2026-10-19, "the best flow possible, we are not giving it up"):** spawn at the Roundtable → press the table → the stock boss
 list → **Matchmaking Settings → Number of Players shows Solo / Duo / Trio** → back, pick the **first boss** (only that one for now) →
 **Commence Expedition** → the game searches for players (**our** queue) → when the match is full the expedition starts by itself. Cancel =
@@ -879,10 +879,22 @@ Fallback if C is blocked: our own text (UI-2) with the same flow; talk to Leonar
    **Runbook (Leonardo, solo, ~3 min):** `.\scripts\launch.ps1 -Profile br`. 1. Table → Matchmaking Settings → Number of Players: the
    three options should read **Solo / Duo / Trio** (also check how the chosen value shows on the settings page). 2. Pick Solo → back →
    Commence: the searching box; Commence again: stopped. 3. Quit; tell Claude what the list showed.
-5..n. Duo/Trio queues (MM-6), player build switch-on (launcher/zip carry the package and the profile entry), then UI-2 messages.
+5. **Player build switch-on (built 2026-10-20):** `config.rs` `enforce_player_mode`: `br_menu = matchmaking` (was forced off); the dev
+   tools (`ui_text_trace`, `ui_menu_trace`, `ui_c1_proto`, `ui_msg_test`, `mm_lobby_trace`, `ui_flag_watch`) stay forced off, so all four
+   hardware slots go through `hwbp.rs` (0/1 quiet invite, 2 Commence, 3 labels; the quiet invite's VEH and `menuflow`'s match only their own
+   addresses). `startup.rs` starts `menuflow` on `br_menu && mm_queue` (no dev check). `ui_messages` stays as written (default true).
+   `nrpvp_launcher` writes a third profile entry `[[packages]] id = "nrpvp-gamedata" path = <Game>\NightreignPvP\gamedata` (same shape
+   as `profiles/nrpvp-sc.me3.toml`) and refuses to start without `gamedata\event\m10_00_00_00.emevd.dcx`. `package-release.ps1` copies
+   `dist\gamedata` into `NightreignPvP\gamedata` (checks 1 emevd + 15 languages; VERSION.txt names the emevd hash); HOW TO INSTALL.txt
+   describes the table flow (Solo → Commence → messages → host Invite Members → everyone here → host Commence; Insert panel kept as
+   the old way). 452 + 3 + 26 tests, `clippy --workspace --all-targets -D warnings` clean. Zip rebuilt with `-MatchPlayers 2`
+   (2026-10-20 01:18 UTC, nrpvp.dll `0881264E03245444`; contents checked: 16 game-data files identical to `dist\gamedata`, toml
+   `matchmaking = true`, min = max = 2). Two-player check: **FS-UI2** (TESTING.md §6; FS-UI1 folds in), including the match-ready
+   Commence `[HYPOTHESIS]`. Not run in game yet.
+6..n. Duo/Trio queues (MM-6).
 
 ### UI-2 — Matchmaking status in the game's own messages
-Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: ready after UI-1 | Depends: UI-1 (flag writes)
+Owner: OPUS (spec) → SONNET/implementer → HUMAN (solo) | Status: solo PASS (dev); in the player zip since 2026-10-20, FS-UI2 next | Depends: UI-1 (flag writes)
 Goal: "Searching 3/6", "Match found", the host prompt, "Joining the host", "Everyone is here", "Left the queue" without ImGui.
 1. **Spike first: which instruction draws in the Roundtable while the player walks around**, and how we author EMEVD. Options in
    order: (a) an EMEVD event in `m10_00_00_00.emevd.dcx` that waits on our flag and runs Display Status Message / Display Blinking Message /
@@ -933,8 +945,11 @@ quit to title → queue left ("you left the Roundtable"; the world unloaded befo
    (possibly dropped while the previous blinking text was showing). **Fix (2026-10-20):** gap 6 s, ongoing-state messages (searching,
    N of M, host Invite Members, waiting, everyone is here, not everyone arrived) repeat every 15 s while current, the worker posts `None`
    to end a repeat, and every message is read back after 1 s (log `shown` / `NOT picked up ... cleared`). 452 tests, clippy clean;
-   `dist
-rpvp.dll` rebuilt. Solo check: search ~40 s → the search message every ~15 s; Stop Searching → "stopped" with a `shown` line.
+   `dist\nrpvp.dll` rebuilt. Solo check: search ~40 s → the search message every ~15 s; Stop Searching → "stopped" with a `shown` line.
+**Player build (2026-10-20):** the zip now carries the package (`NightreignPvP\gamedata`, loaded by the launcher as `[[packages]]`) and
+`br_menu` is on with `matchmaking` (UI-1 step 5); `ui_messages` was already on there. The match messages (match found, host Invite Members,
+joining, everyone is here) are checked in **FS-UI2** (TESTING.md §6). Step 4 (remove the Insert panel and badge from the player build) is
+not done: the panel stays as the fallback until FS-UI2 passes.
 
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3
