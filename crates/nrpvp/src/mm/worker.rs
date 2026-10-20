@@ -405,9 +405,8 @@ impl Worker {
         // UI-2: one on-screen message per change of the queue view.
         let view = self.machine.queue_view();
         if self.last_view.as_ref() != Some(&view) {
-            if let Some(k) = super::ui_msg::for_state(self.last_view.as_ref(), &view) {
-                super::ui_msg::post(k);
-            }
+            // `None` too: it ends the repeat of the previous message (e.g. the match started, or the queue went idle).
+            super::ui_msg::post(super::ui_msg::for_state(self.last_view.as_ref(), &view));
             self.last_view = Some(view);
         }
         let mut st = self.machine.status();

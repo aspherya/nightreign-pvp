@@ -928,6 +928,13 @@ stopped searching." Quit; tell Claude which messages appeared. The match message
 message 0 "searching for players...", 3 s later message 20 "(1 of 2)"; Stop Searching → message 1 "stopped searching"; again search;
 quit to title → queue left ("you left the Roundtable"; the world unloaded before that message could show). hwbp slots 2+3 on 131 threads,
 0 failed. Not yet seen: the match messages (two players).
+   Leonardo asked whether messages stopped showing: **yes** — by design each message showed once per change, so nothing was on screen for
+   28 s mid-search, and the first "(1 of 2)" (3 s after "searching...") and "stopped searching" left no flag change at 50 ms sampling
+   (possibly dropped while the previous blinking text was showing). **Fix (2026-10-20):** gap 6 s, ongoing-state messages (searching,
+   N of M, host Invite Members, waiting, everyone is here, not everyone arrived) repeat every 15 s while current, the worker posts `None`
+   to end a repeat, and every message is read back after 1 s (log `shown` / `NOT picked up ... cleared`). 452 tests, clippy clean;
+   `dist
+rpvp.dll` rebuilt. Solo check: search ~40 s → the search message every ~15 s; Stop Searching → "stopped" with a `shown` line.
 
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3

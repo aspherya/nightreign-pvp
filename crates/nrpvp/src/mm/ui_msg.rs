@@ -3,9 +3,14 @@
 //! Each message `k` is one event appended to the Roundtable's event script (`gamedata/emevd-events.json`): it waits for flag
 //! [`FLAG_BASE`]` + k`, shows Display Blinking Message (2007:4, the kind Leonardo could read in the UI-2 spike) with text
 //! [`TEXT_BASE`]` + k` (EventTextForMap_dlc01, `gamedata/fmg-entries.json`), clears the flag and restarts. This module maps the queue
-//! state to `k` ([`for_state`], pure) and a thread sets the flag through `game::flags` (our group 10007 only), at most one message
-//! every [`MIN_GAP`]; a newer message replaces one still waiting. The tables here and the two JSON files are checked against each
-//! other by a unit test. Log lines start with `ui_msg:`.
+//! state to `k` ([`for_state`], pure) and a thread sets the flag through `game::flags` (our group 10007 only):
+//! - at most one message every [`MIN_GAP`] (about one blinking text; the game may drop a new one while one is showing, UI-2 solo run);
+//! - a message for an ongoing state ([`repeats`]: searching, waiting, everyone is here...) is shown again every [`REPEAT_EVERY`] while
+//!   it is still the current one, so the status never disappears for long; the worker posts `None` when no message applies;
+//! - [`READBACK_AFTER`] after setting a flag it is read back: OFF = our event ran; still ON = no event picked it up (e.g. outside the
+//!   Roundtable, where our events do not exist): logged and cleared so it cannot show up stale later.
+//!
+//! The tables here and the two JSON files are checked against each other by a unit test. Log lines start with `ui_msg:`.
 
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
@@ -14,7 +19,9 @@ use std::time::{Duration, Instant};
 pub(crate) const FLAG_BASE: u32 = 10_007_200;
 /// Text (EventTextForMap_dlc01) and event id of message 0.
 pub(crate) const TEXT_BASE: u32 = 99_100_500;
-const MIN_GAP: Duration = Duration::from_secs(3);
+const MIN_GAP: Duration = Duration::from_secs(6);
+const REPEAT_EVERY: Duration = Duration::from_secs(15);
+const READBACK_AFTER: Duration = Duration::from_secs(1);
 
 pub(crate) const SEARCHING: u32 = 0;
 pub(crate) const STOPPED: u32 = 1;
@@ -103,28 +110,74 @@ pub(crate) fn for_state(prev: Option<&QueueView>, cur: &QueueView) -> Option<u32
     }
 }
 
+/// Whether message `k` describes an ongoing state and is shown again every [`REPEAT_EVERY`] while current (pure).
+pub(crate) fn repeats(k: u32) -> bool {
+    matches!(k, SEARCHING | HOST_INVITE | WAITING_OTHERS | WAITING_HOST | ALL_HERE_HOST | ALL_HERE_JOINER | SOME_MISSING)
+        || (COUNT_FIRST..COUNT).contains(&k)
+}
+
+/// The sender's state between ticks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Sched {
+    /// The current message (the worker's latest), if any.
+    pub current: Option<u32>,
+    /// A message waiting to be shown (newest wins).
+    pub pending: Option<u32>,
+    /// When the last message was shown.
+    pub last_sent: Option<Instant>,
+}
+
+/// What to show now, if anything (pure): a pending message once [`MIN_GAP`] has passed, else the current message again when it
+/// [`repeats`] and [`REPEAT_EVERY`] has passed.
+pub(crate) fn next_to_show(s: &Sched, now: Instant) -> Option<u32> {
+    let since = s.last_sent.map(|t| now.saturating_duration_since(t));
+    if since.is_some_and(|d| d < MIN_GAP) {
+        return None;
+    }
+    if let Some(k) = s.pending {
+        return Some(k);
+    }
+    match (s.current, since) {
+        (Some(k), Some(d)) if repeats(k) && d >= REPEAT_EVERY => Some(k),
+        _ => None,
+    }
+}
+
 struct Hub {
-    pending: Mutex<Option<u32>>,
+    /// `Some(update)` = the worker posted since the last tick; the update is the new current message or `None`.
+    posted: Mutex<Option<Option<u32>>>,
 }
 
 static HUB: OnceLock<Hub> = OnceLock::new();
 
-/// Queue message `k` (replaces one not yet shown). No-op until [`spawn`] ran.
-pub(crate) fn post(k: u32) {
+/// Worker: the message for the new queue state (`None` = no message; stops any repeat). No-op until [`spawn`] ran.
+pub(crate) fn post(k: Option<u32>) {
     if let Some(h) = HUB.get() {
-        *h.pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(k);
+        *h.posted.lock().unwrap_or_else(PoisonError::into_inner) = Some(k);
     }
 }
 
 /// Start the sender (`ui_messages`; needs the game-data package, default launch profile / player zip). `base`: `nightreign.exe`.
 pub(crate) fn spawn(base: usize) {
-    let hub = HUB.get_or_init(|| Hub { pending: Mutex::new(None) });
+    let hub = HUB.get_or_init(|| Hub { posted: Mutex::new(None) });
     let r = std::thread::Builder::new().name("nrpvp-uimsg".into()).spawn(move || {
-        tracing::info!("ui_msg: sender started (flags {FLAG_BASE}..{}, texts {TEXT_BASE}..)", FLAG_BASE + COUNT - 1);
+        tracing::info!(
+            "ui_msg: sender started (flags {FLAG_BASE}..{}, texts {TEXT_BASE}.., gap {} s, repeat {} s)",
+            FLAG_BASE + COUNT - 1,
+            MIN_GAP.as_secs(),
+            REPEAT_EVERY.as_secs()
+        );
         let mut cleared = false;
-        let mut last_sent: Option<Instant> = None;
+        let mut sched = Sched::default();
+        // (message, flag set at) waiting for its read-back.
+        let mut check: Option<(u32, Instant)> = None;
         loop {
             std::thread::sleep(Duration::from_millis(200));
+            let now = Instant::now();
+            if let Some(update) = hub.posted.lock().unwrap_or_else(PoisonError::into_inner).take() {
+                sched.current = update;
+                sched.pending = update;
+            }
             // Clear our message flags once the flag manager is live (a crash could leave one ON in memory or the save).
             if !cleared {
                 if crate::game::flags::get(base, FLAG_BASE).is_err() {
@@ -136,20 +189,44 @@ pub(crate) fn spawn(base: usize) {
                 cleared = true;
                 tracing::info!("ui_msg: message flags cleared");
             }
-            if last_sent.is_some_and(|t| t.elapsed() < MIN_GAP) {
-                continue;
-            }
-            let Some(k) = hub.pending.lock().unwrap_or_else(PoisonError::into_inner).take() else { continue };
-            match crate::game::flags::set(base, FLAG_BASE + k, true) {
-                Ok(_) => tracing::info!("ui_msg: message {k} (flag {}, text {})", FLAG_BASE + k, TEXT_BASE + k),
-                Err(e) => {
-                    tracing::info!("ui_msg: message {k} not shown: {e}");
-                    // The world may be loading: the flag manager comes back; try again later.
-                    cleared = false;
-                    *hub.pending.lock().unwrap_or_else(PoisonError::into_inner) = Some(k);
+            if let Some((k, at)) = check {
+                if now.saturating_duration_since(at) >= READBACK_AFTER {
+                    check = None;
+                    match crate::game::flags::get(base, FLAG_BASE + k) {
+                        Ok(false) => tracing::info!("ui_msg: message {k} shown (our event cleared flag {})", FLAG_BASE + k),
+                        Ok(true) => {
+                            tracing::info!(
+                                "ui_msg: message {k} NOT picked up within {} s (flag {} still ON; not in the Roundtable?); cleared",
+                                READBACK_AFTER.as_secs(),
+                                FLAG_BASE + k
+                            );
+                            let _ = crate::game::flags::set(base, FLAG_BASE + k, false);
+                        }
+                        Err(e) => tracing::info!("ui_msg: message {k} read-back failed: {e}"),
+                    }
                 }
             }
-            last_sent = Some(Instant::now());
+            let Some(k) = next_to_show(&sched, now) else { continue };
+            let repeat = sched.pending.is_none();
+            match crate::game::flags::set(base, FLAG_BASE + k, true) {
+                Ok(_) => {
+                    tracing::info!(
+                        "ui_msg: message {k}{} (flag {}, text {})",
+                        if repeat { " again" } else { "" },
+                        FLAG_BASE + k,
+                        TEXT_BASE + k
+                    );
+                    sched.pending = None;
+                    sched.last_sent = Some(now);
+                    check = Some((k, now));
+                }
+                Err(e) => {
+                    // The world may be loading: keep the message pending and clear the flags again once the manager is back.
+                    tracing::info!("ui_msg: message {k} not shown: {e}");
+                    cleared = false;
+                    sched.last_sent = Some(now);
+                }
+            }
         }
     });
     if r.is_err() {
@@ -160,6 +237,38 @@ pub(crate) fn spawn(base: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scheduler_keeps_the_gap_and_repeats_ongoing_states() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        // Nothing shown yet: a pending message goes at once.
+        let s = Sched { current: Some(SEARCHING), pending: Some(SEARCHING), last_sent: None };
+        assert_eq!(next_to_show(&s, t0), Some(SEARCHING));
+        // Within the gap nothing goes, even a new pending message.
+        let s = Sched { current: Some(count_msg(1, 2).unwrap()), pending: count_msg(1, 2), last_sent: Some(t0) };
+        assert_eq!(next_to_show(&s, at(3)), None);
+        assert_eq!(next_to_show(&s, at(6)), count_msg(1, 2));
+        // An ongoing message repeats after 15 s; a one-off does not.
+        let s = Sched { current: count_msg(1, 2), pending: None, last_sent: Some(t0) };
+        assert_eq!(next_to_show(&s, at(14)), None);
+        assert_eq!(next_to_show(&s, at(15)), count_msg(1, 2));
+        let s = Sched { current: Some(STOPPED), pending: None, last_sent: Some(t0) };
+        assert_eq!(next_to_show(&s, at(60)), None);
+        // No current message: nothing repeats.
+        let s = Sched { current: None, pending: None, last_sent: Some(t0) };
+        assert_eq!(next_to_show(&s, at(60)), None);
+    }
+
+    #[test]
+    fn ongoing_states_repeat_and_one_offs_do_not() {
+        for k in [SEARCHING, HOST_INVITE, WAITING_OTHERS, WAITING_HOST, ALL_HERE_HOST, ALL_HERE_JOINER, SOME_MISSING, COUNT_FIRST, COUNT - 1] {
+            assert!(repeats(k), "{k}");
+        }
+        for k in [STOPPED, LEFT_ROUNDTABLE, MISSED, MATCH_FOUND, JOINING, LOADING_IN, PROBLEM] {
+            assert!(!repeats(k), "{k}");
+        }
+    }
 
     #[test]
     fn counts_cover_two_to_six_without_overlap() {
