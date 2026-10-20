@@ -893,6 +893,23 @@ Goal: "Searching 3/6", "Match found", the host prompt, "Joining the host", "Ever
 3. DLL: one flag per message (10007100..), set by the matchmaking worker on each status change, rate-limited (one message on screen at a time).
 4. Then remove the Insert panel and the badge from the player build (keep the dev overlay).
 Acceptance (HUMAN, solo): queue from the table; the in-game message shows "Searching for players 1/6"; Leave shows "Left the queue".
+**Spike built (2026-10-19), event-script route** (the direct route, EMEVD's message functions, sits in obfuscated code: the bank-2007
+dispatch near `0x79D3DD` jumps into protected code):
+- `scripts/emevd_add_events.py` appends events to a decompressed EMEVD in place (events, instructions, args appended; event 0's
+  Initialize Event list copied to the end with ours added; params / linked files / strings copied). Argument packing checked against
+  m10's own instructions (3:0, 2003:66, 1000:4, 2000:0, 2007:1) `[VERIFIED: byte compare]`; result re-read by `emevd_dump.py`;
+  WitchyBND DCX round trip byte-identical `[VERIFIED]`.
+- `gamedata/emevd-events.json`: three test events in the Roundtable (`event/m10_00_00_00.emevd.dcx`, pinned 1.03.3 hash): wait flag
+  10007100 / 101 / 102 → Display Generic Dialog / Blinking Message / Status Message (texts 99100200..202 in EventTextForMap_dlc01) →
+  clear the flag → restart. `build-gamedata.ps1` builds it into `dist\gamedata\event\` (needs Python 3).
+- DLL: `game/flags.rs` get/set (writes only 10007000..=10007999, one-byte read-modify-write); dev `ui_msg_test = true` sets the three
+  flags in turn 25 s after the world loads (10 s apart, twice) and reads each back 2 s later (OFF again = our event ran).
+  `dist\nrpvp.toml` for the spike: `ui_msg_test = true`, `ui_text_trace = true` (shows which FMG each message asks for), `br_menu = false`
+  (debug registers). 446 tests, clippy clean.
+**Runbook (Leonardo, solo, ~3 min, `.\scripts\launch.ps1`):** load into the Roundtable and stand still about 1 minute. Three test texts
+should appear one after the other, twice: "Battle Royale test 1 of 3 (dialog)", "… 2 of 3 (blinking message)", "… 3 of 3 (status
+message)". Note which ones appeared and how each looked (popup with a button? text that fades? a line at the bottom?). Quit; tell Claude.
+Risk: our m10 event file replaces the game's (with everything kept); SC with it is untested until this run.
 
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3
