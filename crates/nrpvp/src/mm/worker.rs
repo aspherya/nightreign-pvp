@@ -63,6 +63,8 @@ pub(crate) struct Worker {
     sc_seen: Option<u64>,
     refusal: Option<String>,
     last_status: Option<Status>,
+    /// UI-2: the queue view of the previous tick.
+    last_view: Option<super::ui_msg::QueueView>,
     last_override: Option<usize>,
     next_sync: Instant,
     next_env: Instant,
@@ -148,6 +150,7 @@ impl Worker {
             sc_seen: None,
             refusal: None,
             last_status: None,
+            last_view: None,
             last_override: None,
             next_sync: Instant::now(),
             next_env: Instant::now(),
@@ -399,6 +402,14 @@ impl Worker {
             self.last_override = ov;
         }
         super::set_phase(self.machine.phase_code());
+        // UI-2: one on-screen message per change of the queue view.
+        let view = self.machine.queue_view();
+        if self.last_view.as_ref() != Some(&view) {
+            if let Some(k) = super::ui_msg::for_state(self.last_view.as_ref(), &view) {
+                super::ui_msg::post(k);
+            }
+            self.last_view = Some(view);
+        }
         let mut st = self.machine.status();
         if let Some(c) = &self.sc_create {
             st.sc_create_ui = true;

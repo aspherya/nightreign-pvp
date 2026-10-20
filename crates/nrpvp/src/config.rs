@@ -198,6 +198,11 @@ br_menu = false
 # status). Needs the game-data package (default launch profile). Logs \"ui_msg_test:\".
 ui_msg_test = false
 
+# UI-2: matchmaking status as the game's own on-screen messages (blinking text: searching N of M, match found, host: Invite Members,
+# everyone is here, stopped). Needs the game-data package (default launch profile / player zip) and the queue (mm_queue or, in the
+# player build, matchmaking = true). Logs \"ui_msg:\".
+ui_messages = true
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -318,6 +323,8 @@ pub(crate) struct Config {
     pub br_menu: bool,
     /// UI-2 spike: set the test message flags in turn (developer mode only; forced off in the player build).
     pub ui_msg_test: bool,
+    /// UI-2: matchmaking status as on-screen game messages (default true; needs the queue and the game-data package).
+    pub ui_messages: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -390,6 +397,7 @@ impl Default for Config {
             ui_c1_proto: false,
             br_menu: false,
             ui_msg_test: false,
+            ui_messages: true,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,

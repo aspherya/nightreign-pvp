@@ -215,6 +215,17 @@ impl Machine {
         matches!(self.state, State::Idle)
     }
 
+    /// UI-2: the queue state as the on-screen messages see it (`mm::ui_msg::for_state`).
+    pub(crate) fn queue_view(&self) -> super::ui_msg::QueueView {
+        use super::ui_msg::QueueView;
+        match &self.state {
+            State::Idle => QueueView::Idle { error: self.last_error.clone(), left_note: self.left_note.clone() },
+            State::Searching { .. } | State::Creating { .. } | State::Joining { .. } => QueueView::Searching,
+            State::InQueue(q) => QueueView::InQueue { members: q.members, need: self.cfg.need },
+            State::MatchReady(r) => QueueView::Matched { gate_line: r.gate.player_line().to_string() },
+        }
+    }
+
     /// UI-1: the queue phase for lock-free readers ([`super::PHASE_IDLE`], [`super::PHASE_SEARCHING`], [`super::PHASE_MATCHED`]).
     pub(crate) fn phase_code(&self) -> u8 {
         match &self.state {

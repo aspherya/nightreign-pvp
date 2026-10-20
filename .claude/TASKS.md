@@ -910,6 +910,20 @@ dispatch near `0x79D3DD` jumps into protected code):
 should appear one after the other, twice: "Battle Royale test 1 of 3 (dialog)", "… 2 of 3 (blinking message)", "… 3 of 3 (status
 message)". Note which ones appeared and how each looked (popup with a button? text that fades? a line at the bottom?). Quit; tell Claude.
 Risk: our m10 event file replaces the game's (with everything kept); SC with it is untested until this run.
+**Spike result (Leonardo solo, 2026-10-20 00:41–00:43 UTC): PASS.** All three events ran (each flag was OFF again 2 s after the DLL set it)
+and each asked EventTextForMap_dlc01 for its text (`ui_text_trace`); Leonardo read the **blinking message** fine. SC and the Roundtable
+worked with our m10 event file. Decision: blinking messages.
+**Messages built (2026-10-20):** `mm/ui_msg.rs`: 34 messages, message k = flag 10007200+k = text and event id 99100500+k, all blinking:
+searching, "searching for players (N of M)" for M = 2..6, stopped (only after a search), left the Roundtable, missed, match found, host:
+open Invite Members, waiting for the others / the host, joining, loading in, everyone is here (host: start / joiner: waiting), not
+everyone arrived, problem. Pure mapping from the queue view (`Machine::queue_view`, the gate's player line) with tests; the worker posts
+one message per change; a sender thread sets the flag (at most one per 3 s, newest wins) and clears all message flags once the flag manager
+is live. `gamedata/*.json` hold the 37 events / texts; a unit test checks them against the Rust table. Config `ui_messages = true`
+(default; needs the queue and the package). 450 tests, clippy clean; `dist\gamedata` (37 events) and `dist\nrpvp.dll` rebuilt; dev toml back
+to `br_menu = true`, `ui_text_trace = false`, `ui_msg_test = false`.
+**Runbook (Leonardo, solo, ~3 min, `.\scripts\launch.ps1`):** Roundtable → table → Number of Players = Solo → Commence (the searching
+box) → OK. Within a few seconds: "Battle Royale: searching for players..." then "... (1 of 2)". Press Stop Searching: "Battle Royale:
+stopped searching." Quit; tell Claude which messages appeared. The match messages need two players (next friend session).
 
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ready (RE spike first) | Depends: MM-3f, UI-0 Q3

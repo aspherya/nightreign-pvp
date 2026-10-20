@@ -15,6 +15,7 @@ pub(crate) mod join;
 pub(crate) mod machine;
 pub(crate) mod proto;
 pub(crate) mod sccreate;
+pub(crate) mod ui_msg;
 pub(crate) mod worker;
 
 use std::collections::VecDeque;
