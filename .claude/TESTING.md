@@ -358,6 +358,18 @@ Game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0. Baseline, 
 - Defects: status stuck on `IN EXPEDITION` after the expedition ended; false `not trusting its sc_lobby` warning on the joiner at ALL PRESENT.
   Fix card MM-3a. Full findings: `research/S9-matchmaking-decision.md` §5c.
 
+### 2026-10-20 — SMOKE-1: branch `eng/r0-r1-console` (Leonardo solo + Claude over nrcon, dev build 2026-10-20 20:43, `scripts\launch.ps1`, game 1.03.3, SC 1.1.3, me3 0.11.0). Log: `dist\nrpvp.log` (23:47–23:53 UTC): **PASS**
+- **Console (CON-1/CON-2), driven by Claude from a terminal:** `nrcon list` found the game (pid 10332); `status`, `players`,
+  `mm_status`, `echo` answered. `team_set 6` → `players` showed 6 → `team_restore` → 1, both writes with readback in the log
+  (`T-008: console team write … 1 -> 6 (readback 6)`, `console restore … 6 -> 1`). `team_set 29 p2` with one player: clear error.
+  Asked 20 s after launch, `status` said "no world" while the Roundtable was still loading (WorldChrMan live at 23:47:50); the
+  local player appeared 2 s after the world, team 1 as in earlier runs.
+- **No regression from R0/R1 (Leonardo, on screen + log):** table menu shows Solo / Duo / Trio, Commence started the Solo queue with
+  the searching message, Stop Searching left it (`br_menu: Commence -> stop searching`, `mm_queue: state InQueue -> Idle`). Debug
+  registers armed on 132 threads, 0 failed; main-loop ticks 4–267 ms (the 267 ms around unloading).
+- Follow-up done the same day: two reply wordings fixed ("rivals rivals", "Session(2)" → "p2"), commit `2dadcb2`.
+- Not covered: the R1 player DLL (`--no-default-features`) in game; it gets its own check before the next player zip.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.
