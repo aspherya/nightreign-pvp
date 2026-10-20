@@ -74,6 +74,10 @@ pub(crate) fn run() {
                 crate::steam::lobtrace::spawn();
             }
             // UI-0: dev-only text-id tracer (hardware breakpoints on the game's text lookup, no patching).
+            // UI-2 spike: show our test messages through the flags our Roundtable events wait on.
+            if cfg.dev_mode && cfg.ui_msg_test {
+                game::flags::spawn_msg_test(m.base);
+            }
             // UI-1 option 1: Commence Expedition drives the Battle Royale queue (shared hardware breakpoint, no patching).
             if cfg.dev_mode && cfg.br_menu && cfg.mm_queue {
                 game::menuflow::spawn(m.base);

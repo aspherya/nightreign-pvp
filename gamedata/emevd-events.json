@@ -1,0 +1,9 @@
+{
+  "_comment": "Our event-script events, appended to event/m10_00_00_00.emevd.dcx (the Roundtable) by scripts/build-gamedata.ps1 (UI-2). Each waits for its flag (our group 10007), shows its message (EventTextForMap ids in gamedata/fmg-entries.json), clears the flag and restarts. display: dialog (2007:1) | blinking (2007:4) | status (2007:3). The three below are the UI-2 spike: one text per display kind.",
+  "file": "event/m10_00_00_00.emevd.dcx",
+  "events": [
+    { "id": 99100300, "flag": 10007100, "message": 99100200, "display": "dialog" },
+    { "id": 99100301, "flag": 10007101, "message": 99100201, "display": "blinking" },
+    { "id": 99100302, "flag": 10007102, "message": 99100202, "display": "status" }
+  ]
+}

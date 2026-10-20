@@ -1,10 +1,12 @@
 # Build the game-data package dist\gamedata\ (me3 [[packages]] folder, game-relative paths) from the unpacked game and our sources.
 # Usage: ./scripts/build-gamedata.ps1 [-Unpacked Z:\Tools\nr-unpacked\1.03.3] [-Witchy Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe]
 #
-# What it builds (UI-1):
-#   msg\<lang>\menu_dlc01.msgbnd.dcx for every language: the game's bundle with our entries from gamedata\fmg-entries.json added.
+# What it builds:
+#   msg\<lang>\menu_dlc01.msgbnd.dcx for every language (UI-1): the game's bundle with our entries from gamedata\fmg-entries.json added.
 #   Only the FMGs named in that file are rewritten (WitchyBND turns whitespace-only texts into empty ones, so FMGs that hold such
 #   texts are refused); every other file of the bundle is passed through.
+#   event\m10_00_00_00.emevd.dcx (UI-2): the Roundtable's event script with our events from gamedata\emevd-events.json appended by
+#   scripts\emevd_add_events.py (needs Python 3; the default install path is tried, then `python` on PATH).
 # Game content stays out of git: dist\ is gitignored. The unpack must be game 1.03.3 (pinned hash below); after a game patch, re-unpack,
 # check the result in game, then update the pin.
 [CmdletBinding()]
@@ -20,6 +22,9 @@ $work = Join-Path $env:TEMP 'nrpvp-gamedata'
 $entriesFile = Join-Path $repo 'gamedata\fmg-entries.json'
 # engus menu_dlc01.msgbnd.dcx of game 1.03.3 (UI-0 step 2).
 $pinned = 'E33F1C338878DA423D95CF54589072D99425F2A92C10603E5C93BDA9323184DB'
+# event\m10_00_00_00.emevd.dcx of game 1.03.3 (UI-0 step 2).
+$pinnedEmevd = @{ 'event/m10_00_00_00.emevd.dcx' = 'A4D87CAEBE834496F66B958E1FCDE0190006CB97ACE6805AB1A02A00C642D55B' }
+$eventsFile = Join-Path $repo 'gamedata\emevd-events.json'
 
 if (-not (Test-Path $Witchy)) { throw "WitchyBND not found at $Witchy" }
 $engus = Join-Path $Unpacked 'msg\engus\menu_dlc01.msgbnd.dcx'
@@ -78,3 +83,30 @@ foreach ($lang in $langs) {
     Write-Host ("{0,-6} {1}  {2}" -f $lang.Name, (Get-Item $bnd).Length, (Get-FileHash $bnd).Hash.Substring(0, 16))
 }
 Write-Host "OK: $out ($($langs.Count) languages; FMGs: $(($fmgs | ForEach-Object Name) -join ', '))"
+
+# UI-2: our event-script events.
+$ev = Get-Content $eventsFile -Raw | ConvertFrom-Json
+if (@($ev.events).Count -gt 0) {
+    $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+    if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
+    if (-not $py) { throw 'Python 3 not found (needed for scripts\emevd_add_events.py)' }
+    $rel = $ev.file
+    $src = Join-Path $Unpacked ($rel -replace '/', '\')
+    if (-not (Test-Path $src)) { throw "Unpacked game file not found: $src" }
+    $hh = (Get-FileHash $src).Hash
+    if ($pinnedEmevd[$rel] -ne $hh) { throw "$rel hash $hh is not the pinned 1.03.3 hash" }
+    $ew = Join-Path $work 'event'
+    New-Item -ItemType Directory -Force $ew | Out-Null
+    $dcx = Join-Path $ew (Split-Path $src -Leaf)
+    Copy-Item $src $dcx
+    Invoke-Witchy @($dcx)
+    $plain = $dcx -replace '\.dcx$', ''
+    & $py -I (Join-Path $PSScriptRoot 'emevd_add_events.py') $plain $eventsFile
+    if ($LASTEXITCODE -ne 0) { throw "emevd_add_events.py failed ($LASTEXITCODE)" }
+    Remove-Item $dcx
+    Invoke-Witchy @($plain)
+    $dst = Join-Path $out (Split-Path ($rel -replace '/', '\') -Parent)
+    New-Item -ItemType Directory -Force $dst | Out-Null
+    Copy-Item $dcx $dst
+    Write-Host ("{0}  {1}  {2}  ({3} events)" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), @($ev.events).Count)
+}

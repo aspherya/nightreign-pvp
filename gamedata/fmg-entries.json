@@ -5,5 +5,10 @@
     "99100101": "Duo",
     "99100102": "Trio",
     "99100103": "Stop Searching"
+  },
+  "EventTextForMap_dlc01": {
+    "99100200": "Battle Royale test 1 of 3 (dialog)",
+    "99100201": "Battle Royale test 2 of 3 (blinking message)",
+    "99100202": "Battle Royale test 3 of 3 (status message)"
   }
 }

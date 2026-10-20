@@ -16,6 +16,7 @@ pub(crate) mod c1proto;
 pub(crate) mod combat_state;
 pub(crate) mod discover;
 pub(crate) mod downed;
+pub(crate) mod flags;
 pub(crate) mod flagwatch;
 pub(crate) mod image;
 pub(crate) mod mark_dump;

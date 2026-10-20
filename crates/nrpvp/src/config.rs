@@ -193,6 +193,11 @@ ui_c1_proto = false
 # soon\". Hardware breakpoint (shared slot 2, works next to mm_quiet_invite), no code patched. Logs \"br_menu:\".
 br_menu = false
 
+# UI-2 spike (dev mode only; the player build forces it off): 25 s after a world is loaded, set the three test flags of
+# gamedata/emevd-events.json in turn (10 s apart, twice) so our Roundtable events show their test messages (dialog / blinking /
+# status). Needs the game-data package (default launch profile). Logs \"ui_msg_test:\".
+ui_msg_test = false
+
 # MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
 # \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
@@ -311,6 +316,8 @@ pub(crate) struct Config {
     /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; forced off in the player build
     /// for now and while a dev tool that owns all debug registers is on).
     pub br_menu: bool,
+    /// UI-2 spike: set the test message flags in turn (developer mode only; forced off in the player build).
+    pub ui_msg_test: bool,
     /// MM-3d: the "create SC lobby (test)" dev button (developer mode + `mm_queue` only; forced off in the player build).
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
@@ -382,6 +389,7 @@ impl Default for Config {
             ui_menu_trace: false,
             ui_c1_proto: false,
             br_menu: false,
+            ui_msg_test: false,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
             downed_rival_team: 0,
@@ -604,6 +612,7 @@ fn enforce_player_mode(
     cfg.ui_menu_trace = false;
     cfg.ui_c1_proto = false;
     cfg.br_menu = false;
+    cfg.ui_msg_test = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
     // T-031: the rival-revive experiment is a developer tool.

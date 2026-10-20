@@ -359,7 +359,7 @@ impl FlagState {
 
 /// Binary search of the map for `group` (MSVC `std::map`: `head.parent` is the root, children that are absent
 /// point at `head`, nodes have an `is_nil` byte). `Ok(None)` = group not in the map.
-fn find_group(rc: &mut RegionCache, head: usize, group: u32) -> Result<Option<Node>, &'static str> {
+pub(crate) fn find_group(rc: &mut RegionCache, head: usize, group: u32) -> Result<Option<Node>, &'static str> {
     let head_node = read_node(rc, head).ok_or("map head unreadable")?;
     let mut cur = head_node.parent;
     for _ in 0..TREE_MAX_DEPTH {
