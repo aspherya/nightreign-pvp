@@ -150,9 +150,8 @@ starts. Matchmaking then runs by itself and the match begins once its criteria a
 no host action.
 **No ImGui for players (Leonardo, 2026-10-19):** the final product shows nothing from our overlay to players. Every choice and every
 status message lives in the game's own UI (menus, talk lists, on-screen messages), by changing or adding game menu options and
-behaviour. The overlay stays a developer tool. The mod itself must create or obtain the session and bring every matched player into it. How: see
-`FUTURE_CONSIDERATIONS.md`, "Seamless entry flow". Not designed yet; the 2026-10-12 prototype (overlay buttons, Steam invite, host
-starts) is only the online feasibility test.
+behaviour. The overlay stays a developer tool. The mod itself must create or obtain the session and bring every matched player into it. How it
+works today: `MATCHMAKING.md` (the table menu starts the queue, UI-1; one host click remains until MM-3g).
 
 The defining rule is that a death before sudden death costs the player their carried inventory but does not eliminate them. Only the final no-respawn stage determines the winner.
 

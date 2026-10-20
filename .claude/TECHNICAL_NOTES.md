@@ -14,9 +14,8 @@ documentation or code, not yet checked here · `[HYPOTHESIS]` unproven, needs an
 | Seamless Co-op | `nrsc.dll` SHA256 prefix `243EEC929A97B71E`, installed 2026-10-09. No PE version resource; it is **SC 1.13** (Nexus upload 2026-07-02, "compatible with game 1.03.3"; sizes match the package and the DLL contains "1.13") | [VERIFIED: hash/size] [SOURCE: Nexus NR SC mod 3; T-003] |
 | SC launcher | `nrsc_launcher.exe` SHA256 prefix `2726DEA099A54F00` | [VERIFIED] |
 | me3 | 0.11.0 (2026-02-28) at `Z:\Tools\me3` | [VERIFIED: `me3 --version`] |
-| Toolchains present | VS 2022 Community 17.14, CMake, vcpkg (`C:\vcpkg`), .NET SDK, git, Node | [VERIFIED] |
-| Toolchains missing | Rust (rustup), Python, `gh` CLI | [VERIFIED] |
-| RE tools present | Cheat Engine | [VERIFIED] |
+| Toolchains present | Rust stable 1.99.0 (rustup, MSVC), Python 3.12.10 (not on PATH; capstone, pefile), `gh`, VS 2022 Community 17.14, CMake, vcpkg (`C:\vcpkg`), .NET SDK, git, Node | [VERIFIED: 2026-10-20] |
+| RE and modding tools | Cheat Engine; WitchyBND 3.0.1 and the game 1.03.3 unpack in `Z:\Tools\`; Nucleus Co-op in `D:\Programs\Nucleus` | [VERIFIED] |
 | me3 loads our native DLL into NR 1.3.3.0 (no SC), no crash at startup, no `disable_arxan` needed for a passive DLL | [VERIFIED: T-001 HUMAN-solo run, dist/nrpvp.log 2026-10-09] |
 | Saves | `%APPDATA%\Nightreign\76561198342403479\NR0000.sl2`, no `.co2` yet (SC not run yet) | [VERIFIED] |
 
@@ -24,7 +23,7 @@ When the game or SC updates, re-hash, update this table, and re-run the regressi
 
 ---
 
-## 2. Stack decision (ADR-001, **pending review with Leonardo**)
+## 2. Stack decision (ADR-001, accepted)
 
 **Decision:** write the mod as a **Rust native DLL (`cdylib`) loaded by me3**, next to SC, using the
 **fromsoftware-rs** ecosystem as the reverse-engineering foundation.
@@ -121,62 +120,21 @@ from engine team types. No separate team system until an experiment proves one i
 
 ## 4. Engine findings relevant to PvP
 
+**Every memory location (offsets, layouts, team values, downed block, HP, flags) is owned by [re/MEMORY_MAP.md](re/MEMORY_MAP.md)**
+since 2026-10-20. Code comments that say "TECHNICAL_NOTES §4" refer to facts that now live there (§2 players, §3 ChrIns, §4 team
+values, §5–6 HP and downed state). The full former table is in git: `git show 339ee04:.claude/TECHNICAL_NOTES.md`.
+
+Facts that are not memory locations:
+
 | Finding | Tag |
 |---|---|
-| `nightreign.exe` RTTI has `ChrIns`, `PlayerIns`, `WorldChrManImp`, `CSSessionManagerImp`, `CSNetManImp`, `EcTestTeamType`, `EcTestChrSosInvadeType`, and **`ChrTemporaryTeamTypeSlot`** | [VERIFIED: RTTI string scan] |
-| `CSTeamType*` class names were **not** found as RTTI in NR, so the team-relation implementation may differ from ER. UNKNOWN | [VERIFIED: absent from scan] |
-| NR params keep PvP damage scaling: `ATK_PARAM_ST.dmg_level_vs_player`, `EQUIP_PARAM_WEAPON_ST.vs_player_dmg_correct_rate_*`. `is_hit_both_team` is on **BULLET_PARAM_ST** (projectiles only), not AtkParam. AtkParam has `opposeTarget`/`friendlyTarget`/`selfTarget` | [SOURCE: fromsoftware-rs `nightreign/src/param.rs#L7203`; T-011] |
-| `SP_EFFECT_PARAM_ST.change_team_type` (s8) exists in NR. ER semantics: "overwrite with the specified team type", default -1. NR semantics on players UNKNOWN | [SOURCE: param.rs#L51538; T-011] |
-| NR EMEDF has `2004[2] SetCharacterTeamType(entityId, teamType)` and `4[36] IfCharacterHasTeamType`. Vanilla NR uses it in `common_func`, m10, m13, m18. Whether it can target players is UNKNOWN | [SOURCE: DarkScript3 NR EMEDF; T-011] |
-| Team-type enum candidates (ER-derived Smithbox enum, conflicting on 16–22): 19 Host, 20 Co-op, 21 Hostile per EMEDF and the SpEffect enum. NR extras: 77 "Near Death", 80 "Balancer Raid". Hostile-to-player candidates: 1, 13, 19, 20, 21, 29 | [HYPOTHESIS until T-007/T-012; SOURCE: Smithbox, EMEDF via T-011] |
-| Leftover invasion fields in NR (`MultiplayerState.Invasion = 5`, `autoInvadePoint_*`, versus-ghost NetworkParam fields). This shows the layout survived, not that the code is live | [SOURCE: T-011] |
-| `nrsc.dll` contains `YuiNexusRegulationManager`. SC may edit params at runtime or gate lobbies on regulation, which is a risk for any modded-regulation route | [VERIFIED: string scan] [HYPOTHESIS: purpose] |
-| In ER, `ChrIns.team_type: u8` is at **+0x6C** (chr_type +0x68, npc_param_id +0x60). `WorldChrMan.main_player` +0x1E508, `player_chr_set` +0x10EE0. Full hint sheet in `.claude/re/er-reference.md`. **ER layout only; a CE starting point for NR** | [SOURCE: fromsoftware-rs fbd3b, offset_of!; T-005] |
-| `team_relation.rs` is **not** a hostility matrix. It only defines Neutral/Friend/Enemy/Rival filters over an `{oppose, friendly, self}` result. The team_type × team_type hostility table is unmapped: UNKNOWN | [SOURCE: T-005] (corrects an earlier note) |
-| The singleton finder is the external `from-singleton` crate (re-exported by `fromsoftware-shared`): a game-agnostic `.text` pattern scan returning DLRF names (`WorldChrMan`, `CSSessionManager`, …). Untested on NR. NR has **two `.text` sections** plus `.interpr` | [SOURCE: from-singleton v3.0.1; VERIFIED: NR PE headers] |
-| Singleton discovery works on NR 1.3.3.0: 235 DLRF singletons; `from-singleton` stock `map()` is sufficient (all call sites in the first `.text`). WorldChrMan slot exe+0x3C0F0A8, CSSessionManager exe+0x3C21EC8, CSNetMan exe+0x3C046A8, plus NR-only `CSTeamSessionManager`, `CSTeamSessionDataMan`. WorldChrMan is re-created on area change | [VERIFIED: T-006 log 2026-10-09] |
-| ER offset WorldChrMan+0x1E508 (main_player) is **wrong on NR** (null or garbage) | [VERIFIED: T-006 probe] |
-| RTTI is plain in NR (8813 classes). ChrIns-derived vtables: ChrIns exe+0x2C0BA90, **PlayerIns exe+0x2C307F8**, **EnemyIns exe+0x2C18120**, ReplayGhostIns exe+0x2C1A450, ReplayEnemyIns exe+0x2C19D58, CSJamaisVuReplayPlayerIns exe+0x2C17578, CSJamaisVuReplayEnemyIns exe+0x2C16F10, CSHamariSimulateChrIns exe+0x2CD7D08. WorldChrManImp vtable exe+0x2C1B930. Hierarchy: PlayerIns/EnemyIns > ChrIns > FieldInsBase | [VERIFIED: T-007a log 2026-10-09] |
-| **Character layout (NR = ER shifted by +8):** ChrIns+0x68 u32 = NpcParam/character id (enemies 10000010…, objects 1000000); ChrIns+0x70 = chr_type-like (5); **ChrIns+0x74 u8 = team_type**: enemies 6 (Enemy), 26 (Friendly NPC), 48 (Unknown Enemy Team), 0 (None); 4 pre-allocated PlayerIns objects = 30 (Object). Values match the Smithbox NR TEAM_TYPE enum | [VERIFIED: T-007a dumps, 8 enemies + 4 PlayerIns] [HYPOTHESIS: +0x74 is the field the engine uses for hostility, to be confirmed by TC-004] |
-| **Local player:** WorldChrMan+0x9A40 = inline ChrSet (ER shape: capacity +0x10 = **6**, matching SC's cap; entries ptr +0x18; 0x10-byte entries, first qword PlayerIns*). Also referenced via pointers at +0x16440 and +0x17118. WorldChrMan+0x1C820 → stride-8 array holding 1 PlayerIns (main-player candidate). Big mixed ChrIns arrays at +0x9BB8 (cap 1600), +0x17518, +0x17548. Ten more PlayerIns are direct members in pairs at +0x9C20…+0xA170 (team 30 = Object, not the player) | [VERIFIED: T-007a run 2, solo expedition] |
-| Local player team_type: **1 in Roundtable, 2 during an expedition** (+0x70 = 13 in the expedition). ChrSet entry bytes +8 = `04 04`. The F5 write 2→29 worked (readback 29) and F6 restored it. The F8 histogram in an expedition shows **PlayerIns with team 6 (Enemy)** among 34 PlayerIns (mostly 30 = Object), so the engine has player-type characters it treats as enemies. The ChrSet is momentarily capacity 0 during area loads (handled) | [VERIFIED: TC-004 run 1, 2026-10-09] |
-| **ChrIns+0x74 IS the engine's hostility field on NR.** Local player 2→6 (Enemy): enemies ignore the player, the player can't lock on to or damage them; F6 (6→2) restores normal combat. The value held 25 s with no revert (persist off). With 29 (Indiscriminate), enemies stayed hostile | [VERIFIED: TC-004 run 2, 2026-10-09, log 19:04:23–19:04:48] |
-| The overlay (hudhook 0.9.3 DX12) works alongside SC under me3: the panel renders and mouse clicks reach it. Writes 2↔6↔29 held with no reverts (29 held 33 s until the world unloaded). ChrSet entry byte +9 toggled 04→02→04 for ~5 s (a state flag? downed/dead?). WorldChrMan+0x1C820 held UTF-16 text, so it is **not** a player pointer | [VERIFIED: TC-004 run 3, 2026-10-09] |
-| **Team 29 (Indiscriminate) on the local player through a full solo expedition:** lock-on, dealing and taking damage, deaths and revives, field bosses, and the night boss all behave normally (like team 2). The value **held 15.5 min with no reverts and persist OFF** (19:26:50–19:42:24, until the expedition ended). Side effect: **sites of grace can't be interacted with** (level-up menu unavailable), though passing through still applies the grace effect | [VERIFIED: TC-004 run 4, 2026-10-09] |
-| **Hostility is decided per client from that client's own copies of team_type.** With one client holding 29 for both players and the other holding 2 for both, only the first could target and damage the other player | [VERIFIED: FS-0 run 2, 2026-10-10, two Nucleus instances] |
-| **Two-way PvP works between two SC clients with team 29 set on both clients for both players:** lock-on, damage, HP sync, parry mechanics, PvE alongside. PvP death = downed → no revive possible → respawn with runes and a level lost | [VERIFIED: FS-0 run 4, 2026-10-10; Nucleus/Goldberg transport, not real Steam] |
-| **Local player = ChrSet entry[0] on each client**, and **`ChrIns+0x78` is a per-player id identical on all clients** (host 0x6001FFFFFFFF, joiner 0x6002FFFFFFFF) | [VERIFIED: FS-0 (Nucleus) and FS-1 (real Steam, 2 PCs), 2026-10-10; 3 players in FS-0 run 21, 2026-10-12: expedition ids 0x6001/0x6002/0x6003 identical on all three clients, and different from the lobby ids of the two joiners (0x6003/0x6004)] |
-| **Downed state, attacker, and HP (NR 1.3.3.0):** `PlayerIns+0x710` u8 == 1 while downed (also `+0x1F9` bit 0x10); `PlayerIns+0x730` = number of downs; `PlayerIns+0x1A0` = handle of the last attacker (= that character's `ChrIns+0x08` qword), valid on the victim's own client; `PlayerIns+0x5A0` → `CS::PlayerGameData` (vtable exe+0x2BE6E28), HP u32 at +0x10 (0 when downed, 50% after a revive). team_type is unchanged by a down | [VERIFIED: FS-0 run 7 MARK dumps, two downs, both clients, 2026-10-11] |
-| **Authoritative HP: `[PlayerIns+0xB78]+0x70` (u32)**; `PlayerIns+0xBA0` and `PlayerGameData+0x10` are mirrors. Writing 0 on the owner's client downs the player again immediately (does not kill). Bleed-out ≈ 15–17 s and restarts on every down; leaving the downed state with hp 0 = died, with 50% hp = revived | [VERIFIED: FS-0 run 9, 2026-10-11] |
-| **Near-death block (NR 1.3.3.0), all in PlayerIns:** `+0x710` u8 state (0 normal, 1 downed, 2 getting up); `+0x714` f32 revive bar **amount left** (40/90/240 at down 1/2/3, hits subtract, 0 = revived); `+0x718` f32 bleed-out clock **seconds left** (≈14.9 → 0, death at 0); `+0x71C` f32 pause timer (≈3.5 after a hit; clock frozen while > 0); `+0x720` f32 down-level decay timer (180 s); `+0x730` downs. Writing the clock on the owner's client works (set to 2.0 → death 3 s later) | [VERIFIED: FS-0 run 7 dumps + run 14 live read/write, 2026-10-12] |
-| SC binds F4 to its pause ("Paused" on screen); our hotkeys must avoid it | [VERIFIED: TC-004 run 1] |
-| The `eldenring` crate can't run on NR: its RVA table checks ProductName and ER versions and panics. We use its struct layouts only as reference and write our own init-wait and main-thread hook | [SOURCE: T-005] |
-| NR Smithbox `TEAM_TYPE` enum (community-curated): 1 Player, 2 White Ghost, 3 Black Ghost, 4 Grey Ghost, 6 Enemy, 7 Boss, 13/16 Invader, 29 Indiscriminate, plus NR-only 77 Near Death, 80 Balancer Raid. Conflicts with the EMEDF labels on 16–24 | [SOURCE: Smithbox PARAM/NR/Param Enums/TEAM_TYPE.json; T-005] [HYPOTHESIS: hostility] |
-| ER arena (quickmatch) assigns PvP teams per slot via SpEffects 1110/1111. This is the closest precedent for symmetric team PvP | [SOURCE: T-005] |
+| **H1 holds:** giving rivals a hostile team type on every client is enough for synced two-way PvP through SC's networking, with no networking changes. Hostility is decided per client from that client's own copies of `team_type` | [VERIFIED: FS-0 runs 2 and 4, FS-1 over real Steam, 2026-10-10] |
+| RTTI has `ChrTemporaryTeamTypeSlot`, `EcTestTeamType`, `CSSessionManagerImp`, `CSNetManImp`; `CSTeamType*` classes are absent, so the team-relation code may differ from ER | [VERIFIED: RTTI string scan] |
+| `team_relation.rs` (fromsoftware-rs) is not a hostility matrix; the team_type × team_type table is unmapped | [SOURCE: T-005] |
+| Param and event-script routes to hostility (`SP_EFFECT_PARAM_ST.change_team_type`, EMEDF `2004[2] SetCharacterTeamType`, `dmg_level_vs_player`, `is_hit_both_team` on bullets only) | [SOURCE: `research/T-011-alt-hostility.md`] |
+| The `eldenring` crate cannot run on NR (its RVA table checks ER versions and panics); its layouts are hints only | [SOURCE: T-005] |
+| SC binds F4 to its pause; our keys must avoid it | [VERIFIED: TC-004 run 1] |
 | Nightreign vanilla has no PvP; the director stated none was planned | [SOURCE: [gfinityesports](https://www.gfinityesports.com/article/no-pvp-messages-spirit-ashes-in-elden-ring-nightreign-according-to-director)] |
-
-### Core hypothesis (H1), to be tested by E-003
-
-> Because NR inherits ER's invasion-era combat netcode, **giving opposing players hostile team types on
-> all clients** is enough for hits to register and sync through SC's existing networking, with no
-> networking changes.
-
-Sub-questions E-003 must answer:
-- Does the change need to happen on the attacker's client, the victim's client, or both? This tells us
-  the damage authority model.
-- Which team-type values are hostile to a player? Get candidates from Paramdex/Smithbox NR enum names for
-  NpcParam `teamType`. Do not guess the numbers.
-- Does the engine or SC reset team type (on spawn, day change, death, or revive)? If it does, we need a
-  hook or a periodic re-apply.
-- Is `ChrTemporaryTeamTypeSlot` a cleaner override mechanism than writing `team_type` directly?
-
-### Alternative mechanisms (if H1 fails or is unstable)
-
-- **A1, param:** an SpEffect with `change_team_type`, applied to a player by our DLL or by EMEVD. Engine-native override, so a good counter if `team_type` keeps getting reset. Bullet `isHitBothTeam` only covers projectiles.
-  Ships a modified `regulation.bin` via a me3 `[[packages]]` folder. Watch for SC regulation checks.
-- **A2, EMEVD:** `SetCharacterTeamType` exists in NR (2004[2]); DarkScript3 3.6.3 supports NR. Needs a check that it can target player entities and runs per peer. EMEVD file overrides via me3 are undocumented.
-- **A3, damage hook:** intercept the hit-validation or team-relation check and force "hostile" for
-  player pairs on different gameplay teams. This is the most invasive option, so use it last.
 
 ---
 
@@ -184,6 +142,9 @@ Sub-questions E-003 must answer:
 
 | ID | Decision | Status |
 |---|---|---|
-| ADR-001 | Rust cdylib + me3 + fromsoftware-rs reference (§2) | Pending review |
+| ADR-001 | Rust cdylib + me3 + fromsoftware-rs reference (§2) | Accepted (in use since 2026-10-09) |
 | ADR-002 | One SC party; hostility via engine team types only (§3) | Working assumption |
-| ADR-003 | Debug control via hotkeys + config + log file first; overlay only if needed | Accepted |
+| ADR-003 | Debug control via hotkeys + config + log file first; overlay only if needed | Superseded by ADR-004 |
+| ADR-004 | Developer control through a text console (named pipe + `nrcon`, usable by agents); the ImGui panel and F-keys go away. `CONSOLE.md` | Accepted 2026-10-20 |
+| ADR-005 | Code structure: ports and adapters for game memory and Steam, typed memory views, feature modules, a per-tick read model, dev code behind a cargo feature. `ARCHITECTURE.md` | Accepted 2026-10-20 |
+| ADR-006 | One owner doc per topic; the doc map in `CLAUDE.md` is the index | Accepted 2026-10-20 |

@@ -1,6 +1,9 @@
 # Project Plan: Nightreign Battle Royale PvP Mod
 
-Product intent and scope boundaries: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). This document preserves the detailed feature breakdown and feasibility planning; it is subordinate to project scope and the current ROADMAP/TASKS. Treat proposed mechanics and feasibility routes here as planning until supported by current evidence and an active task.
+Product intent and scope boundaries: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). This document owns the feature-by-feature feasibility,
+the milestones, and the parked ideas (§12). It is subordinate to the scope and to STATUS.md / TASKS.md. Treat proposed mechanics and
+feasibility routes here as planning until supported by current evidence and an active task. §1, §6 and §9 are the 2026-10-10
+snapshot; what works today is in STATUS.md §1.
 
 Written 2026-10-10, after Phase 0. Tags: `[PROVEN]` tested by us · `[LEAD]` evidence it may work, untested · `[UNKNOWN]` needs a spike.
 
@@ -157,3 +160,21 @@ respawn at once: no bleed-out, no revive. Route `[LEAD]`: set the game's own nea
 (`GAME_SYSTEM_COMMON_PARAM_ST`: `near_death_grace_period_timer_default`, `boss_arena_near_death_duration`; validate the row by
 `required_revive_progress_level1/2/3` = 40/90/240) on every client. Team modes (team_size ≥ 2) keep the vanilla bleed-out; the "rival hits
 shorten the clock" idea applies there and is deferred to team play. Rule v1 (re-down on a rival revive) stays as the team-mode fallback.
+
+## 12. Parked ideas (merged from FUTURE_CONSIDERATIONS.md on 2026-10-20)
+
+Nothing here is built without a task card. Items already done or decided (menu entry, queues, team values, friendly fire, grace
+interaction, the downed rule) were dropped; their history is in git.
+
+- **Downed gauge flicker on a rival hit** (2026-10-12, Leonardo: fine for now). The game applies the hit to the gauge, then the mod puts it
+  back on its next 50 ms pass, on both screens. Ideas, none tested: (a) run only the downed check on a faster pass (5–10 ms); (b) hook the
+  function that applies revive damage and skip it for rivals. (b) would also close the "one hit removes the whole bar" gap and the
+  teams-of-2+ attacker-screen gap (STATUS.md §4).
+- **Robustness:** disconnect and reconnect mid-match; host migration (does SC support it?); desync detection; performance with 6 players
+  and a full enemy load.
+- **Compatibility:** a version guard that refuses to run on an unknown game build and logs why; coexistence with other me3 mods (FPS
+  unlock, FOV, QoL).
+- **Presentation:** a team colour or marker on rivals (invader phantom tint?); PvP damage scaling through
+  `vs_player_dmg_correct_rate_*`; rewards and rankings.
+- **Fairness:** sessions are friends-only today, so anti-cheat is low priority. Public queues will need basic sanity checks and abuse
+  handling (see §8 risk 6).

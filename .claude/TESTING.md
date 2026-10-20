@@ -196,152 +196,6 @@ Game 1.03.3, SC 1.1.3, me3 0.11.0. **PASS.** Step 5: 234 text ids traced (SC hoo
 DAY I). Step 6a: recompiled table script through an me3 package, normal menu, Solo Mission loaded. Step 6b: list "Expedition" / "Battle
 Royale (test)" at the table, each opens the stock menu, flag 10007000 ON then off. Details: `research/UI-0-ingame-ui.md` §9–10.
 
-## 4. Known bugs
-
-_None yet._
-
-## 5. Regression set
-
-Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once it passes.
-
----
-
-## 6. Friend Session runbooks
-
-### FS-UI2 — In-game Battle Royale UI on the player zip, two PCs (≈40 min). **Status: ready (zip of 2026-10-20 01:28 UTC).**
-Tests UI-1 (Number of Players = Solo → Commence → our queue; Stop Searching; the host's Commence once the match is ready) and UI-2 (the
-blinking messages) with two players, and folds in FS-UI1 (Seamless Co-op with our game-data package on **both** PCs). Main open question:
-`[HYPOTHESIS]` at the match-ready Commence the DLL switches Number of Players from one player to two (byte 2 → 1) so the host's start is a
-multiplayer start that takes the joiner along (UI-1 step 3).
-**Zip:** `dist\NightreignPvP.zip`, built with `scripts\package-release.ps1 -MatchPlayers 2` (VERSION.txt: commit 71f893d clean, no overlay,
-nrpvp.dll `F6B1C1FE9D813141`, gamedata emevd `8B9459487BD2A5A3`, me3 0.11.0). Contains `nrpvp_launcher.exe`,
-`HOW TO INSTALL.txt`, `NightreignPvP\` with nrpvp.dll, nrpvp.toml (`matchmaking = true`, `mm_max_players = mm_min_players = 2`), VERSION.txt,
-`gamedata\` (event\m10_00_00_00.emevd.dcx + 15 × msg\<lang>\menu_dlc01.msgbnd.dcx) and me3. If the build is rebuilt from a commit, use that zip
-and its VERSION line instead; both players need the same zip.
-**Before (both, ~5 min):** back up `%APPDATA%\Nightreign\<steamid>\`. Delete the old `NightreignPvP` folder and `nrpvp_launcher.exe` from the
-game folder, then drag in both from the new zip (HOW TO INSTALL.txt). Steam running, different accounts, voice chat open, start with
-`nrpvp_launcher.exe` only. Leonardo checks once on his PC: `<Game>\NightreignPvP\nrpvp.me3.toml` (written by the launcher) ends with
-`[[packages]] id = "nrpvp-gamedata"`, and the log has `br_menu: Commence handler armed (hwbp slot 2)` and, after the Roundtable loads,
-`br_menu: our labels found in CL_MenuText_dlc01 ... (hwbp slot 3)`. Write down the time of every step (the logs have the rest).
-
-**0. Labels and Seamless Co-op with the package (both, 3 min; FS-UI1).** Each at their own Roundtable: table → Matchmaking Settings →
-Number of Players. Does the list read **Solo / Duo / Trio** on both PCs? Pick **Solo**, back out. Any missing texts (blank or `?` labels)
-anywhere in the menus? Pass = both see the three labels.
-
-**1. Stop Searching, one side (Leonardo, 3 min; the friend does not search).** Commence → box "Battle Royale: searching for players (Solo)…"
-→ OK. Within ~10 s a blinking "Battle Royale: searching for players…" / "(1 of 2)"; it comes back every ~6 s while searching (as soon as the previous one has faded). The button now reads
-**Stop Searching**: press it → box "stopped searching for players" → OK, blinking "Battle Royale: stopped searching." The button reads
-Commence again. Pass = all of that, and no match found (the friend was not searching).
-
-**2. Match found (both, 5 min).** Both pick Solo and press Commence within ~30 s of each other, OK the box. Expected messages, in order:
-"searching (1 of 2)" (maybe "(2 of 2)") → "Battle Royale: match found!" on both → one player (the host) gets **"Match found! Open
-Matchmaking Settings > Invite Members to bring the others in."**, the other "Waiting for the host…" / "Joining the host…". Write down who is
-host and every message each side saw (which ones were missing or came late).
-
-**3. Host opens Invite Members (host only, 3 min).** Host: Matchmaking Settings → Invite Members once. **No Steam window should open**
-(quiet invite, hwbp slots 0/1, now running next to the Commence/label breakpoints 2/3). The joiner presses nothing: "Joining the host…" →
-"Loading in…" → arrives in the host's Roundtable (SC). Then **"Everyone is here. Start the expedition!"** (host) and "Everyone is here. Waiting
-for the host to start." (joiner). Does SC's party list at the table look normal on both screens (FS-UI1)?
-
-**4. Host's Commence (host only, 5 min): the hypothesis.** Host: table → Number of Players still **Solo** → first boss → **Commence**.
-Pass = the departure starts **for both** and both load into the same expedition (rivals: you can hurt each other; the player build has no overlay any more, so the logs show the rival write).
-If it fails, write down exactly what each screen showed (a box? which text? solo expedition for the host only?), then try once:
-(a) host sets Number of Players = **Duo** (one of the old "Up to 6 players" options), Commence (the DLL passes it unchanged in this
-phase); if that fails, the same with **Trio**;
-(b) if that fails too: stop here and write down what each screen showed; Claude reads both logs (`br_menu: Commence pressed … queue phase 2`,
-`mm_join:` lines). (The player build has no Insert panel any more: the in-game menu and messages are the only UI.)
-After the expedition (or a short walk + quit to the Roundtable), both: does the search start again with Solo → Commence? (One round is enough.)
-
-**5. Friend stops searching (friend, 2 min).** Friend alone: Commence → Stop Searching, same checks as step 1 on the friend's PC.
-
-**After:** both send `<Game>\NightreignPvP\logs` (and the friend's `launcher.log`); Leonardo copies them into
-`.claude/experiments/FS-UI2/{host,client}`. Log lines to read: `br_menu: Commence pressed (#n): Number of Players byte …, queue phase …,
-decision code …` (step 4: byte 2 on the host and the multiplayer decision), `ui_msg: … shown` / `NOT picked up`, `hwbp: debug registers now
-[…] (mask …)` (mask 0b1111 on the host while the quiet invite is armed), the `mm_queue` / gate lines around MATCH READY and ALL PRESENT.
-**Stop rules:** a crash → note the time and the step, relaunch, continue from that step. The match-ready start failing in (a) and (b) is a
-result, not a blocker: finish steps 5 and the logs.
-
-### FS-UI1 — Seamless Co-op with our table files, two PCs. **Folded into FS-UI2 (step 0 and 3, both PCs on the zip with the package).**
-The old version (host on `launch.ps1`, friend on a zip without the package, the retired UI-0 "Battle Royale (test)" talk entry) is not run.
-
-### FS-1 — First two-player session (≈90 min). **Status: final draft. Ready once T-015 and T-016 are done.**
-**Before the session (friend, ~15 min, async):** follow `README-FRIEND.md` in the friend kit: install me3 0.11.0 + SC v1.1.3, back up saves,
-run `launch-friend.ps1 -DryRun` and send Leonardo the printed nrsc.dll hash. Leonardo: rebuild, run `scripts/package-friend.ps1`, send the zip.
-**Session (voice call; Leonardo hosts):**
-1. Both launch (Leonardo `scripts\launch.ps1`, friend `launch-friend.ps1`). Check the overlays show; both press MARK "session start". (5 min)
-2. **TC-001:** A hosts "Up to 6 players", B joins, both start the expedition. Check that both see each other and enemies, and fight enemies together for 5 min. (15 min)
-   If B can't join via me3, B retries with the stock `nrsc_launcher.exe` (no nrpvp), and we do TC-001 + TC-002 only.
-3. **Panel check:** each overlay should list 2 players. Each person confirms which row is LOCAL (use "this is me" if UNKNOWN). Note both team values. (5 min)
-4. **TC-003** rows 0–4 + row 4 tail. (45 min)
-5. Quit. Both zip their kit or `dist` `logs\` folder; Leonardo copies both into `.claude/experiments/FS-1/` (`host/`, `client/`). (5 min)
-**Stop rules:** a crash or disconnect → note the time and MARK, relaunch, continue from the same row. Two crashes on the same row → skip it and move on.
-
-### FS-MM1 — Matchmaking, two PCs, real Steam (≈90 min). **Status: draft. Ready once MM-3 is built (it is) and the friend has the mmtest zip.**
-Tests MM-2 (queue) and MM-3 (get into the host's Seamless Co-op lobby). Needs Steam on both PCs, both logged in as different accounts, no Nucleus.
-**Before:** both unpack `dist\NightreignPvP-mmtest.zip` into the game folder (like the player zip) and start with `nrpvp_launcher.exe`. Both back up
-`%APPDATA%\Nightreign\<steamid>\`. Never go online with EAC: the launcher already avoids it. The overlay (Insert hides it) has the buttons. Keep
-voice chat open. Leonardo = host for steps 0, 1 and 3; for step 2 whoever the overlay says is host ("MATCH READY host=...").
-The status line is the first line under the buttons. Write down every line you see and the time (the logs have it too).
-
-**0. Baseline: normal Seamless Co-op, no queue buttons (10 min).**
-Press nothing in the Queue block. Leonardo: Matchmaking Settings > Invite Members, invite the friend. Friend: accept the Steam invite (Shift+Tab).
-Leonardo starts a short expedition ("Up to 6 players"). Both walk around 2 minutes, then quit the expedition back to the Roundtable.
-Write down: did the friend get into the lobby; any dialog on either side. Look at the logs afterwards for `GameLobbyJoinRequested_t`,
-`LobbyInvite_t`, `LobbyEnter_t` and the `mm_join: lobby ... [SC lobby (A)]` / `[game lobby (B ...)]` lines: they show which lobby each player was in
-before, during and after the expedition started.
-
-**1. Scenario 2: friends already in the same lobby, Queue Duo (15 min).**
-Both back at the Roundtable. Leonardo invites the friend the normal way again; friend accepts. Leonardo (the leader) presses **Queue Duo** (F2).
-Friend does NOT press anything. Expected: friend's overlay says `Queue: duo ...` by itself (log `following party leader`); both reach `MATCH READY`,
-then `ALL PRESENT - waiting for the host to start` on one PC and `ALL PRESENT 2/2 - host: start the expedition` on the other, within about 5 s,
-with no invite and no link. Host starts the expedition. Check: the two players are teammates (cannot hurt each other, team labels in the overlay
-show the same team). Quit to the Roundtable. Write down: the status lines, how long it took, team labels. Back at the Roundtable the status should go
-to `Queue: idle` within ~10 s (or press **Leave queue**).
-
-**2. Scenario 1: fresh launch, both Queue Solo (20 min).**
-Both quit the game completely and start it again. Do NOT invite anyone. Get to the Roundtable, wait ~1 minute. Both press **Queue Solo** (F1) within 10 s of each other.
-Expected: `MATCH READY host=<name>`. The host's overlay then says `host has no Seamless Co-op lobby yet: open Matchmaking Settings > Invite Members and invite <name>`.
-Host: open Matchmaking Settings > Invite Members and just open it (do not invite anybody). Write down whether the line changes without you doing more.
-If it does not, send one normal invite to the other player. The moment the host has a lobby the host's mod invites the other player by itself and the other
-overlay says `host invited you: accept the Steam invite (Shift+Tab)`. Other player: accept it. Expected: both see `ALL PRESENT`. Host starts the expedition.
-Check: the two are rivals (can hurt each other, different team labels). Write down: the exact status lines in order, what the host had to do to get a lobby, whether the
-accept dialog appeared by itself, any error dialog (for example "host is not using seamless co-op" or "version does not match"). Quit to the Roundtable
-(status goes idle within ~10 s, or press Leave queue).
-
-**3. The manual method buttons, one at a time (30 min).** Only available once the overlay shows the `Join methods` row. For each try: BOTH start from a state where the
-joiner is NOT in the host's lobby (repeat step 2 up to `MATCH READY` with `mm_join_auto = "none"`: host edits `nrpvp.toml` in `NightreignPvP\` before launch, and
-opens Invite Members once so the lobby exists; the joiner does not accept any invite). Press ONE button, wait 20 s, write down what happened, then leave the queue on both PCs and
-start the next try from scratch.
-- **(a) link: SKIP in this first session** (Opus, 2026-10-12). If Steam did not route the link to the running game it would start the normal,
-  EAC-protected game from Steam. The mods would not be loaded in that copy, but the project rule is never to start the protected game
-  with mod files present. Run (a) only after the baseline log shows how Steam delivers a join to the running game, and only if Opus says so.
-- **(c) direct JoinLobby** (joiner presses): joins or not; does the joiner's game react?
-- **(d) unlock: Public** (host presses), then the joiner presses **(c)** (not (a), see above). Afterwards the host presses **relock: Private**. Repeat with **unlock: Invisible**.
-  The host must write down whether Seamless Co-op still works after (invites, expedition start) and restart the game after this step.
-- **(b) invite / re-invite** (host presses): the joiner sees the Steam invite; accept it.
-Write down for each: which button, what the status line said before and after, any message on screen.
-
-**4. Optional: not friends on Steam (15 min).** Unfriend each other on Steam. Repeat step 2 and, if it fails, step 3 (c) with the host first pressing (d).
-Write down which of the invite, the link and the direct join still work between non-friends.
-
-**Stop rules:** a crash or freeze: note the time, relaunch, continue from the same step. Seamless Co-op breaks (cannot invite or start): restart both games and tell Leonardo before going on.
-**When done:** quit both games and send both `logs` folders (`NightreignPvP\logs` on each PC) to Leonardo. He copies them into `.claude/experiments/FS-MM1/` (`host/`, `client/`).
-
-### FS-MM2 — Matchmaking, second friend run (≈40 min). **Status: ready once MM-3e is built and the new mmtest zip is sent.**
-Tests MM-3a/MM-3e (automatic lobby + join, match end) and MM-2 Scenario 2 (Duo). Same setup as FS-MM1: both replace their install with
-the **new** `dist\NightreignPvP-mmtest.zip`, back up `%APPDATA%\Nightreign`, start with `nrpvp_launcher.exe`. Do not press any Join methods button.
-**1. Solo, fully automatic (15 min).** Both start the game fresh, invite nobody, go to the Roundtable, press **Queue Solo** within 10 s.
-Then **nobody opens any menu**. Expected: host line `creating the Seamless Co-op lobby...`, the other player's line `joining the host's
-lobby...`, then both `ALL PRESENT`, with no click. Only if the host's line asks for it, the host opens Invite Members (write that down).
-If a Steam invite pops up, accept it and write that down. Host starts the expedition; check you can hurt each other and that the
-expedition plays normally for both (enemies, graces, items).
-**2. End of the match (5 min).** Finish or abandon the expedition and **go back to the Roundtable** (do not quit to the title).
-Expected: within about 20 s both status lines show `Queue: idle`. Write down where you ended up and what the line said.
-**3. Duo, teammates (15 min).** Host invites the other the normal way (Invite Members, accept with Shift+Tab). Host presses **Queue Duo**;
-the other presses nothing. Expected: the other's line follows by itself, then `ALL PRESENT` on both within about 5 s. Host starts the
-expedition; check you **cannot** hurt each other and the overlay shows the same team for both. Back to the Roundtable, line goes idle.
-**When done:** both send their `NightreignPvP\logs` folder; Leonardo copies them into `.claude/experiments/FS-MM2/` (`host/`, `client/`).
-
 ### 2026-10-10 — T-029/T-030 player zip, Leonardo solo: **PASS**
 Installed from `dist\NightreignPvP.zip` by the txt guide; `nrpvp_launcher.exe` started the game (bundled me3 with `-e`); the BATTLE ROYALE badge
 showed top-right and changed to "Team 1 - 0 rivals" in a Solo Mission; sites of grace and item pickups work (local player stays on team 2).
@@ -503,3 +357,71 @@ Game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0. Baseline, 
 - fuso pressed "(a) link" once while already in the lobby: Steam delivered it to the running game (left and re-entered lobby A in 1.6 s); no second copy.
 - Defects: status stuck on `IN EXPEDITION` after the expedition ended; false `not trusting its sc_lobby` warning on the joiner at ALL PRESENT.
   Fix card MM-3a. Full findings: `research/S9-matchmaking-decision.md` §5c.
+
+## 4. Known bugs
+
+Owned by STATUS.md §1 ("Known bug") so there is one list.
+
+## 5. Regression set
+
+Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once it passes.
+
+---
+
+## 6. Friend Session runbooks
+
+### FS-UI2 — In-game Battle Royale UI on the player zip, two PCs (≈40 min). **Status: ready (zip of 2026-10-20 01:28 UTC).**
+Tests UI-1 (Number of Players = Solo → Commence → our queue; Stop Searching; the host's Commence once the match is ready) and UI-2 (the
+blinking messages) with two players, and folds in FS-UI1 (Seamless Co-op with our game-data package on **both** PCs). Main open question:
+`[HYPOTHESIS]` at the match-ready Commence the DLL switches Number of Players from one player to two (byte 2 → 1) so the host's start is a
+multiplayer start that takes the joiner along (UI-1 step 3).
+**Zip:** `dist\NightreignPvP.zip`, built with `scripts\package-release.ps1 -MatchPlayers 2` (VERSION.txt: commit 71f893d clean, no overlay,
+nrpvp.dll `F6B1C1FE9D813141`, gamedata emevd `8B9459487BD2A5A3`, me3 0.11.0). Contains `nrpvp_launcher.exe`,
+`HOW TO INSTALL.txt`, `NightreignPvP\` with nrpvp.dll, nrpvp.toml (`matchmaking = true`, `mm_max_players = mm_min_players = 2`), VERSION.txt,
+`gamedata\` (event\m10_00_00_00.emevd.dcx + 15 × msg\<lang>\menu_dlc01.msgbnd.dcx) and me3. If the build is rebuilt from a commit, use that zip
+and its VERSION line instead; both players need the same zip.
+**Before (both, ~5 min):** back up `%APPDATA%\Nightreign\<steamid>\`. Delete the old `NightreignPvP` folder and `nrpvp_launcher.exe` from the
+game folder, then drag in both from the new zip (HOW TO INSTALL.txt). Steam running, different accounts, voice chat open, start with
+`nrpvp_launcher.exe` only. Leonardo checks once on his PC: `<Game>\NightreignPvP\nrpvp.me3.toml` (written by the launcher) ends with
+`[[packages]] id = "nrpvp-gamedata"`, and the log has `br_menu: Commence handler armed (hwbp slot 2)` and, after the Roundtable loads,
+`br_menu: our labels found in CL_MenuText_dlc01 ... (hwbp slot 3)`. Write down the time of every step (the logs have the rest).
+
+**0. Labels and Seamless Co-op with the package (both, 3 min; FS-UI1).** Each at their own Roundtable: table → Matchmaking Settings →
+Number of Players. Does the list read **Solo / Duo / Trio** on both PCs? Pick **Solo**, back out. Any missing texts (blank or `?` labels)
+anywhere in the menus? Pass = both see the three labels.
+
+**1. Stop Searching, one side (Leonardo, 3 min; the friend does not search).** Commence → box "Battle Royale: searching for players (Solo)…"
+→ OK. Within ~10 s a blinking "Battle Royale: searching for players…" / "(1 of 2)"; it comes back every ~6 s while searching (as soon as the previous one has faded). The button now reads
+**Stop Searching**: press it → box "stopped searching for players" → OK, blinking "Battle Royale: stopped searching." The button reads
+Commence again. Pass = all of that, and no match found (the friend was not searching).
+
+**2. Match found (both, 5 min).** Both pick Solo and press Commence within ~30 s of each other, OK the box. Expected messages, in order:
+"searching (1 of 2)" (maybe "(2 of 2)") → "Battle Royale: match found!" on both → one player (the host) gets **"Match found! Open
+Matchmaking Settings > Invite Members to bring the others in."**, the other "Waiting for the host…" / "Joining the host…". Write down who is
+host and every message each side saw (which ones were missing or came late).
+
+**3. Host opens Invite Members (host only, 3 min).** Host: Matchmaking Settings → Invite Members once. **No Steam window should open**
+(quiet invite, hwbp slots 0/1, now running next to the Commence/label breakpoints 2/3). The joiner presses nothing: "Joining the host…" →
+"Loading in…" → arrives in the host's Roundtable (SC). Then **"Everyone is here. Start the expedition!"** (host) and "Everyone is here. Waiting
+for the host to start." (joiner). Does SC's party list at the table look normal on both screens (FS-UI1)?
+
+**4. Host's Commence (host only, 5 min): the hypothesis.** Host: table → Number of Players still **Solo** → first boss → **Commence**.
+Pass = the departure starts **for both** and both load into the same expedition (rivals: you can hurt each other; the player build has no overlay any more, so the logs show the rival write).
+If it fails, write down exactly what each screen showed (a box? which text? solo expedition for the host only?), then try once:
+(a) host sets Number of Players = **Duo** (one of the old "Up to 6 players" options), Commence (the DLL passes it unchanged in this
+phase); if that fails, the same with **Trio**;
+(b) if that fails too: stop here and write down what each screen showed; Claude reads both logs (`br_menu: Commence pressed … queue phase 2`,
+`mm_join:` lines). (The player build has no Insert panel any more: the in-game menu and messages are the only UI.)
+After the expedition (or a short walk + quit to the Roundtable), both: does the search start again with Solo → Commence? (One round is enough.)
+
+**5. Friend stops searching (friend, 2 min).** Friend alone: Commence → Stop Searching, same checks as step 1 on the friend's PC.
+
+**After:** both send `<Game>\NightreignPvP\logs` (and the friend's `launcher.log`); Leonardo copies them into
+`.claude/experiments/FS-UI2/{host,client}`. Log lines to read: `br_menu: Commence pressed (#n): Number of Players byte …, queue phase …,
+decision code …` (step 4: byte 2 on the host and the multiplayer decision), `ui_msg: … shown` / `NOT picked up`, `hwbp: debug registers now
+[…] (mask …)` (mask 0b1111 on the host while the quiet invite is armed), the `mm_queue` / gate lines around MATCH READY and ALL PRESENT.
+**Stop rules:** a crash → note the time and the step, relaunch, continue from that step. The match-ready start failing in (a) and (b) is a
+result, not a blocker: finish steps 5 and the logs.
+
+Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1) were removed on 2026-10-20; their results are in §3 and their text in git
+(`git show 339ee04:.claude/TESTING.md`).
