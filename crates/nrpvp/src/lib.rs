@@ -7,9 +7,16 @@
 //! T-008: team-type debug controls (see `game::team`, config in `nrpvp.toml`).
 //! T-013: in-game ImGui debug overlay (see `overlay`) and configurable hotkeys (see `hotkey`).
 
+// R1: the player build (`--no-default-features`) leaves out the developer tooling, so helpers only that tooling calls (overlay
+// snapshot readers, dev commands, log-ring readers) are unused there by design.
+#![cfg_attr(not(feature = "dev"), allow(dead_code))]
+
 mod config;
+#[cfg(feature = "dev")]
+mod console;
+mod dr;
 mod game;
-mod hotkey;
+mod hwbp;
 mod logging;
 mod logring;
 mod mark;

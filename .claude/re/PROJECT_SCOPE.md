@@ -14,8 +14,8 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 | Match setting | Requirement |
 |---|---|
-| Players | 10 players per match |
-| Queue types | Solo, duos, and trios |
+| Players | **6 players per match, in every mode** (Seamless Co-op's cap) (decided by Leonardo 2026-10-19) |
+| Queue types | Solo (6 players, everyone a rival), Duo (3 teams of 2), Squad/Trio (2 teams of 3) |
 | Matchmaking | Public queue that matches players with random participants and assigns teammates and rivals |
 | Solo teams | Each player is an individual team; all other players are rivals |
 | Team queues | Duo and trio players are assigned to teams of the selected size; players on other teams are rivals |
@@ -26,7 +26,9 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 ### Day 1 — Exploration and looting
 
-- Spawn teams at different positions.
+- Start with a **hawk crossing** (Leonardo, 2026-10-21; replaces "spawn teams at different positions"): every player rides the
+  start hawk on one straight line across the whole map, like Fortnite's battle bus, and each player chooses where to jump off.
+  The line follows the vanilla start direction from the vanilla start point to the far side of the map.
 - Let players fight PvE enemies, clear camps, obtain equipment, and level up.
 - Enable PvP from the beginning of the expedition.
 - On PvP death, drop the player's carried inventory and allow them to respawn.
@@ -134,7 +136,7 @@ After the final Night 2 player-versus-player battle:
 ## 7. Overall game loop
 
 1. Choose solo, duo, or trio matchmaking.
-2. Queue publicly and join a 10-player match with randomly matched players.
+2. Queue publicly and join a 6-player match with randomly matched players (6 solos, 3 duos or 2 trios).
 3. Receive a team assignment; in solo queue, each player is their own team.
 4. Explore, level up, gather loot, fight PvE, and engage rivals during Day 1.
 5. Survive Night 1 while the Night's Tide shrinks the area and no night boss appears.
@@ -147,9 +149,11 @@ After the final Night 2 player-versus-player battle:
 **Entry flow wanted for steps 1–2 (Leonardo, 2026-10-12):** at the Roundtable table the expedition type list offers **Solo / Duo / Squad
 Battle Royale** next to "Solo Mission" and "Up to 6 players". The player picks one, picks the Nightlord as for any expedition, and
 starts. Matchmaking then runs by itself and the match begins once its criteria are met. No overlay buttons, no invite, no menu visit,
-no host action. The mod itself must create or obtain the session and bring every matched player into it. How: see
-`FUTURE_CONSIDERATIONS.md`, "Seamless entry flow". Not designed yet; the 2026-10-12 prototype (overlay buttons, Steam invite, host
-starts) is only the online feasibility test.
+no host action.
+**No ImGui for players (Leonardo, 2026-10-19):** the final product shows nothing from our overlay to players. Every choice and every
+status message lives in the game's own UI (menus, talk lists, on-screen messages), by changing or adding game menu options and
+behaviour. The overlay stays a developer tool. The mod itself must create or obtain the session and bring every matched player into it. How it
+works today: `MATCHMAKING.md` (the table menu starts the queue, UI-1; one host click remains until MM-3g).
 
 The defining rule is that a death before sudden death costs the player their carried inventory but does not eliminate them. Only the final no-respawn stage determines the winner.
 

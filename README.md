@@ -21,10 +21,11 @@ powershell -NoProfile -File scripts\build.ps1
 
 | Zip | Command | For |
 |---|---|---|
-| `dist\NightreignPvP-mmtest.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchmakingTest` | Matchmaking test: debug panel with Queue buttons |
 | `dist\NightreignPvP.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1` | Normal player build: PvP always on, no queue |
 
-The packaging script does not rebuild the mod; it packs the current `dist\nrpvp.dll`. Run step 1 first.
+The packaging script builds its own **player** `nrpvp.dll` (without the developer tooling) into `target\player\`, so step 1 is only
+needed for developer launches (`scripts\launch.ps1`, Nucleus). Developers drive a running developer game with `dist\nrcon.exe`
+(see `.claude/CONSOLE.md`).
 `NightreignPvP\VERSION.txt` inside the zip says when and from which commit it was built.
 
 3. Send the zip. **Both players must install the same zip**, including you.
@@ -54,4 +55,4 @@ Uninstall: delete `nrpvp_launcher.exe` and the `NightreignPvP` folder. Nothing e
 ## After a test
 
 Each player sends the folder `<game folder>\NightreignPvP\logs`. The matchmaking test steps and what to write down are in
-[.claude/TESTING.md](.claude/TESTING.md), section FS-MM1.
+[.claude/TESTING.md](.claude/TESTING.md) §6 (the current friend-session runbook).

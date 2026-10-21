@@ -60,3 +60,10 @@ load_early = true
 [[natives]]
 path = '../dist/nrpvp.dll'
 load_after = [{ id = "nrsc.dll", optional = false }]
+
+# UI-1: our game-data package (game-relative files: msg\<lang>\menu_dlc01.msgbnd.dcx with our texts from gamedata\fmg-entries.json),
+# built by scripts\build-gamedata.ps1 from the game 1.03.3 unpack; gitignored (game content). scripts\launch.ps1 builds it when it is
+# missing. Package syntax: [[packages]] with id and path ('path' is an alias of 'source', me3 CHANGELOG 8f145b5).
+[[packages]]
+id = "nrpvp-gamedata"
+path = '../dist/gamedata'

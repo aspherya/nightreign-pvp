@@ -1,0 +1,34 @@
+# R0 (ARCHITECTURE.md §6): format, lint and unit tests on every push and pull request. No game is needed; tests that touch game
+# memory use fakes or this process's own memory.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the channel, components (clippy, rustfmt) and the MSVC target; rustup installs them on first use.
+      - name: Toolchain
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --release -- -D warnings
+      - name: Test
+        run: cargo test --workspace --release
+      # R1: the player DLL (no `dev` feature) must build lint-clean too, and must refuse dev_mode.
+      - name: Player build
+        run: |
+          cargo clippy -p nrpvp --release --no-default-features --all-targets -- -D warnings
+          cargo test -p nrpvp --release --no-default-features -- dev_mode_needs

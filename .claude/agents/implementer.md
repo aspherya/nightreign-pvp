@@ -14,13 +14,17 @@ Rules:
 - Do only what the card says. If the card is ambiguous or a step is impossible, stop and report. Don't
   improvise scope.
 - Never invent offsets, AOB patterns, struct layouts, enum values, me3 profile keys, or CLI flags. Take
-  them from TECHNICAL_NOTES.md (`[VERIFIED]` entries), the cited source, or the tool's own docs or `--help`.
+  them from re/MEMORY_MAP.md (memory locations), TECHNICAL_NOTES.md (`[VERIFIED]` entries), the cited source, or the tool's own
+  docs or `--help`.
   If none of those has them, stop and report what is missing.
 - Never touch files in the game directory except copying build outputs where a card says to. Never modify
   `nrsc.dll` or SC files. Never launch the game. Launching is a HUMAN step.
 - Rust: stable toolchain; no `unwrap()` on paths that can fail at runtime inside the game (log and bail
   instead); no work inside `DllMain` beyond spawning a thread; every unsafe memory access is null-checked
-  and commented with the TECHNICAL_NOTES.md reference and game version.
+  and commented with the re/MEMORY_MAP.md section and game version.
+- Follow ARCHITECTURE.md §6: where code goes (offsets, features, dev-only code behind the `dev` feature), file size budget,
+  behaviour-preserving rules for refactor (R-) cards, and the **Modding rules** checklist (typed access, signatures, no blocking or
+  unwinding into the game, share the process with other mods, passive on unknown builds, testable rules). Check your diff against it.
 - Verify what you can: `cargo build --release`, `cargo clippy`, and unit tests for pure logic. State
   clearly which acceptance checks are left for the HUMAN.
 

@@ -18,7 +18,6 @@ use std::collections::HashMap;
 /// TypeDescriptor raw names we need (x64 MSVC decoration). [T-006 verified these strings exist in NR 1.3.3.0]
 pub(crate) const CHR_INS: &str = ".?AVChrIns@CS@@";
 pub(crate) const PLAYER_INS: &str = ".?AVPlayerIns@CS@@";
-pub(crate) const WORLD_CHR_MAN: &str = ".?AVWorldChrManImp@CS@@";
 
 /// A snapshot of one PE section: `bytes[i]` is the byte at image RVA `rva + i`.
 pub(crate) struct Region {
@@ -52,7 +51,6 @@ pub(crate) struct Class {
     /// Raw decorated TypeDescriptor name, e.g. `.?AVPlayerIns@CS@@`.
     pub name: String,
     pub td_rva: u32,
-    pub col_rva: u32,
     /// RVAs of every vtable whose COL is this one (usually exactly one).
     pub vtables: Vec<u32>,
     /// TypeDescriptor RVAs of the class's BaseClassArray (includes the class itself, per MSVC).
@@ -74,9 +72,13 @@ pub(crate) struct Stats {
 pub(crate) struct Rtti {
     pub classes: Vec<Class>,
     pub stats: Stats,
+    // R5: the vtable index and the ChrSet flags back the test-only lookups below (the analyzer's tests check classification
+    // through them); the mod itself only needs `player` and `chr`.
+    #[cfg_attr(not(test), allow(dead_code))]
     by_vtable: HashMap<usize, usize>,
     chr: Vec<bool>,
     player: Vec<bool>,
+    #[cfg_attr(not(test), allow(dead_code))]
     chrset: Vec<bool>,
 }
 
@@ -115,19 +117,13 @@ impl Rtti {
     }
 
     /// Class whose primary vtable is exactly at VA `vt`.
+    #[cfg(test)]
     pub(crate) fn class_of_vtable(&self, vt: usize) -> Option<usize> {
         self.by_vtable.get(&vt).copied()
     }
 
-    /// T-032: every known vtable VA with its readable class name (labels for the dev dumps and the position scan).
-    pub(crate) fn vtable_names(&self) -> HashMap<usize, String> {
-        self.by_vtable
-            .iter()
-            .map(|(&vt, &c)| (vt, self.name(c)))
-            .collect()
-    }
-
     /// Derives from (or is) `ChrIns`.
+    #[cfg(test)]
     pub(crate) fn is_chr(&self, class: usize) -> bool {
         self.chr.get(class).copied().unwrap_or(false)
     }
@@ -138,6 +134,7 @@ impl Rtti {
     }
 
     /// Name contains `ChrSet`.
+    #[cfg(test)]
     pub(crate) fn is_chrset(&self, class: usize) -> bool {
         self.chrset.get(class).copied().unwrap_or(false)
     }
@@ -155,6 +152,7 @@ impl Rtti {
     }
 
     /// Readable name of a class by its TypeDescriptor RVA (for base-class lists).
+    #[cfg(test)]
     pub(crate) fn name_of_td(&self, td: u32) -> String {
         self.classes
             .iter()
@@ -164,6 +162,7 @@ impl Rtti {
     }
 
     /// Indices of classes with the exact raw TypeDescriptor name.
+    #[cfg(test)]
     pub(crate) fn find(&self, raw: &str) -> Vec<usize> {
         self.classes
             .iter()
@@ -315,7 +314,6 @@ pub(crate) fn analyze(regions: &[Region], image_base: usize) -> Rtti {
         classes.push(Class {
             name: name.clone(),
             td_rva: c.td,
-            col_rva: c.rva,
             vtables: Vec::new(),
             bases: parse_bases(regions, c.chd),
         });

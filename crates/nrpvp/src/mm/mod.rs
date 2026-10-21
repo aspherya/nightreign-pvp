@@ -1,4 +1,5 @@
-//! MM-2: public matchmaking queue (S9). Developer mode only, switch `mm_queue = true`.
+//! MM-2: public matchmaking queue (S9). Developer mode: switch `mm_queue = true`. Player build (MM-4): the player setting
+//! `matchmaking` (default true) turns the queue, the join step and the quiet invite on; the overlay panel offers Solo and Leave.
 //!
 //! - [`machine`]: the pure queue state machine (`Idle -> Searching -> InQueue -> MatchReady`, plus `Leave`), written against
 //!   the `QueueSteam` trait so it is unit-tested with a fake Steam.
@@ -13,11 +14,14 @@ pub(crate) mod guard;
 pub(crate) mod join;
 pub(crate) mod machine;
 pub(crate) mod proto;
+pub(crate) mod sccreate;
+pub(crate) mod ui_msg;
 pub(crate) mod worker;
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
+use std::time::{Duration, Instant};
 
 /// Queue mode. The mode sets the team size of the match (S9 §6/§7): Solo 1, Duo 2, Squad 3.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -60,6 +64,10 @@ pub(crate) enum Cmd {
     Leave,
     /// MM-3 (dev buttons): one join method attempt.
     Join(join::JoinCmd),
+    /// MM-3d (dev button, `mm_sc_create`): create a lobby the way the game does and see whether Seamless Co-op adopts it.
+    ScCreate,
+    /// MM-3f (dev button, `mm_quiet_invite`): suppress the Steam invite window for 60 s so Invite Members can be tried solo.
+    QuietTest,
 }
 
 /// What the overlay shows.
@@ -75,6 +83,14 @@ pub(crate) struct Status {
     pub sc_known: bool,
     /// MM-3: we own that Seamless Co-op lobby (button (d) usable).
     pub sc_owner: bool,
+    /// MM-3d (`mm_sc_create`): show the "create SC lobby (test)" button.
+    pub sc_create_ui: bool,
+    /// MM-3d: one status line of that test (empty until pressed).
+    pub sc_create_line: String,
+    /// MM-3f (`mm_quiet_invite`): show the "test quiet invite" button and hide the direct JoinLobby button.
+    pub quiet_ui: bool,
+    /// MM-3f: one status line of the suppression (empty when idle).
+    pub quiet_line: String,
 }
 
 struct Hub {
@@ -91,9 +107,37 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 static TEAM_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 /// MM-3: the local player's team_type as last read by the game loop (0 = never read). Only written while the feature is enabled.
 static LOCAL_TEAM: AtomicU8 = AtomicU8::new(0);
+/// MM-4: when the game loop last stored the local team (milliseconds since [`epoch`], plus 1; 0 = never).
+static LOCAL_AT_MS: AtomicU64 = AtomicU64::new(0);
+/// MM-3f: how many players the local ChrSet held at the game loop's last read (0 = never read).
+static LOCAL_PLAYERS: AtomicUsize = AtomicUsize::new(0);
+/// UI-1: the queue phase, written by the worker every tick, read lock-free (also from the Commence exception handler).
+static PHASE: AtomicU8 = AtomicU8::new(PHASE_IDLE);
+pub(crate) const PHASE_IDLE: u8 = 0;
+/// Searching, creating, joining or in a queue lobby.
+pub(crate) const PHASE_SEARCHING: u8 = 1;
+/// MATCH READY (the match exists; the host starts the expedition).
+pub(crate) const PHASE_MATCHED: u8 = 2;
+
+/// Worker: publish the queue phase.
+pub(crate) fn set_phase(p: u8) {
+    PHASE.store(p, Ordering::Relaxed);
+}
+
+/// The queue phase ([`PHASE_IDLE`] when the feature is off).
+pub(crate) fn phase() -> u8 {
+    if enabled() {
+        PHASE.load(Ordering::Relaxed)
+    } else {
+        PHASE_IDLE
+    }
+}
 
 fn hub() -> &'static Hub {
-    HUB.get_or_init(|| Hub { cmds: Mutex::new(VecDeque::new()), status: Mutex::new(Status::default()) })
+    HUB.get_or_init(|| Hub {
+        cmds: Mutex::new(VecDeque::new()),
+        status: Mutex::new(Status::default()),
+    })
 }
 
 fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -146,12 +190,60 @@ pub(crate) fn set_team_override(n: Option<usize>) {
 pub(crate) fn note_local_team(team: u8) {
     if enabled() {
         LOCAL_TEAM.store(team, Ordering::Relaxed);
+        let ms = u64::try_from(epoch().elapsed().as_millis()).unwrap_or(u64::MAX - 1);
+        LOCAL_AT_MS.store(ms.saturating_add(1), Ordering::Relaxed);
     }
+}
+
+/// Game loop: the number of players in the local ChrSet (read by the gate's ALL PRESENT check). Inert unless mm is enabled.
+pub(crate) fn note_local_players(n: usize) {
+    if enabled() {
+        LOCAL_PLAYERS.store(n, Ordering::Relaxed);
+    }
+}
+
+/// Worker: the last ChrSet player count the game loop stored (0 = never read).
+pub(crate) fn local_players() -> usize {
+    LOCAL_PLAYERS.load(Ordering::Relaxed)
 }
 
 /// Worker: the local player's phase according to the last `team_type` the game loop read (`None` = never read / not 1 or 2).
 pub(crate) fn local_phase() -> Option<join::Phase> {
     join::Phase::from_team(LOCAL_TEAM.load(Ordering::Relaxed))
+}
+
+fn epoch() -> Instant {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// MM-4: where the local player is, as far as the game loop's local-player read can tell.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum World {
+    /// The game loop never found a local player (title screen, or still loading).
+    Never,
+    /// It found one before, but not for a while: the world was unloaded (quit to the title, or a loading screen).
+    Gone,
+    /// A local player was read recently, with this phase (`None` = a `team_type` that tells nothing).
+    Present(Option<join::Phase>),
+}
+
+/// Pure rule behind [`world_state`]: `age` is the time since the last local-player read (`None` = never).
+pub(crate) fn classify_world(team: u8, age: Option<Duration>, stale_after: Duration) -> World {
+    match age {
+        None => World::Never,
+        Some(a) if a > stale_after => World::Gone,
+        Some(_) => World::Present(join::Phase::from_team(team)),
+    }
+}
+
+/// Worker: the local player's world state now. `stale_after` should be a few watcher periods (the game loop reads once per period).
+pub(crate) fn world_state(stale_after: Duration) -> World {
+    let at = LOCAL_AT_MS.load(Ordering::Relaxed);
+    let age = at
+        .checked_sub(1)
+        .map(|ms| epoch().elapsed().saturating_sub(Duration::from_millis(ms)));
+    classify_world(LOCAL_TEAM.load(Ordering::Relaxed), age, stale_after)
 }
 
 /// The team size the rules must use: the match override when one is set, else the configured value. With `mm_queue` off
@@ -185,8 +277,40 @@ mod tests {
     }
 
     #[test]
+    fn world_states_from_the_last_local_read() {
+        use super::join::Phase;
+        let stale = Duration::from_secs(4);
+        assert_eq!(classify_world(1, None, stale), World::Never);
+        assert_eq!(
+            classify_world(1, Some(Duration::from_secs(1)), stale),
+            World::Present(Some(Phase::Roundtable))
+        );
+        assert_eq!(
+            classify_world(2, Some(Duration::from_secs(1)), stale),
+            World::Present(Some(Phase::Expedition))
+        );
+        assert_eq!(
+            classify_world(29, Some(Duration::from_secs(1)), stale),
+            World::Present(None)
+        );
+        assert_eq!(
+            classify_world(1, Some(Duration::from_secs(5)), stale),
+            World::Gone,
+            "no read for longer than the limit"
+        );
+        assert_eq!(
+            classify_world(1, Some(stale), stale),
+            World::Present(Some(Phase::Roundtable))
+        );
+    }
+
+    #[test]
     fn team_size_override_applies_only_when_set() {
-        assert_eq!(pick_team_size(3, 0), 3, "no override: the configured value, unchanged");
+        assert_eq!(
+            pick_team_size(3, 0),
+            3,
+            "no override: the configured value, unchanged"
+        );
         assert_eq!(pick_team_size(1, 2), 2);
         assert_eq!(pick_team_size(3, 1), 1);
     }
@@ -212,7 +336,18 @@ mod tests {
         }
         assert!(!send(Cmd::Leave));
         assert_eq!(take_cmds().len(), MAX_CMDS);
-        publish(Status { line: "x".into(), active: true, ..Default::default() });
-        assert_eq!(status(), Status { line: "x".into(), active: true, ..Default::default() });
+        publish(Status {
+            line: "x".into(),
+            active: true,
+            ..Default::default()
+        });
+        assert_eq!(
+            status(),
+            Status {
+                line: "x".into(),
+                active: true,
+                ..Default::default()
+            }
+        );
     }
 }

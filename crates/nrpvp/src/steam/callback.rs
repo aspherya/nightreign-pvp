@@ -86,7 +86,11 @@ unsafe extern "system" fn run(this: *mut CbObject, pv: *const c_void) {
         // `size` bytes for this callback id (struct sizes from the SDK headers, see probe.rs).
         let (id, size) = unsafe { ((*this).id, (*this).size as usize) };
         let n = size.min(MAX_PAYLOAD);
-        let mut ev = RawEvent { id, len: n, data: [0; MAX_PAYLOAD] };
+        let mut ev = RawEvent {
+            id,
+            len: n,
+            data: [0; MAX_PAYLOAD],
+        };
         // SAFETY: see above; `n <= MAX_PAYLOAD` and `n <= size`.
         unsafe { std::ptr::copy_nonoverlapping(pv as *const u8, ev.data.as_mut_ptr(), n) };
         let q = queue();
@@ -120,8 +124,11 @@ pub(crate) unsafe fn register_all(
     callbacks: &[(i32, usize)],
 ) -> Vec<(i32, bool)> {
     queue(); // create before the first delivery can arrive
-    let vtable: &'static [usize; 3] =
-        Box::leak(Box::new([run as *const () as usize, run as *const () as usize, get_size as *const () as usize]));
+    let vtable: &'static [usize; 3] = Box::leak(Box::new([
+        run as *const () as usize,
+        run as *const () as usize,
+        get_size as *const () as usize,
+    ]));
     let mut out = Vec::new();
     for &(id, size) in callbacks {
         let obj: &'static mut CbObject = Box::leak(Box::new(CbObject {

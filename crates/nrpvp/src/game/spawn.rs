@@ -12,13 +12,10 @@
 
 use std::time::{Duration, Instant};
 
+use super::layout::{PHYSICS_GROUND as GROUND_OFF, PHYSICS_POS as POS_OFF};
 use super::mem;
 use super::poswrite::{decode, fmt3, physics_module, plausible, RealMem, ORIGIN_OFF};
 
-/// Ground byte inside the physics module: 1 standing (and riding the hawk), 0 in the air. [VERIFIED: T-028 runs 1-4]
-const GROUND_OFF: usize = 0x92;
-/// Position inside the physics module. [VERIFIED: T-028 run 1]
-const POS_OFF: usize = 0x70;
 /// Horizontal world speed that counts as the hawk ride (sprint is ~8 m/s, the ride 12..17).
 pub(crate) const HAWK_MIN_SPEED: f32 = 11.0;
 /// The ride must last this long before a drop counts (the vanilla ride is ~12 s).
@@ -96,7 +93,9 @@ pub(crate) fn rank_of(local_team: u8, teams: &[u8]) -> Option<(usize, usize)> {
     let mut t = teams.to_vec();
     t.sort_unstable();
     t.dedup();
-    t.iter().position(|&x| x == local_team).map(|r| (r, t.len()))
+    t.iter()
+        .position(|&x| x == local_team)
+        .map(|r| (r, t.len()))
 }
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
@@ -128,7 +127,7 @@ fn read_sample(player: usize, base: usize) -> Option<Sample> {
     })
 }
 
-/// Per-expedition state, driven from `TeamController::tick`.
+/// Per-expedition state, driven from `TeamCtl::tick` (`team/spawns.rs`).
 pub(crate) struct SpawnCtl {
     radius: f32,
     base: usize,
@@ -157,7 +156,9 @@ impl SpawnCtl {
 
     /// Worth a pass now: a new WorldChrMan instance, a sample due before the drop, or follow-up logs pending.
     pub(crate) fn due(&self, inst: usize) -> bool {
-        inst != self.inst || !self.follow.is_empty() || (!self.det.fired && Instant::now() >= self.next)
+        inst != self.inst
+            || !self.follow.is_empty()
+            || (!self.det.fired && Instant::now() >= self.next)
     }
 
     /// One pass. `inst` = WorldChrMan instance, `local` = the LOCAL PlayerIns (already resolved and vtable-checked) or None,
@@ -209,7 +210,10 @@ impl SpawnCtl {
         let to = target(world, rank, count, self.radius);
         let local_pos = add(to, s.origin);
         if !plausible(local_pos) {
-            tracing::warn!("T-028 SPAWN: target {} is implausible; not moving", fmt3(local_pos));
+            tracing::warn!(
+                "T-028 SPAWN: target {} is implausible; not moving",
+                fmt3(local_pos)
+            );
             return;
         }
         let mut bytes = [0u8; 12];
@@ -258,7 +262,14 @@ mod tests {
     use super::*;
 
     /// Samples every 50 ms: `secs` seconds at `speed` m/s along x with the given ground byte, starting at `t`/`x`.
-    fn run(d: &mut DropDetector, t: &mut f32, x: &mut f32, secs: f32, speed: f32, ground: bool) -> usize {
+    fn run(
+        d: &mut DropDetector,
+        t: &mut f32,
+        x: &mut f32,
+        secs: f32,
+        speed: f32,
+        ground: bool,
+    ) -> usize {
         let mut fired = 0;
         let end = *t + secs;
         while *t < end {

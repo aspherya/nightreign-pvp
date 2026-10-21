@@ -1,6 +1,9 @@
 # Project Plan: Nightreign Battle Royale PvP Mod
 
-Product intent and scope boundaries: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). This document preserves the detailed feature breakdown and feasibility planning; it is subordinate to project scope and the current ROADMAP/TASKS. Treat proposed mechanics and feasibility routes here as planning until supported by current evidence and an active task.
+Product intent and scope boundaries: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md). This document owns the feature-by-feature feasibility,
+the milestones, and the parked ideas (§12). It is subordinate to the scope and to STATUS.md / TASKS.md. Treat proposed mechanics and
+feasibility routes here as planning until supported by current evidence and an active task. §1, §6 and §9 are the 2026-10-10
+snapshot; what works today is in STATUS.md §1.
 
 Written 2026-10-10, after Phase 0. Tags: `[PROVEN]` tested by us · `[LEAD]` evidence it may work, untested · `[UNKNOWN]` needs a spike.
 
@@ -24,9 +27,9 @@ Each row says what the game or our tests already give us, and what has to be fou
 
 | # | Scope v3 feature | What we have | What's missing | Risk |
 |---|---|---|---|---|
-| F1 | Public solo/duo/trio queues, initially up to 6 players | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
+| F1 | Public solo/duo/trio queues, 6 players per match in every mode | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
 | F2 | Teams: allies can't hurt each other, rivals can | 29 is free-for-all | Team values or a hostility hook `[UNKNOWN]`; all clients agreeing on teams `[LEAD: derive from the per-player id]` | High |
-| F3 | Teams spawn at different positions | Nothing | How spawn points are chosen `[UNKNOWN]` | Medium |
+| F3 | **Hawk crossing** (2026-10-21, replaces "teams spawn at different positions"): the start hawk crosses the whole map, each player jumps off where they want | `[PROVEN]` moving the local player (world position kept, seen on both screens); the vanilla ride is a straight ~17 m/s line (T-028 run 4) | How the ride works (hawk object, what ends it), holding a player in the air, a safe fall from any point, a drop button. §13 | Medium-high |
 | F4 | PvP active immediately, PvE continues | `[PROVEN]` | Automatic rule verified in-game; sites of grace broken on 29 | Low |
 | F5 | Night 1: tide shrinks, **no boss** | The tide exists in vanilla | How to skip the night boss and still advance to Day 2 `[UNKNOWN]` (event scripts and flags) | High |
 | F6 | Day 2: map opens again, stronger enemies | Vanilla does this | Probably nothing | Low |
@@ -43,7 +46,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 
 ## 3. Public queues and initial player cap
 
-The product target is public solo/duo/trio matchmaking. The initial capacity target is **6 players**: up to six solo players, three duos, or two trios. Private SC sessions and Nucleus are the current development test path, not the intended public product.
+The product target is public solo/duo/trio matchmaking. Every match has **6 players** (decided by Leonardo 2026-10-19): six solo players, three duos, or two trios (squads). This fits Seamless Co-op's cap, so no work goes into raising it. Private SC sessions and Nucleus are the current development test path, not the intended public product.
 
 SC and the engine currently constrain the session to six players. Do not spend effort on more than six without new evidence and an explicit scope decision. Public matchmaking is not implemented, and access to SC's lobby, queue discovery, party membership, and match start remains unresolved. Investigate these when the roadmap activates matchmaking; do not assume SC exposes a public API or that its lobby can be reused without permission.
 
@@ -72,7 +75,7 @@ de-risks the rest.
 | **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree |
 | **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights |
 | **M6 Finale** | Sudden death, eliminations, win detection, winner's choice | F11, F12, F13 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable |
-| **M7 Scale and spawns** | Separate team spawns; validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
+| **M7 Scale and spawns** | Hawk crossing (§13); validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
 | **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players |
 
 M1 and M2 are next. M3–M6 can only be ordered after their spikes, because each could turn out trivial (the game already does it) or very hard.
@@ -157,3 +160,61 @@ respawn at once: no bleed-out, no revive. Route `[LEAD]`: set the game's own nea
 (`GAME_SYSTEM_COMMON_PARAM_ST`: `near_death_grace_period_timer_default`, `boss_arena_near_death_duration`; validate the row by
 `required_revive_progress_level1/2/3` = 40/90/240) on every client. Team modes (team_size ≥ 2) keep the vanilla bleed-out; the "rival hits
 shorten the clock" idea applies there and is deferred to team play. Rule v1 (re-down on a rival revive) stays as the team-mode fallback.
+
+## 12. Parked ideas (merged from FUTURE_CONSIDERATIONS.md on 2026-10-20)
+
+Nothing here is built without a task card. Items already done or decided (menu entry, queues, team values, friendly fire, grace
+interaction, the downed rule) were dropped; their history is in git.
+
+- **Downed gauge flicker on a rival hit** (2026-10-12, Leonardo: fine for now). The game applies the hit to the gauge, then the mod puts it
+  back on its next 50 ms pass, on both screens. Ideas, none tested: (a) run only the downed check on a faster pass (5–10 ms); (b) hook the
+  function that applies revive damage and skip it for rivals. (b) would also close the "one hit removes the whole bar" gap and the
+  teams-of-2+ attacker-screen gap (STATUS.md §4).
+- **Separate team spawns** (F3 before 2026-10-21, replaced by the hawk crossing, §13). Built on `t-028-snapback`, never run: at the
+  vanilla drop each game moves its own player `spawn_radius` m from the drop point, one direction per team (`team_spawns = true`).
+  Kept only as a fallback if the crossing fails.
+- **Robustness:** disconnect and reconnect mid-match; host migration (does SC support it?); desync detection; performance with 6 players
+  and a full enemy load.
+- **Compatibility:** a version guard that refuses to run on an unknown game build and logs why; coexistence with other me3 mods (FPS
+  unlock, FOV, QoL).
+- **Presentation:** a team colour or marker on rivals (invader phantom tint?); PvP damage scaling through
+  `vs_player_dmg_correct_rate_*`; rewards and rankings.
+- **Fairness:** sessions are friends-only today, so anti-cheat is low priority. Public queues will need basic sanity checks and abuse
+  handling (see §8 risk 6).
+
+## 13. Hawk crossing (Leonardo's idea, adopted 2026-10-21; replaces separate team spawns)
+
+**Design.** At the start of an expedition every player is on the hawk, as in vanilla. Instead of a short ride that drops everyone at one
+landing zone, the hawk keeps flying on the **same straight line** (vanilla start point, vanilla direction) until it reaches the far side of
+the map. Each player chooses when to jump off and lands where they want. Players who never jump are dropped automatically at the end
+of the line. Teammates are not forced together (they coordinate by voice, as in Fortnite). Whether everyone stays on one line or each
+team gets its own line can be decided later. The design puts one line through the whole map.
+
+**What we know (T-028 runs 3-4, 2026-10-14, solo; `re/MEMORY_MAP.md` §8).**
+- Moving the local player works: write the physics-module position, keeping world position (physics − origin). Other players see the
+  move (Nucleus, 2026-10-14). `[VERIFIED]`
+- The vanilla ride (run 4): the player starts about 160 m up and moves on a **straight line** at 16–18 m/s for about 12 s (about 210 m),
+  sinking slowly (y 162 → 108). While riding, the game marks the player as standing (ground byte 1). At release the ground byte goes
+  to 0. The player keeps the same horizontal speed and falls about 84 m in 3 s, then lands with **no damage**. `[VERIFIED: run 4 log]`
+- Each vanilla landing row (`SORTIE_STARTING_POINT_ST`, 20 rows) names a **hawk route** (`birdRouteEntityId`, a map entity). The game
+  has a `CSBirdMovePointMan` that appears at expedition load. `[SOURCE: S6]` The map is 6 × 6 tiles (`m60_41..46_35..40`). If NR
+  tiles are 256 m like Elden Ring's, that is about 1.5 km across `[HYPOTHESIS]`, so the full crossing takes about 90 s at the vanilla speed.
+
+**Routes, cheapest first.**
+1. **Carry the player ourselves (proven pieces only).** From the moment the ride is detected, the mod writes the player's position every
+   tick along the extended line at ride height. When the player presses "drop", the mod stops writing and the game's physics takes over.
+   Unknowns: whether a write sticks while the vanilla ride is active (the hawk may pull the player back), what happens when the vanilla
+   ride ends while we are still holding the player, and whether a long fall from ~150 m hurts or kills (the vanilla drop is safe; a
+   plain fall may not be). Possible fixes: clear the fall timer (`CSChrFallModule`, ER hint) or release the player at a safe height.
+2. **Fly the real hawk further.** Find the hawk (a character or an asset near the player during the ride) and the thing that ends the
+   ride. Then move the hawk along our line and keep the ride alive until the player drops. This looks best on screen and keeps the
+   vanilla safe drop, but needs more reverse engineering.
+3. **Longer route in the data.** Edit the hawk route points (`CSBirdMovePointMan` in memory, or the route entities in the map files)
+   so the vanilla hawk flies our line. The early drop on a button press is still needed.
+
+Plan: research steps HAWK-0 (questions to Leonardo + reading the map files), HAWK-1 (solo probe: move the player during the ride, hold
+in the air, release), then pick route 1 or 2 and build HAWK-2. Cards in `TASKS.md`.
+
+**What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector
+(`game/spawn.rs::DropDetector`) are the base of route 1. The F3 "move each team 200 m apart at the drop" rule (`team_spawns`, off by
+default) stays in the code as a parked fallback (§12) until the crossing works, then it is deleted.

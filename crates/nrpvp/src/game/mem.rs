@@ -108,6 +108,7 @@ pub(crate) struct RegionCache {
 }
 
 impl RegionCache {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -409,6 +410,11 @@ pub(crate) fn parse_cstr(bytes: &[u8], max: usize) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(s).into_owned())
+}
+
+/// A plausible user-space object pointer: inside the canonical user range and 8-aligned (R5: moved from `discover`).
+pub(crate) fn is_ptr(v: usize) -> bool {
+    (0x1_0000..0x7FFF_FFFF_FFFF).contains(&v) && v.is_multiple_of(8)
 }
 
 #[cfg(test)]

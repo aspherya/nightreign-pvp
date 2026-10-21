@@ -165,46 +165,77 @@ impl PublishedScLobby {
     }
     /// Read `sc_lobby` from `queue`. `Ok(None)` while the host has not published one yet; `Err` when the lobby does not look like
     /// the host's (owner or `host` data differ, or the value is the queue lobby itself).
-    pub(crate) fn from_queue(api: &dyn LobbyText, queue: &QueueLobby, host: u64) -> Result<Option<PublishedScLobby>, String> {
+    pub(crate) fn from_queue(
+        api: &dyn LobbyText,
+        queue: &QueueLobby,
+        host: u64,
+    ) -> Result<Option<PublishedScLobby>, String> {
         let raw = api.lobby_data(queue.id(), KEY_PUBLISHED_SC);
         if raw.trim().is_empty() {
             return Ok(None);
         }
-        let lobby: u64 = raw.trim().parse().map_err(|_| format!("sc_lobby value {raw:?} is not a number"))?;
+        let lobby: u64 = raw
+            .trim()
+            .parse()
+            .map_err(|_| format!("sc_lobby value {raw:?} is not a number"))?;
         if lobby == 0 || lobby == queue.id() || host == 0 {
             return Err(format!("sc_lobby value {raw:?} is not usable"));
         }
         let data_host = api.lobby_data(queue.id(), crate::mm::proto::K_HOST);
         if data_host.trim() != host.to_string() {
-            return Err(format!("queue lobby host data {data_host:?} is not the roster host {host}"));
+            return Err(format!(
+                "queue lobby host data {data_host:?} is not the roster host {host}"
+            ));
         }
         let owner = api.owner(queue.id());
         if owner != host {
-            return Err(format!("queue lobby owner {owner} is not the host {host}; not trusting its sc_lobby"));
+            return Err(format!(
+                "queue lobby owner {owner} is not the host {host}; not trusting its sc_lobby"
+            ));
         }
         Ok(Some(PublishedScLobby { lobby, host }))
     }
 }
 
 /// `ELobbyType` values (isteammatchmaking.h): Private = 0, FriendsOnly = 1, Public = 2, Invisible = 3, PrivateUnique = 4. Only the
-/// three the dev buttons use are representable.
+/// four the dev buttons use are representable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ScType {
     Public,
+    Friends,
     Invisible,
     Private,
 }
 
 impl ScType {
+    /// MM-3d `mm_sc_create_type`: `"public"` | `"friends"` | `"private"` (case-insensitive). Invisible is not offered there.
+    pub(crate) fn parse_create(s: &str) -> Option<ScType> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "public" => Some(ScType::Public),
+            "friends" => Some(ScType::Friends),
+            "private" => Some(ScType::Private),
+            _ => None,
+        }
+    }
+    /// The config spelling (inverse of [`Self::parse_create`]); `"public"` for the types the config cannot name.
+    pub(crate) fn create_name(self) -> &'static str {
+        match self {
+            ScType::Friends => "friends",
+            ScType::Private => "private",
+            _ => "public",
+        }
+    }
     pub(crate) fn raw(self) -> c_int {
         match self {
             ScType::Private => 0,
+            ScType::Friends => 1,
             ScType::Public => 2,
             ScType::Invisible => 3,
         }
     }
     pub(crate) fn label(self) -> &'static str {
         match self {
+            ScType::Friends => "FriendsOnly (1)",
             ScType::Public => "Public (2)",
             ScType::Invisible => "Invisible (3)",
             ScType::Private => "Private (0)",
@@ -223,10 +254,19 @@ pub(crate) enum CallKind {
 /// A decoded call result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CallData {
-    MatchList { count: u32 },
+    MatchList {
+        count: u32,
+    },
     /// `lobby` is `Some` only when Steam said OK and the id is non-zero.
-    Created { result: i32, lobby: Option<QueueLobby> },
-    Enter { lobby: u64, response: u32, locked: bool },
+    Created {
+        result: i32,
+        lobby: Option<QueueLobby>,
+    },
+    Enter {
+        lobby: u64,
+        response: u32,
+        locked: bool,
+    },
 }
 
 impl CallData {
@@ -240,7 +280,10 @@ pub(crate) enum CallPoll {
     Pending,
     Done(CallData),
     /// `invalid_handle`: Steam no longer knows the handle (the result may already have been consumed by the game's callback pump).
-    Failed { reason: String, invalid_handle: bool },
+    Failed {
+        reason: String,
+        invalid_handle: bool,
+    },
 }
 
 /// Lobby search request (all filters are "equal"; distance is always worldwide).
@@ -282,6 +325,12 @@ pub(crate) trait QueueSteam: LobbyText {
     fn begin_join_sc(&mut self, sc: &PublishedScLobby) -> Result<u64, String>;
     /// Method (a): hand `url` (a `steam://` URL built by `mm::join`) to the shell.
     fn open_url(&mut self, url: &str) -> Result<(), String>;
+
+    // ---- MM-3d: the one lobby creation that is not a queue lobby. ----
+    /// `ISteamMatchmaking::CreateLobby(ty, max_members)` through the same interface the game uses, to see whether Seamless Co-op adopts
+    /// the result. Returns the call handle; the result is polled with [`CallKind::Created`] and yields a [`QueueLobby`] (the lobby is
+    /// ours, so `leave` may be called on it, but `leave` refuses at call time while it carries `nrsc_lobby_type`).
+    fn begin_create_sc(&mut self, ty: ScType, max_members: i32) -> Result<u64, String>;
 }
 
 // ---- flat function types (steam_api_flat.h) ----
@@ -293,13 +342,16 @@ type FnCreateLobby = unsafe extern "system" fn(*mut c_void, c_int, c_int) -> u64
 type FnJoinLobby = unsafe extern "system" fn(*mut c_void, u64) -> u64;
 type FnLeaveLobby = unsafe extern "system" fn(*mut c_void, u64);
 type FnGetLobbyData = unsafe extern "system" fn(*mut c_void, u64, *const c_char) -> *const c_char;
-type FnSetLobbyData = unsafe extern "system" fn(*mut c_void, u64, *const c_char, *const c_char) -> bool;
-type FnGetMemberData = unsafe extern "system" fn(*mut c_void, u64, u64, *const c_char) -> *const c_char;
+type FnSetLobbyData =
+    unsafe extern "system" fn(*mut c_void, u64, *const c_char, *const c_char) -> bool;
+type FnGetMemberData =
+    unsafe extern "system" fn(*mut c_void, u64, u64, *const c_char) -> *const c_char;
 type FnSetMemberData = unsafe extern "system" fn(*mut c_void, u64, *const c_char, *const c_char);
 type FnSetJoinable = unsafe extern "system" fn(*mut c_void, u64, bool) -> bool;
 type FnIsCompleted = unsafe extern "system" fn(*mut c_void, u64, *mut bool) -> bool;
 type FnFailureReason = unsafe extern "system" fn(*mut c_void, u64) -> c_int;
-type FnGetResult = unsafe extern "system" fn(*mut c_void, u64, *mut c_void, c_int, c_int, *mut bool) -> bool;
+type FnGetResult =
+    unsafe extern "system" fn(*mut c_void, u64, *mut c_void, c_int, c_int, *mut bool) -> bool;
 type FnFriendName = unsafe extern "system" fn(*mut c_void, u64) -> *const c_char;
 
 macro_rules! fns {
@@ -409,7 +461,17 @@ impl RealSteam {
         if utils == 0 {
             missing.push("SteamAPI_SteamUtils_v010 (returned NULL)");
         }
-        Some(RealSteam { flat, f, j, mm, utils, friends, own, missing, join_missing })
+        Some(RealSteam {
+            flat,
+            f,
+            j,
+            mm,
+            utils,
+            friends,
+            own,
+            missing,
+            join_missing,
+        })
     }
 
     fn mmp(&self) -> *mut c_void {
@@ -444,7 +506,9 @@ impl LobbyApi for RealSteam {
 
 impl LobbyText for RealSteam {
     fn lobby_data(&self, lobby: u64, key: &str) -> String {
-        let (Some(f), Ok(k)) = (self.f.get_data, cs(key)) else { return String::new() };
+        let (Some(f), Ok(k)) = (self.f.get_data, cs(key)) else {
+            return String::new();
+        };
         if self.mm == 0 {
             return String::new();
         }
@@ -453,7 +517,9 @@ impl LobbyText for RealSteam {
         unsafe { copy_cstr(f(self.mmp(), lobby, k.as_ptr())) }
     }
     fn member_data(&self, lobby: u64, member: u64, key: &str) -> String {
-        let (Some(f), Ok(k)) = (self.f.get_member_data, cs(key)) else { return String::new() };
+        let (Some(f), Ok(k)) = (self.f.get_member_data, cs(key)) else {
+            return String::new();
+        };
         if self.mm == 0 {
             return String::new();
         }
@@ -509,32 +575,62 @@ impl QueueSteam for RealSteam {
             fl.slots,
             fl.max_results
         );
-        if h == 0 { Err("RequestLobbyList returned handle 0".into()) } else { Ok(h) }
+        if h == 0 {
+            Err("RequestLobbyList returned handle 0".into())
+        } else {
+            Ok(h)
+        }
     }
 
     fn begin_create(&mut self, max_members: i32) -> Result<u64, String> {
-        let Some(f) = self.f.create else { return Err(Self::miss("SteamAPI_ISteamMatchmaking_CreateLobby")) };
+        let Some(f) = self.f.create else {
+            return Err(Self::miss("SteamAPI_ISteamMatchmaking_CreateLobby"));
+        };
         // SAFETY: non-null ISteamMatchmaking*; `CreateLobby(self, ELobbyType, int)` -> SteamAPICall_t.
         let h = unsafe { f(self.mmp(), LOBBY_TYPE_INVISIBLE, max_members) };
         tracing::info!("mm_queue: Steam CreateLobby(Invisible, {max_members}) -> handle {h}");
-        if h == 0 { Err("CreateLobby returned handle 0".into()) } else { Ok(h) }
+        if h == 0 {
+            Err("CreateLobby returned handle 0".into())
+        } else {
+            Ok(h)
+        }
     }
 
     fn begin_join(&mut self, t: &JoinTarget) -> Result<u64, String> {
-        let Some(f) = self.f.join else { return Err(Self::miss("SteamAPI_ISteamMatchmaking_JoinLobby")) };
+        let Some(f) = self.f.join else {
+            return Err(Self::miss("SteamAPI_ISteamMatchmaking_JoinLobby"));
+        };
         // SAFETY: non-null ISteamMatchmaking*; `JoinLobby(self, uint64)` -> SteamAPICall_t. The target is a verified
         // queue-lobby candidate or our party leader's published id (see `JoinTarget`).
         let h = unsafe { f(self.mmp(), t.0) };
-        tracing::info!("mm_queue: Steam JoinLobby({} (0x{:X})) -> handle {h}", t.0, t.0);
-        if h == 0 { Err("JoinLobby returned handle 0".into()) } else { Ok(h) }
+        tracing::info!(
+            "mm_queue: Steam JoinLobby({} (0x{:X})) -> handle {h}",
+            t.0,
+            t.0
+        );
+        if h == 0 {
+            Err("JoinLobby returned handle 0".into())
+        } else {
+            Ok(h)
+        }
     }
 
     fn poll(&mut self, handle: u64, kind: CallKind) -> CallPoll {
-        let (Some(done), Some(why), Some(get)) = (self.f.is_completed, self.f.failure_reason, self.f.get_result) else {
-            return CallPoll::Failed { reason: Self::miss("ISteamUtils call-result functions"), invalid_handle: false };
+        let (Some(done), Some(why), Some(get)) = (
+            self.f.is_completed,
+            self.f.failure_reason,
+            self.f.get_result,
+        ) else {
+            return CallPoll::Failed {
+                reason: Self::miss("ISteamUtils call-result functions"),
+                invalid_handle: false,
+            };
         };
         if self.utils == 0 {
-            return CallPoll::Failed { reason: "ISteamUtils is NULL".into(), invalid_handle: false };
+            return CallPoll::Failed {
+                reason: "ISteamUtils is NULL".into(),
+                invalid_handle: false,
+            };
         }
         let u = self.utils as *mut c_void;
         let mut failed = false;
@@ -543,7 +639,10 @@ impl QueueSteam for RealSteam {
         if !completed {
             return CallPoll::Pending;
         }
-        let fail = |reason: i32| CallPoll::Failed { reason: format!("ESteamAPICallFailure {reason}"), invalid_handle: reason == 2 };
+        let fail = |reason: i32| CallPoll::Failed {
+            reason: format!("ESteamAPICallFailure {reason}"),
+            invalid_handle: reason == 2,
+        };
         if failed {
             // SAFETY: `GetAPICallFailureReason(self, SteamAPICall_t)` -> enum (int).
             return fail(unsafe { why(u, handle) });
@@ -557,7 +656,16 @@ impl QueueSteam for RealSteam {
         let mut failed2 = false;
         // SAFETY: `GetAPICallResult(self, SteamAPICall_t, void*, int, int, bool*)`; `buf` holds `size` (<= 32) writable bytes;
         // `failed2` is a valid local.
-        let ok = unsafe { get(u, handle, buf.as_mut_ptr() as *mut c_void, size as c_int, id, &mut failed2) };
+        let ok = unsafe {
+            get(
+                u,
+                handle,
+                buf.as_mut_ptr() as *mut c_void,
+                size as c_int,
+                id,
+                &mut failed2,
+            )
+        };
         if !ok || failed2 {
             // SAFETY: as above.
             return fail(unsafe { why(u, handle) });
@@ -577,7 +685,11 @@ impl QueueSteam for RealSteam {
                     lobby: (result == EVALUE_OK && lobby != 0).then(|| QueueLobby::created(lobby)),
                 }
             }
-            CallKind::Enter => CallData::Enter { lobby: u64_at(0), response: u32_at(16), locked: buf[12] != 0 },
+            CallKind::Enter => CallData::Enter {
+                lobby: u64_at(0),
+                response: u32_at(16),
+                locked: buf[12] != 0,
+            },
         })
     }
 
@@ -600,29 +712,45 @@ impl QueueSteam for RealSteam {
         // SAFETY: non-null ISteamMatchmaking*; `SetLobbyData(self, uint64, const char*, const char*)` -> bool. `lobby` is a
         // QueueLobby (never SC's). Strings are NUL-terminated and outlive the call.
         let ok = unsafe { f(self.mmp(), lobby.0, k.as_ptr(), v.as_ptr()) };
-        tracing::info!("mm_queue: Steam SetLobbyData({}, {key:?}, {value:?}) -> {ok}", lobby.0);
+        tracing::info!(
+            "mm_queue: Steam SetLobbyData({}, {key:?}, {value:?}) -> {ok}",
+            lobby.0
+        );
         ok
     }
 
     fn set_joinable(&mut self, lobby: &QueueLobby, joinable: bool) -> bool {
-        let Some(f) = self.f.set_joinable else { return false };
+        let Some(f) = self.f.set_joinable else {
+            return false;
+        };
         // SAFETY: as `set_data`; `SetLobbyJoinable(self, uint64, bool)` -> bool.
         let ok = unsafe { f(self.mmp(), lobby.0, joinable) };
-        tracing::info!("mm_queue: Steam SetLobbyJoinable({}, {joinable}) -> {ok}", lobby.0);
+        tracing::info!(
+            "mm_queue: Steam SetLobbyJoinable({}, {joinable}) -> {ok}",
+            lobby.0
+        );
         ok
     }
 
     fn set_my_member_data(&mut self, lobby: &QueueLobby, key: &str, value: &str) {
-        let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(key), cs(value)) else { return };
+        let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(key), cs(value)) else {
+            return;
+        };
         // SAFETY: as `set_data`; `SetLobbyMemberData(self, uint64, const char*, const char*)` (sets OUR member entry).
         unsafe { f(self.mmp(), lobby.0, k.as_ptr(), v.as_ptr()) };
-        tracing::info!("mm_queue: Steam SetLobbyMemberData({}, {key:?}, {value:?})", lobby.0);
+        tracing::info!(
+            "mm_queue: Steam SetLobbyMemberData({}, {key:?}, {value:?})",
+            lobby.0
+        );
     }
 
     fn leave(&mut self, lobby: &QueueLobby) {
         // Belt and braces: even a QueueLobby is refused if the lobby carries Seamless Co-op's marker.
         if !self.lobby_data(lobby.0, KEY_SC_TYPE).is_empty() {
-            tracing::error!("mm_queue: REFUSED LeaveLobby({}): it carries {KEY_SC_TYPE}", lobby.0);
+            tracing::error!(
+                "mm_queue: REFUSED LeaveLobby({}): it carries {KEY_SC_TYPE}",
+                lobby.0
+            );
             return;
         }
         let Some(f) = self.f.leave else { return };
@@ -632,10 +760,15 @@ impl QueueSteam for RealSteam {
     }
 
     fn set_sc_queue_value(&mut self, sc: &ScLobby, value: &str) {
-        let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(KEY_SC_MEMBER), cs(value)) else { return };
+        let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(KEY_SC_MEMBER), cs(value)) else {
+            return;
+        };
         // SAFETY: as `set_my_member_data`. The key is the fixed constant `nrpvp_q`: this is the only write on SC's lobby.
         unsafe { f(self.mmp(), sc.0, k.as_ptr(), v.as_ptr()) };
-        tracing::info!("mm_queue: Steam SetLobbyMemberData(SC lobby {}, {KEY_SC_MEMBER:?}, {value:?})", sc.0);
+        tracing::info!(
+            "mm_queue: Steam SetLobbyMemberData(SC lobby {}, {KEY_SC_MEMBER:?}, {value:?})",
+            sc.0
+        );
     }
 
     fn app_id(&self) -> u32 {
@@ -662,7 +795,12 @@ impl QueueSteam for RealSteam {
         // SAFETY: non-null ISteamMatchmaking*; `bool InviteUserToLobby(self, uint64 lobby, uint64 invitee)`. `sc` is a verified
         // Seamless Co-op lobby we are a member of; an invite changes nothing in its data.
         let ok = unsafe { f(self.mmp(), sc.0, invitee) };
-        tracing::info!("mm_join: Steam InviteUserToLobby(SC lobby {} (0x{:X}), invitee {}) -> {ok}", sc.0, sc.0, invitee);
+        tracing::info!(
+            "mm_join: Steam InviteUserToLobby(SC lobby {} (0x{:X}), invitee {}) -> {ok}",
+            sc.0,
+            sc.0,
+            invitee
+        );
         ok
     }
 
@@ -674,17 +812,51 @@ impl QueueSteam for RealSteam {
         // SAFETY: non-null ISteamMatchmaking*; `bool SetLobbyType(self, uint64 lobby, ELobbyType)`; ELobbyType is a 32-bit enum.
         // Reached only from a dev button, for a verified Seamless Co-op lobby we own (the caller checks).
         let ok = unsafe { f(self.mmp(), sc.0, ty.raw()) };
-        tracing::info!("mm_join: Steam SetLobbyType(SC lobby {} (0x{:X}), {}) -> {ok}", sc.0, sc.0, ty.label());
+        tracing::info!(
+            "mm_join: Steam SetLobbyType(SC lobby {} (0x{:X}), {}) -> {ok}",
+            sc.0,
+            sc.0,
+            ty.label()
+        );
         ok
     }
 
     fn begin_join_sc(&mut self, sc: &PublishedScLobby) -> Result<u64, String> {
-        let Some(f) = self.f.join else { return Err(Self::miss("SteamAPI_ISteamMatchmaking_JoinLobby")) };
+        let Some(f) = self.f.join else {
+            return Err(Self::miss("SteamAPI_ISteamMatchmaking_JoinLobby"));
+        };
         // SAFETY: non-null ISteamMatchmaking*; `JoinLobby(self, uint64)` -> SteamAPICall_t. The id came from the host of our own
         // verified queue lobby (`PublishedScLobby`).
         let h = unsafe { f(self.mmp(), sc.lobby) };
-        tracing::info!("mm_join: Steam JoinLobby(SC lobby {} (0x{:X}), published by host {}) -> handle {h}", sc.lobby, sc.lobby, sc.host);
-        if h == 0 { Err("JoinLobby returned handle 0".into()) } else { Ok(h) }
+        tracing::info!(
+            "mm_join: Steam JoinLobby(SC lobby {} (0x{:X}), published by host {}) -> handle {h}",
+            sc.lobby,
+            sc.lobby,
+            sc.host
+        );
+        if h == 0 {
+            Err("JoinLobby returned handle 0".into())
+        } else {
+            Ok(h)
+        }
+    }
+
+    fn begin_create_sc(&mut self, ty: ScType, max_members: i32) -> Result<u64, String> {
+        let Some(f) = self.f.create else {
+            return Err(Self::miss("SteamAPI_ISteamMatchmaking_CreateLobby"));
+        };
+        // SAFETY: non-null ISteamMatchmaking*; `CreateLobby(self, ELobbyType, int)` -> SteamAPICall_t (steam_api_flat.h), the same
+        // call as `begin_create` with another lobby type (S9 §5d: the game itself calls CreateLobby(2, 6) through this interface).
+        let h = unsafe { f(self.mmp(), ty.raw(), max_members) };
+        tracing::info!(
+            "mm_sc_create: Steam CreateLobby({}, {max_members}) -> handle {h}",
+            ty.label()
+        );
+        if h == 0 {
+            Err("CreateLobby returned handle 0".into())
+        } else {
+            Ok(h)
+        }
     }
 
     fn open_url(&mut self, url: &str) -> Result<(), String> {
@@ -694,10 +866,25 @@ impl QueueSteam for RealSteam {
         let wide: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
         // SAFETY: `wide` is NUL-terminated and outlives the call; "open" is a static wide string; the other parameters are null.
         // ShellExecuteW returns an HINSTANCE that is > 32 on success (documented Win32 contract).
-        let r = unsafe { ShellExecuteW(None, w!("open"), PCWSTR(wide.as_ptr()), None, None, SW_SHOWNORMAL) };
+        let r = unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(wide.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
         let code = r.0 as isize;
-        tracing::info!("mm_join: ShellExecuteW(open, {url:?}) -> {code} (> 32 = handed to the shell)");
-        if code > 32 { Ok(()) } else { Err(format!("ShellExecuteW returned {code}")) }
+        tracing::info!(
+            "mm_join: ShellExecuteW(open, {url:?}) -> {code} (> 32 = handed to the shell)"
+        );
+        if code > 32 {
+            Ok(())
+        } else {
+            Err(format!("ShellExecuteW returned {code}"))
+        }
     }
 }
 
@@ -731,6 +918,7 @@ pub(crate) mod fake {
         SetType(u64, ScType),
         JoinSc(u64),
         OpenUrl(String),
+        CreateSc(ScType, i32),
     }
 
     #[derive(Default)]
@@ -749,13 +937,31 @@ pub(crate) mod fake {
         pub overlay: bool,
         pub invite_ok: bool,
         pub url_ok: bool,
+        /// MM-3d: a lobby made by `begin_create_sc` carries `nrsc_lobby_type` from the start (Seamless Co-op adopted it).
+        pub adopt_created: bool,
     }
 
     impl FakeSteam {
         pub(crate) fn new(own: u64) -> FakeSteam {
-            FakeSteam { own, next_handle: 100, next_lobby: 1000, app_id: 2622380, overlay: true, invite_ok: true, url_ok: true, ..Default::default() }
+            FakeSteam {
+                own,
+                next_handle: 100,
+                next_lobby: 1000,
+                app_id: 2622380,
+                overlay: true,
+                invite_ok: true,
+                url_ok: true,
+                ..Default::default()
+            }
         }
-        pub(crate) fn add_lobby(&mut self, id: u64, owner: u64, limit: i32, members: &[u64], data: &[(&str, &str)]) {
+        pub(crate) fn add_lobby(
+            &mut self,
+            id: u64,
+            owner: u64,
+            limit: i32,
+            members: &[u64],
+            data: &[(&str, &str)],
+        ) {
             let l = self.lobbies.entry(id).or_default();
             l.owner = owner;
             l.limit = limit;
@@ -798,7 +1004,10 @@ pub(crate) mod fake {
             self.lobbies.get(&l).map_or(0, |x| x.limit)
         }
         fn member_by_index(&self, l: u64, i: i32) -> u64 {
-            self.lobbies.get(&l).and_then(|x| x.members.get(i as usize).copied()).unwrap_or(0)
+            self.lobbies
+                .get(&l)
+                .and_then(|x| x.members.get(i as usize).copied())
+                .unwrap_or(0)
         }
         fn data_count(&self, l: u64) -> i32 {
             self.lobbies.get(&l).map_or(0, |x| x.data.len() as i32)
@@ -807,16 +1016,23 @@ pub(crate) mod fake {
             let x = self.lobbies.get(&l)?;
             let mut keys: Vec<_> = x.data.iter().collect();
             keys.sort();
-            keys.get(i as usize).map(|(k, v)| ((*k).clone(), (*v).clone()))
+            keys.get(i as usize)
+                .map(|(k, v)| ((*k).clone(), (*v).clone()))
         }
     }
 
     impl LobbyText for FakeSteam {
         fn lobby_data(&self, l: u64, k: &str) -> String {
-            self.lobbies.get(&l).and_then(|x| x.data.get(k).cloned()).unwrap_or_default()
+            self.lobbies
+                .get(&l)
+                .and_then(|x| x.data.get(k).cloned())
+                .unwrap_or_default()
         }
         fn member_data(&self, l: u64, m: u64, k: &str) -> String {
-            self.lobbies.get(&l).and_then(|x| x.member_data.get(&(m, k.to_string())).cloned()).unwrap_or_default()
+            self.lobbies
+                .get(&l)
+                .and_then(|x| x.member_data.get(&(m, k.to_string())).cloned())
+                .unwrap_or_default()
         }
     }
 
@@ -833,7 +1049,12 @@ pub(crate) mod fake {
             let h = self.next_handle;
             let ids = self.auto_search.clone().unwrap_or_default();
             self.search_results = ids.clone();
-            self.results.insert(h, CallPoll::Done(CallData::MatchList { count: ids.len() as u32 }));
+            self.results.insert(
+                h,
+                CallPoll::Done(CallData::MatchList {
+                    count: ids.len() as u32,
+                }),
+            );
             Ok(h)
         }
         fn begin_create(&mut self, max: i32) -> Result<u64, String> {
@@ -841,13 +1062,25 @@ pub(crate) mod fake {
             self.next_handle += 1;
             let h = self.next_handle;
             if self.create_fails {
-                self.results.insert(h, CallPoll::Done(CallData::Created { result: 2, lobby: None }));
+                self.results.insert(
+                    h,
+                    CallPoll::Done(CallData::Created {
+                        result: 2,
+                        lobby: None,
+                    }),
+                );
             } else {
                 self.next_lobby += 1;
                 let id = self.next_lobby;
                 let own = self.own;
                 self.add_lobby(id, own, max, &[own], &[]);
-                self.results.insert(h, CallPoll::Done(CallData::Created { result: 1, lobby: Some(QueueLobby::for_test(id)) }));
+                self.results.insert(
+                    h,
+                    CallPoll::Done(CallData::Created {
+                        result: 1,
+                        lobby: Some(QueueLobby::for_test(id)),
+                    }),
+                );
             }
             Ok(h)
         }
@@ -865,7 +1098,11 @@ pub(crate) mod fake {
             };
             self.results.insert(
                 h,
-                CallPoll::Done(CallData::Enter { lobby: id, response: if ok { 1 } else { 4 }, locked: false }),
+                CallPoll::Done(CallData::Enter {
+                    lobby: id,
+                    response: if ok { 1 } else { 4 },
+                    locked: false,
+                }),
             );
             Ok(h)
         }
@@ -887,7 +1124,8 @@ pub(crate) mod fake {
             true
         }
         fn set_my_member_data(&mut self, l: &QueueLobby, k: &str, v: &str) {
-            self.writes.push(Write::MemberData(l.id(), k.into(), v.into()));
+            self.writes
+                .push(Write::MemberData(l.id(), k.into(), v.into()));
             let own = self.own;
             self.set_member(l.id(), own, k, v);
         }
@@ -932,12 +1170,59 @@ pub(crate) mod fake {
                 }
                 _ => false,
             };
-            self.results.insert(h, CallPoll::Done(CallData::Enter { lobby: sc.id(), response: if ok { 1 } else { 15 }, locked: true }));
+            self.results.insert(
+                h,
+                CallPoll::Done(CallData::Enter {
+                    lobby: sc.id(),
+                    response: if ok { 1 } else { 15 },
+                    locked: true,
+                }),
+            );
+            Ok(h)
+        }
+        fn begin_create_sc(&mut self, ty: ScType, max: i32) -> Result<u64, String> {
+            self.writes.push(Write::CreateSc(ty, max));
+            self.next_handle += 1;
+            let h = self.next_handle;
+            if self.create_fails {
+                self.results.insert(
+                    h,
+                    CallPoll::Done(CallData::Created {
+                        result: 2,
+                        lobby: None,
+                    }),
+                );
+            } else {
+                self.next_lobby += 1;
+                let id = self.next_lobby;
+                let own = self.own;
+                self.add_lobby(id, own, max, &[own], &[]);
+                if self.adopt_created {
+                    self.add_lobby(
+                        id,
+                        own,
+                        max,
+                        &[own],
+                        &[(KEY_SC_TYPE, "nrsc_ynx3_seamless_master_lobby")],
+                    );
+                }
+                self.results.insert(
+                    h,
+                    CallPoll::Done(CallData::Created {
+                        result: 1,
+                        lobby: Some(QueueLobby::for_test(id)),
+                    }),
+                );
+            }
             Ok(h)
         }
         fn open_url(&mut self, url: &str) -> Result<(), String> {
             self.writes.push(Write::OpenUrl(url.to_string()));
-            if self.url_ok { Ok(()) } else { Err("fake refusal".into()) }
+            if self.url_ok {
+                Ok(())
+            } else {
+                Err("fake refusal".into())
+            }
         }
     }
 }
@@ -947,7 +1232,6 @@ mod tests {
     use super::fake::*;
     use super::*;
 
-
     #[test]
     fn published_sc_lobby_needs_the_host_to_own_and_name_it() {
         let mut s = FakeSteam::new(2);
@@ -955,17 +1239,35 @@ mod tests {
         let q = QueueLobby::verify(&s, 40).expect("queue");
         // Nothing published yet.
         assert_eq!(PublishedScLobby::from_queue(&s, &q, 1), Ok(None));
-        s.lobbies.get_mut(&40).expect("q").data.insert(KEY_PUBLISHED_SC.into(), "5555".into());
-        let p = PublishedScLobby::from_queue(&s, &q, 1).expect("ok").expect("some");
+        s.lobbies
+            .get_mut(&40)
+            .expect("q")
+            .data
+            .insert(KEY_PUBLISHED_SC.into(), "5555".into());
+        let p = PublishedScLobby::from_queue(&s, &q, 1)
+            .expect("ok")
+            .expect("some");
         assert_eq!((p.id(), p.host()), (5555, 1));
         // The roster host differs from the owner: refused. Same for a `host` value that disagrees.
         assert!(PublishedScLobby::from_queue(&s, &q, 2).is_err());
-        s.lobbies.get_mut(&40).expect("q").data.insert("host".into(), "9".into());
+        s.lobbies
+            .get_mut(&40)
+            .expect("q")
+            .data
+            .insert("host".into(), "9".into());
         assert!(PublishedScLobby::from_queue(&s, &q, 1).is_err());
-        s.lobbies.get_mut(&40).expect("q").data.insert("host".into(), "1".into());
+        s.lobbies
+            .get_mut(&40)
+            .expect("q")
+            .data
+            .insert("host".into(), "1".into());
         // Garbage, zero and the queue lobby itself are not lobby ids to join.
         for bad in ["abc", "0", "40"] {
-            s.lobbies.get_mut(&40).expect("q").data.insert(KEY_PUBLISHED_SC.into(), bad.into());
+            s.lobbies
+                .get_mut(&40)
+                .expect("q")
+                .data
+                .insert(KEY_PUBLISHED_SC.into(), bad.into());
             assert!(PublishedScLobby::from_queue(&s, &q, 1).is_err(), "{bad}");
         }
     }
@@ -973,12 +1275,36 @@ mod tests {
     #[test]
     fn lobby_type_values_match_the_sdk_header() {
         // isteammatchmaking.h ELobbyType: Private 0, FriendsOnly 1, Public 2, Invisible 3, PrivateUnique 4.
-        assert_eq!((ScType::Private.raw(), ScType::Public.raw(), ScType::Invisible.raw()), (0, 2, 3));
+        assert_eq!(
+            (
+                ScType::Private.raw(),
+                ScType::Friends.raw(),
+                ScType::Public.raw(),
+                ScType::Invisible.raw()
+            ),
+            (0, 1, 2, 3)
+        );
+    }
+
+    #[test]
+    fn create_type_names_round_trip() {
+        for t in [ScType::Public, ScType::Friends, ScType::Private] {
+            assert_eq!(ScType::parse_create(t.create_name()), Some(t));
+        }
+        assert_eq!(ScType::parse_create(" PUBLIC "), Some(ScType::Public));
+        assert_eq!(ScType::parse_create("invisible"), None);
+        assert_eq!(ScType::parse_create(""), None);
     }
     #[test]
     fn verify_refuses_seamless_coop_lobbies_even_when_tagged() {
         let mut s = FakeSteam::new(1);
-        s.add_lobby(10, 1, 6, &[1], &[(KEY_SC_TYPE, "nrsc_ynx3_seamless_master_lobby")]);
+        s.add_lobby(
+            10,
+            1,
+            6,
+            &[1],
+            &[(KEY_SC_TYPE, "nrsc_ynx3_seamless_master_lobby")],
+        );
         s.add_lobby(11, 1, 6, &[1], &[(KEY_SC_TYPE, "x"), (KEY_TAG, "1")]);
         s.add_lobby(12, 1, 6, &[1], &[("inviteParam", "0")]);
         s.add_lobby(13, 1, 2, &[1], &[(KEY_TAG, "1")]);

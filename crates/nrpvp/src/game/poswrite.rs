@@ -18,8 +18,8 @@
 
 use std::fmt::Write as _;
 
-use super::discover::is_ptr;
 use super::mem;
+use super::mem::is_ptr;
 
 /// Saved value must be finite with every |component| below this.
 pub(crate) const MAX_ABS: f32 = 100_000.0;
@@ -27,19 +27,11 @@ pub(crate) const MAX_ABS: f32 = 100_000.0;
 pub(crate) const FOLLOW_MS: [u64; 3] = [100, 500, 2000];
 /// Offsets above this are rejected when parsing (a PlayerIns is a few KiB; a pointee read is bounded too).
 const MAX_OFF: u64 = 0xFFFF;
-/// PlayerIns -> the character's module list (a block of pointers, no vtable). NR 1.3.3.0: seen in the FS-0 run 7 dump
-/// (`[PlayerIns+0x1B8]`, 57 pointers); that it is the module list is a HYPOTHESIS (ER has it at +0x190, which is
-/// `CS::SpecialEffect` in NR). MEMORY_MAP.md section 8.
-pub(crate) const MODULES_OFF: usize = 0x1B8;
-/// Bytes of the module list searched for the physics module.
-pub(crate) const MODULES_SPAN: usize = 0x1C8;
-/// Vtable of `CS::CSChrPhysicsModule` as an exe offset. NR 1.3.3.0, read from the RTTI of `nightreign.exe` on disk
-/// (2026-10-13). The game reads the position at +0x70 of this object (code at exe+0x46E5C1). MEMORY_MAP.md section 8.
-pub(crate) const PHYSICS_VTABLE_RVA: usize = 0x2C1_3720;
-/// PlayerIns -> origin of the local frame the physics position is measured in (x, y, z f32; y stays 0). The game moves it in
-/// 8 m steps as the player walks, so world position = physics position - origin. NR 1.3.3.0, T-028 run 3 (2026-10-14):
-/// local minus this value is a smooth path across every jump of the local value. MEMORY_MAP.md section 8.
-pub(crate) const ORIGIN_OFF: usize = 0x80;
+// Position offsets (MEMORY_MAP §8): `game::layout`, under the names this file used before.
+pub(crate) use super::layout::MODULES_SPAN;
+pub(crate) use super::layout::PHYSICS_VTABLE_RVA;
+pub(crate) use super::layout::PLAYER_MODULES as MODULES_OFF;
+pub(crate) use super::layout::PLAYER_ORIGIN as ORIGIN_OFF;
 
 /// Where one candidate triple lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -309,6 +301,8 @@ impl PosTest {
         self.cands.get(self.sel).map_or(String::new(), Cand::text)
     }
 
+    /// Whether values were saved (tests).
+    #[cfg(test)]
     pub(crate) fn has_saved(&self) -> bool {
         self.saved_for.is_some()
     }

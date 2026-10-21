@@ -29,6 +29,7 @@ Confidence: **Confirmed** = seen behaving this way in the live game. **Likely** 
 |---|---|---|---|
 | Player list | `WorldChrMan+0x9A40` | A fixed list with **6 slots** (Seamless Co-op's player limit). Slot count at `+0x10`, pointer to the slots at `+0x18`. Each slot is 16 bytes and starts with a pointer to a player | T-007a, every session |
 | Which slot is "me" | the first filled slot | On every player's own game, **slot 0 is the local player**; others follow in join order | Nucleus and real Steam, 2 players. Not tested with 3+ |
+| Number of filled slots = players loaded in this world | same place | Goes from 1 to 2 on both games a few seconds after a friend really joins the Seamless Co-op lobby; stays 1 when the friend is only a Steam lobby member. Matchmaking uses it as "present" | FS-MM1, FS-MM2, FS-MM3 (2 players) |
 | Slot count during loading | same place | Briefly reads 0 while an area loads. Ignore it and retry | every session |
 | Other pre-made player objects | `WorldChrMan+0x9C20` … `+0xA170` | About ten extra player-class objects with team 30 ("Object"). **Not real players**; ignore them | T-007a |
 
@@ -116,7 +117,7 @@ To tell teammate from rival: read the handle, find which player in the list has 
 
 ## 8. Position (not finished)
 
-**The physics module holds the position. Writing it moves the player**. **A teleport that keeps world position (physics − origin, below) lands on the saved spot and stays: confirmed solo, run 4 (2026-10-14).** Not yet checked: what other players see (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
+**The physics module holds the position. Writing it moves the player**. **A teleport that keeps world position (physics − origin, below) lands on the saved spot and stays: confirmed solo, run 4 (2026-10-14); other players see the move (Nucleus, 2026-10-14).** Code: `game/layout.rs` (position group), `game/poswrite.rs`. (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
 
 **What run 1 showed (9 writes, local player, solo expedition):**
 - The chain is `[[PlayerIns+0x1B8]+0x68]+0x70`. The owner at `+0x08` is the PlayerIns. **Confirmed.**
@@ -127,6 +128,11 @@ To tell teammate from rival: read the handle, find which player in the list has 
 - `PlayerIns+0x90` = the start position of this life in the same local frame (it shifts with the origin). `[HYPOTHESIS]` (Elden Ring `initial_position`).
 - `PlayerIns+0x38` … `+0x44` hold map-tile ids in the Elden Ring format, e.g. `0x3C2B2800` = m60_43_40_00, which changed to `0x3C2C2700` when the player crossed into the next tile. Not needed for a move inside one expedition map.
 - The start of the expedition (before the hawk) reads (0.00, 10.66, 67.00).
+- **The hawk ride** (run 4, world position, samples every ~0.2 s): starts at y ≈ 162; a straight line (direction about (-0.6, 0, -0.8)
+  on that map) at 16–18 m/s for about 12 s / 210 m, sinking to y ≈ 108. Ground byte `+0x92` = 1 for the whole ride. At release it turns 0,
+  the horizontal speed stays about 17 m/s, and the player falls about 84 m in 3 s to the ground (y ≈ 24) with no damage. Anim id at
+  `[time act]+0x20` read 9 throughout (no use as a ride marker). **Confirmed** (one run, one landing zone). What carries the player
+  (hawk object, animation, attachment) and what ends the ride: UNKNOWN (PROJECT_PLAN §13).
 
 Facts from the exe on disk:
 
@@ -149,7 +155,9 @@ Older candidates (FS-0 run 6: numbers that move smoothly with the player). Readi
 | `[PlayerIns+0x6B0]+0x17C`, `+0x18C` | Inside `CS::CSFD4LocationBodyScaleModifier` (a model/bone object: unlikely to move the player) |
 | `[PlayerIns+0x5F0]+0x64` | Object with no class |
 
-Still UNKNOWN: why the player ends below the saved height or falls through; whether other players see the move; how the map tile
+Answered later: the wrong height and the falls came from the moving origin (above); other players **do** see the move (Nucleus, 2026-10-14,
+reported by Leonardo).
+Still UNKNOWN: how the map tile
 is stored and whether a far move must change it; what marks "landed after the hawk".
 
 ## 9. Things that turned out to be wrong
@@ -187,10 +195,40 @@ match unless noted). The offsets are the table author's; what each object is and
 | Enemies ignore the player ("stealth") | byte `+0xD4` | `exe+0x2F5D02` | `74 ?? C6 81 ?? ?? ?? ?? ?? E9 ?? ?? ?? ?? 80 B9` | UNKNOWN |
 | Night's Tide speed multiplier | a float constant multiplied into the tide timer, and a rate at `+0x118` | **pattern not found in 1.3.3.0** | n/a | n/a |
 
+## 12. Online: Steam lobbies and the game's multiplayer code (matchmaking)
+
+Not memory values but code and Steam facts the matchmaking depends on. How they are used: `.claude/MATCHMAKING.md`. Proofs: S9 §5c–§5g.
+
+| What | Where | Behaviour | Confirmed by |
+|---|---|---|---|
+| Steam API the game uses | the game's own `steam_api64.dll`; flat exports found by name (`SteamAPI_ISteamMatchmaking_CreateLobby`, …) | Each flat export is a 2-instruction jump: `mov rax,[rcx]; jmp [rax+disp]` into the interface's table in `steamclient64.dll` | MM-3c log 2026-10-14 |
+| `ISteamMatchmaking::CreateLobby` | table slot 13 (`disp 0x68`) | Calls from our mod pass through `nrsc.dll+0x2BEC2` first: SC wraps the matchmaking interface | MM-3c (call stack of our own queue lobby) |
+| `ISteamFriends::ActivateGameOverlayInviteDialog` | table slot 33 (`disp 0x108`) | **The game calls the table target directly**; the flat export is never hit. Takes the lobby id, returns nothing. Skipping it (return at once) leaves no side effect we could see | MM-3c; MM-3f solo; FS-MM3 |
+| Invite Members creates the multiplayer lobby | call to `CreateLobby(Public, 6)` at `exe+0x25919A1`, called from `+0x2595B68` ← `+0x258E157` ← `+0x25857D4` ← `+0x257F5DA` ← `+0xDEC332` (return addresses) | Runs when the player picks Matchmaking Settings > Invite Members and no lobby exists yet. SC then writes its tags on it | MM-3c |
+| Invite window call | returns to `exe+0x258568B` | About 0.3 s after the lobby is created. This is the call MM-3f skips | MM-3c; MM-3f; FS-MM3 |
+| This code region | around the call sites above (`exe+0x257F5DA` … `+0x25919A1`) | No unwind data (`.pdata`) and jump-chain obfuscation: static reading is slow. A live trace (hardware breakpoints) works | MM-3c, Python/capstone read of the exe |
+| Lobby made by the game | Steam lobby data `inviteParam = "0"` (the game), `nrsc_lobby_type = "nrsc_ynx3_seamless_master_lobby"` and `nrsc_lobby_version = "1.1.3"` (SC); Public, 6, locked | Joinable: other games enter and load into the host's Roundtable | FS-MM1, FS-MM3 |
+| Lobby made by **our** `CreateLobby(Public, 6)` | SC adopts it too (writes its 2 tags at once), but no `inviteParam` | **Not joinable**: a joiner's game enters and leaves within 0.1 s; a direct `JoinLobby` gives Steam membership but no session | MM-3d, FS-MM2 |
+| Second, unlocked lobby at expedition start | host creates it ~50 s before the expedition loads; the other player enters it 0.7 s later | Purpose UNKNOWN (likely the expedition's own session). Our mod ignores it | FS-MM3 |
+| Phase from team type | local player `ChrIns+0x74` (§4): 1 at the Roundtable, 2 in an expedition | The gate uses it for "match started" and "match over" | FS-MM1, FS-MM3 |
+| Join link | `steam://joinlobby/2622380/<lobby>/<host>` | Steam passes it to the running game as `GameLobbyJoinRequested_t`; the game joins by itself (works only for a lobby made by the game) | FS-MM1, FS-MM3 |
+
+## 13. Text and event flags (UI-0, game 1.03.3)
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| `LookupEntry(repo, slot, category, id)` | `exe+0x27F4D20` | Returns the text of FMG `category` (the FMG file id in the msgbnd: 200 CL_MenuText, 33 EventTextForTalk, 34 EventTextForMap, 500+ the `_dlc01` twins) entry `id`. Every lookup asks the `_dlc01` FMG first, then the base one. **Seamless Co-op hooks it** (first 5 bytes = `jmp` into memory outside any module) and swaps the Number of Players labels 130409/130417/130408 | `[VERIFIED: disassembly + UI-0 step 5 trace]`; which ids SC swaps `[HYPOTHESIS]` |
+| FMG search `(fmg, id)` | `exe+0x27F5710` | `LookupEntry` tail-jumps here; not hooked | `[VERIFIED: entry bytes]` |
+| `MsgRepository` table | `[exe+0x3C246A8]`: `+0x8` table, `+0x10` slot count, `+0x14` category count; FMG = `[[+8] + slot*8] + category*8` | Read by `game/texttrace.rs` to map FMG pointers back to categories | `[VERIFIED: LookupEntry bounds checks; trace mapped every FMG]` |
+| `CSEventFlagMan` | slot `exe+0x3C115A8` | ER layout holds: divisor 1000, a red-black map of group → block; 143 groups have storage (list in `research/UI-0-ingame-ui.md` step 5). Flag 6001 ON / 6000 OFF, 7500 ON at DAY I | `[VERIFIED: UI-0 step 5 probe]` |
+| Our flags | group **10007** (10007000..10007999), 10008 spare | Storage present, no use in any NR talk ESD or EMEVD. 10007000 set by our table list and read by the DLL | `[VERIFIED: UI-0 step 6]`; use by the exe or params UNKNOWN |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).
 - Level and rune count (expected inside `CS::PlayerGameData`; not read yet).
 - Inventory and the game's "drop item" function.
-- The expedition clock and the day/night flags (the flag system's layout checked out structurally; no flag has been read on purpose).
-- Each player's Steam ID.
+- The expedition clock (the day/night flags are readable since UI-0: 7500 ON at DAY I, §13).
+- Each player's Steam ID inside the game (needed to map the queue roster to expedition players for Duo/Squad teams, MM-6). The
+  Steam IDs themselves are known from the lobbies.
+- The game function behind Invite Members that we could call ourselves (MM-3g); only its call chain is known (§12).

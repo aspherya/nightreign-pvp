@@ -1,6 +1,6 @@
-//! T-013: in-memory tail of the log for the overlay. A second `tracing` layer (see `logging.rs`) formats
-//! every event like the file layer does and pushes the lines here; the overlay copies them out on the
-//! render thread. Nothing in this module touches game memory.
+//! In-memory tail of the log (T-013, for the old overlay; since R5 for the console's `log` command). A second `tracing` layer
+//! (see `logging.rs`) formats every event like the file layer does and pushes the lines here. Nothing in this module touches
+//! game memory.
 
 use std::collections::VecDeque;
 use std::io;
@@ -79,6 +79,7 @@ pub(crate) fn snapshot() -> (u64, Vec<String>) {
     (g.seq(), g.lines())
 }
 
+#[cfg(test)]
 /// Sequence number of the global ring (cheap "did anything change" check).
 pub(crate) fn seq() -> u64 {
     lock().seq()

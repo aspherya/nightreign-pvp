@@ -197,7 +197,7 @@ Host the broker, add reconnects, queue timeouts, region/version policy, basic ab
 4. What identity can reliably correlate a queued player with that player's in-expedition `PlayerIns` across every client?
 5. Should Duo and Squad accept only complete pre-formed teams initially, or should solo-queued players be allowed to fill open team slots? What should happen if a party is smaller than the selected team size?
 6. How should a match behave if one player leaves after a match is found but before the expedition starts?
-7. Is six the right first target for each mode, given the documented cap and stability concerns, or should initial tests use fewer players (for example, two duos) before targeting six?
+7. Is six the right first target for each mode, given the documented cap and stability concerns, or should initial tests use fewer players (for example, two duos) before targeting six? **Decided 2026-10-19 (Leonardo): six in every mode (6 solos, 3 duos, 2 squads of 3); smaller test matches only through the pre-release flag (`MATCHMAKING.md` §6).**
 8. Is there a viable alternative that avoids relying on Steam/Seamless Co-op session formation without rebuilding the full game networking layer?
 
 ## Recommendation

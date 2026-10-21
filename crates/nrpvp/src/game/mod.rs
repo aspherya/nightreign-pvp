@@ -1,42 +1,39 @@
 //! Game-memory access (CLAUDE.md convention: all of it lives under `game/`).
 //!
-//! T-006 orchestration: locate engine singletons without hardcoded addresses, wait for the game to
-//! construct them, log the full map.
-//! T-007a orchestration: recover MSVC RTTI once from the static image, then (10 s after WorldChrMan becomes
-//! live or is re-created, and on every F9) scan the WorldChrMan instance for ChrIns-derived objects and
-//! hex-dump them. Read-only: no hooks.
-//! T-008 orchestration: `team` resolves the local player each tick, watches it, and on a write command
-//! selects/writes `team_type` (the only memory write in the project, see `mem::write_u8`); the histogram runs
-//! on the discovery worker.
-//! T-013: commands come from two sources, the (configurable) hotkeys and the overlay's command queue. Both
-//! are executed here, on the main loop thread, by [`run_command`]; the overlay's render thread never touches
-//! game memory. After each tick the loop publishes a [`Snapshot`] for the overlay.
+//! The main loop ([`run`] -> `watch`): locate the engine singletons (T-006) without hardcoded addresses, recover the RTTI once
+//! from the static image (T-007a) for the PlayerIns vtable check, then every tick resolve the players and run the rules: team
+//! values (`team`, T-008/T-020/T-026) and the downed rule (`combat_state`, T-035/T-039). Commands (from the developer console)
+//! are executed here, on this thread, by [`run_command`]; nothing else writes game memory from another thread.
+//! R5 (2026-10-20) removed the overlay, the hotkeys, the discovery worker, the probes and the MARK dumps.
 
 pub(crate) mod combat_state;
-pub(crate) mod discover;
-pub(crate) mod downed;
+pub(crate) mod event_flags;
+pub(crate) mod flags;
+#[cfg(feature = "dev")]
+pub(crate) mod flagwatch;
+pub(crate) mod fmg;
 pub(crate) mod image;
-pub(crate) mod mark_dump;
+pub(crate) mod layout;
 pub(crate) mod mem;
+pub(crate) mod menuflow;
+#[cfg(feature = "dev")]
+pub(crate) mod menutrace;
 pub(crate) mod poswrite;
-pub(crate) mod spawn;
-pub(crate) mod probe2;
-pub(crate) mod probe_down;
-pub(crate) mod probe_pos;
-pub(crate) mod probe_scan;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
+pub(crate) mod spawn;
 pub(crate) mod team;
-pub(crate) mod wide_scan;
+#[cfg(feature = "dev")]
+pub(crate) mod texttrace;
 
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::{Arc, Mutex, PoisonError, TryLockError};
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
-use crate::hotkey::{self, Action};
-use crate::overlay::shared::{Command, Shared, Snapshot};
+use crate::overlay::shared::Command;
+#[cfg(feature = "dev")]
+use crate::overlay::shared::Snapshot;
 use crate::sysinfo::GameModule;
 use mem::va_rva;
 use rtti::Rtti;
@@ -49,16 +46,14 @@ const TARGET: &str = "WorldChrMan";
 const WAIT_POLL: Duration = Duration::from_millis(500);
 /// Cadence of the "did any singleton instance change" log.
 const CHANGE_POLL: Duration = Duration::from_secs(2);
-/// Loop period once WorldChrMan is live (also the F9 reaction time together with the 50 ms key poll).
+/// Loop period once WorldChrMan is live (also the console's reaction time).
 const LIVE_POLL: Duration = Duration::from_millis(50);
-/// T-007a: automatic discovery this long after WorldChrMan becomes live or is re-created.
-const AUTO_DELAY: Duration = Duration::from_secs(10);
-/// RTTI recovery attempts in total (the first happens at startup; retries only if it found no ChrIns).
-const RTTI_MAX_ATTEMPTS: u32 = 4;
 /// Do not read data sections larger than this (sanity bound on a corrupt header).
 const MAX_SECTION_COPY: usize = 0x4000_0000;
 /// After this long without `WorldChrMan` we log a diagnostic dump (polling continues regardless).
 const WAIT_TIMEOUT: Duration = Duration::from_secs(180);
+/// MM-3a: a WorldChrMan that was live before and is null again this long is logged once (info) as a load.
+const NULL_LOADING_LOG: Duration = Duration::from_secs(10);
 const PROGRESS_EVERY: Duration = Duration::from_secs(10);
 /// T-019: a main-loop heartbeat line this often, so a stalled loop can be told apart from a frozen game.
 const HEARTBEAT_EVERY: Duration = Duration::from_secs(10);
@@ -69,7 +64,7 @@ const SCAN_ATTEMPTS: usize = 12;
 const SCAN_RETRY: Duration = Duration::from_secs(5);
 
 /// Entry point, called from the mod thread after the startup banner.
-pub(crate) fn run(m: &GameModule, cfg: &Config, ui: Option<Arc<Shared>>) {
+pub(crate) fn run(m: &GameModule, cfg: &Config) {
     let (base, size) = (m.base, m.size);
 
     let Some(sections) = load_sections(base, size) else {
@@ -116,13 +111,13 @@ pub(crate) fn run(m: &GameModule, cfg: &Config, ui: Option<Arc<Shared>>) {
     );
 
     // T-007a step 1: RTTI from the static image, once. `.rdata` is plain even if code is Arxan-encrypted.
-    let rtti = build_rtti(base, size, &sections, cfg.dev_mode);
+    let rtti = build_rtti(base, size, &sections);
 
-    watch(m, cfg, &scan, derived, &sections, rtti, ui);
+    watch(m, cfg, &scan, derived, rtti);
 }
 
 /// Snapshot the RTTI-bearing data sections and recover classes/vtables. Never panics out of here.
-fn build_rtti(base: usize, size: usize, sections: &[image::Section], verbose: bool) -> Rtti {
+fn build_rtti(base: usize, size: usize, sections: &[image::Section]) -> Rtti {
     let t0 = Instant::now();
     let mut regions = Vec::new();
     let mut missing_total = 0usize;
@@ -165,10 +160,6 @@ fn build_rtti(base: usize, size: usize, sections: &[image::Section], verbose: bo
         t0.elapsed().as_millis(),
         missing_total
     );
-    // T-030: the class listing is a big dump; the player build skips it.
-    if verbose {
-        discover::log_rtti(&rtti);
-    }
     if rtti.stats.cols_primary == 0 || rtti.chr_class_count() == 0 {
         tracing::warn!(
             "T-007a: RTTI recovery found {} primary COLs and {} ChrIns-derived classes; discovery will use the fallback vtable histogram. Sample TypeDescriptors:",
@@ -180,83 +171,6 @@ fn build_rtti(base: usize, size: usize, sections: &[image::Section], verbose: bo
         }
     }
     rtti
-}
-
-/// A unit of work for the discovery worker: gets the RTTI and the run sequence number.
-type Job = Box<dyn FnOnce(&Rtti, u32) + Send>;
-
-/// RTTI recovery state shared with the discovery worker (only one worker runs at a time).
-struct DiscState {
-    rtti: Rtti,
-    attempts: u32,
-}
-
-/// Everything the T-007a discovery needs between runs. Each run executes on its own short-lived worker
-/// thread (`nrpvp-discovery`), one at a time, so neither the main loop nor the F9 handler ever blocks on it.
-struct Discovery {
-    state: Arc<Mutex<DiscState>>,
-    gate: Arc<discover::Gate>,
-    sections: Arc<Vec<image::Section>>,
-    base: usize,
-    size: usize,
-    seq: u32,
-}
-
-impl Discovery {
-    /// Start one discovery run on `inst` in the background. `Err(running_ms)` if a run is already in flight
-    /// (nothing is started). The worker re-attempts RTTI recovery first if it earlier found no ChrIns.
-    fn start(&mut self, inst: usize, reason: &str) -> Result<(), u64> {
-        let (base, size) = (self.base, self.size);
-        let reason = reason.to_string();
-        self.start_job(
-            "T-007a discovery",
-            Box::new(move |rtti, seq| discover::run(rtti, inst, &reason, seq, base, size)),
-        )
-    }
-
-    /// T-008 histogram of team_type over everything the scan reaches, on the same worker/gate.
-    fn start_team_histogram(&mut self, inst: usize) -> Result<(), u64> {
-        let base = self.base;
-        self.start_job(
-            "T-008 histogram",
-            Box::new(move |rtti, _seq| team::histogram_report(rtti, inst, base)),
-        )
-    }
-
-    /// Run `job(rtti, seq)` on a worker thread (one at a time via the gate).
-    fn start_job(&mut self, what: &'static str, job: Job) -> Result<(), u64> {
-        let guard = self.gate.try_acquire()?;
-        self.seq += 1;
-        let seq = self.seq;
-        let state = Arc::clone(&self.state);
-        let sections = Arc::clone(&self.sections);
-        let (base, size) = (self.base, self.size);
-        let spawned = std::thread::Builder::new()
-            .name("nrpvp-discovery".into())
-            .spawn(move || {
-                // Released on every exit path (return, panic) when the guard drops.
-                let _guard = guard;
-                let mut st = state.lock().unwrap_or_else(PoisonError::into_inner);
-                if st.rtti.chr_class_count() == 0 && st.attempts < RTTI_MAX_ATTEMPTS {
-                    st.attempts += 1;
-                    tracing::info!(
-                        "T-007a: no ChrIns classes yet; re-running RTTI recovery (attempt {}/{RTTI_MAX_ATTEMPTS})",
-                        st.attempts
-                    );
-                    st.rtti = build_rtti(base, size, &sections, true);
-                }
-                let rtti = &st.rtti;
-                let r = catch_unwind(AssertUnwindSafe(|| job(rtti, seq)));
-                if r.is_err() {
-                    tracing::error!("{what} #{seq} panicked; continuing");
-                }
-            });
-        if let Err(e) = spawned {
-            // The closure (and with it the guard) was dropped, so the gate is free again.
-            tracing::error!("T-007a: could not spawn the discovery thread: {e}");
-        }
-        Ok(())
-    }
 }
 
 fn load_sections(base: usize, size: usize) -> Option<Vec<image::Section>> {
@@ -317,42 +231,22 @@ fn instance_of(slot: usize) -> Option<usize> {
     mem::read::<usize>(slot)
 }
 
-/// Poll until `WorldChrMan` is non-null (dump the map once), then serve discovery requests forever: the
-/// automatic run 10 s after the instance appears or changes, and every F9 press.
-fn watch(
-    m: &GameModule,
-    cfg: &Config,
-    scan: &Scan,
-    derived: Vec<Found>,
-    sections: &[image::Section],
-    rtti: Rtti,
-    ui: Option<Arc<Shared>>,
-) -> ! {
+/// Poll until `WorldChrMan` is non-null (dump the map once in dev mode), then run the rules every tick, forever.
+fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: Rtti) -> ! {
     let (base, size) = (m.base, m.size);
     let mut team = team::TeamCtl::new(cfg, base, size);
-    // Bound hotkeys with their key names (the names label the log lines, e.g. "F5 team write").
-    let hotkeys = cfg.bindings();
-    let mut last_published: Option<Snapshot> = None;
-    let mut disc = Discovery {
-        state: Arc::new(Mutex::new(DiscState { rtti, attempts: 1 })),
-        gate: discover::Gate::new(),
-        sections: Arc::new(sections.to_vec()),
-        base,
-        size,
-        seq: 0,
-    };
-    // T-035: combat-state tracker and the rival revive rule run in both modes; the timer scan thread is dev + probes only.
-    let mut combat = Some(combat_state::CombatCtl::new(cfg, base, size));
-    // Player mode never builds the probes (config::finalize also forces `probes = false` there).
-    let mut probes = (cfg.dev_mode && cfg.probes).then(|| probe2::Probes::new(cfg, base, size));
-    let mut auto_deferred_logged = false;
-    let mut class_names_set = false;
-    // WorldChrMan instance we last scheduled/ran an automatic discovery for (0 = none/null).
+    // T-035: combat-state tracker and the rival revive rule (both modes).
+    let mut combat = Some(combat_state::CombatCtl::new(cfg, base));
+    // WorldChrMan instance last seen (0 = none/null), for the "instance is now" log line.
     let mut last_wcm_inst: usize = 0;
-    let mut auto_due: Option<Instant> = None;
+    // The PlayerIns vtables and the combat tracker's RTTI are taken from `rtti` once (it never changes after startup).
+    let mut rtti_applied = false;
     let start = Instant::now();
     let mut last_progress = Instant::now();
     let mut timeout_logged = false;
+    // MM-3a: WorldChrMan was live before and is null again (a load screen): when it started, and whether we logged it.
+    let mut null_since: Option<Instant> = None;
+    let mut null_logged = false;
     let mut fd4: Option<Vec<Found>> = None;
     let mut fd4_resolve_tried = false;
     let mut nonnull_ticks = 0u32;
@@ -365,8 +259,8 @@ fn watch(
     let mut ticks: u64 = 0;
     let mut last_heartbeat = Instant::now();
     let mut slowest_tick = Duration::ZERO;
-    // Where the slowest iteration spent its time: team controls, combat tracker + downed rule, overlay snapshot.
-    let mut slowest_parts = [Duration::ZERO; 3];
+    // Where the slowest iteration spent its time: team controls, combat tracker + downed rule.
+    let mut slowest_parts = [Duration::ZERO; 2];
     let heartbeat_every = if cfg.dev_mode {
         HEARTBEAT_EVERY
     } else {
@@ -434,7 +328,21 @@ fn watch(
             }
         }
 
-        if !wcm_live && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
+        if wcm_live {
+            null_since = None;
+            null_logged = false;
+        } else if dumped {
+            // Found at least once already (`dumped`): a long null stretch is a load, not a failed discovery; info only.
+            let since = *null_since.get_or_insert_with(Instant::now);
+            if !null_logged && since.elapsed() >= NULL_LOADING_LOG {
+                null_logged = true;
+                tracing::info!(
+                    "{TARGET} null for {} s (loading)",
+                    since.elapsed().as_secs()
+                );
+            }
+        }
+        if !wcm_live && !dumped && !timeout_logged && start.elapsed() >= WAIT_TIMEOUT {
             timeout_logged = true;
             tracing::warn!(
                 "T-006: timeout after {} s waiting for {TARGET} to be non-null (still polling every 500 ms). {}",
@@ -479,82 +387,42 @@ fn watch(
             );
         }
 
-        // 4. T-007a: schedule the automatic discovery when WorldChrMan appears or is re-created (area
-        //    change), then serve F9. The key flag is always consumed so presses are never queued.
+        // 4. Log WorldChrMan (re)creation (Roundtable <-> expedition loads re-create it).
         if wcm_inst != last_wcm_inst {
             if wcm_inst != 0 {
                 tracing::info!(
-                    "T-007a: WorldChrMan instance is now {}; automatic discovery in {} s",
-                    va_rva(wcm_inst, base, size),
-                    AUTO_DELAY.as_secs()
+                    "T-007a: WorldChrMan instance is now {}",
+                    va_rva(wcm_inst, base, size)
                 );
-                // T-030: no automatic discovery in the player build.
-                auto_due = cfg.dev_mode.then(|| Instant::now() + AUTO_DELAY);
-            } else {
-                auto_due = None;
             }
             last_wcm_inst = wcm_inst;
         }
 
-        // 4b. T-008: team-type controls. PlayerIns vtables come from the RTTI the discovery worker may be
-        //     holding the lock on; never block on it (try_lock) so hotkeys and persist stay responsive.
-        if team.needs_vts() {
-            match disc.state.try_lock() {
-                Ok(st) => team.set_vts(&st.rtti),
-                Err(TryLockError::Poisoned(p)) => team.set_vts(&p.into_inner().rtti),
-                Err(TryLockError::WouldBlock) => {}
+        // 4b. T-008: the PlayerIns vtables (for the write gate) and the combat tracker's class table, once.
+        if !rtti_applied {
+            rtti_applied = true;
+            team.set_vts(&rtti);
+            if let Some(c) = combat.as_mut() {
+                c.set_rtti(&rtti);
             }
         }
         let team_started = Instant::now();
         team.set_instance(wcm_inst);
-        // Hotkey presses and overlay commands, executed in order on this thread. The hotkey flags are
-        // always consumed so presses never queue.
-        for (action, key) in &hotkeys {
-            // The overlay consumes its own toggle flag on the render thread.
-            if *action == Action::ToggleOverlay || !hotkey::take(*action) {
-                continue;
-            }
-            match hotkey_command(*action, &team) {
-                Some(cmd) => run_command(cmd, &key.name, &mut team, &mut disc, wcm_inst),
-                None if *action == Action::Cycle => team.cycle(),
-                None if *action == Action::DownedCycle => team.cycle_downed(),
-                None => {}
-            }
-        }
-        // T-030: only the dev panel sends commands; the player badge is read-only.
-        if let Some(ui) = ui.as_ref().filter(|_| cfg.dev_mode) {
-            for cmd in ui.drain() {
-                run_command(cmd, "overlay", &mut team, &mut disc, wcm_inst);
-            }
-        }
-        // T-032: a MARK this tick starts the dump job (dev mode only; `take_new_mark` is always None in the player build) and
-        // the downed-state change tracker's 2 s window.
-        if let Some(n) = team.take_new_mark() {
-            start_mark_dump(n, &mut team, &mut disc, wcm_inst);
-            if let Some(p) = probes.as_mut() {
-                p.on_mark(n);
-            }
+        // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
+        #[cfg(feature = "dev")]
+        for (req, reply) in crate::console::take() {
+            let mut snap = Snapshot {
+                wcm_instance: wcm_inst,
+                ..Snapshot::default()
+            };
+            team.refresh_live_next();
+            team.fill_snapshot(&mut snap);
+            let text =
+                crate::console::answer(req, &snap, &mut |c| run_command(c, "console", &mut team));
+            let _ = reply.send(text);
         }
         team.tick();
         let team_spent = team_started.elapsed();
-
-        if wcm_live && auto_due.is_some_and(|d| Instant::now() >= d) {
-            match disc.start(wcm_inst, "auto, 10 s after WorldChrMan live/changed") {
-                Ok(()) => {
-                    auto_due = None;
-                    auto_deferred_logged = false;
-                }
-                // Stays due: retried every tick until the running discovery finishes.
-                Err(ms) => {
-                    if !auto_deferred_logged {
-                        auto_deferred_logged = true;
-                        tracing::info!(
-                            "T-007a: automatic discovery deferred: discovery busy (running {ms} ms)"
-                        );
-                    }
-                }
-            }
-        }
 
         // 5. Singleton instance-change watch (every 2 s) once the target is live.
         if cfg.dev_mode && wcm_live && last_change_poll.elapsed() >= CHANGE_POLL {
@@ -576,36 +444,7 @@ fn watch(
             }
         }
 
-        // T-032: the position scan report labels pointee vtables with RTTI class names, once the RTTI is available (never
-        // blocks on the worker's lock).
-        if !class_names_set {
-            if let Some(p) = probes.as_mut() {
-                if let Ok(st) = disc.state.try_lock() {
-                    if st.rtti.stats.classes_with_vtable > 0 {
-                        p.set_class_names(Arc::new(st.rtti.vtable_names()));
-                        class_names_set = true;
-                    }
-                }
-            }
-        }
-        // T-033: RTTI for the combat tracker (never blocks on the worker's lock).
-        if let Some(c) = combat.as_mut().filter(|c| c.needs_rtti()) {
-            if let Ok(st) = disc.state.try_lock() {
-                if st.rtti.stats.classes_with_vtable > 0 {
-                    c.set_rtti(&st.rtti);
-                }
-            }
-        }
-        // T-027/T-028: read-only probes, only in the developer build with `probes = true`.
-        if let Some(p) = probes.as_mut() {
-            let targets = if wcm_live {
-                team.probe_targets()
-            } else {
-                Vec::new()
-            };
-            p.tick(&all, wcm_inst, &targets);
-        }
-        // T-035 (both modes): tracker and rival revive rule; the timer scan runs on its own thread (dev + probes).
+        // T-035 (both modes): tracker and the downed rule.
         let combat_started = Instant::now();
         if let Some(c) = combat.as_mut() {
             let subjects = if wcm_live {
@@ -613,35 +452,13 @@ fn watch(
             } else {
                 Vec::new()
             };
-            c.tick(subjects, &all);
+            c.tick(subjects);
         }
         let combat_spent = combat_started.elapsed();
-        let snap_started = Instant::now();
-        if let Some(ui) = &ui {
-            let mut snap = Snapshot {
-                wcm_instance: wcm_inst,
-                busy: disc.gate.is_busy(),
-                ..Snapshot::default()
-            };
-            team.fill_snapshot(&mut snap);
-            if let Some(c) = combat.as_ref().filter(|_| cfg.dev_mode) {
-                snap.combat_lines = c.overlay_lines();
-                snap.revive_text = c.revive_text();
-            }
-            if let Some(p) = &probes {
-                snap.probes_enabled = true;
-                snap.probe_lines = p.lines();
-            }
-            if last_published.as_ref() != Some(&snap) {
-                ui.publish(snap.clone());
-                last_published = Some(snap);
-            }
-        }
-
         let spent = tick_started.elapsed();
         if spent >= slowest_tick {
             slowest_tick = spent;
-            slowest_parts = [team_spent, combat_spent, snap_started.elapsed()];
+            slowest_parts = [team_spent, combat_spent];
         }
         if last_heartbeat.elapsed() >= heartbeat_every {
             last_heartbeat = Instant::now();
@@ -650,7 +467,7 @@ fn watch(
                 heartbeat_line(ticks, wcm_inst, &team, slowest_tick, slowest_parts)
             );
             slowest_tick = Duration::ZERO;
-            slowest_parts = [Duration::ZERO; 3];
+            slowest_parts = [Duration::ZERO; 2];
         }
 
         std::thread::sleep(if wcm_live {
@@ -661,29 +478,6 @@ fn watch(
     }
 }
 
-/// T-032: start the MARK dump job on the discovery worker, or say why not. Dev mode only (the caller only gets a mark number
-/// there). Reads a fresh quiet resolve of the players on this thread; the worker does the dumping.
-fn start_mark_dump(mark: u32, team: &mut team::TeamCtl, disc: &mut Discovery, wcm_inst: usize) {
-    if wcm_inst == 0 {
-        tracing::info!("T-032 DUMP mark=#{mark} skipped: WorldChrMan is not live");
-        return;
-    }
-    let targets = team.dump_targets();
-    if targets.is_empty() {
-        tracing::info!("T-032 DUMP mark=#{mark} skipped: no players resolved");
-        return;
-    }
-    let (base, size) = (disc.base, disc.size);
-    if let Err(ms) = disc.start_job(
-        "T-032 mark dump",
-        Box::new(move |rtti, _seq| mark_dump::run(rtti, mark, &targets, base, size)),
-    ) {
-        tracing::info!(
-            "T-032 DUMP mark=#{mark} skipped: discovery/scan worker busy (running {ms} ms)"
-        );
-    }
-}
-
 /// T-019: `heartbeat: tick N, wcm=0x..., players=N, pvpve=ON (team 29, 3 writes), slowest tick ... ms`. If these
 /// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
 fn heartbeat_line(
@@ -691,57 +485,23 @@ fn heartbeat_line(
     wcm_inst: usize,
     team: &team::TeamCtl,
     slowest: Duration,
-    parts: [Duration; 3],
+    parts: [Duration; 2],
 ) -> String {
     format!(
-        "heartbeat: tick {ticks}, wcm=0x{wcm_inst:X}, players={}, pvpve={}, slowest tick since last heartbeat {} ms (team {} ms, combat {} ms, overlay {} ms)",
+        "heartbeat: tick {ticks}, wcm=0x{wcm_inst:X}, players={}, pvpve={}, slowest tick since last heartbeat {} ms (team {} ms, combat {} ms)",
         team.player_count_text(),
         team.pvpve_summary(),
         slowest.as_millis(),
         parts[0].as_millis(),
-        parts[1].as_millis(),
-        parts[2].as_millis()
+        parts[1].as_millis()
     )
 }
 
-/// The command a hotkey stands for. `Cycle` has none (it only changes the selection) and so is handled by the
-/// caller.
-fn hotkey_command(a: Action, team: &team::TeamCtl) -> Option<Command> {
-    match a {
-        Action::Write => Some(Command::Set(team.selected())),
-        Action::Restore => Some(Command::Restore),
-        Action::Persist => Some(Command::TogglePersist),
-        Action::Histogram => Some(Command::RunHistogram),
-        Action::Discovery => Some(Command::RunDiscovery),
-        Action::Mark => Some(Command::Mark(None)),
-        Action::WriteAll => Some(Command::SetAll(team.selected())),
-        Action::RestoreAll => Some(Command::RestoreAll),
-        Action::PosCycle => Some(Command::PosCycle),
-        Action::PosSave => Some(Command::PosSave),
-        Action::PosWrite => Some(Command::PosWrite),
-        Action::MmSolo => Some(Command::MmQueue(crate::mm::Mode::Solo)),
-        Action::MmDuo => Some(Command::MmQueue(crate::mm::Mode::Duo)),
-        Action::MmSquad => Some(Command::MmQueue(crate::mm::Mode::Squad)),
-        Action::MmLeave => Some(Command::MmLeave),
-        Action::Cycle | Action::ToggleOverlay | Action::DownedCycle => None,
-    }
-}
-
 /// Execute one command on the main loop thread. `src` is the trigger for the log ("F5", "overlay", ...).
-fn run_command(
-    cmd: Command,
-    src: &str,
-    team: &mut team::TeamCtl,
-    disc: &mut Discovery,
-    wcm_inst: usize,
-) {
-    let wcm_live = wcm_inst != 0;
+fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
     match cmd {
         Command::Set(v) => team.set_and_write(v, src),
         Command::Restore => team.restore(src),
-        Command::SetAll(v) => team.set_all(v, src),
-        Command::RestoreAll => team.restore_all(src),
-        Command::TogglePersist => team.toggle_persist(src),
         Command::SetFor { addr, value } => team.set_for(addr, value, src),
         Command::RestoreFor { addr } => team.restore_for(addr, src),
         Command::PersistFor { addr, on } => team.set_persist_for(addr, on, src),
@@ -753,35 +513,34 @@ fn run_command(
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
-                tracing::info!("mm_queue: {src}: queue {} not sent (queue feature off or command queue full)", mode.label());
+                tracing::info!(
+                    "mm_queue: {src}: queue {} not sent (queue feature off or command queue full)",
+                    mode.label()
+                );
             }
         }
         Command::MmJoin(j) => {
             if !crate::mm::send(crate::mm::Cmd::Join(j)) {
-                tracing::info!("mm_join: {src}: {j:?} not sent (queue feature off or command queue full)");
+                tracing::info!(
+                    "mm_join: {src}: {j:?} not sent (queue feature off or command queue full)"
+                );
+            }
+        }
+        Command::MmScCreate => {
+            if !crate::mm::send(crate::mm::Cmd::ScCreate) {
+                tracing::info!("mm_sc_create: {src}: create test not sent (queue feature off or command queue full)");
+            }
+        }
+        Command::MmQuietTest => {
+            if !crate::mm::send(crate::mm::Cmd::QuietTest) {
+                tracing::info!("mm_quiet_invite: {src}: test not sent (queue feature off or command queue full)");
             }
         }
         Command::MmLeave => {
             if !crate::mm::send(crate::mm::Cmd::Leave) {
-                tracing::info!("mm_queue: {src}: leave not sent (queue feature off or command queue full)");
-            }
-        }
-        Command::RunDiscovery => {
-            if wcm_live {
-                if let Err(ms) = disc.start(wcm_inst, src) {
-                    tracing::info!("T-007a: {src} ignored: discovery busy (running {ms} ms)");
-                }
-            } else {
-                tracing::info!("T-007a: {src} ignored, WorldChrMan is not live");
-            }
-        }
-        Command::RunHistogram => {
-            if wcm_live {
-                if let Err(ms) = disc.start_team_histogram(wcm_inst) {
-                    tracing::info!("T-008: {src} ignored: discovery/scan busy (running {ms} ms)");
-                }
-            } else {
-                tracing::info!("T-008: {src} ignored, WorldChrMan is not live");
+                tracing::info!(
+                    "mm_queue: {src}: leave not sent (queue feature off or command queue full)"
+                );
             }
         }
     }
@@ -936,120 +695,5 @@ mod live_tests {
             return;
         }
         panic!("no system DLL could be analysed");
-    }
-}
-
-#[cfg(test)]
-mod command_tests {
-    use super::*;
-    use crate::config::Config;
-
-    fn fake_disc() -> Discovery {
-        Discovery {
-            state: Arc::new(Mutex::new(DiscState {
-                rtti: Rtti::from_classes(0, Vec::new(), rtti::Stats::default()),
-                attempts: RTTI_MAX_ATTEMPTS,
-            })),
-            gate: discover::Gate::new(),
-            sections: Arc::new(Vec::new()),
-            base: 0,
-            size: 0,
-            seq: 0,
-        }
-    }
-
-    #[test]
-    fn hotkeys_map_to_the_same_commands_as_the_overlay() {
-        let team = team::TeamCtl::new(&Config::default(), 0, 0);
-        assert_eq!(
-            hotkey_command(Action::Write, &team),
-            Some(Command::Set(6)),
-            "the write hotkey applies the selected candidate"
-        );
-        assert_eq!(
-            hotkey_command(Action::Restore, &team),
-            Some(Command::Restore)
-        );
-        assert_eq!(
-            hotkey_command(Action::Persist, &team),
-            Some(Command::TogglePersist)
-        );
-        assert_eq!(
-            hotkey_command(Action::Histogram, &team),
-            Some(Command::RunHistogram)
-        );
-        assert_eq!(
-            hotkey_command(Action::Discovery, &team),
-            Some(Command::RunDiscovery)
-        );
-        // Cycle only changes the selection; the overlay toggle belongs to the render thread.
-        assert_eq!(
-            hotkey_command(Action::Mark, &team),
-            Some(Command::Mark(None))
-        );
-        assert_eq!(hotkey_command(Action::Cycle, &team), None);
-        assert_eq!(hotkey_command(Action::DownedCycle, &team), None);
-        assert_eq!(
-            hotkey_command(Action::PosCycle, &team),
-            Some(Command::PosCycle)
-        );
-        assert_eq!(
-            hotkey_command(Action::PosSave, &team),
-            Some(Command::PosSave)
-        );
-        assert_eq!(
-            hotkey_command(Action::PosWrite, &team),
-            Some(Command::PosWrite)
-        );
-        assert_eq!(hotkey_command(Action::ToggleOverlay, &team), None);
-    }
-
-    #[test]
-    fn commands_with_no_live_worldchrman_do_nothing_and_do_not_panic() {
-        let mut team = team::TeamCtl::new(&Config::default(), 0, 0);
-        let mut disc = fake_disc();
-        for cmd in [
-            Command::Set(6),
-            Command::Set(200),
-            Command::Restore,
-            Command::TogglePersist,
-            Command::TogglePersist,
-            Command::RunDiscovery,
-            Command::RunHistogram,
-            Command::SetFor {
-                addr: 0x10,
-                value: 6,
-            },
-            Command::RestoreFor { addr: 0x10 },
-            Command::PersistFor {
-                addr: 0x10,
-                on: true,
-            },
-            Command::SetPvpve(true),
-            Command::Mark(Some("x".to_string())),
-            Command::Mark(None),
-        ] {
-            run_command(cmd, "test", &mut team, &mut disc, 0);
-        }
-        assert!(
-            !disc.gate.is_busy(),
-            "no worker may start without a live WorldChrMan"
-        );
-    }
-
-    #[test]
-    fn the_draining_main_loop_sees_overlay_commands_in_order() {
-        let shared = Shared::new();
-        shared.push(Command::Set(29));
-        shared.push(Command::Restore);
-        let mut team = team::TeamCtl::new(&Config::default(), 0, 0);
-        let mut disc = fake_disc();
-        let drained = shared.drain();
-        assert_eq!(drained, vec![Command::Set(29), Command::Restore]);
-        for cmd in drained {
-            run_command(cmd, "overlay", &mut team, &mut disc, 0);
-        }
-        // Set(29) selected the candidate even though there was no local player to write to.
-        assert!(shared.drain().is_empty());
     }
 }
