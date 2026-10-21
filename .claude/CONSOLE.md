@@ -1,8 +1,8 @@
 # Developer console
 
-**Status (2026-10-20): CON-1 and CON-2 built** (command core, named pipe, `nrcon.exe`); not yet run against a live game. CON-3..5
-planned. Replaces the ImGui debug panel and the F-key hotkeys with text commands, CS2 style. Developer builds only (`dev` feature +
-`dev_mode = true`): the player zip never has it.
+**Status (2026-10-20): CON-1, CON-2 and CON-4 done.** The console works against a live game (SMOKE-1); the ImGui panel and the F-key
+hotkeys are deleted (R5) and their remaining functions are console commands. CON-3 (`kill`, `down`, `bleed_clock`, flags, settings)
+and CON-5 (in-game line, autoexec) are planned. Developer builds only (`dev` feature + `dev_mode = true`): the player zip never has it.
 
 ## 0. Use it now
 
@@ -27,16 +27,21 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 |---|---|---|
 | `help` | `[name]` | List the commands, or one command's help |
 | `echo` | `text…` | Write `console: echo: text` to the log (a note for whoever reads the log) |
-| `mark` | `[text…]` | Write `MARK #n: text` to the log; dev mode also starts the MARK dump (the old Mark key) |
+| `mark` | `[text…]` | Write a numbered `MARK #n: text` line to the log |
+| `log` | `[n]` | The last n log lines (default 20, at most 300), straight from the game |
 | `status` | | World loaded or not, local player and its team value, PvP mode, matchmaking line, pid |
 | `players` | | Every player in this game's ChrSet: slot, `pN`, id, team value, relation (me / ally / rival) |
 | `team_set` | `<value> [target]` | Write team_type on this game's copy of the target's players (default `me`) |
 | `team_restore` | `[target]` | Put back the team_type captured before the first write (default `me`) |
-| `pvp` | `0\|1` | Pause (0) or resume (1) the automatic rival marking |
+| `team_persist` | `0\|1 [target]` | Keep re-writing the last written team_type on the target's players (1), or stop (0) |
+| `pvp` | `0\|1` | Resume (1), or pause and put back every player's captured original (0; the old F12) |
 | `mm_queue_solo` / `mm_queue_duo` / `mm_queue_squad` | | Join that matchmaking queue |
 | `mm_leave` | | Leave the queue or the ready match |
 | `mm_status` | | The matchmaking status line |
-| `discover` | | Run the character discovery and dump (the old F9) |
+| `mm_join` | `link\|invite\|direct\|unlock_public\|unlock_invisible\|relock` | One join-method attempt for the ready match (dev, `mm_join = true`) |
+| `mm_sc_create` | | Create a lobby the game's way; does Seamless Co-op adopt it? (dev, `mm_sc_create = true`) |
+| `mm_quiet_test` | | Suppress the Steam invite window for 60 s (dev, `mm_quiet_invite = true`) |
+| `pos_next` / `pos_save` / `pos_go` | | Snap-back test (Task D): select a candidate, save your values, write them back (you only) |
 | `whoami` (pipe only) | | `pid <pid> <DLL folder>`; `nrcon list` uses it |
 
 Targets: `me`, `all`, `allies`, `rivals`, `p1`…`p6`, `s0`…`s5` (§3.1).
@@ -112,7 +117,7 @@ with spaces. A setting ("cvar") is typed by its own name: alone it prints the va
 | `msg_show <k>` | Show matchmaking message k in game | main loop | `ui_msg` flags |
 | `<setting> [value]`, `cvar_list` | Read or change a live setting (`rival_hit_seconds`, intervals) | main loop | toml only, restart |
 | `pos_save` / `pos_go` | Snap-back test (T-028) | main loop | F7 / F6 |
-| `dump_players` / `discover` | Discovery and dumps | discovery worker | F9, histogram |
+| ~~`dump_players` / `discover`~~ | Dropped: R5 deleted the discovery scanner and the dumps (findings are in MEMORY_MAP) | — | — |
 
 `kill` and every other write keep today's gates (PlayerIns vtable check, own client only).
 
@@ -165,7 +170,7 @@ list in `config.rs` shrinks by about 20 keys).
 | CON-1 | Command core + parser + registry, mapped onto the existing `Command`s; `help`, `echo`, `status`, `players`, `team_*`, `pvp`, `mm_*` | Unit tests; solo: `nrcon status` answers from a running game |
 | CON-2 | Pipe server + `nrcon` with `-i` / `--all` | Solo in Nucleus: one command reaches both instances |
 | CON-3 | New commands: `kill`, `down`, `bleed_clock`, `flag_*`, `msg_show`, settings, `pos_*` | Solo: each one, checked on screen |
-| CON-4 | Delete the ImGui panel buttons and the F-key hotkeys | Dev build has no hotkey thread |
+| CON-4 ✅ | Delete the ImGui panel buttons and the F-key hotkeys (done with R5, 2026-10-20) | Dev build has no hotkey thread |
 | CON-5 (optional) | In-game console line (ImGui) + `autoexec.cfg` | Solo |
 
 **Agents and skills:** no new agent; CON cards fit the existing `implementer`. Once CON-1 lands, a short **skill "add a console

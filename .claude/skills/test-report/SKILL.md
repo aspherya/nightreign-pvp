@@ -23,7 +23,8 @@ config; check the DLL is the build under test before judging anything.
 
 ## 2. Read them in this order
 
-1. **Banner + `effective config` line**: right build, right switches (`dev_mode`, `team_size`, `probes`, `matchmaking`).
+1. **Banner + `effective config` line**: right build, right switches (`dev_mode`, `team_size`, `matchmaking`). If a developer game is still running, `dist\nrcon.exe --all status`
+   and `log 50` read it directly.
 2. **`heartbeat:` lines**: main-loop pass time must stay at a few ms; seconds = a slow-read regression (STATUS traps).
 3. **The card's own log lines** (each card and runbook names them: rule lines, `MATCH READY`, `ALL PRESENT`, `MARK #n`).
 4. **Errors and panics**: `ERROR`, `panicked`, `failed`.

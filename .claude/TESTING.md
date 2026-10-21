@@ -22,6 +22,9 @@ saves backed up; both PCs on the same SC build and the same nrpvp build.
 
 ## 2. Test cases
 
+TC-000…TC-004 are the Phase 0 cases. The overlay buttons and F-keys they mention were deleted on 2026-10-20 (R5); the same
+actions are console commands now (`team_set`, `team_restore`, `team_persist`, `mark`: CONSOLE.md §0).
+
 ### TC-000 — Solo SC baseline (HUMAN-solo)
 Preconditions: saves backed up; stock `nrsc_launcher.exe`.
 Steps:

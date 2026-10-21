@@ -29,14 +29,15 @@ expedition, and our PvP rules apply. The game's anti-cheat (EAC) and Bandai's se
 | PvP rules | **our mod** | Unchanged: rivals get team type 29 once the expedition loads; `team_size` comes from the queue mode (Solo = 1) |
 
 Code: `crates/nrpvp/src/mm/` (`machine.rs` queue state machine, `machine/gate.rs` gate, `worker.rs` Steam thread, `proto.rs` lobby keys),
-`crates/nrpvp/src/steam/` (`queue.rs` Steam calls, `probe.rs` callbacks, `quietinvite.rs` window suppression), overlay panel in `overlay/`.
+`crates/nrpvp/src/steam/` (`queue.rs` Steam calls, `probe.rs` callbacks, `quietinvite.rs` window suppression), the table menu in
+`game/menuflow.rs` and the on-screen messages in `mm/ui_msg.rs`.
 All Steam calls run on our own worker thread through the game's `steam_api64.dll`; nothing on the game loop waits for Steam.
 
 ## 3. What happens, step by step (Solo)
 
 | # | Who | What happens | Status line (player build) |
 |---|---|---|---|
-| 1 | each player | At the Roundtable: Insert → **Solo Battle Royale**. Refused at the title screen or in an expedition | `Searching for players...` |
+| 1 | each player | At the Roundtable table: boss menu → Matchmaking Settings → Number of Players **Solo** → **Commence** (UI-1). Refused at the title screen or in an expedition | `Searching for players...` |
 | 2 | each mod | Searches Steam for queue lobbies with the same tags (§4) and room. Joins the **lowest** lobby id found, else creates one | `Searching for players... 1/2` |
 | 3 | lobby owners | If two lobbies exist, the owner of the higher id writes `merge_to`, everyone in it leaves and joins the lower one | |
 | 4 | queue owner | Lobby full (6 in the final game; a test setting can start earlier, §5): closes the lobby and writes `host` (itself), `roster`, `state=go` | `Match found!` |
@@ -85,15 +86,14 @@ The SC lobby carries `inviteParam = "0"` (written by the game) plus SC's `nrsc_l
 
 | Setting | Player zip | Meaning |
 |---|---|---|
-| `matchmaking` | `true` | Turns on queue + join + quiet invite in the player build. `false` removes it (and the Insert key) |
+| `matchmaking` | `true` | Turns on queue + join + quiet invite + the table menu (`br_menu`) in the player build. `false` removes it |
 | `mm_max_players` | `2` (pre-release) | Players per match. **Pre-release flag**: `package-release.ps1 -MatchPlayers N` (default 2) writes N here and in `mm_min_players`; the final game is 6 in every mode. Everyone must have the same number |
 | `mm_min_players` | same as `mm_max_players` | Smallest match after the fill wait. Equal to the max in shipped zips, so matches only start full |
 | `mm_fill_wait_s` | 90 (default) | See §5 |
-| `overlay_toggle_key` | Insert (default) | Opens the matchmaking panel |
 
-Developer-only (`dev_mode = true`; the mmtest zip from `package-release.ps1 -MatchmakingTest`): `mm_queue`, `mm_join`, `mm_join_auto`,
-`mm_quiet_invite`, `mm_match_players` (sets min = max), Duo/Squad buttons, and the experiments `mm_probe`, `mm_lobby_trace`,
-`mm_sc_create`, `mm_host_create` (do not use the last one: see §8).
+Developer-only (`dev_mode = true`, developer DLL): `mm_queue`, `mm_join`, `mm_join_auto`, `mm_quiet_invite`, `mm_match_players` (sets
+min = max), and the experiments `mm_probe`, `mm_lobby_trace`, `mm_sc_create`, `mm_host_create` (do not use the last one: see §8).
+Driven from the console: `mm_queue_solo|duo|squad`, `mm_leave`, `mm_status`, `mm_join <method>`, `mm_sc_create`, `mm_quiet_test`.
 
 ## 7. Reading the logs
 
@@ -126,6 +126,5 @@ A healthy joiner shows: `the host published sc_lobby` → `method (a) link` → 
 
 - **MM-3g**: the host still presses Invite Members. Goal: the mod triggers that game action itself (call chain in `re/MEMORY_MAP.md` §12).
 - **MM-6**: Duo (3 teams of 2) and Squad (2 teams of 3) (parties queue together; Steam ID → expedition player mapping for teams). Built partly, dev only, not tested.
-- **MM-5**: the "Battle Royale" choice at the expedition table instead of the overlay button.
 - More than 2 players: only in automated tests. Boss choice: whatever the host picks.
 - Before any public release: ask SC's author (he does not want random matchmaking in SC; S9 §8).

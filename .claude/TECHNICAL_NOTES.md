@@ -60,13 +60,14 @@ When the game or SC updates, re-hash, update this table, and re-run the regressi
 
 | Crate | Use |
 |---|---|
-| `windows` | Win32 APIs (DllMain, threads, memory, keyboard state) |
-| `retour` | Function detours, used only when a task needs a hook |
-| `pelite` | PE parsing and AOB pattern scanning in `nightreign.exe` |
-| `tracing`, `tracing-subscriber`, `tracing-appender` | File logging |
-| `serde`, `toml` | `nrpvp.toml` config (hotkeys, experiment toggles) |
-| `fromsoftware-shared` | Singleton finder and shared engine utilities. **Must be validated on NR** (T-006) |
-| `hudhook` | ImGui overlay. **Deferred** until hotkeys and logs aren't enough |
+| `windows` 0.62 | Win32 APIs (DllMain, threads, memory, debug registers, named pipe, security descriptors) |
+| `tracing`, `tracing-subscriber`, `tracing-appender` | File logging (+ the in-memory tail the console's `log` reads) |
+| `serde`, `toml` | `nrpvp.toml` config |
+| `from-singleton` 3.0.1 | FD4 singleton call-site patterns (validated on NR by T-006) |
+
+As used on 2026-10-20 (initially planned `retour`, `pelite` and `fromsoftware-shared` were never needed; `hudhook` (ImGui overlay) was
+used from T-013 and removed by R5 when the console replaced the panel). `nrcon`, `nrscan` and the launcher use std (+ `windows` for
+`nrscan`).
 
 ### Tools
 

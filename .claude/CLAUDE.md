@@ -18,9 +18,9 @@ it there and nowhere else; other docs link to it instead of repeating it.
 | [TESTING.md](TESTING.md) | Test environment, test cases, results log, open friend-session runbooks |
 | [../README.md](../README.md) | Build, package, install (developers and players) |
 
-Project skills (`.claude/skills/`): `test-report` (turn a reported test run into evidence in the right docs) and `release-zip`
-(build, verify and record a player zip or Nucleus deploy). Planned once their code exists: "add a console command" (after CON-1),
-"add a feature" (after R3).
+Project skills (`.claude/skills/`): `test-report` (turn a reported test run into evidence in the right docs), `release-zip`
+(build, verify and record a player zip or Nucleus deploy) and `add-console-command` (every feature gets console access). Planned:
+"add a feature" (once the `Feature` trait exists, ARCHITECTURE §6 R3).
 
 Frozen history, read only when a card links it: `research/` (spike memos), `re/er-reference.md` (Elden Ring hints), `experiments/`
 (logs and scripts from test runs). They are not kept up to date.

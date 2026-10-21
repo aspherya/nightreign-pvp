@@ -21,10 +21,11 @@ powershell -NoProfile -File scripts\build.ps1
 
 | Zip | Command | For |
 |---|---|---|
-| `dist\NightreignPvP-mmtest.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchmakingTest` | Developer test build (dev mode, debug panel). Players use the normal zip |
 | `dist\NightreignPvP.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1` | Normal player build: PvP always on, no queue |
 
-The packaging script builds its own **player** `nrpvp.dll` (without the developer tooling: no debug panel, tracers or prototypes) into `target\player\`. Step 1 is only needed for the `-MatchmakingTest` zip, which packs the developer `dist\nrpvp.dll`.
+The packaging script builds its own **player** `nrpvp.dll` (without the developer tooling) into `target\player\`, so step 1 is only
+needed for developer launches (`scripts\launch.ps1`, Nucleus). Developers drive a running developer game with `dist\nrcon.exe`
+(see `.claude/CONSOLE.md`).
 `NightreignPvP\VERSION.txt` inside the zip says when and from which commit it was built.
 
 3. Send the zip. **Both players must install the same zip**, including you.

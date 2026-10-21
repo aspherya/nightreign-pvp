@@ -21,9 +21,8 @@ is written down.
 2. If `gamedata\*.json` changed or `dist\gamedata` is missing: `powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1`
    (needs WitchyBND and the 1.03.3 unpack in `Z:\Tools\`, and Python).
 3. `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2`. It builds the **player** DLL itself
-   (`--no-default-features`: no overlay, tracers or prototypes) into `target\player\`, builds the launcher and packs. Step 1 is
-   only needed for `-MatchmakingTest`. Use `-MatchPlayers 6` only for the final game, `-TeamSize N` for team tests, `-MatchmakingTest` for a
-   developer zip (dev mode, debug panel). Everyone who should meet needs the same `-MatchPlayers`.
+   (`--no-default-features`: no developer tooling) into `target\player\`, builds the launcher and packs. Use `-MatchPlayers 6`
+   only for the final game, `-TeamSize N` for team tests. Everyone who should meet needs the same `-MatchPlayers`.
 
 For Nucleus instead: `powershell -ExecutionPolicy Bypass -File scripts\deploy-nucleus.ps1 [-TeamSize N]` (close Nucleus first; it
 rewrites the handler's settings, logs go to `dist\nucleus-logs\`).
@@ -34,7 +33,7 @@ rewrites the handler's settings, logs go to `dist\nucleus-logs\`).
 - The zip holds `nrpvp_launcher.exe`, `HOW TO INSTALL.txt`, and `NightreignPvP\` with `nrpvp.dll`, `nrpvp.toml`, `VERSION.txt`,
   `gamedata\` (16 files: 15 languages + the event script) and `me3\` (3 binaries + 2 licences). The script refuses an incomplete
   `gamedata`; still list the archive once.
-- `nrpvp.toml` in the zip has no `dev_mode = true` (unless `-MatchmakingTest`).
+- `nrpvp.toml` in the zip has no `dev_mode = true` (a player DLL would ignore it anyway, with a warning).
 - Never install the zip into Leonardo's game folder yourself; installing is his step (STATUS §2 notes this each time).
 
 ## 4. Record it

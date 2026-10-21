@@ -1,6 +1,6 @@
 # Architecture
 
-How the code is built, the rules that keep it that way, and the refactor plan (§5–§7; **accepted 2026-10-20, not started**).
+How the code is built, the rules that keep it that way, and the refactor plan (§5–§7; accepted 2026-10-20; status per card in §6).
 Owner of: code structure, threading, module boundaries, coding rules. Memory offsets live in `re/MEMORY_MAP.md`, not here.
 
 ---
@@ -15,46 +15,46 @@ Think of it, coming from .NET, as a **hosted background service that runs inside
 So the useful patterns are the ones from backend services: ports and adapters, background workers, mailboxes, state machines.
 Patterns built for engines are not.
 
-## 2. As built (2026-10-20)
+## 2. As built (2026-10-20, after R0, R1, R5, R2-lite, R3-split)
 
-Three crates: `nrpvp` (the mod DLL, ~32 k lines), `nrpvp-launcher` (player exe), `nrscan` (external scanner, dev tool).
+Four crates: `nrpvp` (the mod DLL, ~27 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nrscan`
+(external scanner, dev).
 
 ```
 DllMain ─► nrpvp-main thread (startup::run, catch_unwind)
             ├─ logging, config, banner
-            ├─ hotkey thread (dev)            ──► Command ─┐
-            ├─ overlay thread (dev, hudhook)  ◄── Snapshot ─┤
-            ├─ Steam thread  = mm::worker + mm::machine     │   only this thread calls Steam
-            │      ▲ mm::send(Cmd)   │ mm::status()          │
-            ├─ menuflow / ui_msg / quietinvite (one thread each)
-            ├─ hwbp thread (owns debug registers DR0–DR3 of every game thread)
-            └─ game::run = main loop, 50 ms: singletons → ChrSet → TeamCtl.tick → CombatCtl.tick → Snapshot
+            ├─ console pipe thread (dev build + dev_mode) ──► MainReq ─┐   nrcon.exe talks to it
+            ├─ Steam thread  = mm::worker + mm::machine                │   only this thread calls Steam
+            │      ▲ mm::send(Cmd)   │ mm::status()                     │
+            ├─ menuflow / ui_msg / quietinvite (one thread each)        │
+            ├─ hwbp thread (owns debug registers DR0–DR3 of every game thread; primitives in dr.rs)
+            └─ game::run = main loop, 50 ms: singletons → ChrSet → TeamCtl.tick → CombatCtl.tick; console requests ◄┘
 ```
 
 | Layer | Modules | State |
 |---|---|---|
-| Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto` | Good: no memory access, tested with fakes |
-| Game access | `game/mem`, `rtti`, `singletons`, `image` | Good |
-| Features | `game/team` (hostility, persist, roster, snapshot, pos test), `game/combat_state` (downed rule), `game/menuflow`, `mm/ui_msg`, `steam/quietinvite` | Mixed: see §3 |
-| Dev tooling | probes, scans, tracers, dumps, overlay, hotkeys | ~13 k lines, compiled into the player DLL |
+| Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
+| Game access | `game/mem`, `game/layout` (every object offset), `rtti`, `singletons`, `image`, `event_flags`, `fmg`, `dr` | Good |
+| Features | `game/team/` (player list, writes, PvP marking, persist, snapshot), `game/combat_state/` (tracker, downed rule), `game/menuflow`, `game/flags`, `mm/ui_msg`, `steam/quietinvite` | Split by job (R3); files under ~550 lines except tests |
+| Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev` except `poswrite` (runtime dev-only) |
 
 ## 3. Current problems, ranked by how much they hurt
 
 This ranking is about **agent throughput**, since agents write the code. A Sonnet agent reads whole files. A 3 600-line file costs
 context, slows the agent, and makes two cards collide on the same file.
 
-| # | Problem | Evidence | Cost today |
-|---|---|---|---|
-| P1 | **`TeamCtl` is a god object.** 50 fields, ~55 methods, six jobs: player resolution, debug writes and restores, persist, PvPvE marking, overlay snapshot, snap-back test | `game/team.rs` 3 567 lines | Every hostility, roster or UI card touches it |
-| P2 | **Offsets live inside feature files.** The near-death block and HP chain are constants in `combat_state` (and again in `wide_scan`), the ChrSet shape and `+0x5A0` in `team` (`+0x5A0` in both) | grep `0x5A0`, `0x710` | Not badly scattered yet, but every new feature that needs a player field has to import from another feature or copy the constant |
-| P3 | **Three ways to read memory.** `mem::read` (guarded, slow), `RegionCache`, and the `CombatMem` trait (only combat uses an adapter) | `game/mem.rs`, `combat_state.rs` | Only one feature is testable without the game; STATUS trap "no guarded reads on the main loop" exists because of this |
-| P4 | **Startup is a hand-written composition root.** 15 `if cfg.a && cfg.b && !cfg.c { spawn }` blocks | `startup.rs` | Every feature edits it; flag interlocks live in two places |
-| P5 | **Config is ~60 flat switches**, dev and player mixed, interlocks in code | `config.rs` 1 840 lines | Each feature adds 2–4 flags; comments drifted (`mm_queue` "forced off" is false) |
-| P6 | **Dev code ships to players** (gated only at runtime, 0 `#[cfg(feature)]`) | §2 | Crash surface, hudhook linked, agents read dead code |
-| P7 | **`combat_state.rs` mixes tracker, rule and scan driver** | 2 235 lines | Same as P1, smaller |
-| P8 | **Layering inversion:** `hwbp` uses `steam::lobtrace::apply_all` | `hwbp.rs:19` | Deleting a dev tracer breaks the player build |
-| P9 | **Ad-hoc globals:** ~58 statics, mailboxes per module | grep `static` | No single picture of who talks to whom |
-| P10 | `mm/machine/gate.rs` 2 063 + `mm/machine.rs` 1 608 | — | Big, but pure and tested: **low priority** |
+| # | Problem | Status (2026-10-20) |
+|---|---|---|
+| P1 | **`TeamCtl` was a god object** (3 567 lines, six jobs) | **Fixed (R3-split):** `game/team/` = chrset, write, roster + TeamCtl's methods in manual / pvpve / view / postest; `mod.rs` 416 lines |
+| P2 | **Offsets lived inside feature files** (`+0x5A0` under two names) | **Fixed (R2-lite):** `game/layout.rs` holds every object offset once; modules alias the old names |
+| P3 | **Three ways to read memory** (`mem::read`, `RegionCache`, `CombatMem`) | **Open** (R2 rest): one `GameMem` trait + typed views (`PlayerIns<'m>`); touches the downed rule, so it waits for a Nucleus test slot |
+| P4 | **Startup is a hand-written composition root** (`if cfg.a && cfg.b` blocks) | **Open** (R3 rest): `Feature` trait + `World` read model |
+| P5 | **Config is ~50 flat switches** | **Smaller:** R5 removed the overlay/hotkey/probe keys (old files still load with one warning). Sections: open (R4) |
+| P6 | **Dev code shipped to players** | **Fixed (R1 + R5):** feature `dev`; panel, probes, scans, dumps deleted; player DLL 2.0 MB |
+| P7 | **`combat_state.rs` mixed tracker, rule and scan driver** | **Fixed (R5 + R3-split):** scan driver deleted; `combat_state/` = memory, tracker, rules |
+| P8 | **Layering inversion** (`hwbp` used a dev tracer) | **Fixed (R1):** `dr.rs` |
+| P9 | **Ad-hoc globals** | Open (R6) |
+| P10 | `mm/machine/gate.rs` 2 634 + `mm/machine.rs` 2 186 (after `cargo fmt`) | Low priority: pure and tested |
 
 What is **not** a problem: Rust as a language, the thread-per-concern model, panic handling, the test suite, the pure rules core. Keep
 them.
@@ -107,21 +107,22 @@ Every R-card is **behaviour-preserving**: same log lines, same tests green, plus
 
 | Card | What | Unblocks | Size |
 |---|---|---|---|
-| R0 | `cargo fmt` once; CI on GitHub Actions (fmt, clippy `-D warnings`, test) | everything | XS |
+| R0 ✅ | **Done 2026-10-20.** `cargo fmt` once; CI on GitHub Actions (fmt, clippy `-D warnings` for dev and player builds, test) | everything | XS |
 | R1 ✅ | **Done 2026-10-20 (first pass):** feature `dev` (default on) gates the ImGui panel, `lobtrace`, `menutrace`, `texttrace`, `c1proto`, `flagwatch`; shared helpers moved to `dr.rs` (debug registers), `game/fmg.rs` (text tables), `menuflow`/`flags`; player DLL refuses `dev_mode`; package-release builds the player DLL (3.2 → 2.0 MB). Probes, scans and `poswrite` are still compiled: they go in R5. Original scope: Cargo feature `dev`: move dev tooling under `dev/`, `#[cfg]` out of the player build; `build.ps1` builds with it, `package-release.ps1` without. Move `apply_all` into `hwbp` (P8) | P6, P8, console | M |
-| R2 | `game/layout/` + typed views + one `GameMem` trait; migrate `team`, `combat_state`, `downed` to it | P2, P3 | M |
-| R3 | `World` read model + `Feature` trait; split `TeamCtl` into hostility/roster/persist-debug and `combat_state` into tracker/rule; startup loop | P1, P4, P7 | L |
-| R4 | Sectioned config with old flat keys still accepted (migration + log warning) | P5 | S |
-| R5 | Delete answered investigation code (T-031…T-038 probes, wide/probe scans, `c1proto`, UI-0 tracers); findings stay in MEMORY_MAP | P6 | M |
+| R2 ◐ | **Half done 2026-10-20:** `game/layout.rs` (every object offset, MEMORY_MAP refs). **Open:** typed views (`PlayerIns<'m>`) and one `GameMem` trait replacing `RegionCache` / `CombatMem` | P2 ✅, P3 | M |
+| R3 ◐ | **Split done 2026-10-20:** `game/team/` and `game/combat_state/` by job (pure moves, same tests). **Open:** `World` read model, `Feature` trait, startup loop | P1 ✅, P7 ✅, P4 | L |
+| R4 ◐ | **Removed keys done (R5):** overlay/hotkey/probe/C1/downed keys gone, old files load with one warning. **Open:** sections | P5 | S |
+| R5 ✅ | **Done 2026-10-20:** ImGui panel + hudhook, hotkeys, T-027…T-038 probes and scans, discovery worker, MARK dumps, `c1proto`, the inert downed experiment (~12 k lines). Kept: UI-0/UI-1 tracers (MM-3g RE), `flagwatch`, `poswrite` (Task D) | P6 | M |
 | R6 | Thread map + mailbox list in this file; one `core::threads` spawner that names and logs every thread | P9 | S |
 | (later) | Split `mm/machine/gate.rs` by state | P10 | M |
 
-Order: **R0 now → FS-UI2 → R1 → R5 → R2 → R3 → R4 → R6**, then feature work (spawns, death rules). The console (CON-1) comes after R1
-because it lives in `dev/`.
+Done in order R0 → R1 → CON-1/2 → R5 → R2-lite → R3-split (2026-10-20, SMOKE-2 pending). Next: FS-UI2, then the open halves of R2/R3
+(typed views + `GameMem`, `Feature` + `World`) **together with the first new feature** (separate spawns) so the new structure is
+shaped by a real user, then R4 sections and R6.
 
 **Rules for refactor cards and every card after them:**
 - A file over ~800 lines needs a reason in its header; new files aim for under 600.
-- Offsets only in `game/layout/`, each with game version + MEMORY_MAP section.
+- Offsets only in `game/layout.rs`, each with game version + MEMORY_MAP section.
 - New behaviour comes as a `Feature`, not as another field on an existing controller.
 - Dev-only code goes under `dev/` behind the feature flag.
 
@@ -165,11 +166,12 @@ header before the body.
 | Question | Start at |
 |---|---|
 | What runs at startup and in which thread? | `startup.rs`, then §2 of this file |
-| Where is offset X, and is it verified? | `re/MEMORY_MAP.md`, then `game/layout/` (after R2; today `game/team.rs`, `game/combat_state.rs`) |
-| How do rivals get marked hostile? | `game/team.rs` (`plan_pvpve`, `write_team_type`); after R3 `features/hostility.rs` |
-| How does the downed rule work? | `game/combat_state.rs` (`Core`); after R3 `features/downed_rule.rs` |
+| Where is offset X, and is it verified? | `game/layout.rs` (one line per offset with its MEMORY_MAP section), then `re/MEMORY_MAP.md` |
+| How is the player list read, and who is LOCAL? | `game/team/chrset.rs` (`resolve`, `decide_local`) |
+| How do rivals get marked hostile? | `game/team/roster.rs` (`plan_pvpve`), `game/team/pvpve.rs` (`pvpve_tick`), `game/team/write.rs` (`write_team_type`) |
+| How does the downed rule work? | `game/combat_state/rules.rs` (`Core`), fed by `game/combat_state/tracker.rs` |
 | How does matchmaking decide? | `mm/machine.rs` (pure), then `mm/worker.rs` (glue), `MATCHMAKING.md` |
-| How do our menus and messages appear in game? | `game/menuflow.rs`, `mm/ui_msg.rs`, `gamedata/*.json`, `scripts/build-gamedata.ps1` |
+| How do our menus and messages appear in game? | `game/menuflow.rs`, `mm/ui_msg.rs`, `game/flags.rs` + `game/event_flags.rs`, `gamedata/*.json`, `scripts/build-gamedata.ps1` |
 | Which settings exist? | `config.rs` (the default toml text at the top lists and explains every key) |
 | How does a console command reach the game? | `console/mod.rs` (registry, `answer`), `console/pipe.rs`, the `console::take()` block in `game/mod.rs`; client `crates/nrcon` |
-| What is dev-only? | Anything behind `#[cfg(feature = "dev")]`: `overlay/panel.rs`, `console/`, `steam/lobtrace.rs`, `game/{menutrace,texttrace,c1proto,flagwatch}.rs` |
+| What is dev-only? | `#[cfg(feature = "dev")]`: `console/`, `steam/lobtrace.rs`, `game/{menutrace,texttrace,flagwatch}.rs`; runtime dev-only: `game/poswrite.rs` |

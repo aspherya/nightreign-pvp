@@ -45,8 +45,9 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 
 ## Engineering (accepted 2026-10-20; cards are written out in full when they start)
 
-Done (on `main`, SMOKE-1 PASS 2026-10-20): **R0** (fmt + CI), **R1** first pass (dev feature), **CON-1, CON-2**
-(console + `nrcon.exe`), all 2026-10-20. Order: SMOKE-1 → FS-UI2 → R5 → R2 → R3 → R4 → R6 → CON-3, CON-4 → (CON-5 optional).
+Done (on `main`, SMOKE-1 PASS 2026-10-20): **R0** (fmt + CI), **R1** first pass (dev feature), **CON-1, CON-2** (console + `nrcon.exe`).
+Done on branch `eng/cleanup-r5-r2-r3` (SMOKE-2 pending, STATUS §3): **R5**, **CON-4**, **R2** half (`game/layout.rs`), **R3** half
+(split by job), **R4** removed keys. Open: the R2/R3 halves (with the first new feature), R4 sections, R6, CON-3, CON-5. Order was: SMOKE-1 → FS-UI2 → R5 → R2 → R3 → R4 → R6 → CON-3, CON-4 → (CON-5 optional).
 - **R0–R6 — Refactor plan.** Behaviour-preserving; scope, acceptance and rules in `ARCHITECTURE.md` §6–§7. Owner: SONNET/implementer →
   OPUS review → HUMAN solo smoke run.
 - **CON-1–CON-5 — Developer console.** Scope and acceptance in `CONSOLE.md` §6–§7. Owner: SONNET/implementer → HUMAN solo.
