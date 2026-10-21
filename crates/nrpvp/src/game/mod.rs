@@ -414,6 +414,7 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
                 wcm_instance: wcm_inst,
                 ..Snapshot::default()
             };
+            team.refresh_live_next();
             team.fill_snapshot(&mut snap);
             let text =
                 crate::console::answer(req, &snap, &mut |c| run_command(c, "console", &mut team));

@@ -7,6 +7,12 @@ use crate::game::mem::{self};
 use crate::overlay::shared::{Role, Snapshot};
 
 impl TeamCtl {
+    /// The next [`fill_snapshot`](Self::fill_snapshot) re-reads the players instead of reusing the last read (console requests:
+    /// `team_set 6; players` must show the value just written, not one up to [`LIVE_REFRESH`] old).
+    pub(crate) fn refresh_live_next(&mut self) {
+        self.next_live = Instant::now();
+    }
+
     /// Fill the team part of the overlay snapshot (T-013, T-015). Runs on the main loop thread: the only
     /// place that reads game memory for the overlay. Read-only; refreshes the resolve at most every
     /// [`LIVE_REFRESH`].

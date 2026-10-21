@@ -40,6 +40,19 @@ quits stop crashing on the new builds, it was the overlay; if not, the debug-reg
 
 ## 3. Next, in order
 
+**RESUME HERE (session paused 2026-10-21 at the usage limit; branch `eng/cleanup-r5-r2-r3`):**
+1. Verify the last commit ("console reads fresh"): `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --release -- -D warnings`,
+   the same with `-p nrpvp --no-default-features`, `cargo test --workspace --release`. It is NOT built or tested yet.
+2. When the game is closed: `scriptsuild.ps1` (puts the fix in `dist
+rpvp.dll`).
+3. Finish SMOKE-2 (below). **Part A step 2 PASSED** in the Roundtable on 2026-10-20 23:5x (TESTING §3 entry still to write):
+   `list/status/players/team_set 6/team_restore/pos_next/log` all fine, readback 1 -> 6 -> 1, ticks 0 ms, menu Commence/Stop fine.
+   Found: a chained `team_set 6; players` showed the old value (players list cached for 100 ms): that is the fix in step 1.
+   Still to run: part A step 3 (solo expedition: team_set 6 / team_restore / pvp 0 / pvp 1), step 4 (crash on quit?), part B (Nucleus
+   downed rule + Task D).
+4. Then: TESTING §3 entry for SMOKE-2 (skill `test-report`), merge the branch into `main` (fast-forward), update the memory files
+   (`dev-console-and-architecture.md`: R5/R2-lite/R3-split done).
+
 1. **FS-UI2** (HUMAN + friend; runbook TESTING.md §6): both PCs on the new zip, match started from the table, checks the match-ready
    Commence `[HYPOTHESIS]` (one player is switched to two first) and our game files next to SC on two PCs.
 2. **SMOKE-2: the cleanup branch `eng/cleanup-r5-r2-r3` (HUMAN, ~25 min; Claude drives the console).** Built: R5 (panel, hotkeys,
