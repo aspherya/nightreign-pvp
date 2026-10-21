@@ -200,7 +200,27 @@ team gets its own line can be decided later. The design puts one line through th
   has a `CSBirdMovePointMan` that appears at expedition load. `[SOURCE: S6]` The map is 6 × 6 tiles (`m60_41..46_35..40`). If NR
   tiles are 256 m like Elden Ring's, that is about 1.5 km across `[HYPOTHESIS]`, so the full crossing takes about 90 s at the vanilla speed.
 
+**Leonardo's answers (2026-10-21, from playing vanilla).** (1) The start hawk cannot be left early. (2) Each player has their own
+hawk. (3) No fall damage, except falling into the void. (4) The vanilla button: to be traced with nrcon/nrscan in the next session.
+(5) No glide: after the drop the player falls straight to the spot. Leonardo's point: only the start hawk is locked (fixed direction,
+fixed drop). The hawks from **Spectral Hawk Trees** let the player steer for a while.
+- Consequences: we must provide the drop ourselves (1); each game moves only its own player, which matches how we already work (2); a
+  release from any height over solid ground is safe, so route 1's biggest risk goes away, but the line must stay over the map (3; the
+  void at the edges kills) `[HYPOTHESIS until HAWK-1 c]`.
+
+**Spectral Hawk Trees** (wiki extract `research/hawk/spectral-hawk-tree.md`): a tree summons a hawk that flies a **fixed route shown on the
+map** ("spectral road"). The player can steer off the route, which makes the hawk descend; with no input it flies the whole route. The
+trees are at fixed places and the start hawk also has a route (`birdRouteEntityId`), so both very likely use the same route system
+(`CSBirdMovePointMan`, flag 8800 "Bird movement icon") `[HYPOTHESIS]`. A Nexus mod, **Spectral hawk anywhere** (Dhafer, 2026-10-03;
+`research/hawk/spectral-hawk-anywhere-mod.md`), summons a tree hawk anywhere, at any time, so summoning a hawk without a tree is
+possible. The page does not say how it works. Its permissions forbid modifying or re-uploading the file, so we may only study it and
+write our own version (or ask the author).
+
 **Routes, cheapest first.**
+0. **Summon a tree hawk at the start, on a route across the map** (new, 2026-10-21). If we can start a Spectral Hawk Tree ride for the
+   player (as the Nexus mod does) on a long route, the game gives us the hawk on screen, the other players' view, and steering. Open:
+   how the summon is triggered (the Nexus mod's files will show it: event script, param or DLL), whether a route can be ours or must be
+   one of the fixed tree routes, and how the player leaves a tree hawk before the end of its route.
 1. **Carry the player ourselves (proven pieces only).** From the moment the ride is detected, the mod writes the player's position every
    tick along the extended line at ride height. When the player presses "drop", the mod stops writing and the game's physics takes over.
    Unknowns: whether a write sticks while the vanilla ride is active (the hawk may pull the player back), what happens when the vanilla
@@ -212,8 +232,8 @@ team gets its own line can be decided later. The design puts one line through th
 3. **Longer route in the data.** Edit the hawk route points (`CSBirdMovePointMan` in memory, or the route entities in the map files)
    so the vanilla hawk flies our line. The early drop on a button press is still needed.
 
-Plan: research steps HAWK-0 (questions to Leonardo + reading the map files), HAWK-1 (solo probe: move the player during the ride, hold
-in the air, release), then pick route 1 or 2 and build HAWK-2. Cards in `TASKS.md`.
+Plan: HAWK-0 (answers in; still open: how the Nexus mod summons a hawk, the route data in the map files), HAWK-1 (solo probe: the
+start ride and a tree-hawk ride logged, moving and holding the player), then pick route 0, 1 or 2 and build HAWK-2. Cards in `TASKS.md`.
 
 **What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector
 (`game/spawn.rs::DropDetector`) are the base of route 1. The F3 "move each team 200 m apart at the drop" rule (`team_spawns`, off by

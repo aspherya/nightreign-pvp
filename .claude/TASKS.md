@@ -292,11 +292,13 @@ T-028 (teleport) is done: solo run 4 and the Nucleus two-screen check passed on 
 branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spawns = false`).
 
 ### HAWK-0 — Questions for Leonardo and desk research
-Owner: OPUS + HUMAN (answers only, no test) | Status: todo
-1. Leonardo, from playing vanilla: (a) can a player jump off the hawk before the end of the ride, and with which button? (b) do all
-   players ride one hawk together or one hawk each, and do you see the others on their hawks? (c) is there fall damage in Nightreign,
-   and from roughly what height does a fall kill? (d) which button should "drop" be (keyboard and gamepad)? (e) do players glide or
-   steer while falling after the drop?
+Owner: OPUS + HUMAN (answers only, no test) | Status: in progress (answers 2026-10-21 in PROJECT_PLAN §13)
+1. ~~Leonardo's questions~~ answered 2026-10-21, except the drop button (traced in HAWK-1). Still for Leonardo: download the Nexus mod
+   **Spectral hawk anywhere** (nexusmods.com/eldenringnightreign/mods/924; Nexus needs his login) and unpack it **outside the repo**
+   (e.g. `Z:\Tools
+r-mods\spectral-hawk-anywhere\`), without installing it. Opus reads what it changes (event script, params, DLL) to
+   learn how a hawk is summoned. Study only: its permissions forbid modifying or re-uploading it. Also: can you leave a **tree** hawk
+   early, and with which button?
 2. Opus, offline: decompress the `m60_*` map files (Oodle KRAK, `oo2core_9_win64.dll` from the game folder) and read the hawk route
    entities named by `SORTIE_STARTING_POINT_ST.birdRouteEntityId`: points, length, height. Also find the tile size, which gives the map
    edges in the world frame we write.
@@ -307,11 +309,12 @@ Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: `t-028-snapback
 Build (console, `add-console-command` skill): `pos_shift <dx> <dy> <dz>` moves the LOCAL player by metres in the world frame (world
 position kept, as `pos_go`). `pos_hold <secs>` holds the current world position every tick, then lets go. A ride logger records world
 position, ground byte and speed every 100 ms from expedition load to 30 s after landing, and lists every character within 30 m of the
-player during the ride (to find the hawk).
-HUMAN (solo, about 10 min, three expeditions): (a) during the ride, `pos_shift 50 0 0`: does the player stay moved, does the hawk follow,
-does the drop still happen on time? (b) during the ride, `pos_hold 30`: is the player held past the 12 s ride, what does it look like,
-and what happens at release (fall, damage, death)? (c) after landing, `pos_shift 0 60 0`, then `0 100 0`: how much fall damage?
-Acceptance: the three answers and the log. These answers choose route 1 or 2 of §13.
+player during the ride (to find the hawk). The logger also runs on a Spectral Hawk Tree ride, to compare the two hawks.
+HUMAN (solo, about 15 min, two expeditions): (a) during the start ride, `pos_shift 50 0 0`: does the player stay moved, does the hawk
+follow, does the drop still happen on time? (b) during the start ride, `pos_hold 30`: is the player held past the 12 s ride, what does it
+look like, and what happens at release? (c) after landing, `pos_shift 0 100 0`: confirm no fall damage. (d) ride one Spectral Hawk Tree
+with no input, then a second one steering off the route, then try every button to leave it early (the trace shows which one works).
+Acceptance: the answers and the log. They choose route 0, 1 or 2 of §13.
 
 ### HAWK-2 — Hawk crossing v1
 Owner: OPUS to card in detail after HAWK-1 | Status: later
