@@ -116,7 +116,7 @@ Every R-card is **behaviour-preserving**: same log lines, same tests green, plus
 | R6 | Thread map + mailbox list in this file; one `core::threads` spawner that names and logs every thread | P9 | S |
 | (later) | Split `mm/machine/gate.rs` by state | P10 | M |
 
-Done in order R0 → R1 → CON-1/2 → R5 → R2-lite → R3-split (2026-10-20, SMOKE-2 pending). Next: FS-UI2, then the open halves of R2/R3
+Done in order R0 → R1 → CON-1/2 → R5 → R2-lite → R3-split (2026-10-20; SMOKE-2 PASS 2026-10-21). Next: FS-UI2, then the open halves of R2/R3
 (typed views + `GameMem`, `Feature` + `World`) **together with the first new feature** (separate spawns) so the new structure is
 shaped by a real user, then R4 sections and R6.
 

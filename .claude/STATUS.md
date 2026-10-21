@@ -26,55 +26,29 @@ See `PROJECT_PLAN.md` §2 and §9.
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10. Not proven to be Seamless Co-op's;
 our thread that rewrites debug registers and the overlay's teardown were the suspects. The overlay is gone since R5 (2026-10-20): if
-quits stop crashing on the new builds, it was the overlay; if not, the debug-register thread is next. Investigate before any public zip.
+quits stop crashing on the new builds, it was the overlay; if not, the debug-register thread is next. **2026-10-21: the first quit on
+the new build did not crash** (SMOKE-2); keep watching before calling it fixed.
 
 ## 2. What is deployed where
 
 | Place | Mode | Settings |
 |---|---|---|
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-12 02:31; redeploy for SMOKE-2) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 2` (set for run 21), PvP on |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 08:00, same as `dist`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 2` (set for run 21), PvP on |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
-| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). Branch `eng/cleanup-r5-r2-r3`: R5, R2-lite, R3-split; **SMOKE-2 pending** | `team_size = 1` |
+| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` 2026-10-21 (R5, R2-lite, R3-split): SMOKE-2 PASS | `team_size = 1` |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
 ## 3. Next, in order
 
-**RESUME HERE (session paused 2026-10-21 at the usage limit; branch `eng/cleanup-r5-r2-r3`):**
-1. ~~Verify the console fresh-read fix~~ done 2026-10-21: fmt, clippy (dev + player), 385 tests pass.
-2. ~~Rebuild `dist`~~ done 2026-10-21 08:00 (`dist
-rpvp.dll` has the fix).
-3. Finish SMOKE-2 (below). **Part A step 2 PASSED** in the Roundtable on 2026-10-20 23:5x (TESTING §3 entry still to write):
-   `list/status/players/team_set 6/team_restore/pos_next/log` all fine, readback 1 -> 6 -> 1, ticks 0 ms, menu Commence/Stop fine.
-   Found: a chained `team_set 6; players` showed the old value (players list cached for 100 ms): that is the fix in step 1.
-   Still to run: part A step 3 (solo expedition: team_set 6 / team_restore / pvp 0 / pvp 1), step 4 (crash on quit?), part B (Nucleus
-   downed rule + Task D).
-4. Then: TESTING §3 entry for SMOKE-2 (skill `test-report`), merge the branch into `main` (fast-forward), update the memory files
-   (`dev-console-and-architecture.md`: R5/R2-lite/R3-split done).
-
 1. **FS-UI2** (HUMAN + friend; runbook TESTING.md §6): both PCs on the new zip, match started from the table, checks the match-ready
    Commence `[HYPOTHESIS]` (one player is switched to two first) and our game files next to SC on two PCs.
-2. **SMOKE-2: the cleanup branch `eng/cleanup-r5-r2-r3` (HUMAN, ~25 min; Claude drives the console).** Built: R5 (panel, hotkeys,
-   probes, scans, discovery and dumps deleted, ~12 k lines), R2-lite (`game/layout.rs`), R3-split (`team/`, `combat_state/` by job).
-   `dist\nrpvp.dll` and `dist\nrcon.exe` are this build. SMOKE-1 (console + R0/R1) passed on 2026-10-20 (TESTING §3).
-   **Part A, solo (~10 min):**
-   1. `.\scripts\launch.ps1`, load to the Roundtable. Table menu: Solo / Duo / Trio, Commence shows "searching", Stop Searching stops.
-   2. Say "game is up": Claude runs `status`, `players`, `log 30`, `team_set 6` / `team_restore`, `pos_next`.
-   3. Start a solo expedition. Claude runs `team_set 6` (enemies should ignore you), `team_restore` (back to normal), `pvp 0`, `pvp 1`.
-   4. Quit. Note whether the game **crashed on quit** (the overlay is gone now: see the known bug in §1).
-   **Part B, Nucleus 2 instances (~15 min): the downed rule after the split, and Task D.**
-   1. Claude runs `scripts\deploy-nucleus.ps1 -TeamSize 1` (Nucleus closed). Start 2 instances, host + join, start an expedition.
-   2. Say "both in": Claude runs `nrcon --all status` (both games, rivals marked).
-   3. Down one player with the other (rival). Hit the downed one 2–3 times: the purple bar must not fill and the clock gets shorter, as in
-      runs 15–20; then let them die. Claude checks the rule lines in both logs.
-   4. Task D (T-028, needed for spawns), on instance 0: stand still, say "save" (Claude runs `pos_save`), walk ~20 m, say "go" (Claude
-      runs `pos_go`). Tell Claude whether you snapped back and what the other screen showed. Claude runs `pos_next` and you repeat, up
-      to 6 candidates.
-   Rollback if anything is off: `git checkout main`, `scripts\build.ps1`. The FS-UI2 zip is untouched; the new player DLL gets its own
-   check before the next zip.
+2. **SMOKE-2: PASS (2026-10-21, TESTING §3).** R5, R2-lite, R3-split merged into `main`. Next engineering step: the open halves of R2/R3
+   with the first new feature (ARCHITECTURE §6).
 3. **MM-3g** (no Invite Members click), then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
-4. **Task D: position snap-back test** (T-028, needed for separate spawns): folded into SMOKE-2 part B (console `pos_save` / `pos_go` /
-   `pos_next` instead of F7 / F6 / F9).
+4. **Task D: position snap-back test** (T-028, needed for separate spawns), in Nucleus: stand still, `nrcon -i 0 pos_save`, walk ~20 m,
+   `nrcon -i 0 pos_go`; say whether you snapped back and what the other screen showed; `pos_next`, repeat (6 candidates). Skipped in
+   SMOKE-2; do it before spawns.
 
 Open from FS-0 run 21: whether teammates can damage each other (not visible in the logs), and what the lone rival's screen showed on the
 gauge of a downed enemy who has a teammate.
@@ -144,7 +118,7 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 
 ## 7. Repository state
 
-- `main`: docs, R0, R1, CON-1/2 (2026-10-20). Branch `eng/cleanup-r5-r2-r3`: R5, R2-lite, R3-split, waiting for SMOKE-2. Leonardo pushes.
+- `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split (SMOKE-1 2026-10-20, SMOKE-2 2026-10-21). Leonardo pushes.
 - Branch `t-028-snapback` (Leonardo): T-028 snap-back/teleport runs and F3 team spawns, 3 commits not on `main`. Resolve when spawns start.
 - Tests: `cargo test --workspace` → 385 pass (353 nrpvp, 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
   self-scan `poke_add_is_followed`). R5 removed ~110 tests together with the code they tested. fmt, clippy `-D warnings` (dev and player builds) clean; the same checks

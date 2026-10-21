@@ -373,6 +373,23 @@ Game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0. Baseline, 
 - Follow-up done the same day: two reply wordings fixed ("rivals rivals", "Session(2)" → "p2"), commit `2dadcb2`.
 - Not covered: the R1 player DLL (`--no-default-features`) in game; it gets its own check before the next player zip.
 
+### 2026-10-21 — SMOKE-2: cleanup branch `eng/cleanup-r5-r2-r3` (Leonardo + Claude over nrcon; dev build 2026-10-21 08:00, nrpvp.dll 66824444A97739C5; game 1.03.3, SC 1.1.3, me3 0.11.0). Logs: `dist\nrpvp.log`, `dist\nucleus-logs\Instance{0,1}\`: **PASS**
+- **Part A, solo (`scripts\launch.ps1`), Roundtable:** console `list/status/players/team_set 6/team_restore/pos_next/log` answered on
+  2026-10-20 (build before the fresh-read fix) and again on 2026-10-21; menu Solo/Duo/Trio, Commence → searching, Stop → idle (log
+  `br_menu: Commence -> stop searching`, `mm_queue: state InQueue -> Idle`). Found and fixed: a chained `team_set 6; players` showed the
+  value from before the write (players list cached 100 ms); with the fix `players` showed 6 at once (2026-10-21).
+- **Step 3 (solo expedition) not run, by design:** with `br_menu` on, Commence starts the Solo queue (it waited at `solo 1/2 searching`),
+  so no solo expedition can start; in a solo expedition there are no rivals anyway. Left with `mm_leave`; value restored 6 -> 1.
+- **Quit: no crash** (Leonardo). First clean quit noted since 2026-10-10 (0xC0000374), and the first build without the overlay. One
+  run is not proof: watch the next quits (STATUS §1 known bug).
+- **Part B, Nucleus 2 instances (deploy with `mm_queue = false`, `br_menu = false`):** `nrcon --all status` showed both games, each
+  keeping itself on 2 and marking the other 29 (`rivals marked 29, 1 writes` on each). Downed rule: Instance0 (p2) downed by RIVAL p1 at
+  11:16:14 (bar 40, clock 14.98); two rival hits reached the rule: `bar 3 -> 40 restored, clock 7.77 -> 4.77` and `bar 2 -> 40
+  restored, clock 3.69 -> 0.69`; death at clock 0 (11:16:23). Instance1's display copy logged the same values at the same times.
+  Leonardo reported 3 hits and that the bar never filled; the logs show 2 hits reaching the rule (the third likely landed as the clock
+  ran out). 0 errors / panics; ticks 1–4 ms, peaks 62 / 114 ms at the hits (the known run-21 spike, not new).
+- **Task D (snap-back) skipped** (Leonardo): still open, console `pos_save` / `pos_go` / `pos_next` ready.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.
