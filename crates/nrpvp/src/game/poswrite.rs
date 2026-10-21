@@ -17,8 +17,8 @@
 
 use std::fmt::Write as _;
 
-use super::discover::is_ptr;
 use super::mem;
+use super::mem::is_ptr;
 
 /// Saved value must be finite with every |component| below this.
 pub(crate) const MAX_ABS: f32 = 100_000.0;
@@ -250,6 +250,8 @@ impl PosTest {
         self.cands.get(self.sel).map_or(String::new(), Cand::text)
     }
 
+    /// Whether values were saved (tests).
+    #[cfg(test)]
     pub(crate) fn has_saved(&self) -> bool {
         self.saved_for.is_some()
     }

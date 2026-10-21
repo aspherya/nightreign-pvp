@@ -1,4 +1,4 @@
-//! T-033/T-034/T-035: combat-state tracker, the rival revive rule and the downed-timer scan driver.
+//! T-033/T-034/T-035/T-039: combat-state tracker, the rival revive rule and the downed rule.
 //!
 //! Facts used (all "VERIFIED on NR 1.3.3.0 by FS-0 runs 7-9, TECHNICAL_NOTES section 4", identical on every client unless noted):
 //! - `PlayerIns+0x710` u8 == 1 while downed, 0 otherwise;
@@ -20,20 +20,14 @@
 //!    again instead of revived ([`Core::apply_rule`], the only store in this module). Gates right before the write: PlayerIns
 //!    vtable, plausible `[PlayerIns+0xB78]`, a current value > 0 that equals the mirror at `PlayerIns+0xBA0` or the PlayerGameData
 //!    HP. Never for remote players, never for ALLY/SELF/OTHER.
-//! 3. Timer scan (`wide_scan.rs`, dev mode with `probes = true`, read-only): [`Core`] only tells the sampling thread when LOCAL goes
-//!    down, when its attacker/HP change and when it is up again; the thread does the sampling and ranking
-//!    (`T-035 TIMER UNVERIFIED`).
 //!
 //! Memory access goes through the guarded [`CombatMem`] trait; the real implementation uses `mem::read` (VirtualQuery-guarded)
 //! and `mem::write_bytes` (the single store: [`Core::apply_rule`]).
 
 use std::collections::{HashMap, HashSet};
 
-use super::discover::is_ptr;
-use super::mem;
+use super::mem::{self, is_ptr};
 use super::rtti::Rtti;
-use super::singletons::Found;
-use super::wide_scan::{pick_short_list, Marker, NullSink, ScanMsg, ScanSink, ScanThread, Single};
 use crate::config::Config;
 use crate::overlay::shared::Relation;
 
@@ -410,26 +404,6 @@ pub(crate) struct Tracker {
 }
 
 impl Tracker {
-    pub(crate) fn local_downed(&self) -> Option<bool> {
-        self.local_downed
-    }
-
-    pub(crate) fn local_reading(&self) -> Option<Reading> {
-        self.local_reading
-    }
-
-    pub(crate) fn local_addr(&self) -> Option<usize> {
-        self.local_addr
-    }
-
-    /// One compact line per tracked player, for the dev overlay.
-    pub(crate) fn overlay_lines(&self, subjects: &[Subject]) -> Vec<String> {
-        subjects
-            .iter()
-            .filter_map(|s| self.states.get(&s.addr).map(|p| p.line.clone()))
-            .collect()
-    }
-
     /// Sample every 100 ms; returns the transitions seen. Players that are not PlayerIns-derived objects are skipped.
     pub(crate) fn tick(
         &mut self,
@@ -586,18 +560,13 @@ pub(crate) fn hp_gate(auth: Option<u32>, mirror: Option<u32>, gamedata: Option<u
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Core: tracker + rule + scan driver, driven by an explicit clock
+// Core: tracker + rules, driven by an explicit clock
 // ---------------------------------------------------------------------------------------------------
 
 pub(crate) struct Core {
     dev: bool,
-    probes: bool,
     policy: RevivePolicy,
     tracker: Tracker,
-    /// Short-list singletons present in the singleton map, handed to the sampling thread on each window start.
-    singles: Vec<Single>,
-    scan_open: bool,
-    prev_local: Option<Reading>,
     last_rule_log_ms: Option<u64>,
     suppressed: u32,
     /// T-039: seconds taken off the bleed-out clock per rival hit.
@@ -620,15 +589,11 @@ pub(crate) struct Core {
 }
 
 impl Core {
-    pub(crate) fn new(dev: bool, probes: bool, policy: RevivePolicy) -> Self {
+    pub(crate) fn new(dev: bool, policy: RevivePolicy) -> Self {
         Core {
             dev,
-            probes: dev && probes,
             policy: if dev { policy } else { RevivePolicy::Redown },
             tracker: Tracker::default(),
-            singles: Vec::new(),
-            scan_open: false,
-            prev_local: None,
             last_rule_log_ms: None,
             suppressed: 0,
             hit_seconds: DEFAULT_RIVAL_HIT_SECONDS,
@@ -653,7 +618,8 @@ impl Core {
         };
     }
 
-    /// T-039: the dev status line for LOCAL while downed.
+    /// T-039: the dev status line for LOCAL while downed (tests).
+    #[cfg(test)]
     pub(crate) fn downed_line(&self) -> Option<&str> {
         self.downed_line.as_deref()
     }
@@ -662,21 +628,12 @@ impl Core {
         self.policy
     }
 
-    pub(crate) fn tracker(&self) -> &Tracker {
-        &self.tracker
-    }
-
-    pub(crate) fn set_singles(&mut self, singles: Vec<Single>) {
-        self.singles = singles;
-    }
-
     /// One pass; returns the log lines.
     pub(crate) fn step(
         &mut self,
         now_ms: u64,
         subjects: &[Subject],
         mem: &mut dyn CombatMem,
-        scan: &mut dyn ScanSink,
     ) -> Vec<String> {
         let mut lines = Vec::new();
         let events = self.tracker.tick(now_ms, subjects, mem);
@@ -692,9 +649,6 @@ impl Core {
         lines.extend(self.remote_step(subjects, mem));
         if self.dev {
             lines.extend(self.watch_block(subjects, mem));
-        }
-        if self.probes {
-            self.scan_step(now_ms, scan);
         }
         lines
     }
@@ -1064,49 +1018,6 @@ impl Core {
         self.fired += 1;
         Ok((before, mem.read_u32(target)))
     }
-
-    /// The timer scan (read-only), dev + probes: tells the sampling thread when LOCAL's downed window starts, when its attacker
-    /// field or HP change, and when it ends. The thread samples, backs off and ranks on its own.
-    fn scan_step(&mut self, now_ms: u64, scan: &mut dyn ScanSink) {
-        match (self.tracker.local_downed(), self.tracker.local_addr()) {
-            (Some(true), Some(player)) => {
-                if !self.scan_open {
-                    self.scan_open = true;
-                    self.prev_local = self.tracker.local_reading();
-                    scan.send(ScanMsg::Start {
-                        at_ms: now_ms,
-                        player,
-                        singles: self.singles.clone(),
-                    });
-                }
-                let cur = self.tracker.local_reading();
-                if let (Some(p), Some(c)) = (self.prev_local, cur) {
-                    if p.attacker_raw != c.attacker_raw {
-                        scan.send(ScanMsg::Marker(Marker {
-                            t_ms: now_ms,
-                            what: "attacker",
-                        }));
-                    }
-                    if p.hp != c.hp {
-                        scan.send(ScanMsg::Marker(Marker {
-                            t_ms: now_ms,
-                            what: "hp",
-                        }));
-                    }
-                }
-                if cur.is_some() {
-                    self.prev_local = cur;
-                }
-            }
-            _ => {
-                if self.scan_open {
-                    self.scan_open = false;
-                    self.prev_local = None;
-                    scan.send(ScanMsg::Stop { at_ms: now_ms });
-                }
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -1116,56 +1027,36 @@ impl Core {
 pub(crate) struct CombatCtl {
     core: Core,
     mem: RealCombatMem,
-    scan: Box<dyn ScanSink>,
     rtti_ready: bool,
     base: usize,
     started: std::time::Instant,
     subjects: Vec<Subject>,
-    singles_len: usize,
-    dev: bool,
 }
 
 impl CombatCtl {
-    /// Both modes. The scan thread exists only in dev mode with `probes = true`.
-    pub(crate) fn new(cfg: &Config, base: usize, size: usize) -> Self {
+    /// Both modes.
+    pub(crate) fn new(cfg: &Config, base: usize) -> Self {
         let started = std::time::Instant::now();
-        let scan_on = cfg.dev_mode && cfg.probes;
-        let scan: Box<dyn ScanSink> = if scan_on {
-            match ScanThread::spawn(base, size, started) {
-                Some(t) => Box::new(t),
-                None => Box::new(NullSink),
-            }
-        } else {
-            Box::new(NullSink)
-        };
-        let mut core = Core::new(cfg.dev_mode, scan_on, cfg.revive_policy());
+        let mut core = Core::new(cfg.dev_mode, cfg.revive_policy());
         core.set_hit_seconds(cfg.rival_hit_seconds);
         tracing::info!(
-            "T-035: combat-state tracker on (100 ms); T-039 downed rule on (50 ms, rival_hit_seconds {}); rival revive rule: {}{}; timer scan (read-only, own thread): {}",
+            "T-035: combat-state tracker on (100 ms); T-039 downed rule on (50 ms, rival_hit_seconds {}); rival revive rule: {}{}",
             cfg.rival_hit_seconds,
             core.policy().label(),
             if cfg.dev_mode {
                 ""
             } else {
                 " (player build: always on)"
-            },
-            if scan_on { "on" } else { "off" }
+            }
         );
         CombatCtl {
             core,
             mem: RealCombatMem::default(),
-            scan,
             rtti_ready: false,
             base,
             started,
             subjects: Vec::new(),
-            singles_len: usize::MAX,
-            dev: cfg.dev_mode,
         }
-    }
-
-    pub(crate) fn needs_rtti(&self) -> bool {
-        !self.rtti_ready
     }
 
     pub(crate) fn set_rtti(&mut self, rtti: &Rtti) {
@@ -1179,46 +1070,13 @@ impl CombatCtl {
         }
     }
 
-    /// Dev panel status line.
-    pub(crate) fn revive_text(&self) -> String {
-        format!(
-            "Rival revive (rival_revive): {}, applied {}x",
-            self.core.policy().label(),
-            self.core.fired
-        )
-    }
-
-    pub(crate) fn overlay_lines(&self) -> Vec<String> {
-        if !self.dev {
-            return Vec::new();
-        }
-        let mut v = self.core.tracker().overlay_lines(&self.subjects);
-        v.extend(self.core.downed_line().map(str::to_string));
-        v
-    }
-
-    /// `all` is the singleton map (for the timer scan's short list).
-    pub(crate) fn tick(&mut self, subjects: Vec<Subject>, all: &[&Found]) {
+    pub(crate) fn tick(&mut self, subjects: Vec<Subject>) {
         self.subjects = subjects;
         if !self.rtti_ready {
             return;
         }
-        if self.dev && self.singles_len != all.len() {
-            self.singles_len = all.len();
-            let (found, missing) = pick_short_list(all.iter().map(|f| (f.name.as_str(), f.slot)));
-            if !missing.is_empty() {
-                tracing::info!(
-                    "T-035 TIMER UNVERIFIED: short-list singleton(s) not in the singleton map: {}",
-                    missing.join(", ")
-                );
-            }
-            self.core.set_singles(found);
-        }
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        for l in self
-            .core
-            .step(now_ms, &self.subjects, &mut self.mem, self.scan.as_mut())
-        {
+        for l in self.core.step(now_ms, &self.subjects, &mut self.mem) {
             tracing::info!("{l}");
         }
     }
@@ -1414,53 +1272,52 @@ mod tests {
     fn transitions_down_up_and_respawn_are_detected_and_logged_once() {
         // Tracker only: the rule is off (its own tests are below).
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Vanilla);
-        let mut s = NullSink;
+        let mut c = Core::new(true, RevivePolicy::Vanilla);
         // First tick seeds.
-        let l = c.step(0, &subjects(), &mut f, &mut s);
+        let l = c.step(0, &subjects(), &mut f);
         assert_eq!(l.iter().filter(|x| x.contains("INIT")).count(), 3, "{l:?}");
         // Nothing changes: nothing logged.
-        assert!(c.step(100, &subjects(), &mut f, &mut s).is_empty());
+        assert!(c.step(100, &subjects(), &mut f).is_empty());
         // The rival downs LOCAL.
         f.downed(P0, 1, true);
         f.hp(G0, 0);
         f.attacker(P0, H1);
-        let l = c.step(200, &subjects(), &mut f, &mut s);
+        let l = c.step(200, &subjects(), &mut f);
         assert_eq!(l.len(), 1, "{l:?}");
         assert!(l[0]
             .contains("who=LOCAL[0] id=0x6001 DOWN (downs=1, hp=0, last_attacker=RIVAL id=0x6002"));
         // Same state again (and a tick inside the 100 ms gate): no new line.
-        assert!(c.step(250, &subjects(), &mut f, &mut s).is_empty());
-        assert!(c.step(300, &subjects(), &mut f, &mut s).is_empty());
+        assert!(c.step(250, &subjects(), &mut f).is_empty());
+        assert!(c.step(300, &subjects(), &mut f).is_empty());
         // Revived at 50% HP, the field has been cleared: the latch supplies the attacker.
         f.downed(P0, 1, false);
         f.hp(G0, 120);
         f.attacker(P0, u64::MAX);
-        let l = c.step(400, &subjects(), &mut f, &mut s);
+        let l = c.step(400, &subjects(), &mut f);
         assert_eq!(l.len(), 1);
         assert!(
             l[0].contains("UP (downs=1, hp=120, last_attacker=RIVAL"),
             "{l:?}"
         );
         assert!(l[0].contains("(latched)"));
-        assert!(c.step(500, &subjects(), &mut f, &mut s).is_empty());
+        assert!(c.step(500, &subjects(), &mut f).is_empty());
         // Down again, bleed out: HP back to the maximum means RESPAWN.
         f.downed(P0, 2, true);
         f.hp(G0, 0);
         f.attacker(P0, 0xBEEF);
-        let l = c.step(600, &subjects(), &mut f, &mut s);
+        let l = c.step(600, &subjects(), &mut f);
         assert!(
             l[0].contains("DOWN (downs=2, hp=0, last_attacker=OTHER handle=0xBEEF"),
             "{l:?}"
         );
         f.downed(P0, 2, false);
         f.hp(G0, 240);
-        let l = c.step(700, &subjects(), &mut f, &mut s);
+        let l = c.step(700, &subjects(), &mut f);
         assert!(l[0].contains("RESPAWN (downs=2, hp=240"), "{l:?}");
         // A remote copy: no attacker is claimed.
         f.downed(P1, 1, true);
         f.hp(0x2001_0000, 0);
-        let l = c.step(800, &subjects(), &mut f, &mut s);
+        let l = c.step(800, &subjects(), &mut f);
         assert!(
             l[0].contains("who=REMOTE[1] id=0x6002 DOWN") && l[0].contains("n/a (remote copy)"),
             "{l:?}"
@@ -1468,9 +1325,9 @@ mod tests {
         // HP restored without a downed change.
         f.hp(G0, 100);
         f.hp(G0, 0);
-        c.step(900, &subjects(), &mut f, &mut s);
+        c.step(900, &subjects(), &mut f);
         f.hp(G0, 120);
-        let l = c.step(1000, &subjects(), &mut f, &mut s);
+        let l = c.step(1000, &subjects(), &mut f);
         assert!(l[0].contains("HP restored (downs=2, hp=120"), "{l:?}");
     }
 
@@ -1484,8 +1341,8 @@ mod tests {
         assert_eq!(r.downed, Some(false));
         // Not a PlayerIns at all: skipped entirely.
         f.players.remove(&P2);
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        let l = c.step(0, &subjects(), &mut f, &mut NullSink);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        let l = c.step(0, &subjects(), &mut f);
         assert_eq!(l.iter().filter(|x| x.contains("INIT")).count(), 2, "{l:?}");
     }
 
@@ -1499,16 +1356,15 @@ mod tests {
     /// LOCAL is downed by `attacker` at t=100 and revived (HP `hp_after` in all three places) at t=200. Returns the lines of the
     /// UP tick.
     fn drive_revive(f: &mut Fake, c: &mut Core, attacker: u64, hp_after: u32) -> Vec<String> {
-        let mut s = NullSink;
-        c.step(0, &subjects(), f, &mut s);
+        c.step(0, &subjects(), f);
         f.downed(P0, 1, true);
         f.hp3(P0, G0, 0);
         f.attacker(P0, attacker);
-        c.step(100, &subjects(), f, &mut s);
+        c.step(100, &subjects(), f);
         f.downed(P0, 1, false);
         f.hp3(P0, G0, hp_after);
         f.attacker(P0, u64::MAX);
-        c.step(200, &subjects(), f, &mut s)
+        c.step(200, &subjects(), f)
     }
 
     fn rule_lines(l: &[String]) -> Vec<&String> {
@@ -1519,7 +1375,7 @@ mod tests {
     fn rule_fires_once_for_local_up_with_hp_and_a_rival_in_both_modes() {
         for dev in [true, false] {
             let mut f = world();
-            let mut c = Core::new(dev, false, RevivePolicy::Redown);
+            let mut c = Core::new(dev, RevivePolicy::Redown);
             let l = drive_revive(&mut f, &mut c, H1, 120);
             // One store, four zero bytes, to the authoritative HP only.
             assert_eq!(
@@ -1536,18 +1392,17 @@ mod tests {
             );
             // The game downs the player again and later the player is revived by the rival again: no extra write from the
             // same UP, and the next UP is a separate event.
-            let mut s = NullSink;
-            c.step(300, &subjects(), &mut f, &mut s);
-            c.step(400, &subjects(), &mut f, &mut s);
+            c.step(300, &subjects(), &mut f);
+            c.step(400, &subjects(), &mut f);
             assert_eq!(f.writes.len(), 1, "once per UP");
             f.downed(P0, 2, true);
             f.hp3(P0, G0, 0);
             f.attacker(P0, H1);
-            c.step(500, &subjects(), &mut f, &mut s);
+            c.step(500, &subjects(), &mut f);
             f.downed(P0, 2, false);
             f.hp3(P0, G0, 90);
             f.attacker(P0, u64::MAX);
-            let l = c.step(600, &subjects(), &mut f, &mut s);
+            let l = c.step(600, &subjects(), &mut f);
             assert_eq!(f.writes.len(), 2);
             // The player build limits the log to one rule line per 5 s; dev mode logs every one.
             assert_eq!(rule_lines(&l).len(), usize::from(dev), "{l:?}");
@@ -1559,39 +1414,38 @@ mod tests {
         for dev in [true, false] {
             for att in [H2, H0, 0xDEAD_BEEF, u64::MAX] {
                 let mut f = world();
-                let mut c = Core::new(dev, false, RevivePolicy::Redown);
+                let mut c = Core::new(dev, RevivePolicy::Redown);
                 let l = drive_revive(&mut f, &mut c, att, 120);
                 assert!(f.writes.is_empty(), "dev={dev} attacker {att:#X}");
                 assert!(rule_lines(&l).is_empty(), "{l:?}");
             }
             // A respawn (HP back to the maximum) is not a revive.
             let mut f = world();
-            let mut c = Core::new(dev, false, RevivePolicy::Redown);
+            let mut c = Core::new(dev, RevivePolicy::Redown);
             drive_revive(&mut f, &mut c, H1, 240);
             assert!(f.writes.is_empty(), "dev={dev} respawn");
             // A revive that left HP at 0 is not eligible either.
             let mut f = world();
-            let mut c = Core::new(dev, false, RevivePolicy::Redown);
+            let mut c = Core::new(dev, RevivePolicy::Redown);
             drive_revive(&mut f, &mut c, H1, 0);
             assert!(f.writes.is_empty(), "dev={dev} hp 0");
             // A remote player's own down and revive never writes, whoever the attacker was.
             let mut f = world();
-            let mut c = Core::new(dev, false, RevivePolicy::Redown);
-            let mut s = NullSink;
-            c.step(0, &subjects(), &mut f, &mut s);
+            let mut c = Core::new(dev, RevivePolicy::Redown);
+            c.step(0, &subjects(), &mut f);
             f.downed(P1, 1, true);
             f.hp3(P1, G1, 0);
             f.attacker(P1, H0);
-            c.step(100, &subjects(), &mut f, &mut s);
+            c.step(100, &subjects(), &mut f);
             f.downed(P1, 1, false);
             f.hp3(P1, G1, 120);
-            c.step(200, &subjects(), &mut f, &mut s);
+            c.step(200, &subjects(), &mut f);
             f.downed(P2, 1, true);
             f.hp3(P2, 0x2002_0000, 0);
-            c.step(300, &subjects(), &mut f, &mut s);
+            c.step(300, &subjects(), &mut f);
             f.downed(P2, 1, false);
             f.hp3(P2, 0x2002_0000, 120);
-            c.step(400, &subjects(), &mut f, &mut s);
+            c.step(400, &subjects(), &mut f);
             assert!(f.writes.is_empty(), "dev={dev} remote");
         }
     }
@@ -1599,7 +1453,7 @@ mod tests {
     #[test]
     fn rival_revive_vanilla_disables_the_rule_in_dev_mode_only() {
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Vanilla);
+        let mut c = Core::new(true, RevivePolicy::Vanilla);
         let l = drive_revive(&mut f, &mut c, H1, 120);
         assert!(f.writes.is_empty());
         assert!(rule_lines(&l).is_empty());
@@ -1607,7 +1461,7 @@ mod tests {
         assert!(l.iter().any(|x| x.contains("UP (downs=1")), "{l:?}");
         // The player build cannot be switched off, whatever the policy it is given.
         let mut f = world();
-        let mut c = Core::new(false, false, RevivePolicy::Vanilla);
+        let mut c = Core::new(false, RevivePolicy::Vanilla);
         assert_eq!(c.policy(), RevivePolicy::Redown);
         drive_revive(&mut f, &mut c, H1, 120);
         assert_eq!(f.writes.len(), 1);
@@ -1654,18 +1508,17 @@ mod tests {
     fn rule_skips_and_logs_when_a_gate_fails() {
         // Mirror and game data both disagree with the authoritative value.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        let mut s = NullSink;
-        c.step(0, &subjects(), &mut f, &mut s);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         f.downed(P0, 1, true);
         f.hp3(P0, G0, 0);
         f.attacker(P0, H1);
-        c.step(100, &subjects(), &mut f, &mut s);
+        c.step(100, &subjects(), &mut f);
         f.downed(P0, 1, false);
         f.hp3(P0, G0, 120);
         f.set(auth_addr(G0), &77u32.to_le_bytes());
         f.attacker(P0, u64::MAX);
-        let l = c.step(200, &subjects(), &mut f, &mut s);
+        let l = c.step(200, &subjects(), &mut f);
         assert!(f.writes.is_empty());
         let r = rule_lines(&l);
         assert_eq!(r.len(), 1, "{l:?}");
@@ -1675,22 +1528,22 @@ mod tests {
         );
         // Without a class-checked PlayerGameData the tracker has no HP at all.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         f.gds.remove(&G0); // PlayerGameData cannot be class-checked any more
         drive_revive(&mut f, &mut c, H1, 120);
         assert!(f.writes.is_empty());
         // Authoritative value already 0 at the time of the UP.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut s);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         f.downed(P0, 1, true);
         f.hp3(P0, G0, 0);
         f.attacker(P0, H1);
-        c.step(100, &subjects(), &mut f, &mut s);
+        c.step(100, &subjects(), &mut f);
         f.downed(P0, 1, false);
         f.hp(G0, 120); // only the PlayerGameData copy shows the new HP
         f.attacker(P0, u64::MAX);
-        let l = c.step(200, &subjects(), &mut f, &mut s);
+        let l = c.step(200, &subjects(), &mut f);
         assert!(
             f.writes.is_empty(),
             "authoritative HP is 0: nothing to write"
@@ -1699,7 +1552,7 @@ mod tests {
         // Null / implausible pointer at +0xB78.
         for bad in [0u64, 0x1234_5679, u64::MAX] {
             let mut f = world();
-            let mut c = Core::new(true, false, RevivePolicy::Redown);
+            let mut c = Core::new(true, RevivePolicy::Redown);
             f.set(P0 + OFF_HP_PTR, &bad.to_le_bytes());
             let l = drive_revive(&mut f, &mut c, H1, 120);
             assert!(f.writes.is_empty(), "pointer {bad:#X}");
@@ -1710,14 +1563,14 @@ mod tests {
         }
         // Unreadable authoritative HP (pointer plausible but nothing mapped there).
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         f.set(P0 + OFF_HP_PTR, &0x7000_0000u64.to_le_bytes());
         let l = drive_revive(&mut f, &mut c, H1, 120);
         assert!(f.writes.is_empty());
         assert!(rule_lines(&l)[0].contains("authoritative ?"), "{l:?}");
         // The PlayerIns stopped being one between the event and the write.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         let r = c.try_rule(P0, &mut f);
         assert!(r.is_ok());
         f.players.remove(&P0);
@@ -1729,7 +1582,7 @@ mod tests {
         // A refused store is logged and not counted.
         let mut f = world();
         f.refuse_write = true;
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         let l = drive_revive(&mut f, &mut c, H1, 120);
         assert!(rule_lines(&l)[0].contains("write refused"), "{l:?}");
         assert_eq!(c.fired, 0);
@@ -1739,45 +1592,43 @@ mod tests {
     fn rule_mirror_gate_accepts_either_confirmation_in_a_full_run() {
         // Mirror differs, PlayerGameData agrees: fires.
         let mut f = world();
-        let mut c = Core::new(false, false, RevivePolicy::Redown);
-        let mut s = NullSink;
-        c.step(0, &subjects(), &mut f, &mut s);
+        let mut c = Core::new(false, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         f.downed(P0, 1, true);
         f.hp3(P0, G0, 0);
         f.attacker(P0, H1);
-        c.step(100, &subjects(), &mut f, &mut s);
+        c.step(100, &subjects(), &mut f);
         f.downed(P0, 1, false);
         f.hp3(P0, G0, 120);
         f.set(P0 + OFF_HP_MIRROR, &5u32.to_le_bytes());
         f.attacker(P0, u64::MAX);
-        c.step(200, &subjects(), &mut f, &mut s);
+        c.step(200, &subjects(), &mut f);
         assert_eq!(f.writes.len(), 1);
         // PlayerGameData differs, mirror agrees: fires.
         let mut f = world();
-        let mut c = Core::new(false, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut s);
+        let mut c = Core::new(false, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         f.downed(P0, 1, true);
         f.hp3(P0, G0, 0);
         f.attacker(P0, H1);
-        c.step(100, &subjects(), &mut f, &mut s);
+        c.step(100, &subjects(), &mut f);
         f.downed(P0, 1, false);
         f.hp3(P0, G0, 120);
         f.set(auth_addr(G0), &120u32.to_le_bytes());
         f.set(G0 + GD_HP, &121u32.to_le_bytes()); // tracker sees 121 > 0, the mirror still agrees with the authoritative 120
         f.attacker(P0, u64::MAX);
-        c.step(200, &subjects(), &mut f, &mut s);
+        c.step(200, &subjects(), &mut f);
         assert_eq!(f.writes.len(), 1);
     }
 
     #[test]
     fn player_mode_logs_only_the_rule_line_and_rate_limits_it() {
         let mut f = world();
-        let mut c = Core::new(false, true, RevivePolicy::Redown);
-        let mut s = NullSink;
+        let mut c = Core::new(false, RevivePolicy::Redown);
         // No tracker lines in the player build, not even for the INIT or a remote player's down.
-        assert!(c.step(0, &subjects(), &mut f, &mut s).is_empty());
+        assert!(c.step(0, &subjects(), &mut f).is_empty());
         f.downed(P1, 1, true);
-        assert!(c.step(100, &subjects(), &mut f, &mut s).is_empty());
+        assert!(c.step(100, &subjects(), &mut f).is_empty());
         // First rival revive: one line. Two more within 5 s: written but not logged. After 5 s: logged again with the count.
         let mut t = 1000;
         let mut logged = Vec::new();
@@ -1786,12 +1637,12 @@ mod tests {
             f.hp3(P0, G0, 0);
             f.attacker(P0, H1);
             t += 100;
-            c.step(t, &subjects(), &mut f, &mut s);
+            c.step(t, &subjects(), &mut f);
             f.downed(P0, 1, false);
             f.hp3(P0, G0, 120);
             f.attacker(P0, u64::MAX);
             t += 100;
-            let l = c.step(t, &subjects(), &mut f, &mut s);
+            let l = c.step(t, &subjects(), &mut f);
             logged.push(rule_lines(&l).len());
             t += if logged.len() == 3 { 5000 } else { 500 };
         }
@@ -1803,21 +1654,21 @@ mod tests {
         );
         // Dev mode logs every one.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         let mut t = 0;
-        c.step(t, &subjects(), &mut f, &mut s);
+        c.step(t, &subjects(), &mut f);
         let mut n = 0;
         for _ in 0..3 {
             f.downed(P0, 1, true);
             f.hp3(P0, G0, 0);
             f.attacker(P0, H1);
             t += 100;
-            c.step(t, &subjects(), &mut f, &mut s);
+            c.step(t, &subjects(), &mut f);
             f.downed(P0, 1, false);
             f.hp3(P0, G0, 120);
             f.attacker(P0, u64::MAX);
             t += 100;
-            n += rule_lines(&c.step(t, &subjects(), &mut f, &mut s)).len();
+            n += rule_lines(&c.step(t, &subjects(), &mut f)).len();
         }
         assert_eq!(n, 3);
     }
@@ -1851,10 +1702,10 @@ mod tests {
     /// A core already past INIT, LOCAL downed (bar 90, clock 14.9, pause 0) and seen once at t=50.
     fn downed_world(dev: bool) -> (Fake, Core, u64) {
         let mut f = world();
-        let mut c = Core::new(dev, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut NullSink);
+        let mut c = Core::new(dev, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         down_local(&mut f, 90.0, 14.9, 0.0);
-        c.step(50, &subjects(), &mut f, &mut NullSink);
+        c.step(50, &subjects(), &mut f);
         (f, c, 50)
     }
 
@@ -1863,7 +1714,7 @@ mod tests {
         for dev in [true, false] {
             let (mut f, mut c, t) = downed_world(dev);
             hit(&mut f, 70.0, H1);
-            let l = c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+            let l = c.step(t + 50, &subjects(), &mut f);
             assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 90.0);
             assert!((getf(&f, P0 + OFF_BLEED_CLOCK) - 11.9).abs() < 1e-4);
             assert_eq!(getf(&f, P0 + OFF_PAUSE), 0.0);
@@ -1880,20 +1731,20 @@ mod tests {
     fn clock_floor_is_0_05_and_the_configured_seconds_are_used() {
         let (mut f, mut c, t) = downed_world(true);
         setf(&mut f, P0 + OFF_BLEED_CLOCK, 2.0);
-        c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+        c.step(t + 50, &subjects(), &mut f);
         hit(&mut f, 70.0, H1);
-        c.step(t + 100, &subjects(), &mut f, &mut NullSink);
+        c.step(t + 100, &subjects(), &mut f);
         assert!((getf(&f, P0 + OFF_BLEED_CLOCK) - 0.05).abs() < 1e-6);
         // Custom seconds, clamped inside Core as well.
         let (mut f, mut c, t) = downed_world(true);
         c.set_hit_seconds(5.5);
         hit(&mut f, 70.0, H1);
-        c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+        c.step(t + 50, &subjects(), &mut f);
         assert!((getf(&f, P0 + OFF_BLEED_CLOCK) - 9.4).abs() < 1e-4);
         let (mut f, mut c, t) = downed_world(true);
         c.set_hit_seconds(500.0);
         hit(&mut f, 70.0, H1);
-        c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+        c.step(t + 50, &subjects(), &mut f);
         assert!((getf(&f, P0 + OFF_BLEED_CLOCK) - (14.9 - 15.0f32).max(CLOCK_FLOOR)).abs() < 1e-6);
     }
 
@@ -1905,11 +1756,11 @@ mod tests {
             let cur = getf(&f, P0 + OFF_REVIVE_BAR);
             hit(&mut f, cur - 20.0, H1);
             t += 50;
-            c.step(t, &subjects(), &mut f, &mut NullSink);
+            c.step(t, &subjects(), &mut f);
             assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 90.0, "hit {i}");
             // A quiet tick in between changes nothing.
             t += 50;
-            c.step(t, &subjects(), &mut f, &mut NullSink);
+            c.step(t, &subjects(), &mut f);
             assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 90.0);
         }
         assert_eq!(c.fired, 4);
@@ -1922,14 +1773,14 @@ mod tests {
         for attacker in [H2, H0, 0xFFFF_FFFF_10C0_0099, u64::MAX] {
             let (mut f, mut c, t) = downed_world(true);
             hit(&mut f, 70.0, attacker);
-            let l = c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+            let l = c.step(t + 50, &subjects(), &mut f);
             assert!(f.writes.is_empty(), "attacker {attacker:X}");
             assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 70.0);
             assert!(dn_lines(&l).is_empty());
             // bar_before follows: a later rival hit restores to 70, not 90.
             setf(&mut f, P0 + OFF_PAUSE, 0.0);
             hit(&mut f, 50.0, H1);
-            c.step(t + 100, &subjects(), &mut f, &mut NullSink);
+            c.step(t + 100, &subjects(), &mut f);
             assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 70.0);
         }
     }
@@ -1939,7 +1790,7 @@ mod tests {
         let (mut f, mut c, t) = downed_world(true);
         setf(&mut f, P0 + OFF_REVIVE_BAR, 95.0);
         assert!(c
-            .step(t + 50, &subjects(), &mut f, &mut NullSink)
+            .step(t + 50, &subjects(), &mut f)
             .iter()
             .all(|l| !l.starts_with("rule:")));
         assert!(f.writes.is_empty());
@@ -1947,7 +1798,7 @@ mod tests {
         setf(&mut f, P0 + OFF_REVIVE_BAR, 80.0);
         f.attacker(P0, u64::MAX);
         f.set(P0 + OFF_CUR_ATTACKER, &H1.to_le_bytes());
-        c.step(t + 100, &subjects(), &mut f, &mut NullSink);
+        c.step(t + 100, &subjects(), &mut f);
         assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 95.0);
     }
 
@@ -1955,30 +1806,30 @@ mod tests {
     fn no_writes_when_not_downed_for_remote_players_or_when_a_gate_fails() {
         // Not downed: a "bar drop" in memory is ignored.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut NullSink);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         setf(&mut f, P0 + OFF_REVIVE_BAR, 90.0);
         setf(&mut f, P0 + OFF_BLEED_CLOCK, 10.0);
-        c.step(50, &subjects(), &mut f, &mut NullSink);
+        c.step(50, &subjects(), &mut f);
         hit(&mut f, 70.0, H1);
-        c.step(100, &subjects(), &mut f, &mut NullSink);
+        c.step(100, &subjects(), &mut f);
         assert!(f.writes.is_empty());
         // State 2 (getting up) is not downed either.
         f.set(P0 + OFF_DOWNED, &[2]);
         setf(&mut f, P0 + OFF_REVIVE_BAR, 50.0);
-        c.step(150, &subjects(), &mut f, &mut NullSink);
+        c.step(150, &subjects(), &mut f);
         assert!(f.writes.is_empty());
         // A downed REMOTE player is never written, even when a rival "hits" it.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut NullSink);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         f.downed(P1, 1, true);
         setf(&mut f, P1 + OFF_REVIVE_BAR, 90.0);
         setf(&mut f, P1 + OFF_BLEED_CLOCK, 10.0);
-        c.step(50, &subjects(), &mut f, &mut NullSink);
+        c.step(50, &subjects(), &mut f);
         setf(&mut f, P1 + OFF_REVIVE_BAR, 70.0);
         f.attacker(P1, H0);
-        c.step(100, &subjects(), &mut f, &mut NullSink);
+        c.step(100, &subjects(), &mut f);
         assert!(f.writes.is_empty());
         // Gates: bad clock, non-finite clock, refused write, vanished PlayerIns. Nothing written (or a refusal) and one log line.
         for case in 0..4 {
@@ -1992,7 +1843,7 @@ mod tests {
                 }
             }
             hit(&mut f, 70.0, H1);
-            let l = c.step(t + 50, &subjects(), &mut f, &mut NullSink);
+            let l = c.step(t + 50, &subjects(), &mut f);
             if case != 2 {
                 assert!(f.writes.is_empty(), "case {case}");
             }
@@ -2005,7 +1856,7 @@ mod tests {
                 assert_eq!(msgs.len(), 1, "case {case}: {l:?}");
                 // Logged once: a second rival hit stays quiet.
                 hit(&mut f, 50.0, H1);
-                let l2 = c.step(t + 100, &subjects(), &mut f, &mut NullSink);
+                let l2 = c.step(t + 100, &subjects(), &mut f);
                 assert!(l2.iter().all(|x| !x.contains("nothing was written")));
             }
         }
@@ -2014,15 +1865,14 @@ mod tests {
     #[test]
     fn rule_v1_still_fires_when_a_rival_completes_the_bar() {
         let mut f = world();
-        let mut c = Core::new(false, false, RevivePolicy::Redown);
+        let mut c = Core::new(false, RevivePolicy::Redown);
         c.early_redown = false;
-        let mut s = NullSink;
-        c.step(0, &subjects(), &mut f, &mut s);
+        c.step(0, &subjects(), &mut f);
         f.hp3(P0, G0, 0);
         down_local(&mut f, 5.0, 10.0, 0.0);
         f.attacker(P0, H1);
-        c.step(100, &subjects(), &mut f, &mut s);
-        c.step(150, &subjects(), &mut f, &mut s);
+        c.step(100, &subjects(), &mut f);
+        c.step(150, &subjects(), &mut f);
         // The hit completes the bar in one tick: state leaves 1, HP comes back.
         f.downed(P0, 1, false);
         f.set(P0 + OFF_DOWNED, &[2]);
@@ -2030,11 +1880,11 @@ mod tests {
         f.hp3(P0, G0, 120);
         f.attacker(P0, H1);
         let w = f.writes.len();
-        c.step(200, &subjects(), &mut f, &mut s);
+        c.step(200, &subjects(), &mut f);
         // State 2 reads as unknown for the tracker, so the revive is seen when it returns to 0.
         f.set(P0 + OFF_DOWNED, &[0]);
         f.attacker(P0, u64::MAX);
-        let l = c.step(300, &subjects(), &mut f, &mut s);
+        let l = c.step(300, &subjects(), &mut f);
         assert_eq!(f.writes.len(), w + 1);
         assert_eq!(f.writes[w].0, auth_addr(G0));
         assert_eq!(rule_lines(&l).len(), 1, "{l:?}");
@@ -2044,24 +1894,23 @@ mod tests {
     fn a_rival_completing_the_bar_is_answered_during_the_get_up_and_a_teammate_is_not() {
         for (attacker, expect) in [(H1, 1usize), (H2, 0)] {
             let mut f = world();
-            let mut c = Core::new(true, false, RevivePolicy::Redown);
+            let mut c = Core::new(true, RevivePolicy::Redown);
             c.early_redown = true;
-            let mut s = NullSink;
-            c.step(0, &subjects(), &mut f, &mut s);
+            c.step(0, &subjects(), &mut f);
             f.hp3(P0, G0, 0);
             down_local(&mut f, 40.0, 10.0, 0.0);
             f.attacker(P0, attacker);
-            c.step(100, &subjects(), &mut f, &mut s);
+            c.step(100, &subjects(), &mut f);
             // One hit completes the bar: state 2, HP not granted yet.
             f.set(P0 + OFF_DOWNED, &[2]);
             setf(&mut f, P0 + OFF_REVIVE_BAR, 0.0);
-            let l = c.step(150, &subjects(), &mut f, &mut s);
+            let l = c.step(150, &subjects(), &mut f);
             assert!(f.writes.is_empty(), "hp 0: gate holds");
             assert_eq!(rule_lines(&l).len(), expect, "{l:?}");
             // HP arrives: one store to the authoritative HP, once.
             f.hp3(P0, G0, 120);
-            let l = c.step(200, &subjects(), &mut f, &mut s);
-            c.step(250, &subjects(), &mut f, &mut s);
+            let l = c.step(200, &subjects(), &mut f);
+            c.step(250, &subjects(), &mut f);
             assert_eq!(f.writes.len(), expect, "attacker {attacker:X}");
             if expect == 1 {
                 assert_eq!(f.writes[0], (auth_addr(G0), vec![0, 0, 0, 0]));
@@ -2072,13 +1921,12 @@ mod tests {
 
     /// The remote copy at `p` goes down (bar/clock as the owner sent them) and is then hit.
     fn remote_down_and_hit(f: &mut Fake, c: &mut Core, subs: &[Subject], p: usize) {
-        let mut s = NullSink;
-        c.step(0, subs, f, &mut s);
+        c.step(0, subs, f);
         f.downed(p, 1, true);
         setf(f, p + OFF_REVIVE_BAR, 40.0);
         setf(f, p + OFF_BLEED_CLOCK, 15.0);
         setf(f, p + OFF_PAUSE, 0.0);
-        c.step(50, subs, f, &mut s);
+        c.step(50, subs, f);
         assert!(f.writes.is_empty());
         setf(f, p + OFF_REVIVE_BAR, 3.0);
         setf(f, p + OFF_BLEED_CLOCK, 12.5);
@@ -2089,10 +1937,10 @@ mod tests {
     fn a_hit_on_a_downed_solo_rival_is_undone_on_the_display_copy_too() {
         for dev in [true, false] {
             let mut f = world();
-            let mut c = Core::new(dev, false, RevivePolicy::Redown);
+            let mut c = Core::new(dev, RevivePolicy::Redown);
             let subs = subjects();
             remote_down_and_hit(&mut f, &mut c, &subs, P1);
-            let l = c.step(100, &subs, &mut f, &mut NullSink);
+            let l = c.step(100, &subs, &mut f);
             assert_eq!(getf(&f, P1 + OFF_REVIVE_BAR), 40.0);
             assert!((getf(&f, P1 + OFF_BLEED_CLOCK) - 9.5).abs() < 1e-4);
             assert_eq!(getf(&f, P1 + OFF_PAUSE), 0.0);
@@ -2101,7 +1949,7 @@ mod tests {
             assert_eq!(n, usize::from(dev), "{l:?}");
             // A second hit is measured against the same full bar.
             setf(&mut f, P1 + OFF_REVIVE_BAR, 2.0);
-            c.step(150, &subs, &mut f, &mut NullSink);
+            c.step(150, &subs, &mut f);
             assert_eq!(getf(&f, P1 + OFF_REVIVE_BAR), 40.0);
             assert_eq!(f.writes.len(), 6);
         }
@@ -2111,21 +1959,21 @@ mod tests {
     fn display_copies_of_allies_and_of_rivals_with_a_teammate_are_left_alone() {
         // An ally of LOCAL.
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
+        let mut c = Core::new(true, RevivePolicy::Redown);
         let subs = subjects();
         remote_down_and_hit(&mut f, &mut c, &subs, P2);
-        c.step(100, &subs, &mut f, &mut NullSink);
+        c.step(100, &subs, &mut f);
         assert!(f.writes.is_empty());
         // Two rivals on one team: the copy cannot tell a teammate's hit from a rival's. Unknown rosters: the same.
         for team in [Some(1), None] {
             let mut f = world();
-            let mut c = Core::new(true, false, RevivePolicy::Redown);
+            let mut c = Core::new(true, RevivePolicy::Redown);
             let mut subs = subjects();
             subs[1].team_no = team;
             subs[2].team_no = team;
             subs[2].relation = Some(Relation::Rival);
             remote_down_and_hit(&mut f, &mut c, &subs, P1);
-            c.step(100, &subs, &mut f, &mut NullSink);
+            c.step(100, &subs, &mut f);
             assert!(f.writes.is_empty(), "team {team:?}");
         }
     }
@@ -2139,10 +1987,10 @@ mod tests {
             setf(&mut f, P0 + OFF_BLEED_CLOCK, 14.0);
             hit(&mut f, cur - 10.0, H1);
             t += 50;
-            let l = c.step(t, &subjects(), &mut f, &mut NullSink);
+            let l = c.step(t, &subjects(), &mut f);
             logged.push(dn_lines(&l).len());
             t += if i == 2 { 5000 } else { 100 };
-            c.step(t, &subjects(), &mut f, &mut NullSink);
+            c.step(t, &subjects(), &mut f);
         }
         assert_eq!(logged, vec![1, 0, 0, 1]);
         assert_eq!(c.fired, 4);
@@ -2157,79 +2005,15 @@ mod tests {
             let cur = getf(&f, P0 + OFF_REVIVE_BAR);
             hit(&mut f, cur - 10.0, H1);
             t += 50;
-            n += dn_lines(&c.step(t, &subjects(), &mut f, &mut NullSink)).len();
+            n += dn_lines(&c.step(t, &subjects(), &mut f)).len();
         }
         assert_eq!(n, 3);
         // No status line outside dev mode or when not downed.
         let (_, c, _) = downed_world(false);
         assert!(c.downed_line().is_none());
         let mut f = world();
-        let mut c = Core::new(true, false, RevivePolicy::Redown);
-        c.step(0, &subjects(), &mut f, &mut NullSink);
+        let mut c = Core::new(true, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
         assert!(c.downed_line().is_none());
-    }
-
-    // ---- timer scan driver ----
-
-    #[derive(Default)]
-    struct Rec(Vec<ScanMsg>);
-
-    impl ScanSink for Rec {
-        fn send(&mut self, msg: ScanMsg) {
-            self.0.push(msg);
-        }
-    }
-
-    #[test]
-    fn scan_driver_sends_start_markers_and_stop_only_in_dev_with_probes() {
-        let run = |dev: bool, probes: bool| {
-            let mut f = world();
-            let mut c = Core::new(dev, probes, RevivePolicy::Redown);
-            c.set_singles(vec![Single {
-                name: "WorldChrMan".into(),
-                slot: 0x5000,
-            }]);
-            let mut r = Rec::default();
-            c.step(0, &subjects(), &mut f, &mut r);
-            f.downed(P0, 1, true);
-            f.hp3(P0, G0, 0);
-            f.attacker(P0, H1);
-            c.step(100, &subjects(), &mut f, &mut r);
-            c.step(200, &subjects(), &mut f, &mut r);
-            f.attacker(P0, H2);
-            c.step(300, &subjects(), &mut f, &mut r);
-            f.hp(G0, 5);
-            c.step(400, &subjects(), &mut f, &mut r);
-            f.downed(P0, 1, false);
-            f.hp3(P0, G0, 240);
-            c.step(500, &subjects(), &mut f, &mut r);
-            c.step(600, &subjects(), &mut f, &mut r);
-            r.0
-        };
-        let msgs = run(true, true);
-        assert!(
-            matches!(&msgs[0], ScanMsg::Start { at_ms: 100, player, singles } if *player == P0 && singles.len() == 1),
-            "{msgs:?}"
-        );
-        let what: Vec<&str> = msgs
-            .iter()
-            .filter_map(|m| match m {
-                ScanMsg::Marker(k) => Some(k.what),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(what, ["attacker", "hp"], "{msgs:?}");
-        assert!(
-            matches!(msgs.last(), Some(ScanMsg::Stop { at_ms: 500 })),
-            "{msgs:?}"
-        );
-        assert_eq!(
-            msgs.iter()
-                .filter(|m| matches!(m, ScanMsg::Start { .. }))
-                .count(),
-            1
-        );
-        assert!(run(true, false).is_empty(), "probes off");
-        assert!(run(false, true).is_empty(), "player build");
     }
 }

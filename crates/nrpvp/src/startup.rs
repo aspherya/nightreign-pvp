@@ -2,11 +2,6 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::hotkey;
-#[cfg(feature = "dev")]
-use crate::hotkey::Action;
-#[cfg(feature = "dev")]
-use crate::overlay::{self, shared::Shared};
 use crate::{config, game, logging, sysinfo};
 
 pub(crate) fn run() {
@@ -24,19 +19,6 @@ pub(crate) fn run() {
         if let Some(m) = banner(&setup) {
             // T-008 config (created with defaults if missing).
             let cfg = config::load(&dll_dir);
-            // T-013: hotkey polling thread (also delivers the overlay toggle), then the overlay install
-            // thread. Both fail safe: the mod carries on without them.
-            // T-030: the player build has no hotkey thread at all (MM-4's panel key went with the overlay: in-game UI instead).
-            let bindings = cfg.bindings();
-            if !bindings.is_empty() {
-                hotkey::spawn(bindings);
-                tracing::info!(
-                    "hotkeys: {} (polled every 50 ms; count only while the game window is foreground)",
-                    cfg.describe_bindings()
-                );
-            } else {
-                tracing::info!("hotkeys: none (player mode)");
-            }
             // MM-1: read/listen-only Steam probe, MM-2: the queue worker. One Steam thread serves both (one listener registration).
             // MM-4: the player build turns the queue on through `matchmaking` (config.rs forces every dev-only switch off there).
             let queue = cfg.mm_queue.then(|| {
@@ -99,11 +81,6 @@ pub(crate) fn run() {
             if cfg.br_menu && cfg.mm_queue {
                 game::menuflow::spawn(m.base);
             }
-            // UI-1 C1: dev-only prototype of the Commence dialog with live text.
-            #[cfg(feature = "dev")]
-            if cfg.dev_mode && cfg.ui_c1_proto {
-                game::c1proto::spawn(m.base);
-            }
             // UI-1 A/B/C: dev-only expedition-menu tracer (hardware breakpoints, no patching).
             #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_menu_trace {
@@ -123,28 +100,9 @@ pub(crate) fn run() {
             if cfg.dev_mode {
                 crate::console::spawn(dll_dir.display().to_string());
             }
-            #[cfg(feature = "dev")]
-            let ui = if cfg.overlay_enabled {
-                let shared = Shared::new();
-                overlay::spawn(
-                    std::sync::Arc::clone(&shared),
-                    cfg.binding(Action::ToggleOverlay).map(|k| k.name),
-                    std::time::Duration::from_millis(cfg.overlay_install_delay_ms),
-                    !cfg.dev_mode,
-                    // MM-4: the player build gets an interactive matchmaking panel (the toggle key opens it).
-                    !cfg.dev_mode && cfg.mm_queue,
-                );
-                Some(shared)
-            } else {
-                tracing::info!("overlay: disabled by overlay_enabled = false in nrpvp.toml");
-                None
-            };
-            // R1: the player DLL has no overlay code at all.
-            #[cfg(not(feature = "dev"))]
-            let ui = None;
             // T-006 singleton discovery, T-007a RTTI + character discovery and the T-008 controls. Never
             // returns.
-            game::run(&m, &cfg, ui);
+            game::run(&m, &cfg);
         }
     }));
     if result.is_err() {

@@ -10,11 +10,11 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-use super::mem::RegionCache;
-use super::probe2::{
+use super::event_flags::{
     all_groups, block_addr, checks_ok, parse_layout, structural_checks, EF_HEADER_LEN, NODE_IS_NIL,
     NODE_LEN,
 };
+use super::mem::RegionCache;
 
 use super::flags::RVA_FLAGMAN_SLOT;
 const PERIOD: Duration = Duration::from_millis(50);

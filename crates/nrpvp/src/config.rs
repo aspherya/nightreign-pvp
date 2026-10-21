@@ -1,15 +1,12 @@
 //! T-008: `nrpvp.toml` next to the DLL. Created with defaults if missing; the effective values are logged.
 //! A file that fails to parse never stops the mod: the defaults are used and the error is logged.
 //!
-//! T-013 added the overlay and the configurable hotkeys. Key names are validated here (see
-//! `hotkey::parse_key`); an unknown name falls back to that key's default with a warning, an empty string
-//! unbinds the key.
+//! R5 (2026-10-20) removed the overlay, hotkey, probe, C1-prototype and downed-experiment settings with their features; a file
+//! that still has them loads fine (one warning line names the ignored keys).
 
 use std::path::Path;
 
 use serde::Deserialize;
-
-use crate::hotkey::{self, Action, KeyBind};
 
 pub(crate) const FILE_NAME: &str = "nrpvp.toml";
 
@@ -18,43 +15,10 @@ pub(crate) const FILE_NAME: &str = "nrpvp.toml";
 pub(crate) const DEFAULT_CANDIDATES: [u8; 7] = [6, 29, 3, 16, 13, 2, 1];
 pub(crate) const DEFAULT_PERSIST_MS: u64 = 50;
 pub(crate) const DEFAULT_WATCH_MS: u64 = 1000;
-pub(crate) const DEFAULT_OVERLAY_ENABLED: bool = true;
 /// T-020: team_type the PvPvE mode writes over the expedition default (2).
 pub(crate) const DEFAULT_PVPVE_TEAM: u8 = 29;
 pub(crate) const DEFAULT_PVPVE_INTERVAL_MS: u64 = 250;
 const PVPVE_INTERVAL_MS_RANGE: (u64, u64) = (50, 5000);
-/// Pause between the game window appearing and installing the D3D12 hooks (FS-0: Nucleus ProtoInput injects around then).
-pub(crate) const DEFAULT_OVERLAY_DELAY_MS: u64 = 2000;
-const OVERLAY_DELAY_MS_RANGE: (u64, u64) = (0, 600_000);
-/// T-013 defaults. F4 is deliberately absent: Seamless Co-op binds it to its pause (TC-004 run 1).
-pub(crate) const DEFAULT_OVERLAY_TOGGLE: &str = "Insert";
-/// T-032: F5/F6/F7 are free for the snap-back test; the team write/restore/persist actions keep their overlay buttons.
-pub(crate) const DEFAULT_HOTKEY_WRITE: &str = "";
-pub(crate) const DEFAULT_HOTKEY_RESTORE: &str = "";
-pub(crate) const DEFAULT_HOTKEY_PERSIST: &str = "";
-/// T-031: F8 now cycles `downed_rival_team`; the histogram hotkey is unbound by default (the overlay button remains).
-pub(crate) const DEFAULT_HOTKEY_HISTOGRAM: &str = "";
-/// T-031: cycle `downed_rival_team` through `downed_rival_candidates` (dev mode only).
-pub(crate) const DEFAULT_HOTKEY_DOWNED_CYCLE: &str = "F8";
-/// T-031: `downed_rival_team` cycle list (0 = off).
-pub(crate) const DEFAULT_DOWNED_CANDIDATES: [u8; 5] = [0, 6, 14, 30, 2];
-/// T-032: F9 now selects the snap-back candidate; the discovery overlay button remains.
-pub(crate) const DEFAULT_HOTKEY_DISCOVERY: &str = "";
-/// T-032 snap-back test keys (dev mode only).
-pub(crate) const DEFAULT_HOTKEY_POS_CYCLE: &str = "F9";
-pub(crate) const DEFAULT_HOTKEY_POS_SAVE: &str = "F7";
-pub(crate) const DEFAULT_HOTKEY_POS_WRITE: &str = "F6";
-/// Cycling the selection is done with the overlay buttons; this hotkey is unbound by default.
-pub(crate) const DEFAULT_HOTKEY_CYCLE: &str = "";
-/// T-015: numbered MARK line in the log.
-pub(crate) const DEFAULT_HOTKEY_MARK: &str = "F10";
-pub(crate) const DEFAULT_HOTKEY_WRITE_ALL: &str = "F11";
-pub(crate) const DEFAULT_HOTKEY_RESTORE_ALL: &str = "F12";
-/// MM-2 queue controls (dev mode + `mm_queue = true` only). F1/F2/F3/F5 are free (F4 = SC pause, F6..F12 and Insert are taken).
-pub(crate) const DEFAULT_HOTKEY_MM_SOLO: &str = "F1";
-pub(crate) const DEFAULT_HOTKEY_MM_DUO: &str = "F2";
-pub(crate) const DEFAULT_HOTKEY_MM_SQUAD: &str = "F3";
-pub(crate) const DEFAULT_HOTKEY_MM_LEAVE: &str = "F5";
 pub(crate) const DEFAULT_MM_MATCH_PLAYERS: u64 = 2;
 const MM_MATCH_PLAYERS_RANGE: (u64, u64) = (2, 6);
 /// MM-4: queue lobby size, the smallest match, and the wait for more players once the lobby has a 2nd member.
@@ -66,15 +30,13 @@ const MM_FILL_WAIT_RANGE: (u64, u64) = (5, 600);
 /// Sanity bounds so a typo cannot spin a thread or silence the watcher.
 const PERSIST_MS_RANGE: (u64, u64) = (10, 5000);
 const WATCH_MS_RANGE: (u64, u64) = (100, 60_000);
-/// T-027: read-only probes (timeline flags, world clock, PlayerGameData candidates); off by default.
-pub(crate) const DEFAULT_PROBE_INTERVAL_MS: u64 = 1000;
-const PROBE_INTERVAL_MS_RANGE: (u64, u64) = (100, 60_000);
 
 /// Contents written when the file does not exist.
 pub(crate) const DEFAULT_FILE_TEXT: &str = "\
-# nrpvp configuration (T-008, T-013, T-015). Edit and restart the game; the effective values are logged at startup.
+# nrpvp configuration. Edit and restart the game; the effective values are logged at startup. Keys that no longer exist are
+# ignored (one warning line names them).
 
-# team_type values (u8) offered by the overlay buttons and by the cycle hotkey.
+# team_type values (u8) the console's team_set accepts for the local player.
 team_candidates = [6, 29, 3, 16, 13, 2, 1]
 
 # Persist mode: re-apply the selected value this often (milliseconds, 10..5000).
@@ -83,20 +45,13 @@ persist_interval_ms = 50
 # How often the watcher logs PlayerIns changes (milliseconds, 100..60000).
 watch_interval_ms = 1000
 
-# T-030: false (default) = player build: PvP always on, no hotkeys, no overlay (menus and messages are the game's own UI).
-# true = developer mode (all hotkeys, the debug panel, discovery, pause/resume).
+# T-030: false (default) = player build: PvP always on, menus and messages are the game's own UI.
+# true = developer mode (the console for nrcon.exe, pause/resume, the dev switches below). Only a developer DLL honours it.
 dev_mode = false
-
-# In-game debug overlay (ImGui via hudhook, Direct3D 12), developer mode only. false = no overlay; the hotkeys below still work.
-overlay_enabled = true
-
-# Wait this long after the game window appears before hooking Direct3D 12 (0..600000 ms). Raise it (e.g. 60000) under
-# Nucleus Co-op so ProtoInput injects first.
-overlay_install_delay_ms = 2000
 
 # T-020 PvPvE mode: while on, this client rewrites its own copy of team_type for EVERY player whose value is 2 (the
 # expedition default) to pvpve_team, every pvpve_interval_ms (50..5000). Other values (e.g. 1 in the Roundtable) are
-# never touched. F12 pauses the mode (and restores captured originals), F11 resumes it; the overlay has a checkbox.
+# never touched. Console `pvp 0` pauses the mode (and restores captured originals), `pvp 1` resumes it.
 # Every client in the session must run it: hostility is decided from each client's own copies.
 # pvpve = true   (dev mode only; the player build always has PvP on)
 pvpve_team = 29
@@ -110,19 +65,13 @@ team_size = 1
 # Deprecated alias (FS-0): auto_team_all = N means pvpve = true, pvpve_team = N when pvpve is not set. 0 = off.
 auto_team_all = 0
 
-# T-027 read-only probes (UNVERIFIED ER-layout hypotheses): while on, every probe_interval_ms (100..60000) the mod reads the
-# timeline event flags, the world clock and PlayerGameData candidates, logs changes, and shows them in the overlay.
-# Never writes game memory.
-probes = false
-probe_interval_ms = 1000
-
 # MM-1 Steam access probe (dev mode only, read/listen-only): waits for the game's own Steam init, logs which flat Steam interfaces are
 # reachable and every lobby event (with owner, members and lobby data) under the prefix \"mm_probe:\". Registers listen-only callbacks;
 # never calls Steam setters. The player build forces this off.
 mm_probe = false
 
 # MM-2 public matchmaking queue (dev mode only; the player build forces it off). false = nothing of it runs. true = a queue lobby
-# worker on the Steam thread, queue buttons in the debug overlay, and the hotkeys below (they only exist while mm_queue = true).
+# worker on the Steam thread, driven from the console (mm_queue_solo, mm_leave, mm_status) and from the table menu (br_menu).
 # Needs Seamless Co-op (nrsc.dll) loaded and no EasyAntiCheat module; otherwise queuing is refused and the reason is shown.
 # mm_match_players = players per match (2..=6); a team size from the queue mode (solo 1 / duo 2 / squad 3) overrides team_size
 # for that match only. Log lines start with \"mm_queue:\".
@@ -130,8 +79,8 @@ mm_queue = false
 # mm_match_players = 2
 
 # MM-4 Solo Battle Royale matchmaking, the player setting (player build only; developer mode uses the mm_* switches). true (default)
-# = the Roundtable panel (opened with the overlay toggle key) has a \"Solo Battle Royale\" button: it finds other players and gets them
-# into the host's Seamless Co-op lobby; the host starts the expedition. false = no matchmaking at all. Needs Seamless Co-op.
+# = Solo Battle Royale from the table menu (Number of Players = Solo, Commence): it finds other players and gets them into the
+# host's Seamless Co-op lobby; the host starts the expedition. false = no matchmaking at all. Needs Seamless Co-op.
 matchmaking = true
 # MM-4 lobby rules (queue lobby size 2..=6; the match starts when it is full, or mm_fill_wait_s seconds (5..=600) after the lobby got
 # its 2nd member if it holds at least mm_min_players). Everybody who should meet needs the same mm_max_players. Setting
@@ -142,7 +91,7 @@ mm_fill_wait_s = 90
 
 # MM-3 (dev mode only; needs mm_queue = true; the player build forces it off): after MATCH READY, get every roster member into the host's
 # Seamless Co-op lobby. false = exactly MM-2. mm_join_auto = what happens by itself: \"invite\" (the host's mod invites every absent
-# player; default) | \"invite+link\" (plus the joiner's mod opens a steam://joinlobby link) | \"link\" | \"none\" (only the overlay buttons).
+# player; default) | \"invite+link\" (plus the joiner's mod opens a steam://joinlobby link) | \"link\" | \"none\" (only the console's mm_join).
 # Log lines start with \"mm_join:\".
 mm_join = false
 mm_join_auto = \"invite\"
@@ -154,8 +103,8 @@ mm_host_create = false
 # MM-3f (dev mode only; needs mm_join = true; the player build forces it off): while this player is the host at MATCH READY and no Seamless
 # Co-op lobby exists yet, the Steam invite window that Matchmaking Settings > Invite Members opens is skipped (hardware execute breakpoint on
 # ISteamFriends::ActivateGameOverlayInviteDialog, no code is patched; only calls from nightreign.exe are skipped). The game still makes its
-# own lobby; the mod sends the invite. Everywhere else the window works as normal. Also hides the \"(c) direct JoinLobby\" button and adds a
-# \"test quiet invite\" button. Uses debug registers, so it is switched off (with a warning) when mm_lobby_trace = true.
+# own lobby; the mod sends the invite. Everywhere else the window works as normal. The console's mm_quiet_test tries it solo.
+# Uses debug registers, so it is switched off (with a warning) when mm_lobby_trace = true.
 # Log lines start with \"mm_quiet_invite:\".
 mm_quiet_invite = false
 
@@ -181,12 +130,6 @@ ui_flag_watch = false
 # mm_lobby_trace off (debug registers).
 ui_menu_trace = false
 
-# UI-1 C1 prototype (dev mode only; the player build forces it off): Commence Expedition with a multiplayer Number of Players option
-# opens the game's own dialog with live \"Searching for players n/6\" text instead of the offline error (hardware breakpoint + one FMG
-# string-offset write, no code patched). Logs \"ui_c1_proto:\". Takes the debug registers (turns ui_menu_trace, ui_text_trace,
-# mm_quiet_invite and mm_lobby_trace off).
-ui_c1_proto = false
-
 # UI-1 option 1 (dev mode: needs mm_queue = true; the player build ignores this line and turns it on with matchmaking = true): Battle Royale from the stock
 # expedition menu. Commence Expedition with Number of Players = one player starts the Solo queue and the game's own dialog says
 # so; Commence again stops searching; once the match is ready Commence starts the expedition as normal. Duo/Trio say \"coming
@@ -203,22 +146,17 @@ ui_msg_test = false
 # player build, matchmaking = true). Logs \"ui_msg:\".
 ui_messages = true
 
-# MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): adds the overlay button
-# \"create SC lobby (test)\" to the Queue block. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
+# MM-3d (dev mode only; needs mm_queue = true; the player build and the mmtest zip force it off): enables the console's
+# mm_sc_create. It calls ISteamMatchmaking::CreateLobby(type, 6) like the game does for Invite
 # Members, watches that lobby for 20 s and logs whether Seamless Co-op adopted it (nrsc_lobby_type appears) or not (then the mod
 # leaves it). It writes nothing to the lobby. Log lines start with \"mm_sc_create:\".
 # mm_sc_create_type = \"public\" (default) | \"friends\" | \"private\".
 mm_sc_create = false
 mm_sc_create_type = \"public\"
 
-# T-031 experiment value (dev mode only). INERT since T-032: the downed marker is unknown (ChrSet entry byte +9 was disproven by
-# FS-0 run 6), so nothing is written from it. hotkey_downed_cycle still steps through downed_rival_candidates (0 = off).
-downed_rival_team = 0
-downed_rival_candidates = [0, 6, 14, 30, 2]
-
 # T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF or [PlayerIns+0xPTR]+0xOFF
-# (3 x f32 each). hotkey_pos_cycle selects one, hotkey_pos_save saves the local player's values of ALL candidates,
-# hotkey_pos_write writes the saved 12 bytes into the SELECTED candidate only and logs every candidate after 100 ms, 500 ms and 2 s.
+# (3 x f32 each). Console pos_next selects one, pos_save saves the local player's values of ALL candidates, pos_go writes the
+# saved 12 bytes into the SELECTED candidate only and logs every candidate after 100 ms, 500 ms and 2 s.
 # Invalid entries are skipped with a warning.
 pos_candidates = [\"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
 
@@ -236,42 +174,17 @@ rival_hit_seconds = 3.0
 # on close; point this somewhere permanent. Falls back to the DLL folder if unusable. Read before logging starts.
 # log_dir = 'C:\\some\\folder'
 
-# Show/hide the overlay. The overlay starts visible. Key names: F1..F24, A..Z, 0..9, Numpad0..Numpad9,
-# Insert, Delete, Home, End, PageUp, PageDown, Pause, ScrollLock. \"\" = unbound.
-overlay_toggle_key = \"Insert\"
-
-# Fallback hotkeys (only count while the game window is in the foreground). \"\" = unbound.
-# F4 is not used by default because Seamless Co-op binds it to pause.
-hotkey_write = \"\"         # write the selected team candidate to the local player (unbound since T-032; the overlay has buttons)
-hotkey_restore = \"\"       # restore the original value (unbound since T-032)
-hotkey_persist = \"\"       # persist mode on/off (unbound since T-032)
-hotkey_histogram = \"\"     # log a team_type histogram (unbound since T-031; the overlay has a button)
-hotkey_downed_cycle = \"F8\" # T-031: next downed_rival_team candidate (inert since T-032)
-hotkey_discovery = \"\"     # run the character discovery (unbound since T-032; the overlay has a button)
-hotkey_pos_cycle = \"F9\"   # T-032: select the next snap-back position candidate
-hotkey_pos_save = \"F7\"    # T-032: save the local player's current values of every position candidate
-hotkey_pos_write = \"F6\"   # T-032: write the saved values into the selected candidate (local player only)
-hotkey_cycle = \"\"         # select the next candidate (unbound; use the overlay buttons)
-hotkey_mark = \"F10\"       # log a numbered MARK line (T-015); the overlay has a text box for annotated marks
-hotkey_write_all = \"F11\"   # FS-0: write the selected candidate to EVERY player (this client's copies)
-hotkey_restore_all = \"F12\" # FS-0: restore every player
-hotkey_mm_solo = \"F1\"     # MM-2 (needs mm_queue = true): queue Solo
-hotkey_mm_duo = \"F2\"      # MM-2: queue Duo (needs a Seamless Co-op party of 2; only the party leader queues)
-hotkey_mm_squad = \"F3\"    # MM-2: queue Squad (party of 3)
-hotkey_mm_leave = \"F5\"    # MM-2: leave the queue / the ready match
 ";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(default)]
 pub(crate) struct Config {
-    /// T-030: developer mode. false (default) = player build: no hotkeys, PvPvE forced on with the rivals scheme, no
-    /// discovery or probes, a read-only badge instead of the debug panel.
+    /// T-030: developer mode. false (default) = player build: PvPvE forced on with the rivals scheme, the dev switches off,
+    /// no console. Only a developer DLL (`dev` feature) honours `true`.
     pub dev_mode: bool,
     pub team_candidates: Vec<u8>,
     pub persist_interval_ms: u64,
     pub watch_interval_ms: u64,
-    pub overlay_enabled: bool,
-    pub overlay_install_delay_ms: u64,
     /// T-020: PvPvE mode on (after the alias is resolved in `parse`).
     pub pvpve: bool,
     pub pvpve_team: u8,
@@ -282,10 +195,6 @@ pub(crate) struct Config {
     pub team_size: u64,
     /// Deprecated FS-0 alias of `pvpve` + `pvpve_team`.
     pub auto_team_all: u32,
-    /// T-027: read-only probes on.
-    pub probes: bool,
-    /// T-027: probe period in milliseconds (100..=60000).
-    pub probe_interval_ms: u64,
     /// MM-1: Steam access probe on (developer mode only; forced off in the player build).
     pub mm_probe: bool,
     /// MM-2: public matchmaking queue on (developer mode only; forced off in the player build).
@@ -316,8 +225,6 @@ pub(crate) struct Config {
     pub ui_flag_watch: bool,
     /// UI-1 A/B/C: expedition-menu tracer (developer mode only; forced off in the player build; takes the debug registers).
     pub ui_menu_trace: bool,
-    /// UI-1 C1 prototype (developer mode only; forced off in the player build; takes the debug registers).
-    pub ui_c1_proto: bool,
     /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; the player build turns it on with `matchmaking`;
     /// off while a dev tool that owns all debug registers is on).
     pub br_menu: bool,
@@ -329,10 +236,6 @@ pub(crate) struct Config {
     pub mm_sc_create: bool,
     /// MM-3d: `"public"`, `"friends"` or `"private"` (normalised in `parse`; read it through [`Config::sc_create_type`]).
     pub mm_sc_create_type: String,
-    /// T-031 (dev only): team value written to a downed rival's copy; 0 = off.
-    pub downed_rival_team: u8,
-    /// T-031: values the downed-cycle hotkey steps through (0 = off).
-    pub downed_rival_candidates: Vec<u8>,
     /// T-032 (dev only): snap-back position candidates, `PlayerIns+0xOFF` or `[PlayerIns+0xPTR]+0xOFF`.
     pub pos_candidates: Vec<String>,
     /// T-035: `"redown"` (default) or `"vanilla"` (normalised in `parse`; read it through [`Config::revive_policy`]). The player
@@ -340,26 +243,8 @@ pub(crate) struct Config {
     pub rival_revive: String,
     /// T-039: seconds a rival hit takes off a downed LOCAL player's bleed-out clock (clamped to 0.5..=15.0 in `parse`).
     pub rival_hit_seconds: f32,
-    pub overlay_toggle_key: String,
     /// T-018: absolute log directory; empty = next to the DLL.
     pub log_dir: String,
-    pub hotkey_write: String,
-    pub hotkey_restore: String,
-    pub hotkey_persist: String,
-    pub hotkey_histogram: String,
-    pub hotkey_downed_cycle: String,
-    pub hotkey_discovery: String,
-    pub hotkey_pos_cycle: String,
-    pub hotkey_pos_save: String,
-    pub hotkey_pos_write: String,
-    pub hotkey_cycle: String,
-    pub hotkey_mark: String,
-    pub hotkey_write_all: String,
-    pub hotkey_restore_all: String,
-    pub hotkey_mm_solo: String,
-    pub hotkey_mm_duo: String,
-    pub hotkey_mm_squad: String,
-    pub hotkey_mm_leave: String,
 }
 
 impl Default for Config {
@@ -369,16 +254,12 @@ impl Default for Config {
             team_candidates: DEFAULT_CANDIDATES.to_vec(),
             persist_interval_ms: DEFAULT_PERSIST_MS,
             watch_interval_ms: DEFAULT_WATCH_MS,
-            overlay_enabled: DEFAULT_OVERLAY_ENABLED,
-            overlay_install_delay_ms: DEFAULT_OVERLAY_DELAY_MS,
             pvpve: false,
             pvpve_team: DEFAULT_PVPVE_TEAM,
             pvpve_interval_ms: DEFAULT_PVPVE_INTERVAL_MS,
             pvpve_scheme: SCHEME_RIVALS.to_string(),
             team_size: DEFAULT_TEAM_SIZE,
             auto_team_all: 0,
-            probes: false,
-            probe_interval_ms: DEFAULT_PROBE_INTERVAL_MS,
             mm_probe: false,
             mm_queue: false,
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
@@ -394,36 +275,15 @@ impl Default for Config {
             ui_text_trace: false,
             ui_flag_watch: false,
             ui_menu_trace: false,
-            ui_c1_proto: false,
             br_menu: false,
             ui_msg_test: false,
             ui_messages: true,
             mm_sc_create: false,
             mm_sc_create_type: "public".to_string(),
-            downed_rival_team: 0,
-            downed_rival_candidates: DEFAULT_DOWNED_CANDIDATES.to_vec(),
             pos_candidates: crate::game::poswrite::default_candidates(),
             rival_revive: REVIVE_REDOWN.to_string(),
             rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
-            overlay_toggle_key: DEFAULT_OVERLAY_TOGGLE.to_string(),
             log_dir: String::new(),
-            hotkey_write: DEFAULT_HOTKEY_WRITE.to_string(),
-            hotkey_restore: DEFAULT_HOTKEY_RESTORE.to_string(),
-            hotkey_persist: DEFAULT_HOTKEY_PERSIST.to_string(),
-            hotkey_histogram: DEFAULT_HOTKEY_HISTOGRAM.to_string(),
-            hotkey_downed_cycle: DEFAULT_HOTKEY_DOWNED_CYCLE.to_string(),
-            hotkey_discovery: DEFAULT_HOTKEY_DISCOVERY.to_string(),
-            hotkey_pos_cycle: DEFAULT_HOTKEY_POS_CYCLE.to_string(),
-            hotkey_pos_save: DEFAULT_HOTKEY_POS_SAVE.to_string(),
-            hotkey_pos_write: DEFAULT_HOTKEY_POS_WRITE.to_string(),
-            hotkey_cycle: DEFAULT_HOTKEY_CYCLE.to_string(),
-            hotkey_mark: DEFAULT_HOTKEY_MARK.to_string(),
-            hotkey_write_all: DEFAULT_HOTKEY_WRITE_ALL.to_string(),
-            hotkey_restore_all: DEFAULT_HOTKEY_RESTORE_ALL.to_string(),
-            hotkey_mm_solo: DEFAULT_HOTKEY_MM_SOLO.to_string(),
-            hotkey_mm_duo: DEFAULT_HOTKEY_MM_DUO.to_string(),
-            hotkey_mm_squad: DEFAULT_HOTKEY_MM_SQUAD.to_string(),
-            hotkey_mm_leave: DEFAULT_HOTKEY_MM_LEAVE.to_string(),
         }
     }
 }
@@ -489,94 +349,6 @@ impl Config {
     pub(crate) fn team_size_usize(&self) -> usize {
         usize::try_from(self.team_size.clamp(TEAM_SIZE_RANGE.0, TEAM_SIZE_RANGE.1)).unwrap_or(1)
     }
-
-    /// The configured key name for `a` (possibly empty = unbound).
-    fn key_text(&self, a: Action) -> &str {
-        match a {
-            Action::Write => &self.hotkey_write,
-            Action::Restore => &self.hotkey_restore,
-            Action::Persist => &self.hotkey_persist,
-            Action::Histogram => &self.hotkey_histogram,
-            Action::DownedCycle => &self.hotkey_downed_cycle,
-            Action::PosCycle => &self.hotkey_pos_cycle,
-            Action::PosSave => &self.hotkey_pos_save,
-            Action::PosWrite => &self.hotkey_pos_write,
-            Action::Discovery => &self.hotkey_discovery,
-            Action::Cycle => &self.hotkey_cycle,
-            Action::ToggleOverlay => &self.overlay_toggle_key,
-            Action::Mark => &self.hotkey_mark,
-            Action::WriteAll => &self.hotkey_write_all,
-            Action::RestoreAll => &self.hotkey_restore_all,
-            Action::MmSolo => &self.hotkey_mm_solo,
-            Action::MmDuo => &self.hotkey_mm_duo,
-            Action::MmSquad => &self.hotkey_mm_squad,
-            Action::MmLeave => &self.hotkey_mm_leave,
-        }
-    }
-
-    /// The resolved key for `a`, or `None` if unbound (or, only possible on an unvalidated `Config`, if
-    /// the name is unknown).
-    ///
-    /// T-030: always `None` outside dev mode, so no key is ever bound in the player build. MM-4: the one exception is the toggle of
-    /// the matchmaking panel, while matchmaking is on.
-    pub(crate) fn binding(&self, a: Action) -> Option<KeyBind> {
-        // The player build binds no key at all (no overlay to toggle since the in-game UI replaced the panel).
-        if !self.dev_mode {
-            return None;
-        }
-        // MM-2: the queue keys exist only while the queue feature is on, so nothing new is bound otherwise.
-        if a.is_mm() && !self.mm_queue {
-            return None;
-        }
-        hotkey::parse_key(self.key_text(a))
-    }
-
-    /// Every bound action with its key, for the hotkey thread and for log labels.
-    pub(crate) fn bindings(&self) -> Vec<(Action, KeyBind)> {
-        hotkey::ALL_ACTIONS
-            .iter()
-            .filter_map(|&a| self.binding(a).map(|k| (a, k)))
-            .collect()
-    }
-
-    /// `write=F5 restore=F6 ...` for the startup log; unbound actions show `-`.
-    pub(crate) fn describe_bindings(&self) -> String {
-        if !self.dev_mode {
-            return match self.binding(Action::ToggleOverlay) {
-                Some(k) => format!("overlay-toggle={} (matchmaking panel; player mode)", k.name),
-                None => "none (player mode)".to_string(),
-            };
-        }
-        let one = |label: &str, a: Action| {
-            format!(
-                "{label}={}",
-                self.binding(a).map_or("-".to_string(), |k| k.name)
-            )
-        };
-        let mut parts = vec![
-            one("write", Action::Write),
-            one("restore", Action::Restore),
-            one("persist", Action::Persist),
-            one("histogram", Action::Histogram),
-            one("downed_cycle", Action::DownedCycle),
-            one("discovery", Action::Discovery),
-            one("pos_cycle", Action::PosCycle),
-            one("pos_save", Action::PosSave),
-            one("pos_write", Action::PosWrite),
-            one("cycle", Action::Cycle),
-            one("overlay-toggle", Action::ToggleOverlay),
-            one("mark", Action::Mark),
-            one("write_all", Action::WriteAll),
-            one("restore_all", Action::RestoreAll),
-        ];
-        if self.mm_queue {
-            parts.push(one("mm_solo", Action::MmSolo));
-            parts.push(one("mm_duo", Action::MmDuo));
-            parts.push(one("mm_squad", Action::MmSquad));
-            parts.push(one("mm_leave", Action::MmLeave));
-        }
-        parts.join(" ")
-    }
 }
 
 /// T-030: the player build fixes the mode: PvPvE on, rivals scheme, no probes. `explicit_off` / `explicit_all` say
@@ -590,9 +362,6 @@ fn enforce_player_mode(
     if cfg.dev_mode {
         return;
     }
-    // No ImGui for players (Leonardo, 2026-10-19/20): no badge, no matchmaking panel, no overlay at all in the player build. Menus and
-    // status are the game's own UI (UI-1 br_menu, UI-2 ui_messages). The overlay stays a developer tool.
-    cfg.overlay_enabled = false;
     if explicit_off {
         warnings.push("pvpve = false is ignored: PvP is always on in the player build".to_string());
     }
@@ -604,7 +373,6 @@ fn enforce_player_mode(
     }
     cfg.pvpve = true;
     cfg.pvpve_scheme = SCHEME_RIVALS.to_string();
-    cfg.probes = false;
     // MM-4: the player setting `matchmaking` (default true) turns on exactly what Solo matchmaking needs: the queue, the join step
     // with the host's invite plus the joiner's link, and the quiet invite (S9 5g). `matchmaking = false` leaves all of it off.
     cfg.mm_queue = cfg.matchmaking;
@@ -621,15 +389,12 @@ fn enforce_player_mode(
     cfg.ui_text_trace = false;
     cfg.ui_flag_watch = false;
     cfg.ui_menu_trace = false;
-    cfg.ui_c1_proto = false;
     // UI-1 option 1: Battle Royale from the stock expedition menu comes with matchmaking (it needs the queue; the debug registers are
     // shared with the quiet invite through crate::hwbp: slots 0/1 quiet invite, 2 Commence, 3 labels). UI-2 `ui_messages` stays as written.
     cfg.br_menu = cfg.matchmaking;
     cfg.ui_msg_test = false;
     // MM-3d: and the SC-adoption test button.
     cfg.mm_sc_create = false;
-    // T-031: the rival-revive experiment is a developer tool.
-    cfg.downed_rival_team = 0;
     // T-035: the rival revive rule is always on.
     if cfg.rival_revive == REVIVE_VANILLA {
         warnings.push(
@@ -692,11 +457,6 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         WATCH_MS_RANGE,
     );
     clamp(
-        "overlay_install_delay_ms",
-        &mut cfg.overlay_install_delay_ms,
-        OVERLAY_DELAY_MS_RANGE,
-    );
-    clamp(
         "pvpve_interval_ms",
         &mut cfg.pvpve_interval_ms,
         PVPVE_INTERVAL_MS_RANGE,
@@ -723,11 +483,6 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         &mut cfg.mm_fill_wait_s,
         MM_FILL_WAIT_RANGE,
     );
-    clamp(
-        "probe_interval_ms",
-        &mut cfg.probe_interval_ms,
-        PROBE_INTERVAL_MS_RANGE,
-    );
     // MM-4: `mm_match_players`, when the file sets it, fixes min = max (the mmtest zip keeps 2 so tests stay quick).
     if let Ok(t) = toml::from_str::<toml::Table>(text) {
         if t.contains_key("mm_match_players") {
@@ -744,10 +499,6 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.mm_min_players, cfg.mm_max_players, cfg.mm_max_players
         ));
         cfg.mm_min_players = cfg.mm_max_players;
-    }
-    if cfg.downed_rival_candidates.is_empty() {
-        warnings.push("downed_rival_candidates is empty; using the defaults".to_string());
-        cfg.downed_rival_candidates = DEFAULT_DOWNED_CANDIDATES.to_vec();
     }
     // T-032: position candidates; invalid entries are skipped with a warning, an empty result uses the defaults.
     {
@@ -812,26 +563,15 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         // four registers win, and br_menu needs the queue worker.
         if cfg.dev_mode
             && cfg.br_menu
-            && (cfg.ui_c1_proto || cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_lobby_trace)
+            && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_lobby_trace)
         {
-            warnings.push("br_menu is off while ui_c1_proto, ui_menu_trace, ui_text_trace or mm_lobby_trace is on (they own all debug registers)".to_string());
+            warnings.push("br_menu is off while ui_menu_trace, ui_text_trace or mm_lobby_trace is on (they own all debug registers)".to_string());
             cfg.br_menu = false;
         }
         if cfg.dev_mode && cfg.br_menu && !cfg.mm_queue {
             warnings
                 .push("br_menu = true needs mm_queue = true; Commence is left alone".to_string());
             cfg.br_menu = false;
-        }
-        // UI-1 C1 prototype: owns DR0 on every thread; every other debug-register user is switched off.
-        if cfg.dev_mode
-            && cfg.ui_c1_proto
-            && (cfg.ui_menu_trace || cfg.ui_text_trace || cfg.mm_quiet_invite || cfg.mm_lobby_trace)
-        {
-            warnings.push("ui_c1_proto uses the hardware breakpoints; ui_menu_trace, ui_text_trace, mm_quiet_invite and mm_lobby_trace are off while it is on".to_string());
-            cfg.ui_menu_trace = false;
-            cfg.ui_text_trace = false;
-            cfg.mm_quiet_invite = false;
-            cfg.mm_lobby_trace = false;
         }
         // UI-1: the menu tracer owns all four debug registers.
         if cfg.dev_mode
@@ -944,115 +684,34 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         ));
     }
 
-    let mut key = |name: &str, v: &mut String, default: &str| {
-        if v.trim().is_empty() {
-            v.clear(); // unbound
-        } else if hotkey::parse_key(v).is_none() {
+    // R5: settings removed with their features are ignored, named once so an old file is easy to tidy.
+    if let Ok(t) = toml::from_str::<toml::Table>(text) {
+        let gone: Vec<&str> = t
+            .keys()
+            .map(String::as_str)
+            .filter(|k| {
+                (k.starts_with("hotkey_") && *k != "hotkey_finisher")
+                    || k.starts_with("overlay_")
+                    || matches!(
+                        *k,
+                        "probes"
+                            | "probe_interval_ms"
+                            | "ui_c1_proto"
+                            | "downed_rival_team"
+                            | "downed_rival_candidates"
+                    )
+            })
+            .collect();
+        if !gone.is_empty() {
             warnings.push(format!(
-                "{name} = {v:?} is not a known key name; using {}",
-                if default.is_empty() {
-                    "unbound".to_string()
-                } else {
-                    format!("{default:?}")
-                }
+                "ignored (removed with the overlay, the hotkeys and the probes): {}",
+                gone.join(", ")
             ));
-            *v = default.to_string();
         }
-    };
-    key(
-        "overlay_toggle_key",
-        &mut cfg.overlay_toggle_key,
-        DEFAULT_OVERLAY_TOGGLE,
-    );
-    key("hotkey_write", &mut cfg.hotkey_write, DEFAULT_HOTKEY_WRITE);
-    key(
-        "hotkey_restore",
-        &mut cfg.hotkey_restore,
-        DEFAULT_HOTKEY_RESTORE,
-    );
-    key(
-        "hotkey_persist",
-        &mut cfg.hotkey_persist,
-        DEFAULT_HOTKEY_PERSIST,
-    );
-    key(
-        "hotkey_histogram",
-        &mut cfg.hotkey_histogram,
-        DEFAULT_HOTKEY_HISTOGRAM,
-    );
-    key(
-        "hotkey_downed_cycle",
-        &mut cfg.hotkey_downed_cycle,
-        DEFAULT_HOTKEY_DOWNED_CYCLE,
-    );
-    key(
-        "hotkey_discovery",
-        &mut cfg.hotkey_discovery,
-        DEFAULT_HOTKEY_DISCOVERY,
-    );
-    key(
-        "hotkey_pos_cycle",
-        &mut cfg.hotkey_pos_cycle,
-        DEFAULT_HOTKEY_POS_CYCLE,
-    );
-    key(
-        "hotkey_pos_save",
-        &mut cfg.hotkey_pos_save,
-        DEFAULT_HOTKEY_POS_SAVE,
-    );
-    key(
-        "hotkey_pos_write",
-        &mut cfg.hotkey_pos_write,
-        DEFAULT_HOTKEY_POS_WRITE,
-    );
-    key("hotkey_cycle", &mut cfg.hotkey_cycle, DEFAULT_HOTKEY_CYCLE);
-    key("hotkey_mark", &mut cfg.hotkey_mark, DEFAULT_HOTKEY_MARK);
-    key(
-        "hotkey_write_all",
-        &mut cfg.hotkey_write_all,
-        DEFAULT_HOTKEY_WRITE_ALL,
-    );
-    key(
-        "hotkey_restore_all",
-        &mut cfg.hotkey_restore_all,
-        DEFAULT_HOTKEY_RESTORE_ALL,
-    );
-    key(
-        "hotkey_mm_solo",
-        &mut cfg.hotkey_mm_solo,
-        DEFAULT_HOTKEY_MM_SOLO,
-    );
-    key(
-        "hotkey_mm_duo",
-        &mut cfg.hotkey_mm_duo,
-        DEFAULT_HOTKEY_MM_DUO,
-    );
-    key(
-        "hotkey_mm_squad",
-        &mut cfg.hotkey_mm_squad,
-        DEFAULT_HOTKEY_MM_SQUAD,
-    );
-    key(
-        "hotkey_mm_leave",
-        &mut cfg.hotkey_mm_leave,
-        DEFAULT_HOTKEY_MM_LEAVE,
-    );
-
+    }
     let (explicit_off, explicit_all) = peek_pvpve_overrides(text);
     enforce_player_mode(&mut cfg, explicit_off, explicit_all, &mut warnings);
 
-    // Two actions on one key both fire; that is allowed but almost certainly a mistake.
-    let bound = cfg.bindings();
-    for (i, (a, ka)) in bound.iter().enumerate() {
-        for (b, kb) in &bound[i + 1..] {
-            if ka.vk == kb.vk {
-                warnings.push(format!(
-                    "{a:?} and {b:?} are both bound to {}; both will fire",
-                    ka.name
-                ));
-            }
-        }
-    }
     Ok((cfg, warnings))
 }
 
@@ -1128,11 +787,10 @@ pub(crate) fn load(dir: &Path) -> Config {
     };
     tracing::info!("mode: {}", if cfg.dev_mode { "DEV" } else { "PLAYER" });
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} overlay_enabled={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} log_dir={:?} keys: {}",
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} log_dir={:?}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
-        cfg.overlay_enabled,
         cfg.pvpve,
         cfg.pvpve_team,
         cfg.pvpve_interval_ms,
@@ -1147,8 +805,7 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.mm_join,
         cfg.mm_join_auto,
         cfg.mm_quiet_invite,
-        cfg.log_dir,
-        cfg.describe_bindings()
+        cfg.log_dir
     );
     cfg
 }
@@ -1169,8 +826,6 @@ mod tests {
             mm_join_auto: "invite+link".to_string(),
             mm_quiet_invite: true,
             br_menu: true,
-            // No ImGui for players: the overlay is a developer tool.
-            overlay_enabled: false,
             ..Config::default()
         }
     }
@@ -1196,93 +851,6 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(cfg.team_candidates, vec![6, 29, 3, 16, 13, 2, 1]);
         assert_eq!((cfg.persist_interval_ms, cfg.watch_interval_ms), (50, 1000));
-    }
-
-    #[test]
-    fn new_keys_have_the_documented_defaults() {
-        let c = dev_default();
-        assert!(c.overlay_enabled);
-        assert_eq!(c.overlay_toggle_key, "Insert");
-        assert_eq!(
-            (
-                c.hotkey_write.as_str(),
-                c.hotkey_restore.as_str(),
-                c.hotkey_persist.as_str(),
-                c.hotkey_histogram.as_str(),
-                c.hotkey_discovery.as_str(),
-                c.hotkey_cycle.as_str(),
-                c.hotkey_mark.as_str(),
-            ),
-            ("", "", "", "", "", "", "F10")
-        );
-        // F4 (Seamless Co-op pause) is bound to nothing by default.
-        let f4 = hotkey::parse_key("F4").expect("F4 parses").vk;
-        assert!(c.bindings().iter().all(|(_, k)| k.vk != f4));
-        // Cycle is unbound; the other seven actions are bound.
-        assert_eq!(c.bindings().len(), 8);
-        assert!(c.binding(Action::Cycle).is_none());
-        assert_eq!(
-            c.binding(Action::ToggleOverlay).map(|k| (k.vk, k.name)),
-            Some((0x2D, "Insert".to_string()))
-        );
-        assert_eq!(
-            c.describe_bindings(),
-            "write=- restore=- persist=- histogram=- downed_cycle=F8 discovery=- pos_cycle=F9 pos_save=F7 pos_write=F6 cycle=- overlay-toggle=Insert mark=F10 write_all=F11 restore_all=F12"
-        );
-    }
-
-    #[test]
-    fn new_keys_parse_and_normalise() {
-        let (cfg, w) = parse_dev(
-            "overlay_enabled = false\noverlay_toggle_key = \"home\"\nhotkey_write = \"f11\"\nhotkey_write_all = \"f13\"\nhotkey_cycle = \"F4\"\nhotkey_restore = \"\"\nhotkey_persist = \"  \"\n",
-        )
-        .expect("ok");
-        assert!(w.is_empty(), "{w:?}");
-        assert!(!cfg.overlay_enabled);
-        assert_eq!(
-            cfg.binding(Action::ToggleOverlay).map(|k| k.name),
-            Some("Home".into())
-        );
-        assert_eq!(cfg.binding(Action::Write).map(|k| k.vk), Some(0x7A));
-        assert_eq!(
-            cfg.binding(Action::Cycle).map(|k| k.name),
-            Some("F4".into())
-        );
-        // Empty / blank strings unbind.
-        assert_eq!(cfg.binding(Action::Restore), None);
-        assert_eq!(cfg.binding(Action::Persist), None);
-        assert_eq!(cfg.hotkey_persist, "");
-        // Untouched keys keep their defaults.
-        assert_eq!(cfg.hotkey_histogram, "");
-        assert_eq!(cfg.hotkey_downed_cycle, "F8");
-        assert_eq!(cfg.hotkey_discovery, "");
-        assert_eq!(cfg.hotkey_pos_cycle, "F9");
-    }
-
-    #[test]
-    fn unknown_key_names_fall_back_to_the_default_with_a_warning() {
-        let (cfg, w) = parse_dev(
-            "overlay_toggle_key = \"Esc\"\nhotkey_write = \"banana\"\nhotkey_cycle = \"nope\"\n",
-        )
-        .expect("ok");
-        assert_eq!(w.len(), 3, "{w:?}");
-        assert_eq!(cfg.overlay_toggle_key, "Insert");
-        assert_eq!(cfg.hotkey_write, ""); // T-032: its default is unbound
-        assert_eq!(cfg.hotkey_cycle, ""); // its default is unbound
-        assert!(w[0].contains("overlay_toggle_key") && w[0].contains("Esc"));
-    }
-
-    #[test]
-    fn two_actions_on_one_key_warn() {
-        let (_, w) = parse_dev("hotkey_write = \"F6\"\n").expect("ok"); // restore is F6 too
-        assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].contains("Write") && w[0].contains("PosWrite") && w[0].contains("F6"));
-    }
-
-    #[test]
-    fn non_string_key_values_are_errors() {
-        assert!(parse_dev("hotkey_write = 5").is_err());
-        assert!(parse_dev("overlay_enabled = \"yes\"").is_err());
     }
 
     #[test]
@@ -1334,12 +902,9 @@ mod tests {
     }
 
     #[test]
-    fn mm_queue_defaults_off_is_dev_only_and_binds_keys_only_when_on() {
+    fn mm_queue_defaults_off_is_dev_only() {
         let c = dev_default();
         assert!(!c.mm_queue && c.mm_match_players == 2);
-        // Off: no MM key is bound, so nothing new exists.
-        assert!(c.binding(Action::MmSolo).is_none() && c.binding(Action::MmLeave).is_none());
-        assert!(!c.describe_bindings().contains("mm_"));
         let (cfg, w) = parse_dev(
             "mm_queue = true
 mm_match_players = 3
@@ -1350,40 +915,15 @@ mm_match_players = 3
             cfg.mm_queue && cfg.mm_match_players == 3 && w.is_empty(),
             "{w:?}"
         );
-        let names: Vec<_> = [
-            Action::MmSolo,
-            Action::MmDuo,
-            Action::MmSquad,
-            Action::MmLeave,
-        ]
-        .iter()
-        .map(|a| cfg.binding(*a).map(|k| k.name))
-        .collect();
-        assert_eq!(
-            names,
-            vec![
-                Some("F1".into()),
-                Some("F2".into()),
-                Some("F3".into()),
-                Some("F5".into())
-            ]
-        );
-        assert!(cfg
-            .describe_bindings()
-            .ends_with("mm_solo=F1 mm_duo=F2 mm_squad=F3 mm_leave=F5"));
-        // No default collides with a key that is already bound.
-        assert!(w.is_empty());
-        // Range and key validation.
+        // Range validation.
         let (cfg, w) = parse_dev(
             "mm_queue = true
 mm_match_players = 9
-hotkey_mm_duo = \"banana\"
 ",
         )
         .expect("ok");
         assert_eq!(cfg.mm_match_players, 6);
-        assert_eq!(cfg.hotkey_mm_duo, "F2");
-        assert_eq!(w.len(), 2, "{w:?}");
+        assert_eq!(w.len(), 1, "{w:?}");
         let (cfg, _) = parse_dev(
             "mm_match_players = 1
 ",
@@ -1392,7 +932,7 @@ hotkey_mm_duo = \"banana\"
         assert_eq!(cfg.mm_match_players, 2);
         // Player build: the queue follows `matchmaking`, not `mm_queue`.
         let (cfg, _) = parse("mm_queue = true\nmatchmaking = false\n").expect("ok");
-        assert!(!cfg.dev_mode && !cfg.mm_queue && cfg.bindings().is_empty());
+        assert!(!cfg.dev_mode && !cfg.mm_queue);
         assert!(parse_dev("mm_queue = \"yes\"").is_err());
     }
 
@@ -1511,13 +1051,6 @@ hotkey_mm_duo = \"banana\"
         );
         let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
-        let (cfg, w) = parse_dev("ui_menu_trace = true\nui_c1_proto = true\n").expect("ok");
-        assert!(
-            cfg.ui_c1_proto && !cfg.ui_menu_trace && w.len() == 1,
-            "{w:?}"
-        );
-        let (cfg, _) = parse("ui_c1_proto = true\n").expect("ok");
-        assert!(!cfg.ui_c1_proto);
     }
 
     #[test]
@@ -1538,20 +1071,12 @@ hotkey_mm_duo = \"banana\"
         let (cfg, _) = parse("br_menu = false\n").expect("ok");
         assert!(cfg.br_menu && cfg.mm_queue && cfg.mm_quiet_invite && cfg.ui_messages);
         assert!(
-            !cfg.ui_text_trace
-                && !cfg.ui_menu_trace
-                && !cfg.ui_c1_proto
-                && !cfg.ui_msg_test
-                && !cfg.mm_lobby_trace
+            !cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_msg_test && !cfg.mm_lobby_trace
         );
-        let (cfg, _) = parse("ui_text_trace = true\nui_menu_trace = true\nui_c1_proto = true\nui_msg_test = true\nmm_lobby_trace = true\n").expect("ok");
+        let (cfg, _) = parse("ui_text_trace = true\nui_menu_trace = true\nui_msg_test = true\nmm_lobby_trace = true\n").expect("ok");
         assert!(cfg.br_menu && cfg.mm_quiet_invite);
         assert!(
-            !cfg.ui_text_trace
-                && !cfg.ui_menu_trace
-                && !cfg.ui_c1_proto
-                && !cfg.ui_msg_test
-                && !cfg.mm_lobby_trace
+            !cfg.ui_text_trace && !cfg.ui_menu_trace && !cfg.ui_msg_test && !cfg.mm_lobby_trace
         );
         let (cfg, _) = parse("matchmaking = false\nbr_menu = true\n").expect("ok");
         assert!(!cfg.br_menu && !cfg.mm_queue);
@@ -1596,19 +1121,6 @@ hotkey_mm_duo = \"banana\"
         // The player build (no dev_mode) forces it off even when the file asks for it.
         let (cfg, _) = parse("mm_queue = true\nmm_sc_create = true\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_sc_create);
-    }
-
-    #[test]
-    fn probe_keys_default_off_and_are_clamped() {
-        let c = dev_default();
-        assert_eq!((c.probes, c.probe_interval_ms), (false, 1000));
-        let (cfg, w) = parse_dev("probes = true\nprobe_interval_ms = 250\n").expect("ok");
-        assert_eq!((cfg.probes, cfg.probe_interval_ms), (true, 250));
-        assert!(w.is_empty(), "{w:?}");
-        let (cfg, w) = parse_dev("probe_interval_ms = 1\n").expect("ok");
-        assert_eq!(cfg.probe_interval_ms, 100);
-        assert_eq!(w.len(), 1, "{w:?}");
-        assert!(parse_dev("probes = \"yes\"").is_err());
     }
 
     #[test]
@@ -1669,7 +1181,6 @@ hotkey_mm_duo = \"banana\"
         assert_eq!(cfg.team_candidates, vec![13, 6]);
         assert_eq!(cfg.watch_interval_ms, 250);
         assert_eq!(cfg.persist_interval_ms, DEFAULT_PERSIST_MS);
-        assert_eq!(cfg.overlay_toggle_key, "Insert");
     }
 
     #[test]
@@ -1718,14 +1229,12 @@ hotkey_mm_duo = \"banana\"
 pvpve_scheme = \"all\"
 pvpve_team = 13
 team_size = 2
-probes = true
 ",
         )
         .expect("ok");
         assert!(cfg.pvpve);
         assert_eq!(cfg.scheme(), Scheme::Rivals);
         assert_eq!((cfg.pvpve_team, cfg.team_size_usize()), (13, 2));
-        assert!(!cfg.probes);
         assert_eq!(w.len(), 2, "{w:?}");
         assert!(w[0].contains("pvpve = false") && w[1].contains("pvpve_scheme"));
         // Silent when the file does not ask for either.
@@ -1747,6 +1256,21 @@ probes = true
     /// module's dev-mode tests run on the developer build only (`cargo test`); the player build is checked by `cargo clippy
     /// --no-default-features` plus this test under `cargo test --no-default-features -- dev_mode_needs`.
     #[test]
+    fn removed_keys_are_ignored_with_one_warning() {
+        let (cfg, w) = parse_dev(
+            "overlay_enabled = true\nhotkey_mark = \"F10\"\nprobes = true\nteam_size = 2\n",
+        )
+        .expect("ok");
+        assert_eq!(cfg.team_size, 2);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("hotkey_mark")
+                && w[0].contains("overlay_enabled")
+                && w[0].contains("probes")
+        );
+    }
+
+    #[test]
     fn dev_mode_needs_the_dev_build() {
         let (c, w) = parse("dev_mode = true\n").unwrap();
         assert_eq!(c.dev_mode, cfg!(feature = "dev"));
@@ -1754,27 +1278,6 @@ probes = true
             w.iter().any(|x| x.contains("player build")),
             !cfg!(feature = "dev")
         );
-    }
-
-    #[test]
-    fn player_mode_has_no_key_bindings() {
-        // MM-4: with matchmaking = false no key at all (T-030).
-        let (cfg, _) =
-            parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Insert\"\nmatchmaking = false\n")
-                .expect("ok");
-        assert!(cfg.bindings().is_empty());
-        for a in hotkey::ALL_ACTIONS {
-            assert!(cfg.binding(a).is_none(), "{a:?}");
-        }
-        assert_eq!(cfg.describe_bindings(), "none (player mode)");
-        // With matchmaking on there is no key either: no overlay in the player build (the in-game UI replaced the panel), and the
-        // overlay itself is off whatever the file says.
-        let (cfg, _) =
-            parse("hotkey_write = \"F5\"\noverlay_toggle_key = \"Home\"\noverlay_enabled = true\n")
-                .expect("ok");
-        assert!(cfg.bindings().is_empty());
-        assert!(!cfg.overlay_enabled);
-        assert_eq!(cfg.describe_bindings(), "none (player mode)");
     }
 
     #[test]
@@ -1840,13 +1343,11 @@ probes = true
             "dev_mode = true
 pvpve = false
 pvpve_scheme = \"all\"
-probes = true
 ",
         )
         .expect("ok");
-        assert!(!cfg.pvpve && cfg.scheme() == Scheme::All && cfg.probes);
+        assert!(!cfg.pvpve && cfg.scheme() == Scheme::All);
         assert!(w.is_empty(), "{w:?}");
-        assert_eq!(cfg.bindings().len(), 8);
     }
 
     #[test]
@@ -1860,54 +1361,6 @@ probes = true
         // Second load reads it back.
         assert_eq!(load(&dir), player_default());
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn t031_downed_keys_defaults_and_player_mode() {
-        let c = dev_default();
-        assert_eq!(c.downed_rival_team, 0);
-        assert_eq!(c.downed_rival_candidates, vec![0, 6, 14, 30, 2]);
-        assert_eq!(c.hotkey_downed_cycle, "F8");
-        assert_eq!(c.hotkey_histogram, "");
-        assert_eq!(
-            c.binding(Action::DownedCycle).map(|k| k.name),
-            Some("F8".into())
-        );
-        assert!(c.binding(Action::Histogram).is_none());
-        let (cfg, w) = parse_dev(
-            "downed_rival_team = 14
-downed_rival_candidates = [0, 5]
-hotkey_downed_cycle = \"F2\"
-",
-        )
-        .expect("ok");
-        assert!(w.is_empty(), "{w:?}");
-        assert_eq!(
-            (cfg.downed_rival_team, cfg.downed_rival_candidates.clone()),
-            (14, vec![0, 5])
-        );
-        assert_eq!(
-            cfg.binding(Action::DownedCycle).map(|k| k.name),
-            Some("F2".into())
-        );
-        let (cfg, w) = parse_dev(
-            "downed_rival_candidates = []
-hotkey_downed_cycle = \"nope\"
-",
-        )
-        .expect("ok");
-        assert_eq!(w.len(), 2, "{w:?}");
-        assert_eq!(cfg.downed_rival_candidates, vec![0, 6, 14, 30, 2]);
-        assert_eq!(cfg.hotkey_downed_cycle, "F8");
-        // The player build forces the experiment off and binds no key.
-        let (cfg, _) = parse(
-            "downed_rival_team = 6
-",
-        )
-        .expect("ok");
-        assert_eq!(cfg.downed_rival_team, 0);
-        assert!(cfg.binding(Action::DownedCycle).is_none());
-        assert!(parse("downed_rival_team = 300").is_err());
     }
 
     #[test]
@@ -1966,7 +1419,7 @@ hotkey_downed_cycle = \"nope\"
     }
 
     #[test]
-    fn t032_snap_back_keys_candidates_and_player_mode() {
+    fn t032_snap_back_candidates() {
         let c = dev_default();
         assert_eq!(
             c.pos_candidates,
@@ -1979,22 +1432,6 @@ hotkey_downed_cycle = \"nope\"
                 "[PlayerIns+0x5F0]+0x64"
             ]
         );
-        for (a, key) in [
-            (Action::PosCycle, "F9"),
-            (Action::PosSave, "F7"),
-            (Action::PosWrite, "F6"),
-        ] {
-            assert_eq!(c.binding(a).map(|k| k.name), Some(key.into()), "{a:?}");
-        }
-        // The old team write / restore / persist / discovery keys are free.
-        for a in [
-            Action::Write,
-            Action::Restore,
-            Action::Persist,
-            Action::Discovery,
-        ] {
-            assert!(c.binding(a).is_none(), "{a:?}");
-        }
         // Invalid entries are skipped with a warning; spacing and case are normalised.
         let (cfg, w) = parse_dev(
             "pos_candidates = [\"playerins + 0x10\", \"nonsense\", \"[PlayerIns+0x60]+0x1EC\", \"PlayerIns+0x10\"]
@@ -2011,10 +1448,5 @@ hotkey_downed_cycle = \"nope\"
         let (cfg, w) = parse_dev("pos_candidates = [\"x\"]\n").expect("ok");
         assert_eq!(cfg.pos_candidates, dev_default().pos_candidates);
         assert_eq!(w.len(), 2, "{w:?}");
-        // Player mode: no keys at all.
-        let p = player_default();
-        for a in [Action::PosCycle, Action::PosSave, Action::PosWrite] {
-            assert!(p.binding(a).is_none());
-        }
     }
 }

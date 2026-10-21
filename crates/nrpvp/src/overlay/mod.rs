@@ -1,9 +1,4 @@
-//! Developer UI. `shared` is plain data (snapshot, commands, roster rows) that the main loop and the matchmaking glue use in every
-//! build; `panel` is the Dear ImGui overlay (hudhook, Direct3D 12 hooks) and exists only in developer builds (`--features dev`, R1).
+//! Plain data the main loop publishes about the game (`Snapshot`, `PlayerRow`) and the commands it executes (`Command`). The
+//! developer console reads and sends these. R5 removed the Dear ImGui panel that used to draw them (the console replaced it).
 
 pub(crate) mod shared;
-
-#[cfg(feature = "dev")]
-mod panel;
-#[cfg(feature = "dev")]
-pub(crate) use panel::spawn;

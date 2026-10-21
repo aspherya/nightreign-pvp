@@ -16,7 +16,6 @@ mod config;
 mod console;
 mod dr;
 mod game;
-mod hotkey;
 mod hwbp;
 mod logging;
 mod logring;

@@ -7,26 +7,18 @@
 #                                 messages, UI-1/UI-2); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
-# R1: the player zip gets a PLAYER nrpvp.dll, built here with `--no-default-features` (no developer tooling: no overlay, tracers or
-#   prototypes) into target\player\. -MatchmakingTest still packages the developer dist\nrpvp.dll from scripts\build.ps1, because it
-#   runs dev_mode. The script also builds the launcher.
-# -MatchmakingTest (MM-2/MM-3 friend session): instead of the player settings, the packaged nrpvp.toml turns on developer mode with the
-#   Steam probe, the matchmaking queue and the join step (dev_mode, mm_probe, mm_queue, mm_join = true, mm_join_auto = "invite+link", mm_host_create = false, mm_quiet_invite = true, mm_match_players = 2,
-#   probes = false, team_size = 1).
-#   The zip is dist\NightreignPvP-mmtest.zip (the player zip is not touched). Logs land in <Game>\NightreignPvP\logs as usual.
+# R1: the zip gets a PLAYER nrpvp.dll, built here with `--no-default-features` (no developer tooling) into target\player\. The script
+#   also builds the launcher. (R5 removed the -MatchmakingTest developer zip with the debug panel; friend tests use this zip.)
 param(
     [string]$Me3Dir = 'Z:\Tools\me3',
     [int]$TeamSize = 1,
     # Pre-release feature flag: players per match in the player zip (2..6). 2 = quick friend tests (default until the first release);
     # 6 = the final game: every match has 6 players (Solo 6 x 1, Duo 3 x 2, Squad 2 x 3). Min = max, so matches only start full. Everyone who should meet needs the same number.
-    [ValidateRange(2, 6)][int]$MatchPlayers = 2,
-    [switch]$MatchmakingTest
+    [ValidateRange(2, 6)][int]$MatchPlayers = 2
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $repo 'dist'
-$dll = Join-Path $dist 'nrpvp.dll'
-if ($MatchmakingTest -and -not (Test-Path -LiteralPath $dll)) { throw 'dist\nrpvp.dll not found. Run scripts\build.ps1 first.' }
 # UI-1/UI-2: the game-data package (our texts in every language + the Roundtable event script). Built by scripts\build-gamedata.ps1
 # (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry.
 $gamedata = Join-Path $dist 'gamedata'
@@ -45,14 +37,12 @@ $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # cargo wr
 & $cargo build --release -p nrpvp-launcher --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the launcher failed ($code)" }
-if (-not $MatchmakingTest) {
-    $playerTarget = Join-Path $repo 'target\player'
-    $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-    & $cargo build --release -p nrpvp --no-default-features --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
-    $code = $LASTEXITCODE; $ErrorActionPreference = $prev
-    if ($code -ne 0) { throw "cargo build of the player nrpvp.dll failed ($code)" }
-    $dll = Join-Path $playerTarget 'release\nrpvp.dll'
-}
+$playerTarget = Join-Path $repo 'target\player'
+$prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+& $cargo build --release -p nrpvp --no-default-features --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
+$code = $LASTEXITCODE; $ErrorActionPreference = $prev
+if ($code -ne 0) { throw "cargo build of the player nrpvp.dll failed ($code)" }
+$dll = Join-Path $playerTarget 'release\nrpvp.dll'
 $launcher = Join-Path $repo 'target\release\nrpvp_launcher.exe'
 
 $stage = Join-Path $dist 'release-stage'
@@ -69,52 +59,17 @@ Copy-Item -LiteralPath (Join-Path $Me3Dir 'LICENSE-MIT'), (Join-Path $Me3Dir 'LI
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\HOW TO INSTALL.txt') -Destination $stage
 
 $ascii = New-Object Text.ASCIIEncoding
-if ($MatchmakingTest) {
-    # MM-2/MM-3 test build for a friend session: developer mode (debug overlay with the Queue and join-method buttons; hotkeys F1 F2 F3 F5 as a backup).
-    $toml = @(
-        '# Nightreign PvP MATCHMAKING TEST settings (MM-2, MM-3). Developer build: the debug overlay (Insert hides it) has the Queue buttons.',
-        'dev_mode = true',
-        'mm_probe = true',
-        'mm_queue = true',
-        'mm_match_players = 2',
-        'mm_join = true',
-        'mm_join_auto = "invite+link"',
-        '# MM-3e (the mod creating the lobby itself) failed in FS-MM2: the lobby must come from the game (Invite Members).',
-        'mm_host_create = false',
-        '# MM-3f: while the host waits at MATCH READY the Steam invite window of Invite Members is skipped (no code is patched).',
-        'mm_quiet_invite = true',
-        '# MM-3c lobby tracer (hardware breakpoints) is a solo developer tool: never in a friend zip.',
-        'mm_lobby_trace = false',
-        '# MM-3d SC-adoption test button is a solo developer tool: never in a friend zip.',
-        'mm_sc_create = false',
-        'probes = false',
-        # Developer mode defaults to pvpve = false; without these two lines a queued match would have no PvP at all.
-        'pvpve = true',
-        'pvpve_scheme = "rivals"',
-        'team_size = 1',
-        'team_candidates = [29, 6, 3, 16, 13, 2, 1]',
-        '# Old test hotkeys unbound so a tester cannot trigger them by accident (the overlay buttons remain).',
-        'hotkey_downed_cycle = ""',
-        'hotkey_pos_cycle = ""',
-        'hotkey_pos_save = ""',
-        'hotkey_pos_write = ""',
-        'hotkey_write_all = ""',
-        'hotkey_restore_all = ""'
-    ) -join "`r`n"
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\MATCHMAKING TEST.txt') -Destination $stage
-} else {
-    $toml = @(
-        '# Nightreign PvP settings. You do not need to change anything here.',
-        "team_size = $TeamSize",
-        '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence.',
-        '# Set to false to turn it off.',
-        'matchmaking = true',
-        '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
-        "mm_max_players = $MatchPlayers",
-        "mm_min_players = $MatchPlayers",
-        'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
-    ) -join "`r`n"
-}
+$toml = @(
+    '# Nightreign PvP settings. You do not need to change anything here.',
+    "team_size = $TeamSize",
+    '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence.',
+    '# Set to false to turn it off.',
+    'matchmaking = true',
+    '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
+    "mm_max_players = $MatchPlayers",
+    "mm_min_players = $MatchPlayers",
+    'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
+) -join "`r`n"
 [IO.File]::WriteAllText((Join-Path $mod 'nrpvp.toml'), $toml + "`r`n", $ascii)
 
 $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
@@ -123,7 +78,7 @@ $gdHash = (Get-FileHash (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx') -Al
 $ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, me3 0.11.0"
 [IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
 
-$zipName = if ($MatchmakingTest) { 'NightreignPvP-mmtest.zip' } else { 'NightreignPvP.zip' }
+$zipName = 'NightreignPvP.zip'
 $zip = Join-Path $dist $zipName
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip

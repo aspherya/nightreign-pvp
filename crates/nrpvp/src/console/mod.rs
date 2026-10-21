@@ -36,6 +36,10 @@ pub(crate) enum MainReq {
     Run(Vec<Command>, String),
     /// Write `team_type` (`Some`) or restore the captured original (`None`) for the target's players.
     Team(Option<u8>, Target),
+    /// `pvp 1|0`: resume, or pause and put back every player's captured original (the old F12).
+    Pvp(bool),
+    /// Persist on (`true`) or off for the target's players.
+    Persist(bool, Target),
     Status,
     Players,
 }
@@ -60,6 +64,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "help", args: "[name]", help: "list the commands, or one command's help", run: help },
     Spec { name: "echo", args: "text…", help: "write `console: echo: text` to the log (a note for whoever reads it)", run: echo },
     Spec { name: "mark", args: "[text…]", help: "write `MARK #n: text` to the log (dev mode also starts the MARK dump, like the old Mark key)", run: mark },
+    Spec { name: "log", args: "[n]", help: "the last n log lines (default 20, at most 300) straight from the game", run: log_tail },
     Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
@@ -70,7 +75,13 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "mm_queue_squad", args: "", help: "join the Squad matchmaking queue", run: |_| Ok(mm(Command::MmQueue(Mode::Squad), "queue squad")) },
     Spec { name: "mm_leave", args: "", help: "leave the queue or the ready match", run: |_| Ok(mm(Command::MmLeave, "leave")) },
     Spec { name: "mm_status", args: "", help: "the matchmaking status line", run: mm_status },
-    Spec { name: "discover", args: "", help: "run the character discovery and dump (the old F9)", run: |_| Ok(Act::Main(MainReq::Run(vec![Command::RunDiscovery], "discovery requested (see the log)".into()))) },
+    Spec { name: "team_persist", args: "0|1 [target]", help: "keep re-writing the last written team_type on the target's players (1) or stop (0)", run: team_persist },
+    Spec { name: "pos_next", args: "", help: "snap-back test (T-028): select the next position candidate", run: |_| Ok(run_ack(Command::PosCycle, "next position candidate selected (see the log)")) },
+    Spec { name: "pos_save", args: "", help: "snap-back test: save your current values of every position candidate", run: |_| Ok(run_ack(Command::PosSave, "position values saved (see the log)")) },
+    Spec { name: "pos_go", args: "", help: "snap-back test: write the saved values into the selected candidate (you only)", run: |_| Ok(run_ack(Command::PosWrite, "position written; follow-up values at +100 ms / +500 ms / +2 s in the log")) },
+    Spec { name: "mm_join", args: "link|invite|direct|unlock_public|unlock_invisible|relock", help: "one join-method attempt for the ready match (dev, mm_join = true)", run: mm_join },
+    Spec { name: "mm_sc_create", args: "", help: "create a lobby the game's way and see if Seamless Co-op adopts it (dev, mm_sc_create = true)", run: |_| Ok(mm(Command::MmScCreate, "SC lobby create test")) },
+    Spec { name: "mm_quiet_test", args: "", help: "suppress the Steam invite window for 60 s (dev, mm_quiet_invite = true)", run: |_| Ok(mm(Command::MmQuietTest, "quiet invite test")) },
 ];
 
 static ENABLED: AtomicBool = AtomicBool::new(false);
@@ -175,6 +186,22 @@ fn echo(args: &[String]) -> Result<Act, String> {
     Ok(Act::Reply(text))
 }
 
+fn log_tail(args: &[String]) -> Result<Act, String> {
+    let n = match args.first() {
+        None => 20,
+        Some(v) => v
+            .parse::<usize>()
+            .map_err(|_| "n must be a number")?
+            .clamp(1, 300),
+    };
+    let (_, lines) = crate::logring::snapshot();
+    let skip = lines.len().saturating_sub(n);
+    Ok(Act::Reply(lines[skip..].join(
+        "
+",
+    )))
+}
+
 fn mark(args: &[String]) -> Result<Act, String> {
     let text = (!args.is_empty()).then(|| args.join(" "));
     Ok(Act::Main(MainReq::Run(
@@ -204,15 +231,35 @@ fn pvp(args: &[String]) -> Result<Act, String> {
         Some("0") => false,
         _ => return Err("expected 0 or 1".into()),
     };
-    let what = if on {
-        "PvP marking resumed"
-    } else {
-        "PvP marking paused"
+    Ok(Act::Main(MainReq::Pvp(on)))
+}
+
+fn run_ack(c: Command, ack: &str) -> Act {
+    Act::Main(MainReq::Run(vec![c], ack.into()))
+}
+
+fn team_persist(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        Some("1") => true,
+        Some("0") => false,
+        _ => return Err("expected 0 or 1".into()),
     };
-    Ok(Act::Main(MainReq::Run(
-        vec![Command::SetPvpve(on)],
-        what.into(),
-    )))
+    let t = parse_target(args.get(1).map(String::as_str))?;
+    Ok(Act::Main(MainReq::Persist(on, t)))
+}
+
+fn mm_join(args: &[String]) -> Result<Act, String> {
+    use crate::mm::join::JoinCmd;
+    let j = match args.first().map(String::as_str) {
+        Some("link") => JoinCmd::Link,
+        Some("invite") => JoinCmd::Invite,
+        Some("direct") => JoinCmd::Direct,
+        Some("unlock_public") => JoinCmd::UnlockPublic,
+        Some("unlock_invisible") => JoinCmd::UnlockInvisible,
+        Some("relock") => JoinCmd::RelockPrivate,
+        _ => return Err("unknown join method".into()),
+    };
+    Ok(mm(Command::MmJoin(j), "join attempt"))
 }
 
 fn mm(c: Command, what: &str) -> Act {
@@ -242,6 +289,35 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
                 run(c);
             }
             ack
+        }
+        MainReq::Persist(on, t) => {
+            if !snap.vtables_known {
+                return "error: player classes not known yet (RTTI); try again in a moment".into();
+            }
+            let rows = match pick(t, &snap.players) {
+                Ok(r) => r,
+                Err(e) => return format!("error: {e}"),
+            };
+            let n = rows.len();
+            for r in rows {
+                run(Command::PersistFor { addr: r.addr, on });
+            }
+            format!(
+                "persist {} for {n} player(s) on this game",
+                if on { "on" } else { "off" }
+            )
+        }
+        MainReq::Pvp(on) => {
+            run(Command::SetPvpve(on));
+            if on {
+                return "PvP marking resumed".into();
+            }
+            let mut n = 0;
+            for r in snap.players.iter().filter(|r| r.original.is_some()) {
+                run(Command::RestoreFor { addr: r.addr });
+                n += 1;
+            }
+            format!("PvP marking paused; {n} player(s) restored on this game")
         }
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
@@ -436,6 +512,25 @@ mod tests {
             ran.push(c)
         });
         assert!(r.starts_with("error:") && ran.is_empty());
+    }
+
+    #[test]
+    fn pvp_off_pauses_and_restores_every_captured_original() {
+        let mut s = snap();
+        s.players[1].original = Some(2);
+        let mut ran = Vec::new();
+        let r = answer(MainReq::Pvp(false), &s, &mut |c| ran.push(c));
+        assert_eq!(
+            ran,
+            vec![
+                Command::SetPvpve(false),
+                Command::RestoreFor { addr: 0x101 }
+            ]
+        );
+        assert!(r.contains("1 player(s) restored"));
+        ran.clear();
+        answer(MainReq::Pvp(true), &s, &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::SetPvpve(true)]);
     }
 
     #[test]

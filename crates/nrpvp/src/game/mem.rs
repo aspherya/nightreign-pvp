@@ -108,6 +108,7 @@ pub(crate) struct RegionCache {
 }
 
 impl RegionCache {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -322,19 +323,6 @@ fn check_writable(addr: usize, len: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// UI-1 C1 (dev only): store one 8-byte-aligned u64 at `addr` with a single volatile store (so a concurrent reader never sees a
-/// half-written value), after the same `VirtualQuery` check as [`write_u8`]. The caller (`c1proto`) decides what may be written: one
-/// string-offset slot of a loaded FMG, found through the game's own lookup structures. Same TOCTOU residual risk.
-pub(crate) fn write_u64_aligned(addr: usize, value: u64) -> Result<(), &'static str> {
-    if !addr.is_multiple_of(8) {
-        return Err("address is not 8-byte aligned");
-    }
-    check_writable(addr, 8)?;
-    // SAFETY: [addr, addr+8) was just verified to lie in one committed, writable, non-guard run, and addr is 8-aligned.
-    unsafe { ptr::write_volatile(addr as *mut u64, value) };
-    Ok(())
-}
-
 /// Largest store [`write_bytes`] accepts.
 pub(crate) const MAX_WRITE_BYTES: usize = 16;
 
@@ -422,6 +410,11 @@ pub(crate) fn parse_cstr(bytes: &[u8], max: usize) -> Option<String> {
         return None;
     }
     Some(String::from_utf8_lossy(s).into_owned())
+}
+
+/// A plausible user-space object pointer: inside the canonical user range and 8-aligned (R5: moved from `discover`).
+pub(crate) fn is_ptr(v: usize) -> bool {
+    (0x1_0000..0x7FFF_FFFF_FFFF).contains(&v) && v.is_multiple_of(8)
 }
 
 #[cfg(test)]

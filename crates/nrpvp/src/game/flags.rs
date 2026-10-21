@@ -5,11 +5,11 @@
 //! **Writes are limited to our group 10007** ([`OUR_FIRST`]..=[`OUR_LAST`]: storage present, no reference in any NR talk script or event
 //! script, UI-0 step 5), so the game never writes the same byte concurrently. One byte read-modify-write through `mem::write_u8`.
 
-use super::mem::RegionCache;
-use super::probe2::{
+use super::event_flags::{
     block_addr, checks_ok, find_group, flag_split, parse_layout, structural_checks, EF_HEADER_LEN,
     NODE_IS_NIL, NODE_LEN,
 };
+use super::mem::RegionCache;
 
 /// `CSEventFlagMan` slot (game 1.03.3, exe 1.3.3.0; TC-004, UI-0 step 5).
 pub(crate) const RVA_FLAGMAN_SLOT: usize = 0x3C1_15A8;
