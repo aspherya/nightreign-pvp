@@ -32,11 +32,13 @@ Copy-Item (Join-Path $repo 'dist\nrpvp.pdb') $HandlerDir -Force -ErrorAction Sil
 $toml = Join-Path $repo 'dist\nrpvp.toml'
 if (Test-Path $toml) { Copy-Item $toml $HandlerDir -Force }
 $htoml = Join-Path $HandlerDir 'nrpvp.toml'
-$body = @(if (Test-Path $htoml) { Get-Content $htoml | Where-Object { $_ -notmatch '^\s*(dev_mode|log_dir|auto_team_all|pvpve|pvpve_team|pvpve_scheme|team_size|probes|probe_interval_ms|overlay_\w+|hotkey_\w+|downed_rival_\w+|ui_c1_proto)\s*=' } })
+$body = @(if (Test-Path $htoml) { Get-Content $htoml | Where-Object { $_ -notmatch '^\s*(dev_mode|log_dir|auto_team_all|pvpve|pvpve_team|pvpve_scheme|team_size|probes|probe_interval_ms|overlay_\w+|hotkey_\w+|downed_rival_\w+|ui_c1_proto|mm_queue|br_menu)\s*=' } })
+# Nucleus runs the instances over Goldberg (no real Steam lobbies): our queue and the table-menu takeover stay off, so instances meet
+# through Seamless Co-op's normal Invite / Join flow and Commence starts a normal expedition.
 # T-018: logs go outside Nucleus's Instance<N> folders (deleted on close). TOML single-quoted literal = no escapes.
 $logDir = Join-Path $repo 'dist\nucleus-logs'
 New-Item -ItemType Directory -Force $logDir | Out-Null
-Set-Content -Path $htoml -Value ($body + "dev_mode = true" + "log_dir = '$logDir'" + "pvpve = $($Pvpve.ToString().ToLower())" + "pvpve_scheme = '$Scheme'" + "team_size = $TeamSize") -Encoding Ascii
+Set-Content -Path $htoml -Value ($body + "dev_mode = true" + "log_dir = '$logDir'" + "pvpve = $($Pvpve.ToString().ToLower())" + "pvpve_scheme = '$Scheme'" + "team_size = $TeamSize" + "mm_queue = false" + "br_menu = false") -Encoding Ascii
 [IO.File]::WriteAllText($list, (($lines + 'nrpvp.dll') -join "`r`n"))  # no trailing newline (see above)
 Write-Output "Deployed nrpvp.dll ($((Get-Item $dll).LastWriteTime)) to $HandlerDir"
 Get-Content $list
