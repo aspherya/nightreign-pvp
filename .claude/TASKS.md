@@ -295,8 +295,7 @@ branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spa
 Owner: OPUS + HUMAN (answers only, no test) | Status: in progress (answers 2026-10-21 in PROJECT_PLAN §13)
 1. ~~Leonardo's questions~~ answered 2026-10-21, except the drop button (traced in HAWK-1). Still for Leonardo: download the Nexus mod
    **Spectral hawk anywhere** (nexusmods.com/eldenringnightreign/mods/924; Nexus needs his login) and unpack it **outside the repo**
-   (e.g. `Z:\Tools
-r-mods\spectral-hawk-anywhere\`), without installing it. Opus reads what it changes (event script, params, DLL) to
+   (e.g. `Z:\Tools\nr-mods\spectral-hawk-anywhere\`), without installing it. Opus reads what it changes (event script, params, DLL) to
    learn how a hawk is summoned. Study only: its permissions forbid modifying or re-uploading it. Also: can you leave a **tree** hawk
    early, and with which button?
 2. Opus, offline: decompress the `m60_*` map files (Oodle KRAK, `oo2core_9_win64.dll` from the game folder) and read the hawk route
