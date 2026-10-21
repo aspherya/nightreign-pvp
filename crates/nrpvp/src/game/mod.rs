@@ -13,6 +13,7 @@ pub(crate) mod flags;
 pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod image;
+pub(crate) mod layout;
 pub(crate) mod mem;
 pub(crate) mod menuflow;
 #[cfg(feature = "dev")]
