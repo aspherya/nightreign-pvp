@@ -139,11 +139,17 @@ Facts that are not memory locations:
 
 ### 4b. The hawk ride is a player behavior state (HKS)
 
-Source for every row: the decompiled player action script `action/script/c0000.hks` shipped as plain Lua text by the Nexus mod
-"Spectral hawk anywhere" (header: decompiled with DSLuaDecompiler, curated at github.com/ividyon/EldenRingHKS, version 131467), read
-2026-10-21 from `Z:\Tools\nr-mods\Spectral haw flying\mod\` (study only; the mod forbids modifying or re-uploading it). The file is
-vanilla **plus the mod's edits**, so each row is `[SOURCE: mod's decompiled c0000.hks]` and "vanilla behaviour" is a `[HYPOTHESIS]`
-until checked against a 1.03.3 decompile.
+Sources: the player action script `action/script/c0000.hks` as plain Lua text, (1) shipped by the Nexus mod "Spectral hawk anywhere"
+(`Z:\Tools\nr-mods\Spectral haw flying\mod\`, study only: its permissions forbid modifying or re-uploading it); (2) the community
+decompile [El-Fonz0/EldenRingNightreignHKS](https://github.com/El-Fonz0/EldenRingNightreignHKS) at `b2ccd62` ("Update for 1.03.1") and
+`197b182` ("changes from 1.03.4"). The mod's file is that decompile (its "Version 11, 1.03.1") plus a whole mod pack's edits (Daybreak
+Team), not vanilla plus one line. **All 24 hawk functions are identical in the 1.03.1 and 1.03.4 decompiles and in the mod, except
+the one 707144 line** `[VERIFIED: function-by-function diff, 2026-10-21; scripts and route dump in experiments/HAWK-0/]`. So every row
+below is vanilla behaviour, and the hawk code did not change between patches.
+**Warning:** that mod pack's script calls `os.execute(...)` to open web pages, so a mod's action script can run programs on the PC.
+Never install a script mod we have not read.
+Which decompile matches our exe (1.3.3.0) exactly is not proven (string and number fingerprints did not separate 1.03.1 from 1.03.4).
+It only matters if we ship our own `c0000.hks`.
 
 | Finding | Where in that file |
 |---|---|
@@ -155,6 +161,22 @@ until checked against a 1.03.3 decompile.
 | Shared rules in `BirdActCommonFunction`: `GetBirdActionID == 1` → separation fall; `== 2` → fall end; dying on the hawk → separation fall; landing → `W_BirdAct_FallEnd` / `W_Departure_FallEnd`; damage type "death by falling" → `W_FallDeath` (the void) | `BirdActCommonFunction` |
 | The start-hawk fall has its own states (`Departure_FallStart/FallLoop/FallEnd`, a 180° turn `W_BirdDepartureFall180` under SpEffect 102610) and a 100 s safety timer that forces a separation fall | `Departure_*`, `ExecDashTurn` |
 | The game loads `c0000.hks` as **plain Lua source** from a mod package (the Nexus mod ships text, not bytecode; vanilla 1.03.3 ships bytecode) | file header; `Z:\Tools\nr-unpacked\1.03.3\action\script\c0000.hks` starts with `LuaQ` |
+| Engine ids of the hawk values (the number the script passes to `env`): `GetBirdEventID` = **377**, `GetBirdPathEscapeTime` = 384, `GetBirdMovementDirectionTime` = 394, `GetBirdActionID` = **395**. The exe code that answers these ids is where the engine keeps "which ride / route ended" (needed for A2, PROJECT_PLAN §13) | decompile constants (`197b182`) |
+| Numbers in the compiled vanilla script are stored as big-endian f32 | `vanilla c0000.hks` byte search |
+
+### 4c. Hawk routes in the map data
+
+`[VERIFIED: read from the 1.03.3 unpack, 2026-10-21; tools and full dump in experiments/HAWK-0/]`
+
+| Finding | Detail |
+|---|---|
+| All hawk routes are in one map-wide file, **`map/mapstudio/m60_00_00_99.msb.dcx`** (`_98` holds the 3 routes of the other map variant, landing rows 110xxxxxx) | `SORTIE_STARTING_POINT_ST.birdRouteEntityId` values are found only there |
+| A route is an EVENT entry of **type 25** whose type data holds 4 ints (0, 0, 6001, 0 for start routes; 7601–7605 for tree routes: probably gating flags, UNKNOWN) and then a list of **POINT indices** (i16, ended by -1) | Names: `出撃ルート` = sortie (start hawk) routes, 29 (20 used by the landing table, 9 marked unused); `鳥移動ルート` = bird-move routes (the Spectral Hawk Tree roads), 11; `鳥移動_レア` = rare variants, 5 |
+| A route point is a POINT entry: position x, y, z (f32) at **+0x14**, heading (deg) at **+0x24**. Point names end in `出撃` (start), `通常N` (waypoint N), `終了` (end) | e.g. route `00_000`: (-205.6, 238.5, 845.2) → (-85.0, 218.4, 783.9) → (-23.9, 160.7, 754.5) |
+| **Every start route is 3 points, 190–203 m** (matches the ~210 m ride of T-028 run 4). Tree routes: 6–11 points, 240–760 m. An unused rare route has 25 points over 1,465 m, so long many-point routes exist in the data | `routes_m60_00_00_99.txt` |
+| Frame of this file: tiles are **256 m**, and Limveld (tiles 41–46 × 35–40) spans about **x −334..1202, z 256..1792** (±60 m). Every route point lies inside. Fit from route ends vs the return points in each tile file | `[HYPOTHESIS ±60 m]` |
+| Each landing row also names a `spawnPointEntityId`: a POINT named `出撃ルートNN 復帰用ポイント①` ("return point") in the tile file `m60_XX_YY_00/10/20`, not the landing spot | tile MSBs |
+| WitchyBND 3.0.1 decrypts `regulation.bin` and writes NR params as XML, but cannot serialize NR MSBs; `msb.py` walks them (sections: MODEL, EVENT, POINT, ROUTE, LAYER, PARTS, version 80) | `experiments/HAWK-0/` |
 
 ---
 

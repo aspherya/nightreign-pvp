@@ -47,8 +47,9 @@ the new build did not crash** (SMOKE-2); keep watching before calling it fixed.
    with the first new feature (ARCHITECTURE §6).
 3. **MM-3g** (no Invite Members click), then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
 4. **Hawk crossing** (PROJECT_PLAN §13, TASKS HAWK-0..2). The teleport (T-028) passed on 2026-10-14 (solo + Nucleus). `t-028-snapback`
-   now holds `main` merged in and needs **SMOKE-3** (the teleport on the merged build, below) before it goes to `main`. Then HAWK-0 (questions
-   for Leonardo, map files) and HAWK-1 (ride probe, solo).
+   now holds `main` merged in and needs **SMOKE-3** (the teleport on the merged build, below) before it goes to `main`. HAWK-0 research is done
+   (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). Next: HAWK-1b
+   (long start route, data only, solo 5 min), HAWK-A2 (static RE), HAWK-1 (ride probe).
 
 **SMOKE-3 (Leonardo solo + Claude over nrcon, about 5 min, dev build of `t-028-snapback` from `scripts\launch.ps1`).** Start an
 expedition and land. Stand still, `pos_save`; walk or climb about 20–50 m away, `pos_go`: you must jump back to the saved spot and stay
@@ -74,7 +75,7 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved. Run 21 confirmed the rule
    itself is right with teams; what that gauge looked like on the lone rival's screen was not reported.
    New in run 21: the combat step peaked at 63–225 ms around rival hits with three games running (cause UNKNOWN, rule still fired).
-2. Hawk crossing: HAWK-0 → HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
+2. Hawk crossing: HAWK-1b / HAWK-A2 / HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).

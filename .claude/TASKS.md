@@ -291,18 +291,22 @@ With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapp
 T-028 (teleport) is done: solo run 4 and the Nucleus two-screen check passed on 2026-10-14 (TESTING §3); code merged with `main` on
 branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spawns = false`).
 
-### HAWK-0 — Questions for Leonardo and desk research
-Owner: OPUS + HUMAN (answers only, no test) | Status: in progress (answers 2026-10-21 in PROJECT_PLAN §13)
-1. **Done 2026-10-21.** Leonardo's answers (PROJECT_PLAN §13). The Nexus mod (`Z:\Tools\nr-mods\Spectral haw flying\`, study only)
-   showed how the hawk works: a player behavior state in `c0000.hks` (TECHNICAL_NOTES §4b). Leaving a tree hawk early: hold the action
-   button 0.5 s or press L3 (from the script; confirm in HAWK-1 d).
-2. Opus, offline: decompress the `m60_*` map files (Oodle KRAK, `oo2core_9_win64.dll` from the game folder) and read the hawk route
-   entities named by `SORTIE_STARTING_POINT_ST.birdRouteEntityId`: points, length, height. Also find the tile size, which gives the map
-   edges in the world frame we write.
-3. Opus, offline: get an exact decompile of the 1.03.3 `c0000.hks` (the ividyon/EldenRingHKS repo, or DSLuaDecompiler on our unpack),
-   diff it against the Nexus mod's file to see exactly what the mod changed, and confirm that the start-hawk loop reads no input in
-   vanilla. Needed for A1 (shipping our own script).
-Done when: answers and findings are in PROJECT_PLAN §13 / MEMORY_MAP §8.
+HAWK-0 (questions and desk research) is done (2026-10-21): answers and design in PROJECT_PLAN §13, engine facts in TECHNICAL_NOTES §4b
+(hawk = player script state) and §4c (routes in `m60_00_00_99.msb`), tools in `experiments/HAWK-0/`.
+
+### HAWK-1b — Long start route, data only (no DLL code)
+Owner: OPUS builds → HUMAN (solo, about 5 min) | Status: todo
+Build: a script (`experiments/HAWK-0/`) that writes a patched `m60_00_00_99.msb.dcx`: every start route keeps its start point; its
+waypoint and end point move along the same direction to 100 m before the map edge, at the start height (no sinking). Recompress with
+Oodle Kraken (same DCX header), add it under `map/mapstudio/` in `dist\gamedata` (dev launch only, not the player zip).
+HUMAN: launch with `scripts\launch.ps1`, start an expedition, watch the start ride. Report: does the hawk fly past the usual drop
+spot, how far and how long (the log has the ride), does it drop you at the end, anything odd (clipping, falling through, a crash on
+loading). Acceptance: the hawk follows the long route and drops at its end. If the game ignores or rejects the file: record it, then B2.
+
+### HAWK-A2 — Find what answers `GetBirdEventID` (env 377) in the exe
+Owner: OPUS (static, capstone) → HUMAN check later | Status: todo
+Find the HKS env dispatcher in `nightreign.exe` 1.3.3.0, the case for 377 (and 395 `GetBirdActionID`), and the object field it reads.
+Done when: the field is in MEMORY_MAP with its chain, and a dev console command can read it during a ride (checked in HAWK-1).
 
 ### HAWK-1 — Ride probe (dev build, solo)
 Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: `t-028-snapback` merged into `main`.
