@@ -216,7 +216,35 @@ trees are at fixed places and the start hawk also has a route (`birdRouteEntityI
 possible. The page does not say how it works. Its permissions forbid modifying or re-uploading the file, so we may only study it and
 write our own version (or ask the author).
 
-**Routes, cheapest first.**
+**What the Nexus mod showed (2026-10-21; facts in `TECHNICAL_NOTES.md` §4b).** The hawk is not a vehicle. Riding it is a state of the
+player character, run by the player action script `c0000.hks`. The engine tells the script which ride starts (1 = tree hawk, 4 = start
+hawk) and when the route ends (2). The **start hawk loop reads no input at all**, which is why it can't be left early. The **tree hawk
+loop can be left by holding the action button for 0.5 s or by pressing L3**, and the player can steer it. The Nexus mod adds one line
+that starts a tree-hawk ride whenever the player has SpEffect 707144, and the game accepts the script as plain text from a mod package.
+
+**The design splits into two jobs.**
+
+*Job A: the drop button on the start hawk.*
+- A1 (data): ship our own `c0000.hks` (text) that adds the tree-hawk exits (hold action 0.5 s, L3) to the start-hawk loop. Same
+  buttons as vanilla tree hawks, so nothing new to learn. Needs an exact decompile of the 1.03.3 script (the curated
+  ividyon/EldenRingHKS repo or DSLuaDecompiler on our unpack). Risks: the whole file is replaced (any other mod that ships `c0000.hks`
+  conflicts, and every game patch needs a new decompile).
+- A2 (DLL): when the player presses the drop button, make the engine report "route end" (2) for this player. The script then
+  starts the vanilla separation fall by itself. Needs the place in memory the engine reads for `GetBirdEventID` (reverse engineering
+  in the exe). Nothing is shipped.
+
+*Job B: a route across the whole map.*
+- B1 (data): point the start ride at a longer route. Each landing row names its route (`SORTIE_STARTING_POINT_ST.birdRouteEntityId`, a
+  param we can change in memory before the expedition loads). The target is a route entity that crosses the map: a tree hawk's
+  "spectral road", or new route points. At the end of the route the engine sends 2, which gives the automatic drop at the far side.
+  Needs the route entities from the map files (HAWK-0 step 2).
+- B2 (DLL): keep the vanilla route and move the player ourselves along the extended line during the start-hawk loop (route 1 below).
+  Works only if the engine does not pull the player back onto its route (HAWK-1 a).
+
+Likely v1: **B1 + A1 or A2**. Everything stays vanilla on screen (each player's hawk, animations, the safe drop), and other players
+see it the way they see vanilla rides.
+
+**Earlier routes (kept for HAWK-1).**
 0. **Summon a tree hawk at the start, on a route across the map** (new, 2026-10-21). If we can start a Spectral Hawk Tree ride for the
    player (as the Nexus mod does) on a long route, the game gives us the hawk on screen, the other players' view, and steering. Open:
    how the summon is triggered (the Nexus mod's files will show it: event script, param or DLL), whether a route can be ours or must be
@@ -232,8 +260,9 @@ write our own version (or ask the author).
 3. **Longer route in the data.** Edit the hawk route points (`CSBirdMovePointMan` in memory, or the route entities in the map files)
    so the vanilla hawk flies our line. The early drop on a button press is still needed.
 
-Plan: HAWK-0 (answers in; still open: how the Nexus mod summons a hawk, the route data in the map files), HAWK-1 (solo probe: the
-start ride and a tree-hawk ride logged, moving and holding the player), then pick route 0, 1 or 2 and build HAWK-2. Cards in `TASKS.md`.
+Plan: HAWK-0 (answers in; how the hawk works: done; still open: the route data in the map files and the 1.03.3 script decompile),
+HAWK-1 (solo probe: both rides logged, the drop button traced, moving the player during the ride), then pick A1/A2 and B1/B2 and build
+HAWK-2. Cards in `TASKS.md`.
 
 **What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector
 (`game/spawn.rs::DropDetector`) are the base of route 1. The F3 "move each team 200 m apart at the drop" rule (`team_spawns`, off by

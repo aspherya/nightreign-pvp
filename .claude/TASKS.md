@@ -293,14 +293,15 @@ branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spa
 
 ### HAWK-0 — Questions for Leonardo and desk research
 Owner: OPUS + HUMAN (answers only, no test) | Status: in progress (answers 2026-10-21 in PROJECT_PLAN §13)
-1. ~~Leonardo's questions~~ answered 2026-10-21, except the drop button (traced in HAWK-1). Still for Leonardo: download the Nexus mod
-   **Spectral hawk anywhere** (nexusmods.com/eldenringnightreign/mods/924; Nexus needs his login) and unpack it **outside the repo**
-   (e.g. `Z:\Tools\nr-mods\spectral-hawk-anywhere\`), without installing it. Opus reads what it changes (event script, params, DLL) to
-   learn how a hawk is summoned. Study only: its permissions forbid modifying or re-uploading it. Also: can you leave a **tree** hawk
-   early, and with which button?
+1. **Done 2026-10-21.** Leonardo's answers (PROJECT_PLAN §13). The Nexus mod (`Z:\Tools\nr-mods\Spectral haw flying\`, study only)
+   showed how the hawk works: a player behavior state in `c0000.hks` (TECHNICAL_NOTES §4b). Leaving a tree hawk early: hold the action
+   button 0.5 s or press L3 (from the script; confirm in HAWK-1 d).
 2. Opus, offline: decompress the `m60_*` map files (Oodle KRAK, `oo2core_9_win64.dll` from the game folder) and read the hawk route
    entities named by `SORTIE_STARTING_POINT_ST.birdRouteEntityId`: points, length, height. Also find the tile size, which gives the map
    edges in the world frame we write.
+3. Opus, offline: get an exact decompile of the 1.03.3 `c0000.hks` (the ividyon/EldenRingHKS repo, or DSLuaDecompiler on our unpack),
+   diff it against the Nexus mod's file to see exactly what the mod changed, and confirm that the start-hawk loop reads no input in
+   vanilla. Needed for A1 (shipping our own script).
 Done when: answers and findings are in PROJECT_PLAN §13 / MEMORY_MAP §8.
 
 ### HAWK-1 — Ride probe (dev build, solo)

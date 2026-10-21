@@ -137,6 +137,25 @@ Facts that are not memory locations:
 | SC binds F4 to its pause; our keys must avoid it | [VERIFIED: TC-004 run 1] |
 | Nightreign vanilla has no PvP; the director stated none was planned | [SOURCE: [gfinityesports](https://www.gfinityesports.com/article/no-pvp-messages-spirit-ashes-in-elden-ring-nightreign-according-to-director)] |
 
+### 4b. The hawk ride is a player behavior state (HKS)
+
+Source for every row: the decompiled player action script `action/script/c0000.hks` shipped as plain Lua text by the Nexus mod
+"Spectral hawk anywhere" (header: decompiled with DSLuaDecompiler, curated at github.com/ividyon/EldenRingHKS, version 131467), read
+2026-10-21 from `Z:\Tools\nr-mods\Spectral haw flying\mod\` (study only; the mod forbids modifying or re-uploading it). The file is
+vanilla **plus the mod's edits**, so each row is `[SOURCE: mod's decompiled c0000.hks]` and "vanilla behaviour" is a `[HYPOTHESIS]`
+until checked against a 1.03.3 decompile.
+
+| Finding | Where in that file |
+|---|---|
+| Both hawks are the same state family of the player character, not a separate vehicle. The engine tells the script which ride starts through `env(GetBirdEventID)`: **1 = tree hawk** → `W_BirdAct_MoveStart`; **4 = start hawk** → `W_Departure_MoveStart` (`ExecBirdAct`) | `ExecBirdAct` |
+| **The mod's whole trick is one added line:** if the player has SpEffect **707144**, start `W_BirdAct_MoveStart` (a tree-hawk ride anywhere). 707144 is not set by the mod's event script, so its regulation.bin applies it (probably through an item); not checked | `ExecBirdAct` |
+| **Start hawk loop (`Departure_MoveLoop_onUpdate`) reads no input.** It ends only when the engine sets `GetBirdEventID == 2` (end of the route) → `W_BirdAct_SeparationFallStart`. This is why the start hawk cannot be left early | `Departure_MoveLoop_onUpdate` |
+| **Tree hawk loop exits:** hold the action button (`ACTION_ARM_ACTION`) > 500 ms → `W_BirdAct_FallStart`; **L3** → `W_BirdAct_SeparationFallStart`; off the route (`GetBirdPathEscapeTime`) ≥ 10 → SpEffect 102615, ≥ 2000 → fall; `GetBirdEventID == 2` → separation fall. SpEffect **99230** turns the exits off and the speed up to ×1.3 | `BirdAct_MoveLoop_onUpdate` |
+| Steering on a hawk: the engine reports `GetBirdMovementDirectionTime(0..3)` (up, down, left, right); the script feeds them to blend variables | `BirdActCommonFunction` |
+| Shared rules in `BirdActCommonFunction`: `GetBirdActionID == 1` → separation fall; `== 2` → fall end; dying on the hawk → separation fall; landing → `W_BirdAct_FallEnd` / `W_Departure_FallEnd`; damage type "death by falling" → `W_FallDeath` (the void) | `BirdActCommonFunction` |
+| The start-hawk fall has its own states (`Departure_FallStart/FallLoop/FallEnd`, a 180° turn `W_BirdDepartureFall180` under SpEffect 102610) and a 100 s safety timer that forces a separation fall | `Departure_*`, `ExecDashTurn` |
+| The game loads `c0000.hks` as **plain Lua source** from a mod package (the Nexus mod ships text, not bytecode; vanilla 1.03.3 ships bytecode) | file header; `Z:\Tools\nr-unpacked\1.03.3\action\script\c0000.hks` starts with `LuaQ` |
+
 ---
 
 ## 5. Design decisions log
