@@ -118,12 +118,38 @@ FS step: in an expedition the host quits (title screen, then Alt-F4 in a second 
 "The host left - match over" and return everyone to idle. Feeds S10 (host migration).
 
 ### S10 — Study Seamless Co-op: sessions, the 6-player cap, host loss (research, read-only)
-Owner: OPUS + SONNET/researcher | Status: done in its own session, review pending (`tasks/S10-seamless-coop-study.md`) | Rule: hard rule 3 (study for interop only; never patch, copy or redistribute `nrsc.dll`)
+Owner: OPUS + SONNET/researcher | Status: done; merged into `main` 2026-10-22 (`research/S10-seamless-coop-internals.md`), OPUS review pending | Rule: hard rule 3 (study for interop only; never patch, copy or redistribute `nrsc.dll`)
 Questions: (1) how SC creates and joins a session (its Steam lobby wrapper, `MEMORY_MAP` §12, and what it hooks in the game's session
 code); (2) where the 6-player cap lives; (3) what happens on host loss and whether the game or SC has any host-migration path; (4) a
 sized estimate of our own session layer if SC ever blocks us. Static analysis of `nrsc.dll` exports/imports/strings and the game hooks it
 installs, plus runtime traces with our existing hardware-breakpoint tooling. Output: `research/S10-seamless-coop-internals.md` with
 evidence tags and a go/no-go on host migration.
+
+## Offline mode (decided 2026-10-22; first new feature, so it carries the open R2/R3 halves)
+
+Leonardo's decision: a separate **Offline** mode for solo play and solo testing, so `br_menu` / `matchmaking` never have to be switched
+off again. First step is a solo test mode (no queue, no second player); AI rivals ("bots") come later and start as research (OFF-3).
+
+### OFF-1 — Offline mode v1: Commence starts a solo match at once (dev selector)
+Owner: SONNET/implementer → OPUS review → HUMAN solo | Status: todo (next)
+Build: a `GameMode` (`BattleRoyale` default, `Offline`) as the first `Feature` (ARCHITECTURE §6: `Feature` trait + `World` read model +
+typed views / `GameMem` for what it touches, shaped by this user). In `Offline`, `menuflow`'s Commence handler lets the game run a
+vanilla solo Commence (no queue, no "searching" dialog) while every other feature stays as in Battle Royale (game-data package, PvP
+rules, hawk routes when built). Selection: `mode = "br" | "offline"` in `nrpvp.toml` (default `br`) and a console command `mode
+[br|offline]` (`add-console-command` skill) that switches it in the Roundtable; `status` shows the mode. Log line `mode: <mode>` at start
+and on every change. `br_menu` stays on in both modes. Tests for the mode switch and the Commence decision (no game).
+HUMAN (solo, 5 min): with `br_menu = true`, `nrcon mode offline`, Commence Solo → the expedition starts at once; `nrcon mode br`,
+Commence → the queue starts as before. Acceptance: both, plus SMOKE-2's checks (console, clean quit).
+
+### OFF-2 — Offline mode in the game menu (players)
+Owner: OPUS (RE) → SONNET → HUMAN | Status: later (after OFF-1)
+A player-visible way to pick Offline in the stock expedition menu (e.g. an extra Number of Players entry or a Roundtable message
+choice, UI-1/UI-2 tools). Design after OFF-1 is in use.
+
+### OFF-3 — Bots: can the game run AI Nightfarers as rivals? (research)
+Owner: OPUS + SONNET/researcher | Status: later
+Leads: singletons `CSNpcBotMan`, `CSRebornBuddyMan`, `CSNecroBuddyMan` (seen in our singleton log), NPC Nightfarer params, the Nexus
+NPC/summon mods. Output: a memo with a go/no-go and a size estimate.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 

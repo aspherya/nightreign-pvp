@@ -77,7 +77,9 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved. Run 21 confirmed the rule
    itself is right with teams; what that gauge looked like on the lone rival's screen was not reported.
    New in run 21: the combat step peaked at 63–225 ms around rival hits with three games running (cause UNKNOWN, rule still fired).
-2. Hawk crossing: HAWK-1b (land check) / HAWK-A2 / HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
+2. **Offline mode** (decided 2026-10-22): OFF-1 next (solo Commence without the queue, selected by `mode`; carries the open
+   R2/R3 halves), then OFF-2 (menu entry), OFF-3 (bots research). `TASKS.md`.
+   Hawk crossing after it: HAWK-1b (land check, single diagonal route) / HAWK-A2 / HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
