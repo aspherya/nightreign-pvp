@@ -31,8 +31,6 @@ pub(crate) struct Inputs<'a> {
     pub mm_phase: u8,
     /// `CSNpcBotMan` instance, 0 = none.
     pub bot_man: usize,
-    /// Exe base + `PHYSICS_VTABLE_RVA` (finds the local player's physics module for the ground byte).
-    pub physics_vtable: usize,
     /// Bot handles to find, each with the set it was last found in.
     pub watched: &'a [(u64, Option<usize>)],
 }
@@ -46,8 +44,6 @@ pub(crate) struct World {
     pub local: Option<usize>,
     /// Where the local player is (`None` = no local player or unreadable).
     pub place: Option<Place>,
-    /// The local player's ground byte: true standing (or riding the hawk), false in the air (`None` = unreadable).
-    pub grounded: Option<bool>,
     /// The matchmaking queue phase (`crate::mm::PHASE_*`; idle when the queue is off).
     pub mm_phase: u8,
     /// OFF-4: the NPC bot manager's state (`None` = no instance or unreadable).
@@ -80,7 +76,6 @@ impl World {
             wcm_instance: i.wcm_instance,
             local,
             place: local.and_then(|p| ChrIns::new(mem, p).place()),
-            grounded: local.and_then(|p| ChrIns::new(mem, p).grounded(i.physics_vtable)),
             mm_phase: i.mm_phase,
             bots: (i.bot_man != 0)
                 .then(|| BotMan::new(mem, i.bot_man).state())

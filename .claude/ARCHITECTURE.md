@@ -35,7 +35,7 @@ DllMain ─► nrpvp-main thread (startup::run, catch_unwind)
 |---|---|---|
 | Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
 | Game access | `game/mem`, `game/layout` (every object offset), `rtti`, `singletons`, `image`, `event_flags`, `fmg`, `dr` | Good |
-| Feature list (OFF-1) | `features/` (`Feature` trait, `Features`, `Ctx`; first feature `mode`), `game/world` (`World` read model), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (typed views) | New behaviour goes here; the older controllers below move in when a card touches them |
+| Feature list (OFF-1, OFF-4/5) | `features/` (`Feature` trait, `Features`, `Ctx` outbox: matchmaking commands, event flags, bot writes; features `mode`, `bots` (dev console), `bot_match` (dev mode only)), `game/world` (`World` read model: place, bot manager, watched bots), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (`ChrIns`, `WorldChrMan`, `BotMan`, `ExpeditionMenu`) | New behaviour goes here; the older controllers below move in when a card touches them |
 | Features | `game/team/` (player list, writes, PvP marking, persist, snapshot), `game/combat_state/` (tracker, downed rule), `game/menuflow`, `game/flags`, `mm/ui_msg`, `steam/quietinvite` | Split by job (R3); files under ~550 lines except tests |
 | Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev` except `poswrite` (runtime dev-only) |
 

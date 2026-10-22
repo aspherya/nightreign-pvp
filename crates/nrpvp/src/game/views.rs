@@ -7,8 +7,7 @@ use super::layout::{
     BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE,
     CHRSET_CAPACITY, CHRSET_ENTRIES, CHRSET_ENTRY_SIZE, CHRSET_MAX_CAPACITY, CHR_HANDLE, CHR_ID,
     CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, MENU_SETTINGS,
-    MENU_SETTINGS_PLAYERS, MODULES_SPAN, PHYSICS_GROUND, PLAYER_MODULES, WCM_CHRSETS,
-    WCM_CHRSET_COUNT,
+    MENU_SETTINGS_PLAYERS, WCM_CHRSETS, WCM_CHRSET_COUNT,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -60,17 +59,6 @@ impl<'m> ChrIns<'m> {
     /// This game's copy of the team type (MEMORY_MAP §4). Callers gate what they write and to whom.
     pub(crate) fn set_team(&self, v: u8) -> Result<(), &'static str> {
         self.mem.write_u8(self.addr + CHR_TEAM, v)
-    }
-
-    /// The physics module's ground byte (1 standing or riding the hawk, 0 in the air; MEMORY_MAP §8). `physics_vtable` = exe base
-    /// + `PHYSICS_VTABLE_RVA`; the module is the first pointer in the module list whose pointee has that vtable.
-    pub(crate) fn grounded(&self, physics_vtable: usize) -> Option<bool> {
-        let list = self.mem.read_ptr(self.addr + PLAYER_MODULES)?;
-        let phys = (0..MODULES_SPAN).step_by(8).find_map(|slot| {
-            let p = self.mem.read_ptr(list + slot)?;
-            (self.mem.read_u64(p)? as usize == physics_vtable).then_some(p)
-        })?;
-        self.mem.read_u8(phys + PHYSICS_GROUND).map(|g| g != 0)
     }
 }
 
@@ -267,24 +255,14 @@ mod tests {
     }
 
     #[test]
-    fn team_and_ground_through_the_character() {
+    fn team_through_the_character() {
         let m = FakeMem::default();
-        let (chr, list, phys, vt) = (0x10_0000, 0x20_0000, 0x30_0000, 0x1_4000_0000);
+        let chr = 0x10_0000;
         m.put(chr + CHR_TEAM, &[2]);
-        m.put_u64(chr + PLAYER_MODULES, list as u64);
-        for s in (0..MODULES_SPAN).step_by(8) {
-            m.put_u64(list + s, 0);
-        }
-        m.put_u64(list + 0x68, phys as u64);
-        m.put_u64(phys, vt as u64);
-        m.put(phys + PHYSICS_GROUND, &[0]);
+        m.put_u64(chr + CHR_HANDLE, 0xA0);
         let c = ChrIns::new(&m, chr);
         c.set_team(29).expect("write");
-        assert_eq!(c.team(), Some(29));
-        assert_eq!(c.grounded(vt), Some(false));
-        m.put(phys + PHYSICS_GROUND, &[1]);
-        assert_eq!(c.grounded(vt), Some(true));
-        assert_eq!(c.grounded(vt + 8), None, "wrong vtable: no physics module");
+        assert_eq!((c.team(), c.handle()), (Some(29), Some(0xA0)));
     }
 
     #[test]

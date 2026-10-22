@@ -31,7 +31,8 @@ rewrites the handler's settings, logs go to `dist\nucleus-logs\`).
 
 - The script prints `OK: ...zip (N MB)` and the VERSION line: build time, commit, clean/dirty, `nrpvp.dll <hash16>`, gamedata hash.
 - The zip holds `nrpvp_launcher.exe`, `HOW TO INSTALL.txt`, and `NightreignPvP\` with `nrpvp.dll`, `nrpvp.toml`, `VERSION.txt`,
-  `gamedata\` (17 files: 15 languages + the event script + the hawk crossing line `map\mapstudio\m60_00_00_99.msb.dcx`, HAWK-2;
+  `gamedata\` (17 files: 15 languages + the Roundtable event script + the hawk crossing line `map\mapstudio\m60_00_00_99.msb.dcx`, HAWK-2;
+  `dist\gamedata` has 18: the bot events `event\common.emevd.dcx` are dev only and the script leaves them out of the zip;
   the VERSION line names its hash as `hawk routes`) and `me3\` (3 binaries + 2 licences). The script refuses an incomplete
   `gamedata`; still list the archive once.
 - `nrpvp.toml` in the zip has no `dev_mode = true` (a player DLL would ignore it anyway, with a warning).

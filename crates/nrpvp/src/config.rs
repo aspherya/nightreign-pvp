@@ -136,7 +136,8 @@ ui_menu_trace = false
 # change. The developer console switches it live: mode br | mode offline.
 mode = \"br\"
 
-# OFF-5: rival bots in an offline Solo match (0..5; 0 = none). After the landing, the game's own NPC Nightfarers join and fight you.
+# OFF-5 (dev mode only for now; the player build forces 0): rival bots in an offline Solo match (0..5; 0 = none). At the landing,
+# the game's own NPC Nightfarers join and fight you.
 offline_bots = 5
 
 # UI-1 option 1 (dev mode: needs mm_queue = true; the player build ignores this line and turns it on with matchmaking = true): Battle Royale from the stock
@@ -492,6 +493,8 @@ fn enforce_player_mode(
         );
     }
     cfg.rival_revive = REVIVE_REDOWN.to_string();
+    // OFF-5: bots are an internal development tool for now (Leonardo, 2026-10-22): never in player mode.
+    cfg.offline_bots = 0;
 }
 
 /// What the file set explicitly (before defaults and the alias): `pvpve = false`, `pvpve_scheme = "all"`.
@@ -989,6 +992,7 @@ mod tests {
             mm_join_auto: "invite+link".to_string(),
             mm_quiet_invite: true,
             br_menu: true,
+            offline_bots: 0,
             ..Config::default()
         }
     }
@@ -1214,6 +1218,17 @@ mm_match_players = 9
         );
         let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
+    }
+
+    #[test]
+    fn bots_are_dev_mode_only() {
+        let (cfg, _) = parse("mode = \"offline\"\noffline_bots = 5\n").expect("ok");
+        assert_eq!(cfg.offline_bots, 0, "player mode never has bots");
+        let (cfg, _) = parse_dev("offline_bots = 3\n").expect("ok");
+        assert_eq!(cfg.offline_bots, 3);
+        let (cfg, w) = parse_dev("offline_bots = 9\n").expect("ok");
+        assert_eq!(cfg.offline_bots, 5);
+        assert!(w.iter().any(|l| l.contains("offline_bots")), "{w:?}");
     }
 
     #[test]

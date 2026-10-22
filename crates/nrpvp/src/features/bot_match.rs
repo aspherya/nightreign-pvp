@@ -1,6 +1,7 @@
-//! OFF-5: an offline Solo match with rival bots. Once the player has landed after the hawk crossing (or after
-//! [`LANDING_TIMEOUT_MS`]), this feature brings in `offline_bots` (default 5) of the game's own NPC bots and keeps them hostile.
-//! Engine facts: MEMORY_MAP §15, TECHNICAL_NOTES §4d, TESTING §3 OFF-4.
+//! OFF-5: an offline Solo match with rival bots. As soon as an offline expedition is loaded, this feature asks for `offline_bots`
+//! (default 5) of the game's own NPC bots and keeps them hostile. The game itself holds an armed bot table until the player has
+//! landed after the hawk crossing, so the bots arrive at the landing (OFF-5 run 2: armed during the ride, spawned at the landing).
+//! Engine facts: MEMORY_MAP §15, TECHNICAL_NOTES §4d, TESTING §3 OFF-4 / OFF-5.
 //!
 //! The game's bot manager holds only 2 bots, so the director works in rounds ("detach and re-arm"):
 //! 1. set our flag for a bot table (our `common.emevd` event runs `2003[97]`; the manager spawns the table's 2 Nightfarers);
@@ -18,10 +19,9 @@ use std::time::Instant;
 
 use super::mode::GameMode;
 use super::{BotWrite, Ctx, Feature};
+use crate::game::views::Place;
 use crate::game::world::{World, MAX_WATCHED};
 
-/// After the expedition loads, wait at most this long for the landing (the crossing line takes about 60 s).
-pub(crate) const LANDING_TIMEOUT_MS: u64 = 180_000;
 /// A round that sees no new bots this long gives up (and the director moves on). Long on purpose: the game spawns an armed table
 /// only once the host is on the ground (OFF-5 run 1: armed during the hawk ride, nothing for 15 s; the next table spawned at the
 /// landing), so the first round may wait out the rest of the ride.
@@ -41,8 +41,6 @@ pub(crate) const MAX_BOTS: usize = 5;
 enum Stage {
     /// Not in an offline expedition.
     Idle,
-    /// In the expedition since `since`; `saw_air` once the player has been off the ground (the drop).
-    Landing { since: u64, saw_air: bool },
     /// Round `n` armed at `at`.
     Spawning { n: usize, at: u64 },
     /// Round `n` done at `at`; the next round starts after [`ROUND_GAP_MS`].
@@ -124,8 +122,9 @@ impl BotMatch {
     pub(crate) fn step(&mut self, now: u64, mode: GameMode, world: &World, ctx: &mut Ctx) {
         let active = self.want > 0 && mode == GameMode::Offline && world.in_expedition();
         if !active {
-            if self.stage != Stage::Idle && world.wcm_instance == 0 {
-                // Load screen or title: the expedition is over; its bots are gone with the world.
+            let over = world.wcm_instance == 0 || world.place == Some(Place::Roundtable);
+            if self.stage != Stage::Idle && over {
+                // Load screen, title or back in the Roundtable: the expedition is over; its bots are gone with it.
                 tracing::info!(
                     "bot_match: expedition over; {} bot(s) were kept",
                     self.kept.len()
@@ -142,31 +141,10 @@ impl BotMatch {
         match self.stage {
             Stage::Idle => {
                 tracing::info!(
-                    "bot_match: offline expedition: waiting for the landing, then {} bot(s)",
+                    "bot_match: offline expedition: {} bot(s); the game brings them at the landing",
                     self.want
                 );
-                self.stage = Stage::Landing {
-                    since: now,
-                    saw_air: false,
-                };
-            }
-            Stage::Landing { since, saw_air } => {
-                let saw_air = saw_air || world.grounded == Some(false);
-                let landed = saw_air && world.grounded == Some(true);
-                let late = now.saturating_sub(since) >= LANDING_TIMEOUT_MS;
-                if landed || late {
-                    tracing::info!(
-                        "bot_match: {}; round 1",
-                        if landed {
-                            "landed"
-                        } else {
-                            "no landing seen after 180 s"
-                        }
-                    );
-                    self.arm(0, now, ctx);
-                } else {
-                    self.stage = Stage::Landing { since, saw_air };
-                }
+                self.arm(0, now, ctx);
             }
             Stage::Spawning { n, at } => {
                 let fresh: Vec<(usize, u64)> = slots
@@ -308,17 +286,16 @@ impl Feature for BotMatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::views::{BotManState, Place};
+    use crate::game::views::BotManState;
     use crate::game::world::BotChr;
 
-    fn world(grounded: Option<bool>, slots: [u64; 2]) -> World {
+    fn world(slots: [u64; 2]) -> World {
         let mut heads = [0u64; 8];
         heads[..2].copy_from_slice(&slots);
         World {
             wcm_instance: 0x5_0000,
             local: Some(0x10_0000),
             place: Some(Place::Expedition),
-            grounded,
             bots: Some(BotManState {
                 table: 10,
                 armed: false,
@@ -331,9 +308,9 @@ mod tests {
 
     const E: u64 = EMPTY;
 
-    /// Drive the director through a landing and the rounds; the manager fills both slots with new handles after each arm.
+    /// Drive the director through the rounds; the manager fills both slots with new handles after each arm.
     #[test]
-    fn five_bots_in_three_rounds_after_the_landing() {
+    fn five_bots_in_three_rounds() {
         let mut d = BotMatch::new(5, 29);
         let mut ctx = Ctx::default();
         let mut t = 0;
@@ -341,37 +318,32 @@ mod tests {
             t += dt;
             d.step(t, GameMode::Offline, w, ctx);
         };
-        // On the hawk (grounded), then the drop (air), then standing: round 1 is armed.
-        go(&mut d, &world(Some(true), [E, E]), &mut ctx, 0);
-        go(&mut d, &world(Some(true), [E, E]), &mut ctx, 50);
-        assert!(ctx.flags.is_empty(), "still on the hawk");
-        go(&mut d, &world(Some(false), [E, E]), &mut ctx, 50);
-        go(&mut d, &world(Some(true), [E, E]), &mut ctx, 50);
+        // The expedition is loaded: round 1 is armed at once (the game waits for the landing itself).
+        go(&mut d, &world([E, E]), &mut ctx, 0);
         assert_eq!(ctx.flags, vec![(10_007_300, true)]);
+        // Nothing yet during the ride.
+        let mut ctx = Ctx::default();
+        go(&mut d, &world([E, E]), &mut ctx, 50_000);
+        assert_eq!(ctx, Ctx::default());
         // Round 1 spawns 2: both kept and forgotten.
         let mut ctx = Ctx::default();
-        go(&mut d, &world(Some(true), [0xA0, 0xA1]), &mut ctx, 50);
+        go(&mut d, &world([0xA0, 0xA1]), &mut ctx, 50);
         assert_eq!(
             ctx.bot_writes,
             vec![BotWrite::ForgetSlot(0), BotWrite::ForgetSlot(1)]
         );
         // Gap, then round 2.
         let mut ctx = Ctx::default();
-        go(&mut d, &world(Some(true), [E, E]), &mut ctx, ROUND_GAP_MS);
+        go(&mut d, &world([E, E]), &mut ctx, ROUND_GAP_MS);
         assert_eq!(ctx.flags, vec![(10_007_303, true)]);
-        go(&mut d, &world(Some(true), [0xB0, 0xB1]), &mut ctx, 50);
-        go(&mut d, &world(Some(true), [E, E]), &mut ctx, ROUND_GAP_MS);
+        go(&mut d, &world([0xB0, 0xB1]), &mut ctx, 50);
+        go(&mut d, &world([E, E]), &mut ctx, ROUND_GAP_MS);
         // Round 3: only one more is wanted; slot 1 stays for the clear.
         let mut ctx = Ctx::default();
-        go(&mut d, &world(Some(true), [0xC0, 0xC1]), &mut ctx, 50);
+        go(&mut d, &world([0xC0, 0xC1]), &mut ctx, 50);
         assert_eq!(ctx.bot_writes, vec![BotWrite::ForgetSlot(0)]);
         let mut ctx = Ctx::default();
-        go(
-            &mut d,
-            &world(Some(true), [E, 0xC1]),
-            &mut ctx,
-            ROUND_GAP_MS,
-        );
+        go(&mut d, &world([E, 0xC1]), &mut ctx, ROUND_GAP_MS);
         assert_eq!(ctx.flags, vec![(FLAG_CLEAR, true)]);
         assert_eq!(d.kept.len(), 5);
         assert_eq!(d.stage, Stage::Done);
@@ -382,7 +354,7 @@ mod tests {
         let mut d = BotMatch::new(1, 29);
         d.stage = Stage::Done;
         d.kept.push(Kept::new(0xA0));
-        let mut w = world(Some(true), [E, E]);
+        let mut w = world([E, E]);
         w.bot_chrs[0] = Some(BotChr {
             handle: 0xA0,
             chr: 0x7000,
@@ -413,37 +385,24 @@ mod tests {
         for (want, mode) in [(5, GameMode::BattleRoyale), (0, GameMode::Offline)] {
             let mut d = BotMatch::new(want, 29);
             let mut ctx = Ctx::default();
-            d.step(0, mode, &world(Some(false), [E, E]), &mut ctx);
-            d.step(
-                LANDING_TIMEOUT_MS,
-                mode,
-                &world(Some(true), [E, E]),
-                &mut ctx,
-            );
+            d.step(0, mode, &world([E, E]), &mut ctx);
+            d.step(ROUND_TIMEOUT_MS, mode, &world([E, E]), &mut ctx);
             assert_eq!(ctx, Ctx::default());
             assert_eq!(d.stage, Stage::Idle);
         }
     }
 
     #[test]
-    fn no_landing_seen_still_starts_after_the_timeout() {
-        let mut d = BotMatch::new(2, 29);
+    fn back_in_the_roundtable_ends_the_set() {
+        let mut d = BotMatch::new(5, 29);
+        d.stage = Stage::Done;
+        d.kept.push(Kept::new(0xA0));
+        let mut w = world([E, E]);
+        w.place = Some(crate::game::views::Place::Roundtable);
         let mut ctx = Ctx::default();
-        d.step(0, GameMode::Offline, &world(None, [E, E]), &mut ctx);
-        d.step(
-            LANDING_TIMEOUT_MS - 1,
-            GameMode::Offline,
-            &world(None, [E, E]),
-            &mut ctx,
-        );
-        assert!(ctx.flags.is_empty());
-        d.step(
-            LANDING_TIMEOUT_MS,
-            GameMode::Offline,
-            &world(None, [E, E]),
-            &mut ctx,
-        );
-        assert_eq!(ctx.flags, vec![(10_007_300, true)]);
+        d.step(0, GameMode::Offline, &w, &mut ctx);
+        assert_eq!(d.stage, Stage::Idle);
+        assert!(d.kept.is_empty());
     }
 
     #[test]
@@ -454,13 +413,13 @@ mod tests {
         d.step(
             ROUND_TIMEOUT_MS,
             GameMode::Offline,
-            &world(Some(true), [E, E]),
+            &world([E, E]),
             &mut ctx,
         );
         d.step(
             ROUND_TIMEOUT_MS + ROUND_GAP_MS,
             GameMode::Offline,
-            &world(Some(true), [E, E]),
+            &world([E, E]),
             &mut ctx,
         );
         assert_eq!(ctx.flags, vec![(FLAG_CLEAR, true)]);
@@ -490,7 +449,7 @@ mod tests {
             seen: true,
             ..Kept::new(0xA0)
         });
-        let w = world(Some(true), [E, E]);
+        let w = world([E, E]);
         let mut ctx = Ctx::default();
         for t in 0..u64::from(GONE_AFTER) {
             assert!(!d.watched().is_empty() || t % u64::from(RETRY_EVERY) != 0);

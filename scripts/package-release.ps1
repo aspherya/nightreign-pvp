@@ -30,7 +30,7 @@ if ($gdMap.Count -ne 1 -or -not (Test-Path -LiteralPath $routes)) {
     throw "dist\gamedata\map must hold exactly map\mapstudio\m60_00_00_99.msb.dcx (the hawk crossing line; found $($gdMap.Count) file(s)). Run scripts\build-gamedata.ps1 (without -VanillaRoutes) first."
 }
 $gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
-# OFF-4: event\common.emevd.dcx holds the bot events (inert until the DLL sets their flags; offline mode only).
+# OFF-4: event\common.emevd.dcx holds the bot events (dev only: left out of the zip below).
 if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\common.emevd.dcx')) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 18) {
     throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + event\common.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx + the hawk route file). Run scripts\build-gamedata.ps1 first."
 }
@@ -61,6 +61,8 @@ New-Item -ItemType Directory -Force $me3 | Out-Null
 Copy-Item -LiteralPath $launcher -Destination $stage
 Copy-Item -LiteralPath $dll -Destination $mod
 Copy-Item -LiteralPath $gamedata -Destination (Join-Path $mod 'gamedata') -Recurse
+# OFF-4/OFF-5: the bot events (event\common.emevd.dcx) are an internal development tool for now: players never get them.
+Remove-Item -LiteralPath (Join-Path $mod 'gamedata\event\common.emevd.dcx') -Force
 Copy-Item -LiteralPath (Join-Path $Me3Dir 'bin\me3.exe'), (Join-Path $Me3Dir 'bin\me3-launcher.exe'), (Join-Path $Me3Dir 'bin\me3_mod_host.dll') -Destination $me3
 Copy-Item -LiteralPath (Join-Path $Me3Dir 'LICENSE-MIT'), (Join-Path $Me3Dir 'LICENSE-APACHE') -Destination $me3
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'release\HOW TO INSTALL.txt') -Destination $stage

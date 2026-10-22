@@ -5,6 +5,8 @@
 //! values (`team`, T-008/T-020/T-026) and the downed rule (`combat_state`, T-035/T-039). Commands (from the developer console)
 //! are executed here, on this thread, by [`run_command`]; nothing else writes game memory from another thread.
 //! R5 (2026-10-20) removed the overlay, the hotkeys, the discovery worker, the probes and the MARK dumps.
+//! Size: just over 800 lines (ARCHITECTURE §6 budget) because `watch` still ticks the older controllers itself; they move into
+//! `crate::features` (R3 rest), which shrinks this file.
 
 #[cfg(feature = "dev")]
 pub(crate) mod bartrace;
@@ -448,7 +450,6 @@ fn watch(
                     .map(|(a, _)| a),
                 mm_phase: crate::mm::phase(),
                 bot_man,
-                physics_vtable: base + layout::PHYSICS_VTABLE_RVA,
                 watched: &watched,
             },
         );
