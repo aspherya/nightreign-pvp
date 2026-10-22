@@ -16,6 +16,8 @@ pub(crate) trait GameMem {
     /// Fill `out` from `addr`; false (and `out` unspecified) when any byte is unreadable.
     fn read_into(&self, addr: usize, out: &mut [u8]) -> bool;
     fn write_u8(&self, addr: usize, value: u8) -> Result<(), &'static str>;
+    /// OFF-5: 1..=16 bytes, the same page check as `write_u8` over the whole range.
+    fn write_bytes(&self, addr: usize, data: &[u8]) -> Result<(), &'static str>;
 
     fn read_u8(&self, addr: usize) -> Option<u8> {
         let mut b = [0u8; 1];
@@ -47,6 +49,9 @@ impl GameMem for RealMem {
     }
     fn write_u8(&self, addr: usize, value: u8) -> Result<(), &'static str> {
         mem::write_u8(addr, value)
+    }
+    fn write_bytes(&self, addr: usize, data: &[u8]) -> Result<(), &'static str> {
+        mem::write_bytes(addr, data)
     }
 }
 
@@ -94,6 +99,12 @@ impl GameMem for FakeMem {
             }
             None => Err("unmapped"),
         }
+    }
+    fn write_bytes(&self, addr: usize, data: &[u8]) -> Result<(), &'static str> {
+        for (i, b) in data.iter().enumerate() {
+            self.write_u8(addr + i, *b)?;
+        }
+        Ok(())
     }
 }
 

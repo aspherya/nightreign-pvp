@@ -5,6 +5,9 @@ Usage: python emevd_add_events.py <file.emevd> <events.json>
 events.json: {"events": [{"id": 99100300, "flag": 10007100, "message": 99100200, "display": "dialog" | "blinking" | "status"}, ...]}
 Each event: IF Event Flag(MAIN, ON, flag) [3:0] -> display(message) [2007:1 | 2007:4 | 2007:3] -> Set Event Flag(flag, OFF) [2003:66] ->
 END Restart [1000:4]. Event 0 gets one Initialize Event(slot 0, id) [2000:0] per event.
+OFF-4: instead of a message, an event may carry "bots": <table id> (the game's NPC bot start, 2003:97 with one s32, research/OFF-3-bots.md)
+or "bots_clear": true (2003:98, no arguments). Neither is in DarkScript3's NR EMEDF; the argument layout comes from the bank 2003
+dispatcher (case 97 reads one s32 at args+0; case 98 reads none).
 
 Layout (SoulsFormats EMEVD, DS3/ER 64-bit; verified on NR 1.03.3 m10_00_00_00.emevd, see .claude/experiments/UI-0/emevd_dump.py):
 header 0x90 | events (0x30 each) | instructions (0x20 each: bank i32, id i32, argsLen i64, argsOff i64 rel. to args, layerOff i64 = -1)
@@ -23,9 +26,13 @@ INS = 0x20
 
 
 def build_event_instrs(ev):
-    flag, msg, kind = ev['flag'], ev['message'], ev['display']
+    flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')
     out = [(3, 0, struct.pack('<bBBxI', 0, 1, 0, flag))]
-    if kind == 'dialog':
+    if 'bots' in ev:
+        out.append((2003, 97, struct.pack('<i', ev['bots'])))
+    elif ev.get('bots_clear'):
+        out.append((2003, 98, b''))
+    elif kind == 'dialog':
         out.append((2007, 1, struct.pack('<ihhIf', msg, 0, 0, 0, 5.0)))
     elif kind == 'blinking':
         out.append((2007, 4, struct.pack('<i', msg)))
@@ -62,6 +69,9 @@ def main(path, spec_path):
     rest = b[h['paramsOff']: h['stringsOff'] + h['stringsLen']]  # params + linked + strings, copied as is
 
     def add_instr(bank, iid, a):
+        if not a:  # no arguments: length 0, offset -1 (as the game's own argument-less instructions)
+            instrs.append(bytearray(struct.pack('<iiqqq', bank, iid, 0, -1, -1)))
+            return len(instrs) - 1
         while len(args) % 4:
             args.append(0)
         off = len(args)

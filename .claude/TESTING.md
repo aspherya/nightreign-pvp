@@ -576,6 +576,35 @@ The other player saw the jump; both screens agreed; both could still hit each ot
 - Not exercised: Offline + Duo ("solo only" box). Press #4 was Duo in **br** mode (decision 0x120 = "Duo/Trio coming soon"), as
   before; the Offline + Duo path is covered by unit tests only. Crash on quit: not reported.
 
+### 2026-10-22 — OFF-4 bot spike (Leonardo solo, branch `claude/off-4-bots` 6fc31c8, worktree `dist\`, `mode = "offline"`). Logs: `experiments/OFF-4/nrpvp_2026-10-22_16-48-10.log`: **PASS**
+- **Leonardo: the bots spawn.** They follow him and fight enemies; he could not fight them (they are allies, team 2: as shipped).
+- Our `common.emevd` events run in the expedition: each flag set (`features: flag 10007300 ON`) is followed within 50 ms by the
+  manager's new table id (10, then 10000). `bots_clear` (flag 10007302) → table −1 and both bot slots back to −1 within 1 s.
+- **The manager holds exactly 2 bots.** Its bot list has 2 entries from the start (both −1); after `2003[97]` they hold the
+  characters' handles `0xFFFFFFFF10E00000` / `…01`. Table 10000 (8 rows) also gave 2 handles. The constructor sizes the list to a
+  constant 2 (`exe+0x38CC05..`, static), and the table store has room for 2 rows: **the vanilla system is "solo player + 2 AI
+  teammates"** (MEMORY_MAP §15).
+- The `+0x4` "armed" byte read 0 at every 50 ms sample: the update consumes it within one frame.
+- No ERROR or panic. One WARN at the area unload (ChrSet capacity 0), as on every quit.
+
+### 2026-10-22 — OFF-5 run 1, offline match with rival bots (Leonardo solo, branch `claude/off-4-bots` bee0399, worktree `dist\`, `mode = "offline"`, `offline_bots = 5`). Logs: `experiments/OFF-5/nrpvp_2026-10-22_17-07-38.log`: **PARTIAL (4 of 5)**
+- **Leonardo: the bots fight him, each other and the monsters.** No console was used.
+- **Detach and re-arm works:** after the manager's slots were set to −1, the bots stayed in the world (and fought), and the next
+  `2003[97]` spawned 2 more at once (round 3, 1 s after round 2). Handles grow per spawn: `0x…10E00000` .. `…03`.
+- **Found by handle:** every bot was in WorldChrMan character set **14** (the ER encoding: bits 20..27 of the handle), `ChrIns+0x68`
+  = **600040000** (its NpcParam id), team 2 → written 29 at once; no reverts logged.
+- **Why 4:** "landed" fired 4 s after the expedition loaded (the ground byte changes at the ride start too), so round 1 (table 10)
+  was armed during the ride; the manager spawned nothing for 15 s and the director moved on. Round 2 (armed 17:08:58) spawned at
+  17:09:03, at the landing: **the manager spawns only once the host is on the ground** `[HYPOTHESIS from timing]`. Fix (same day):
+  a round waits up to 120 s.
+- Ticks of 55–82 ms in the windows with a flag write (`flags::set` walks the flag tree); otherwise 0–16 ms. No ERROR or panic.
+
+### 2026-10-22 — OFF-5 run 2, 5 rival bots (Leonardo solo, branch `claude/off-4-bots` 23b5bb6, worktree `dist\`, `mode = "offline"`). Logs: `experiments/OFF-5/nrpvp_2026-10-22_17-18-38.log`: **PASS**
+- Round 1 (table 10) was armed during the hawk ride (17:19:43); **the game held it and spawned both bots at the landing** (17:20:03).
+  Rounds 2 (table 30) and 3 (table 50) spawned within 0.1 s of their flag. **5 of 5 kept**, all found in set 14 and set to team 29;
+  the 6th bot of round 3 was removed by the clear. No console used.
+- Ticks of 82–103 ms in the windows with flag writes (as in run 1). No ERROR or panic.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

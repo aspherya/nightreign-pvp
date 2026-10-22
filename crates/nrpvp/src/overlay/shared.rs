@@ -51,6 +51,8 @@ pub(crate) enum Command {
     Hawk(HawkCmd),
     /// OFF-1 (dev console): switch the game mode (`crate::features::mode`); handled in the main loop by the feature list.
     Mode(crate::features::mode::GameMode),
+    /// OFF-4 (dev console): start or clear the game's NPC bots (`crate::features::bots`); handled in the main loop by the feature list.
+    Bots(crate::features::bots::BotsCmd),
 }
 
 /// HAWK-3 console commands (`hawk_*`).

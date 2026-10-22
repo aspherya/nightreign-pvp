@@ -184,6 +184,7 @@ mod tests {
             local: Some(0x10_0000),
             place,
             mm_phase: phase,
+            ..World::default()
         }
     }
 

@@ -151,33 +151,34 @@ started by event instruction `2003[97](tableId)` and cleared by `2003[98]`; no s
 count (likely the party size) is above 1, so solo/offline only. Bots are allies and follow the host as shipped; rivals need a team
 flip. Memo: `research/OFF-3-bots.md`; facts in TECHNICAL_NOTES §4d and MEMORY_MAP §15; scripts in `experiments/OFF-3/`.
 
-### OFF-4 — Bot spike: spawn the game's own NPC bots in an offline expedition
-Owner: SONNET/implementer → OPUS review → HUMAN solo | Status: ready (after OFF-1 is accepted) | Phase: M9
-Goal: answer with one solo run whether `2003[97]` spawns Nightfarer bots in an expedition, how many, where, and whether
-`2003[98]` removes them.
-Context: `research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15, UI-2 event tooling (`gamedata/emevd-events.json`,
-`scripts/emevd_add_events.py`, `scripts/build-gamedata.ps1`), flag group 10007 (MEMORY_MAP §13).
-Steps:
-1. Extend the event tooling with a second target file, `event/common.emevd.dcx` (runs on every map; pin its 1.03.3 hash like
-   `m10_00_00_00`), and two event kinds: `bots` (wait flag → `2003[97](table)` → clear flag → restart) and `bots_clear` (wait flag →
-   `2003[98]` → clear flag → restart). Events: flag 10007300 → table 10 (2 bots, level 1), 10007301 → table 10000 (8 bots, level
-   6), 10007302 → clear. Instruction argument layout: one i32 (from the dispatcher; check it against an ER EMEDF-style decode of a
-   neighbouring 2003 instruction before shipping).
-2. Console (dev): `bots 10|10000` sets the matching flag, `bots_clear` sets 10007302 (`add-console-command`; flags through
-   `game/flags.rs`). Refuse unless `mode` is offline.
-3. Evidence log (dev): every 2 s while a world is loaded, log the ChrSet/NPC characters whose `CHR_ID` (+0x68) is 600040000 (or
-   the count and their team values), plus `CSNpcBotMan +0x0/+0x4` (table id, armed) through a typed view.
-4. Tests for the console parsing and the event JSON (existing UI-2 unit test pattern). Build the game-data package and the DLL.
-Deliverables: tooling change, `gamedata/emevd-events.json` entries, console commands, a `BotMan` view in `game/views.rs`, CONSOLE.md
-rows, Leonardo's steps in this card.
-Acceptance (HUMAN solo, 10 min): Offline mode, Solo expedition, after landing `nrcon bots 10` → do two Nightfarers appear? Where?
-Do they follow and fight? `nrcon bots_clear` → are they gone? Then `bots 10000`. Report what was seen; the log shows the rest.
-Out of scope: hostility, roaming, multiplayer, the hawk start for bots (OFF-5/OFF-6).
-Target (Leonardo, 2026-10-22): **"Solo (Offline with Bots)" = me + 5 bots that start the match together with me, like a normal
-6-player Solo match; no console.** OFF-4 is only the check that the game's bot system works in an expedition; OFF-5 delivers the target.
-Next (sketch): **OFF-5** rival bots (team flip of bot ChrIns through the existing team write, gated on `CHR_ID`; 5 rivals for a
-6-player Solo match; spawn at the hawk drop), **OFF-6** battle-royale behaviour (roaming logic script, day tiers, bot deaths in
-the match). Sizes in the memo.
+**OFF-4 done (2026-10-22, solo PASS, TESTING §3):** our `common.emevd` events run the game's bot instructions; console `bots 10|10000`,
+`bots_clear` (dev, offline mode). The bots spawn, follow the host and fight enemies; they are allies (team 2), and **the game keeps
+at most 2 bots** (vanilla design: solo player + 2 AI teammates; MEMORY_MAP §15). Card removed; text in git (`git show 6fc31c8:.claude/TASKS.md`).
+
+**OFF-5 done (2026-10-22, solo PASS run 2, TESTING §3):** in offline mode, 5 of the game's NPC Nightfarers join after the landing,
+hostile to you, each other and monsters (team 29), no console (`offline_bots = 5`). Past the game's 2-bot cap by "detach and re-arm"
+(`features/bot_match.rs`). Card removed; text in git (`git show 23b5bb6:.claude/TASKS.md`).
+
+Leonardo's use of bots (2026-10-22): **a sparring partner for testing alone**: combat, the near-death rules and the hawk; a full
+battle-royale feel comes after.
+
+### OFF-7 — Bots count as rivals in the near-death rules
+Owner: SONNET/implementer → HUMAN solo | Status: ready | Phase: M9
+Goal: a bot's hit on the downed LOCAL player is handled like a rival player's (T-039/T-041: no progress on the purple bar, 3 s off
+the bleed-out), so the near-death rules can be tested solo against bots.
+Context: `game/combat_state/rules.rs` (`Core::step`: the attacker handle must be a rival's), `CombatCtl::rival_handles`,
+`features/bot_match.rs` (kept bots and their handles), MEMORY_MAP §6/§15.
+Steps: give the combat controller the kept bots' handles each tick (from the feature list, through the main loop) and treat them as
+rival attackers; the hardware-breakpoint bar block (T-041) uses the same attacker check. Tests with the existing fakes.
+Acceptance (HUMAN solo): offline match, get downed by the bots: the bar never fills from their hits and the bleed-out shortens; log
+lines `rule: rival hit on downed LOCAL`.
+Note: bots left as allies run the game's own rescue behaviour (`ExecRescueAction`), so an ally bot may revive a downed player: a way
+to test the teammate revive solo later (not in this card).
+
+### OFF-6 — Bots in the battle royale (sketch, after OFF-7)
+In order: spread starts (move each bot to its own drop point along the hawk line when the ride starts, the T-028 teleport on NPCs),
+roaming (our own logic script: plain-text logic may load like `c0000.hks`, TECHNICAL_NOTES §4b; or DLL steering), day levels
+(tables 10000/20000/30000 = levels 6/11/13), bot deaths counted by the match. Sizes in `research/OFF-3-bots.md`.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 

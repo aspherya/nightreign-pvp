@@ -196,7 +196,7 @@ It only matters if we ship our own `c0000.hks`.
 | No shipped event script uses 97 or 98 (279 `.emevd` scanned; bank 2003 ids 0..130 occur) | The system is dormant in vanilla play |
 | Bot data | `NPCBotTableParam` tables 10..80 (2 heroes each, level 1) and 10000 / 20000 / 30000 (8 heroes, levels 6 / 11 / 13); `NpcParam 600040000` team 2 (ally); `NpcThinkParam 600040000` logic 30000 (follow the host) + battle 29999 (`Common_NPC_AI`: plays a Nightfarer: skill, ultimate, items, revives) |
 | Hostile cousins | `SmallbaseInvationNpcParam`: Nightfarer-style invaders at small bases (team 6, logic 31000 = guard home, same battle AI) |
-| Spawned where, how many, with which model parts | UNKNOWN (navmesh + Havok + AI-manager callees suggest "on the navmesh near the host"); OFF-4 spike |
+| In game (OFF-4 run, 2026-10-22) | `2003[97]` from our `common.emevd` event spawns the bots in an expedition: they appear, follow the host and fight enemies; the host cannot hurt them (team 2, allies). `2003[98]` removes them. **At most 2 bots** per manager (list sized to 2 in the constructor; table store holds 2 rows): the vanilla design is solo player + 2 AI teammates `[VERIFIED: OFF-4 run + static]` |
 | Custom AI logic | The game loads `c0000.hks` as plain Lua from a package (§4b), so a plain-text roaming logic script for bots may load the same way `[HYPOTHESIS]` |
 
 ---

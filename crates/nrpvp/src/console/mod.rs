@@ -20,6 +20,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::features::bots::BotsCmd;
 use crate::features::mode::GameMode;
 use crate::mm::Mode;
 use crate::overlay::shared::{Command, HawkCmd, PvpveState, Relation, Snapshot};
@@ -55,6 +56,8 @@ pub(crate) enum MainReq {
     Hawk(HawkCmd),
     /// OFF-1: `mode br|offline` switches the game mode (now, or once back in the Roundtable); the reply is the mode line.
     Mode(GameMode),
+    /// OFF-4: `bots <table>` / `bots_clear` ask the bot feature; the reply is the bots line.
+    Bots(BotsCmd),
 }
 
 /// What a command does.
@@ -80,6 +83,8 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "log", args: "[n]", help: "the last n log lines (default 20, at most 300) straight from the game", run: log_tail },
     Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, game mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
     Spec { name: "mode", args: "[br|offline]", help: "game mode: br = Commence starts the queue, offline = Commence Solo starts a solo expedition at once; during an expedition the change waits for the Roundtable; no argument shows it", run: mode },
+    Spec { name: "bots", args: "[10|30|50|10000]", help: "OFF-4 (offline mode): start the game's own NPC bots from NPCBotTableParam table 10 / 30 / 50 (2 Nightfarers, level 1) or 10000 (2 of 8, level 6); no argument shows the last request, the bot manager's state and the OFF-5 match line", run: bots },
+    Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
     Spec { name: "team_restore", args: "[target]", help: "put back the team_type captured before the first write (default me)", run: team_restore },
@@ -390,6 +395,16 @@ fn mode(args: &[String]) -> Result<Act, String> {
     }
 }
 
+fn bots(args: &[String]) -> Result<Act, String> {
+    match args.first() {
+        None => Ok(Act::Reply(crate::features::bots::status_line())),
+        Some(a) => a
+            .parse::<i32>()
+            .map(|t| Act::Main(MainReq::Bots(BotsCmd::Spawn(t))))
+            .map_err(|_| "table must be a number (10, 30, 50 or 10000)".into()),
+    }
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -510,6 +525,10 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
         MainReq::Mode(m) => {
             run(Command::Mode(m));
             crate::features::mode::status_line()
+        }
+        MainReq::Bots(b) => {
+            run(Command::Bots(b));
+            crate::features::bots::status_line()
         }
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
@@ -728,6 +747,21 @@ mod tests {
         });
         assert_eq!(ran, vec![Command::Mode(GameMode::Offline)]);
         assert!(r.starts_with("mode: "), "{r}");
+    }
+
+    #[test]
+    fn bots_parse_and_map_to_the_bots_command() {
+        assert!(execute_line("bots ten").contains("table must be a number"));
+        assert!(matches!(
+            bots(&["10000".into()]),
+            Ok(Act::Main(MainReq::Bots(BotsCmd::Spawn(10_000))))
+        ));
+        // No argument: answered on the pipe thread.
+        assert!(execute_line("bots").starts_with("bots: "));
+        let mut ran = Vec::new();
+        let r = answer(MainReq::Bots(BotsCmd::Clear), &snap(), &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::Bots(BotsCmd::Clear)]);
+        assert!(r.starts_with("bots: "), "{r}");
     }
 
     #[test]

@@ -95,7 +95,11 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    the game's own solo expedition. It brought the first `Feature`, the `World` read model, the `GameMem` port and typed views
    (ARCHITECTURE §6). **OFF-3 done (2026-10-22): bots GO for offline** — the game ships a
    dormant NPC bot system (AI Nightfarers, started by event instruction `2003[97]`, solo only; `research/OFF-3-bots.md`). Next:
-   OFF-4 bot spike (one solo run), then OFF-5 rival bots, OFF-6 BR behaviour; OFF-2 (menu entry) sketched. `TASKS.md`.
+   **OFF-4 bot spike PASS** (2026-10-22, branch `claude/off-4-bots`, not merged; console `bots 10|10000`, `bots_clear`; our events in
+   `common.emevd`): bots spawn in the expedition, follow you and fight monsters; allies as shipped, **at most 2** (game design: solo +
+   2 AI teammates). **OFF-5 done** (solo PASS run 2, 2026-10-22): in offline mode 5 hostile bots join after the landing, no
+   console; they fight you, each other and monsters. Next: OFF-7 (bots count as rivals in the near-death rules), then OFF-6 (bots in
+   the battle royale); OFF-2 (Solo/Duo/Trio (Offline) menu entries) later. `TASKS.md`.
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).

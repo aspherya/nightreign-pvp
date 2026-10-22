@@ -272,6 +272,8 @@ fn watch(
     let mut dumped = false;
     let mut dumped_with_fd4 = false;
     let mut wcm_slot: Option<usize> = None;
+    // OFF-4: the NPC bot manager's slot (FD4 singleton, found by name once the FD4 names resolve).
+    let mut botman_slot: Option<usize> = None;
     let mut last_change_poll = Instant::now() - CHANGE_POLL;
     let mut last_inst: BTreeMap<String, usize> = BTreeMap::new();
     // T-019 heartbeat: loop iterations, and the slowest iteration (work only, not the sleep) since the last line.
@@ -328,6 +330,12 @@ fn watch(
         // 2. Find the target.
         if wcm_slot.is_none() {
             wcm_slot = all.iter().find(|f| f.name == TARGET).map(|f| f.slot);
+        }
+        if botman_slot.is_none() {
+            botman_slot = all
+                .iter()
+                .find(|f| f.name == layout::BOTMAN_NAME)
+                .map(|f| f.slot);
         }
         let wcm_inst = wcm_slot
             .and_then(instance_of)
@@ -428,14 +436,21 @@ fn watch(
         let team_started = Instant::now();
         team.set_instance(wcm_inst);
         // R3 / OFF-1: this tick's read model (the local player as the downed rule last resolved it) and the features' outbox.
+        let bot_man = botman_slot.and_then(instance_of).unwrap_or(0);
+        let watched = features.bot_match.watched();
         let world = world::World::read(
             &mem,
-            wcm_inst,
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-            crate::mm::phase(),
+            &world::Inputs {
+                wcm_instance: wcm_inst,
+                local: combat
+                    .as_ref()
+                    .and_then(|c| c.local_state())
+                    .map(|(a, _)| a),
+                mm_phase: crate::mm::phase(),
+                bot_man,
+                physics_vtable: base + layout::PHYSICS_VTABLE_RVA,
+                watched: &watched,
+            },
         );
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
@@ -472,12 +487,19 @@ fn watch(
                 Command::Hawk(h) => hawk::command(h, base, size),
                 // OFF-1: features get their commands with this tick's world.
                 Command::Mode(m) => features.mode.request(m, "console", &world, &mut fctx),
+                Command::Bots(b) => features.bots.request(
+                    b,
+                    "console",
+                    crate::features::mode::current(),
+                    &world,
+                    &mut fctx,
+                ),
                 c => run_command(c, "console", &mut team),
             });
             let _ = reply.send(text);
         }
         features.tick(&world, &mut fctx);
-        fctx.flush();
+        fctx.flush(crate::features::Targets { base, bot_man }, &mem);
         team.tick();
         let team_spent = team_started.elapsed();
 
@@ -591,7 +613,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         | Command::BarTrace(_)
         | Command::ReviveBlock(_)
         | Command::Hawk(_)
-        | Command::Mode(_) => {}
+        | Command::Mode(_)
+        | Command::Bots(_) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
