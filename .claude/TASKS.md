@@ -130,26 +130,54 @@ evidence tags and a go/no-go on host migration.
 Leonardo's decision: a separate **Offline** mode for solo play and solo testing, so `br_menu` / `matchmaking` never have to be switched
 off again. First step is a solo test mode (no queue, no second player); AI rivals ("bots") come later and start as research (OFF-3).
 
-### OFF-1 — Offline mode v1: Commence starts a solo match at once (dev selector)
-Owner: SONNET/implementer → OPUS review → HUMAN solo | Status: todo (next)
-Build: a `GameMode` (`BattleRoyale` default, `Offline`) as the first `Feature` (ARCHITECTURE §6: `Feature` trait + `World` read model +
-typed views / `GameMem` for what it touches, shaped by this user). In `Offline`, `menuflow`'s Commence handler lets the game run a
-vanilla solo Commence (no queue, no "searching" dialog) while every other feature stays as in Battle Royale (game-data package, PvP
-rules, hawk routes when built). Selection: `mode = "br" | "offline"` in `nrpvp.toml` (default `br`) and a console command `mode
-[br|offline]` (`add-console-command` skill) that switches it in the Roundtable; `status` shows the mode. Log line `mode: <mode>` at start
-and on every change. `br_menu` stays on in both modes. Tests for the mode switch and the Commence decision (no game).
-HUMAN (solo, 5 min): with `br_menu = true`, `nrcon mode offline`, Commence Solo → the expedition starts at once; `nrcon mode br`,
-Commence → the queue starts as before. Acceptance: both, plus SMOKE-2's checks (console, clean quit).
+**OFF-1 done (2026-10-22, solo PASS, TESTING §3):** `mode = "br" | "offline"` + console `mode`; Offline lets Commence Solo run the
+game's own solo expedition. Card removed; text in git (`git show 4e0180c:.claude/TASKS.md`).
 
 ### OFF-2 — Offline mode in the game menu (players)
 Owner: OPUS (RE) → SONNET → HUMAN | Status: later (after OFF-1)
 A player-visible way to pick Offline in the stock expedition menu (e.g. an extra Number of Players entry or a Roundtable message
 choice, UI-1/UI-2 tools). Design after OFF-1 is in use.
+Sketch (2026-10-22, not designed): the Number of Players list already shows our Solo / Duo / Trio through the label hook
+(`menuflow`, hwbp slot 3). The cheapest entry is a fourth choice there is none of: so either (a) reuse a value: Commence pressed
+twice within a few seconds with Solo = Offline (no new UI, but hidden), or (b) a Roundtable event (UI-2 tools) that asks "Battle
+Royale or Offline?" when the player first walks to the table and sets `mode` through a flag the DLL reads (flag group 10007).
+(b) is the player-friendly one; it needs a yes/no dialog event (2007 family) whose answer lands in a flag: check that first.
 
 ### OFF-3 — Bots: can the game run AI Nightfarers as rivals? (research)
-Owner: OPUS + SONNET/researcher | Status: later
-Leads: singletons `CSNpcBotMan`, `CSRebornBuddyMan`, `CSNecroBuddyMan` (seen in our singleton log), NPC Nightfarer params, the Nexus
-NPC/summon mods. Output: a memo with a go/no-go and a size estimate.
+Owner: OPUS + SONNET/researcher | Status: done (2026-10-22, static research) → OFF-4
+Result: **GO for offline bots, NO-GO for multiplayer bots for now.** The game ships a complete, dormant NPC bot system: `CSNpcBotMan`,
+`NPCBotTableParam` (Nightfarer loadouts per hero, levels 1 / 6 / 11 / 13), a full Nightfarer battle AI (skill, ultimate, revive),
+started by event instruction `2003[97](tableId)` and cleared by `2003[98]`; no shipped event script uses them. Start refuses when a
+count (likely the party size) is above 1, so solo/offline only. Bots are allies and follow the host as shipped; rivals need a team
+flip. Memo: `research/OFF-3-bots.md`; facts in TECHNICAL_NOTES §4d and MEMORY_MAP §15; scripts in `experiments/OFF-3/`.
+
+### OFF-4 — Bot spike: spawn the game's own NPC bots in an offline expedition
+Owner: SONNET/implementer → OPUS review → HUMAN solo | Status: ready (after OFF-1 is accepted) | Phase: M9
+Goal: answer with one solo run whether `2003[97]` spawns Nightfarer bots in an expedition, how many, where, and whether
+`2003[98]` removes them.
+Context: `research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15, UI-2 event tooling (`gamedata/emevd-events.json`,
+`scripts/emevd_add_events.py`, `scripts/build-gamedata.ps1`), flag group 10007 (MEMORY_MAP §13).
+Steps:
+1. Extend the event tooling with a second target file, `event/common.emevd.dcx` (runs on every map; pin its 1.03.3 hash like
+   `m10_00_00_00`), and two event kinds: `bots` (wait flag → `2003[97](table)` → clear flag → restart) and `bots_clear` (wait flag →
+   `2003[98]` → clear flag → restart). Events: flag 10007300 → table 10 (2 bots, level 1), 10007301 → table 10000 (8 bots, level
+   6), 10007302 → clear. Instruction argument layout: one i32 (from the dispatcher; check it against an ER EMEDF-style decode of a
+   neighbouring 2003 instruction before shipping).
+2. Console (dev): `bots 10|10000` sets the matching flag, `bots_clear` sets 10007302 (`add-console-command`; flags through
+   `game/flags.rs`). Refuse unless `mode` is offline.
+3. Evidence log (dev): every 2 s while a world is loaded, log the ChrSet/NPC characters whose `CHR_ID` (+0x68) is 600040000 (or
+   the count and their team values), plus `CSNpcBotMan +0x0/+0x4` (table id, armed) through a typed view.
+4. Tests for the console parsing and the event JSON (existing UI-2 unit test pattern). Build the game-data package and the DLL.
+Deliverables: tooling change, `gamedata/emevd-events.json` entries, console commands, a `BotMan` view in `game/views.rs`, CONSOLE.md
+rows, Leonardo's steps in this card.
+Acceptance (HUMAN solo, 10 min): Offline mode, Solo expedition, after landing `nrcon bots 10` → do two Nightfarers appear? Where?
+Do they follow and fight? `nrcon bots_clear` → are they gone? Then `bots 10000`. Report what was seen; the log shows the rest.
+Out of scope: hostility, roaming, multiplayer, the hawk start for bots (OFF-5/OFF-6).
+Target (Leonardo, 2026-10-22): **"Solo (Offline with Bots)" = me + 5 bots that start the match together with me, like a normal
+6-player Solo match; no console.** OFF-4 is only the check that the game's bot system works in an expedition; OFF-5 delivers the target.
+Next (sketch): **OFF-5** rival bots (team flip of bot ChrIns through the existing team write, gated on `CHR_ID`; 5 rivals for a
+6-player Solo match; spawn at the hawk drop), **OFF-6** battle-royale behaviour (roaming logic script, day tiers, bot deaths in
+the match). Sizes in the memo.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 

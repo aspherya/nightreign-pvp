@@ -15,6 +15,7 @@ mod config;
 #[cfg(feature = "dev")]
 mod console;
 mod dr;
+mod features;
 mod game;
 mod hwbp;
 mod logging;

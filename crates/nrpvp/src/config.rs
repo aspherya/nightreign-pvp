@@ -130,6 +130,12 @@ ui_flag_watch = false
 # mm_lobby_trace off (debug registers).
 ui_menu_trace = false
 
+# OFF-1 game mode: \"br\" (default) = Battle Royale: Commence in the stock expedition menu starts the matchmaking queue (br_menu).
+# \"offline\" = Commence with Solo starts the game's own solo expedition at once (no queue, no second player), for solo play and
+# testing; everything else (PvP rules, game-data package, hawk crossing) is the same. Logs \"mode: <mode>\" at start and on every
+# change. The developer console switches it live: mode br | mode offline.
+mode = \"br\"
+
 # UI-1 option 1 (dev mode: needs mm_queue = true; the player build ignores this line and turns it on with matchmaking = true): Battle Royale from the stock
 # expedition menu. Commence Expedition with Number of Players = one player starts the Solo queue and the game's own dialog says
 # so; Commence again stops searching; once the match is ready Commence starts the expedition as normal. Duo/Trio say \"coming
@@ -247,6 +253,8 @@ pub(crate) struct Config {
     /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; the player build turns it on with `matchmaking`;
     /// off while a dev tool that owns all debug registers is on).
     pub br_menu: bool,
+    /// OFF-1: `"br"` (default) or `"offline"` (normalised in `parse`; read it through [`Config::game_mode`]).
+    pub mode: String,
     /// UI-2 spike: set the test message flags in turn (developer mode only; forced off in the player build).
     pub ui_msg_test: bool,
     /// UI-2: matchmaking status as on-screen game messages (default true; needs the queue and the game-data package).
@@ -342,6 +350,7 @@ impl Default for Config {
             ui_flag_watch: false,
             ui_menu_trace: false,
             br_menu: false,
+            mode: "br".to_string(),
             ui_msg_test: false,
             ui_messages: true,
             mm_sc_create: false,
@@ -391,6 +400,11 @@ impl Config {
         } else {
             crate::game::combat_state::RevivePolicy::Redown
         }
+    }
+
+    /// OFF-1: the game mode the mod starts in (an unknown text, only possible on an unvalidated `Config`, means Battle Royale).
+    pub(crate) fn game_mode(&self) -> crate::features::mode::GameMode {
+        crate::features::mode::GameMode::parse(&self.mode).unwrap_or_default()
     }
 
     /// T-026: the scheme (an unknown text, only possible on an unvalidated `Config`, means rivals).
@@ -578,6 +592,17 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.pos_candidates = crate::game::poswrite::default_candidates();
         } else {
             cfg.pos_candidates = valid.iter().map(|c| c.text()).collect();
+        }
+    }
+    // OFF-1: the game mode.
+    match crate::features::mode::GameMode::parse(&cfg.mode) {
+        Some(m) => cfg.mode = m.label().to_string(),
+        None => {
+            warnings.push(format!(
+                "mode = {:?} is not \"br\" or \"offline\"; using \"br\"",
+                cfg.mode
+            ));
+            cfg.mode = "br".to_string();
         }
     }
     // T-035: the rival revive policy.
@@ -909,9 +934,12 @@ pub(crate) fn load(dir: &Path) -> Config {
             fallback()
         }
     };
-    tracing::info!("mode: {}", if cfg.dev_mode { "DEV" } else { "PLAYER" });
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} log_dir={:?}",
+        "build mode: {}",
+        if cfg.dev_mode { "DEV" } else { "PLAYER" }
+    );
+    tracing::info!(
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} br_menu={} mode={} log_dir={:?}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
@@ -929,6 +957,8 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.mm_join,
         cfg.mm_join_auto,
         cfg.mm_quiet_invite,
+        cfg.br_menu,
+        cfg.mode,
         cfg.log_dir
     );
     tracing::info!("T-008: effective config: [hawk] {:?}", cfg.hawk);
@@ -1176,6 +1206,26 @@ mm_match_players = 9
         );
         let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
+    }
+
+    #[test]
+    fn mode_defaults_to_br_and_accepts_offline_in_both_builds() {
+        use crate::features::mode::GameMode;
+        assert_eq!(Config::default().game_mode(), GameMode::BattleRoyale);
+        let (cfg, w) = parse("mode = \"Offline\"\n").expect("ok");
+        assert!(w.is_empty(), "{w:?}");
+        assert_eq!(
+            (cfg.mode.as_str(), cfg.game_mode()),
+            ("offline", GameMode::Offline)
+        );
+        // Offline keeps the Battle Royale menu on: it only changes what Commence does.
+        assert!(cfg.br_menu);
+        let (cfg, _) =
+            parse_dev("mode = \"offline\"\nmm_queue = true\nbr_menu = true\n").expect("ok");
+        assert!(cfg.br_menu && cfg.game_mode() == GameMode::Offline);
+        let (cfg, w) = parse("mode = \"solo\"\n").expect("ok");
+        assert_eq!(cfg.game_mode(), GameMode::BattleRoyale);
+        assert!(w.iter().any(|l| l.contains("mode = \"solo\"")), "{w:?}");
     }
 
     #[test]

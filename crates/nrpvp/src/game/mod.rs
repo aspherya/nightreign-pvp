@@ -14,6 +14,7 @@ pub(crate) mod flags;
 #[cfg(feature = "dev")]
 pub(crate) mod flagwatch;
 pub(crate) mod fmg;
+pub(crate) mod gamemem;
 pub(crate) mod hawk;
 pub(crate) mod image;
 pub(crate) mod layout;
@@ -29,12 +30,15 @@ pub(crate) mod spawn;
 pub(crate) mod team;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
+pub(crate) mod views;
+pub(crate) mod world;
 
 use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::features::{Ctx, Features};
 use crate::overlay::shared::Command;
 #[cfg(feature = "dev")]
 use crate::overlay::shared::Snapshot;
@@ -68,7 +72,7 @@ const SCAN_ATTEMPTS: usize = 12;
 const SCAN_RETRY: Duration = Duration::from_secs(5);
 
 /// Entry point, called from the mod thread after the startup banner.
-pub(crate) fn run(m: &GameModule, cfg: &Config) {
+pub(crate) fn run(m: &GameModule, cfg: &Config, features: Features) {
     let (base, size) = (m.base, m.size);
 
     let Some(sections) = load_sections(base, size) else {
@@ -117,7 +121,7 @@ pub(crate) fn run(m: &GameModule, cfg: &Config) {
     // T-007a step 1: RTTI from the static image, once. `.rdata` is plain even if code is Arxan-encrypted.
     let rtti = build_rtti(base, size, &sections);
 
-    watch(m, cfg, &scan, derived, rtti);
+    watch(m, cfg, &scan, derived, rtti, features);
 }
 
 /// Snapshot the RTTI-bearing data sections and recover classes/vtables. Never panics out of here.
@@ -236,8 +240,17 @@ fn instance_of(slot: usize) -> Option<usize> {
 }
 
 /// Poll until `WorldChrMan` is non-null (dump the map once in dev mode), then run the rules every tick, forever.
-fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: Rtti) -> ! {
+fn watch(
+    m: &GameModule,
+    cfg: &Config,
+    scan: &Scan,
+    derived: Vec<Found>,
+    rtti: Rtti,
+    mut features: Features,
+) -> ! {
     let (base, size) = (m.base, m.size);
+    tracing::info!("features: {:?}", features.names());
+    let mem = gamemem::RealMem;
     let mut team = team::TeamCtl::new(cfg, base, size);
     // T-035: combat-state tracker and the rival revive rule (both modes).
     let mut combat = Some(combat_state::CombatCtl::new(cfg, base));
@@ -414,6 +427,17 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
         }
         let team_started = Instant::now();
         team.set_instance(wcm_inst);
+        // R3 / OFF-1: this tick's read model (the local player as the downed rule last resolved it) and the features' outbox.
+        let world = world::World::read(
+            &mem,
+            wcm_inst,
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+            crate::mm::phase(),
+        );
+        let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
         for (req, reply) in crate::console::take() {
@@ -446,10 +470,14 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
                 Command::ReviveBlock(on) => reviveblock::set_enabled(on),
                 // HAWK-3: module-level state like the trace.
                 Command::Hawk(h) => hawk::command(h, base, size),
+                // OFF-1: features get their commands with this tick's world.
+                Command::Mode(m) => features.mode.request(m, "console", &world, &mut fctx),
                 c => run_command(c, "console", &mut team),
             });
             let _ = reply.send(text);
         }
+        features.tick(&world, &mut fctx);
+        fctx.flush();
         team.tick();
         let team_spent = team_started.elapsed();
 
@@ -562,7 +590,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         | Command::EarlyRedown(_)
         | Command::BarTrace(_)
         | Command::ReviveBlock(_)
-        | Command::Hawk(_) => {}
+        | Command::Hawk(_)
+        | Command::Mode(_) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {

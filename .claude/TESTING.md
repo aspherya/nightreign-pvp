@@ -567,6 +567,15 @@ The other player saw the jump; both screens agreed; both could still hit each ot
   checkout's `dist` (cruise off until `hawk_cruise 1`, no HAWK lines in the log): not a defect of this build.
 - Not checked: a Spectral Hawk Tree ride after the crossing (must stay vanilla), and two players (next FS).
 
+### 2026-10-22 — OFF-1 Offline mode (Leonardo solo, branch `claude/offline-mode-ccabe0` 711d6fa, worktree `dist\` with `br_menu = true`, `mode = "br"`). Logs: `experiments/OFF-1/nrpvp_2026-10-22_15-25-21.log`: **PASS**
+- Start: `build mode: DEV`, `mode: br (from nrpvp.toml)`, `features: ["mode"]`. No ERROR or panic.
+- `mode offline` (15:28:30) → Commence Solo (press #1, decision Pass): **the expedition started at once**, no searching box (Leonardo).
+- `mode br` during the expedition (15:30:17) → "stays until the expedition ends"; applied on the way back (15:30:26, "after the
+  expedition").
+- Back in the Roundtable, mode br: Commence Solo (#2) → searching (queue phase 1); Commence again (#3) → stopped. As before.
+- Not exercised: Offline + Duo ("solo only" box). Press #4 was Duo in **br** mode (decision 0x120 = "Duo/Trio coming soon"), as
+  before; the Offline + Duo path is covered by unit tests only. Crash on quit: not reported.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

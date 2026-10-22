@@ -91,3 +91,15 @@ pub(crate) const PLAYER_VTABLE_RVA: usize = 0x2C307F8;
 /// RVA of the `CS::CSChrPhysicsModule` vtable, read from the RTTI of `nightreign.exe` 1.3.3.0 on disk (2026-10-13). The game reads
 /// the position at +0x70 of this object (code at exe+0x46E5C1).
 pub(crate) const PHYSICS_VTABLE_RVA: usize = 0x2C1_3720;
+
+// ---- Character type values (MEMORY_MAP §3; TC-004) ----
+/// [`CHR_TYPE`] of a player in the Roundtable.
+pub(crate) const CHR_TYPE_ROUNDTABLE: u32 = 0;
+/// [`CHR_TYPE`] of a player in an expedition.
+pub(crate) const CHR_TYPE_EXPEDITION: u32 = 13;
+
+// ---- The stock expedition menu (MEMORY_MAP §13; UI-1 trace, game 1.03.3) ----
+/// Expedition menu (`r14` in the Commence checks `exe+0x9EEBE0`) -> pointer to its settings object.
+pub(crate) const MENU_SETTINGS: usize = 0xFC8;
+/// u8 Number of Players inside the settings object: 2 one player, 1 two, 0 three.
+pub(crate) const MENU_SETTINGS_PLAYERS: usize = 0x49;

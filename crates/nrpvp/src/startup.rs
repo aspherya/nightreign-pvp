@@ -100,9 +100,11 @@ pub(crate) fn run() {
             if cfg.dev_mode {
                 crate::console::spawn(dll_dir.display().to_string());
             }
+            // R3 / OFF-1: the feature list (the game mode is published here, before any menu can be pressed).
+            let features = crate::features::Features::new(&cfg);
             // T-006 singleton discovery, T-007a RTTI + character discovery and the T-008 controls. Never
             // returns.
-            game::run(&m, &cfg);
+            game::run(&m, &cfg, features);
         }
     }));
     if result.is_err() {

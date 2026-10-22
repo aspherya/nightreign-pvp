@@ -185,6 +185,20 @@ It only matters if we ship our own `c0000.hks`.
 | HAWK-1b falls on the atlas | Run 1 (1052, 1134): open sea, the void. Run 2 ride B (650, 549): **over land** (ground y ≈ 78), about 20 m inside the island's bottom edge, yet the player fell to y −26: ground not solid there at that moment (not loaded, or a cliff lip) `[HYPOTHESIS]`. Keep route ends ≥ 150 m inside the land box | `[VERIFIED: static, atlas]` for the positions |
 | WitchyBND 3.0.1 decrypts `regulation.bin` and writes NR params as XML, but cannot serialize NR MSBs; `msb.py` walks them (sections: MODEL, EVENT, POINT, ROUTE, LAYER, PARTS, version 80) | `experiments/HAWK-0/` |
 
+### 4d. NPC bots: the game's own AI Nightfarers (OFF-3)
+
+`[VERIFIED: static, 1.03.3, 2026-10-22]` unless tagged. Full memo: `research/OFF-3-bots.md`; addresses: `re/MEMORY_MAP.md` §15.
+
+| Finding | Detail |
+|---|---|
+| Event instruction **`2003[97]`** (one i32: `NPCBotTableParam` table id) | Arms `CSNpcBotMan` with every row of that table (NpcParam, NpcThink, CharaInit); the manager's update then spawns them. Does nothing when the solo gate count is above 1 |
+| Event instruction **`2003[98]`** (no args) | Removes every spawned bot and clears the table |
+| No shipped event script uses 97 or 98 (279 `.emevd` scanned; bank 2003 ids 0..130 occur) | The system is dormant in vanilla play |
+| Bot data | `NPCBotTableParam` tables 10..80 (2 heroes each, level 1) and 10000 / 20000 / 30000 (8 heroes, levels 6 / 11 / 13); `NpcParam 600040000` team 2 (ally); `NpcThinkParam 600040000` logic 30000 (follow the host) + battle 29999 (`Common_NPC_AI`: plays a Nightfarer: skill, ultimate, items, revives) |
+| Hostile cousins | `SmallbaseInvationNpcParam`: Nightfarer-style invaders at small bases (team 6, logic 31000 = guard home, same battle AI) |
+| Spawned where, how many, with which model parts | UNKNOWN (navmesh + Havok + AI-manager callees suggest "on the navmesh near the host"); OFF-4 spike |
+| Custom AI logic | The game loads `c0000.hks` as plain Lua from a package (§4b), so a plain-text roaming logic script for bots may load the same way `[HYPOTHESIS]` |
+
 ---
 
 ## 5. Design decisions log

@@ -247,6 +247,17 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 | 377 `GetBirdEventID` | answered by the switch | −1 idle; **4** for one or two frames when the start ride begins; 0 blips during rides; **2** at the route end (one or two frames). Answering 2 ourselves is accepted (359 answers, no error); answering 1 instead of 4 makes the start ride run the tree-hawk loop (394 then reacts to the stick) | `[VERIFIED: HAWK-3 run 1]`; on-screen effect pending |
 | 394 / 384 | | 394 direction time: rises ~1,600/s while the stick is held on a tree-hawk ride, 0 on a vanilla start ride. 384 escape time: −1 on the route, counts up while off it | `[VERIFIED: HAWK-3 run 1]` |
 
+## 15. NPC bots: `CSNpcBotMan` (OFF-3, game 1.03.3)
+
+Dormant in vanilla play (no shipped event script starts it). Story and params: `research/OFF-3-bots.md`.
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| `CSNpcBotMan` | FD4 singleton, slot `exe+0x3C0B518` | Re-created on every area load. Ticked every frame by the world update (`exe+0x523728` → `exe+0x38D280`) | `[VERIFIED: singleton log 2026-10-22 + static]` |
+| Bot table state | `+0x0` table id (−1 none), `+0x4` armed byte, `+0x0C` (NpcParam, NpcThink, CharaInit) triples (12 bytes each), `+0x40` f32 timer (−1.0 when armed) | Filled by `exe+0x38CF70` (event `2003[97]`), cleared by `exe+0x38D110` (`2003[98]`) | `[VERIFIED: static, 2026-10-22]` |
+| Spawned bots | vector `+0x28`..`+0x30`, 16-byte entries (byte `+9` = "remove") | `2003[98]` finds each character (`exe+0x518F30`) and calls `exe+0x3CD800` on it | `[VERIFIED: static]`; that `exe+0x3CD800` removes the bot `[HYPOTHESIS]` |
+| Solo gate | `[[exe+0x3C13258]+0xDC8]+0x14` (i32) | `2003[97]` does nothing when it is above 1. What it counts: UNKNOWN (party size `[HYPOTHESIS]`) | `[VERIFIED: static]` |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).

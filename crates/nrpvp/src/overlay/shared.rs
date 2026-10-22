@@ -49,6 +49,8 @@ pub(crate) enum Command {
     ReviveBlock(bool),
     /// HAWK-3 (dev only): the hawk env swap (`game::hawk`); handled in the main loop like `ReviveFail`.
     Hawk(HawkCmd),
+    /// OFF-1 (dev console): switch the game mode (`crate::features::mode`); handled in the main loop by the feature list.
+    Mode(crate::features::mode::GameMode),
 }
 
 /// HAWK-3 console commands (`hawk_*`).

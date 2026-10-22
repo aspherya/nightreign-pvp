@@ -35,6 +35,7 @@ DllMain ─► nrpvp-main thread (startup::run, catch_unwind)
 |---|---|---|
 | Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
 | Game access | `game/mem`, `game/layout` (every object offset), `rtti`, `singletons`, `image`, `event_flags`, `fmg`, `dr` | Good |
+| Feature list (OFF-1) | `features/` (`Feature` trait, `Features`, `Ctx`; first feature `mode`), `game/world` (`World` read model), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (typed views) | New behaviour goes here; the older controllers below move in when a card touches them |
 | Features | `game/team/` (player list, writes, PvP marking, persist, snapshot), `game/combat_state/` (tracker, downed rule), `game/menuflow`, `game/flags`, `mm/ui_msg`, `steam/quietinvite` | Split by job (R3); files under ~550 lines except tests |
 | Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev` except `poswrite` (runtime dev-only) |
 
@@ -109,8 +110,8 @@ Every R-card is **behaviour-preserving**: same log lines, same tests green, plus
 |---|---|---|---|
 | R0 ✅ | **Done 2026-10-20.** `cargo fmt` once; CI on GitHub Actions (fmt, clippy `-D warnings` for dev and player builds, test) | everything | XS |
 | R1 ✅ | **Done 2026-10-20 (first pass):** feature `dev` (default on) gates the ImGui panel, `lobtrace`, `menutrace`, `texttrace`, `c1proto`, `flagwatch`; shared helpers moved to `dr.rs` (debug registers), `game/fmg.rs` (text tables), `menuflow`/`flags`; player DLL refuses `dev_mode`; package-release builds the player DLL (3.2 → 2.0 MB). Probes, scans and `poswrite` are still compiled: they go in R5. Original scope: Cargo feature `dev`: move dev tooling under `dev/`, `#[cfg]` out of the player build; `build.ps1` builds with it, `package-release.ps1` without. Move `apply_all` into `hwbp` (P8) | P6, P8, console | M |
-| R2 ◐ | **Half done 2026-10-20:** `game/layout.rs` (every object offset, MEMORY_MAP refs). **Open:** typed views (`PlayerIns<'m>`) and one `GameMem` trait replacing `RegionCache` / `CombatMem` | P2 ✅, P3 | M |
-| R3 ◐ | **Split done 2026-10-20:** `game/team/` and `game/combat_state/` by job (pure moves, same tests). **Open:** `World` read model, `Feature` trait, startup loop | P1 ✅, P7 ✅, P4 | L |
+| R2 ◐ | **Half done 2026-10-20:** `game/layout.rs` (every object offset, MEMORY_MAP refs). **OFF-1 (2026-10-22):** the `GameMem` port (`game/gamemem.rs`: `RealMem`, `FakeMem`) and the first typed views (`game/views.rs`: `ChrIns`, `ExpeditionMenu`, `MenuSettings`; `menuflow` uses them). **Open:** move `RegionCache` / `CombatMem` users onto the port (a `PlayerIns` view) when a card touches them | P2 ✅, P3 | M |
+| R3 ◐ | **Split done 2026-10-20:** `game/team/` and `game/combat_state/` by job (pure moves, same tests). **OFF-1 (2026-10-22):** `Feature` trait + `Features` list built in `startup.rs` and ticked by the main loop with a per-tick `World` (`game/world.rs`) and a `Ctx` outbox; first feature: the game mode. **Open:** move `TeamCtl` / `CombatCtl` / hawk into the list | P1 ✅, P7 ✅, P4 | L |
 | R4 ◐ | **Removed keys done (R5):** overlay/hotkey/probe/C1/downed keys gone, old files load with one warning. **Open:** sections | P5 | S |
 | R5 ✅ | **Done 2026-10-20:** ImGui panel + hudhook, hotkeys, T-027…T-038 probes and scans, discovery worker, MARK dumps, `c1proto`, the inert downed experiment (~12 k lines). Kept: UI-0/UI-1 tracers (MM-3g RE), `flagwatch`, `poswrite` (Task D) | P6 | M |
 | R6 | Thread map + mailbox list in this file; one `core::threads` spawner that names and logs every thread | P9 | S |

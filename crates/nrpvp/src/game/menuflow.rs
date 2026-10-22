@@ -16,6 +16,8 @@
 //!   Two / Three players) with "Solo Mission" / "Up to 6 players"; the handler swaps those ids for ours (99100100..=99100102 "Solo" /
 //!   "Duo" / "Trio", CL_MenuText_dlc01 entries from the game-data package, `scripts/build-gamedata.ps1`) before the lookup runs, so
 //!   SC's hook never sees them. Armed only once our first id is found in the live CL_MenuText_dlc01 FMG (no package = SC's labels).
+//! - OFF-1: the game mode (`crate::features::mode`) is read here too. In Offline, Commence with Solo is left to the game (its own
+//!   solo expedition, no queue); Duo/Trio show a dialog that Offline is solo only.
 //! - The handler never takes a lock: it records a request in an atomic; this module's thread hands it to the matchmaking worker
 //!   (`crate::mm::send`), the same path as the overlay's queue buttons.
 //!
@@ -29,7 +31,10 @@ use windows::Win32::Foundation::STATUS_SINGLE_STEP;
 use windows::Win32::System::Diagnostics::Debug::{AddVectoredExceptionHandler, EXCEPTION_POINTERS};
 
 use super::fmg::{dialogues_fmg, offset_slot};
+use super::gamemem::RealMem;
+use super::views::ExpeditionMenu;
 use crate::dr::{EFLAGS_RF, EXCEPTION_CONTINUE_EXECUTION, EXCEPTION_CONTINUE_SEARCH};
+use crate::features::mode::GameMode;
 use crate::mm::{PHASE_MATCHED, PHASE_SEARCHING};
 
 // R1: moved here from the dev-only C1 prototype (`c1proto`), which now imports them.
@@ -71,8 +76,6 @@ pub(crate) fn label_swap(id: u32, phase: u8) -> Option<u32> {
     }
 }
 
-const MENU_SETTINGS_OFF: usize = 0xFC8;
-const PLAYERS_BYTE: usize = 0x49;
 /// Number of Players byte values (`0x9EF3F0`: 2 → 130304 "Commence Solo Expedition", 1 → 130305 "Two-Player", else three).
 pub(crate) const PLAYERS_ONE: u8 = 2;
 pub(crate) const PLAYERS_TWO: u8 = 1;
@@ -84,7 +87,8 @@ pub(crate) const T_SEARCHING: usize = 0;
 pub(crate) const T_STOPPED: usize = 1;
 pub(crate) const T_SOON: usize = 2;
 pub(crate) const T_OFF: usize = 3;
-const N_TEXTS: usize = 4;
+pub(crate) const T_OFFLINE_SOLO: usize = 4;
+const N_TEXTS: usize = 5;
 const TEXT_UNITS: usize = 256;
 
 /// Requests from the handler to the thread.
@@ -104,7 +108,18 @@ pub(crate) enum Decision {
 }
 
 /// The decision for a Commence press (pure; unit tested).
-pub(crate) fn decide(players: u8, phase: u8, mm_on: bool) -> Decision {
+pub(crate) fn decide(players: u8, phase: u8, mm_on: bool, mode: GameMode) -> Decision {
+    // OFF-1: Offline runs the game's own solo Commence whatever the queue is doing (switching to Offline leaves the queue).
+    if mode == GameMode::Offline {
+        return if players == PLAYERS_ONE {
+            Decision::Pass
+        } else {
+            Decision::Dialog {
+                text: T_OFFLINE_SOLO,
+                request: REQ_NONE,
+            }
+        };
+    }
     if !mm_on {
         return Decision::Dialog {
             text: T_OFF,
@@ -142,6 +157,8 @@ pub(crate) fn texts() -> [String; N_TEXTS] {
         "Battle Royale: stopped searching for players.".to_string(),
         "Duo and Trio Battle Royale are coming soon.\nChoose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale matchmaking is turned off (matchmaking = false).".to_string(),
+        "Offline mode is solo only.
+Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
     ]
 }
 
@@ -202,26 +219,28 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         if rip == 0 || rip != ADDR.load(Ordering::Relaxed) {
             return EXCEPTION_CONTINUE_SEARCH;
         }
-        let menu = (*ctx).R14 as usize;
-        let settings = if menu > 0x10000 {
-            *((menu + MENU_SETTINGS_OFF) as *const usize)
-        } else {
-            0
-        };
+        // R2: the menu and its settings through the typed view (guarded reads, gated write; no lock, no VirtualQuery on reads).
+        let mem = RealMem;
+        let settings = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).settings();
+        let players = settings.as_ref().and_then(|s| s.players());
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
-        if settings > 0x10000 && fmg != 0 && slot != 0 {
-            let pbyte = (settings + PLAYERS_BYTE) as *mut u8;
-            let players = *pbyte;
+        if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
-            let d = decide(players, phase, crate::mm::enabled());
+            let mode = crate::features::mode::current();
+            let d = decide(players, phase, crate::mm::enabled(), mode);
             PRESSES.fetch_add(1, Ordering::Relaxed);
             LAST.store(
-                (u64::from(players) << 32) | (u64::from(phase) << 24) | decision_code(d),
+                (u64::from(mode == GameMode::Offline) << 40)
+                    | (u64::from(players) << 32)
+                    | (u64::from(phase) << 24)
+                    | decision_code(d),
                 Ordering::Relaxed,
             );
             match d {
                 Decision::Pass => {}
-                Decision::PassMultiplayer => *pbyte = PLAYERS_TWO,
+                Decision::PassMultiplayer => {
+                    let _ = settings.set_players(PLAYERS_TWO);
+                }
                 Decision::Dialog { text, request } => {
                     *(slot as *mut u64) = (text_addr(text) as u64).wrapping_sub(fmg as u64);
                     if request != REQ_NONE {
@@ -357,8 +376,9 @@ fn run(base: usize) {
         if p != seen {
             let l = LAST.load(Ordering::Relaxed);
             tracing::info!(
-                "br_menu: Commence pressed (#{p}): Number of Players byte {}, queue phase {}, decision code 0x{:X}",
-                l >> 32,
+                "br_menu: Commence pressed (#{p}): mode {}, Number of Players byte {}, queue phase {}, decision code 0x{:X}",
+                if (l >> 40) & 1 == 1 { "offline" } else { "br" },
+                (l >> 32) & 0xFF,
                 (l >> 24) & 0xFF,
                 l & 0xFF_FFFF
             );
@@ -375,21 +395,21 @@ mod tests {
     #[test]
     fn idle_solo_queues_and_duo_trio_are_coming_soon() {
         assert_eq!(
-            decide(PLAYERS_ONE, PHASE_IDLE, true),
+            decide(PLAYERS_ONE, PHASE_IDLE, true, GameMode::BattleRoyale),
             Decision::Dialog {
                 text: T_SEARCHING,
                 request: REQ_QUEUE_SOLO
             }
         );
         assert_eq!(
-            decide(PLAYERS_TWO, PHASE_IDLE, true),
+            decide(PLAYERS_TWO, PHASE_IDLE, true, GameMode::BattleRoyale),
             Decision::Dialog {
                 text: T_SOON,
                 request: REQ_NONE
             }
         );
         assert_eq!(
-            decide(PLAYERS_THREE, PHASE_IDLE, true),
+            decide(PLAYERS_THREE, PHASE_IDLE, true, GameMode::BattleRoyale),
             Decision::Dialog {
                 text: T_SOON,
                 request: REQ_NONE
@@ -401,7 +421,7 @@ mod tests {
     fn searching_commence_stops() {
         for p in [PLAYERS_ONE, PLAYERS_TWO, PLAYERS_THREE] {
             assert_eq!(
-                decide(p, PHASE_SEARCHING, true),
+                decide(p, PHASE_SEARCHING, true, GameMode::BattleRoyale),
                 Decision::Dialog {
                     text: T_STOPPED,
                     request: REQ_LEAVE
@@ -413,16 +433,19 @@ mod tests {
     #[test]
     fn matched_commence_runs_as_multiplayer() {
         assert_eq!(
-            decide(PLAYERS_ONE, PHASE_MATCHED, true),
+            decide(PLAYERS_ONE, PHASE_MATCHED, true, GameMode::BattleRoyale),
             Decision::PassMultiplayer
         );
-        assert_eq!(decide(PLAYERS_TWO, PHASE_MATCHED, true), Decision::Pass);
+        assert_eq!(
+            decide(PLAYERS_TWO, PHASE_MATCHED, true, GameMode::BattleRoyale),
+            Decision::Pass
+        );
     }
 
     #[test]
     fn matchmaking_off_says_so() {
         assert_eq!(
-            decide(PLAYERS_ONE, PHASE_IDLE, false),
+            decide(PLAYERS_ONE, PHASE_IDLE, false, GameMode::BattleRoyale),
             Decision::Dialog {
                 text: T_OFF,
                 request: REQ_NONE
@@ -449,6 +472,33 @@ mod tests {
             assert_eq!(label_swap(id, PHASE_MATCHED), None);
         }
         assert_eq!(label_swap(130_301, PHASE_SEARCHING), None);
+    }
+
+    #[test]
+    fn offline_solo_runs_the_games_own_commence_in_every_phase() {
+        for ph in [PHASE_IDLE, PHASE_SEARCHING, PHASE_MATCHED] {
+            for mm_on in [true, false] {
+                assert_eq!(
+                    decide(PLAYERS_ONE, ph, mm_on, GameMode::Offline),
+                    Decision::Pass
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn offline_duo_trio_say_solo_only_and_never_queue() {
+        for p in [PLAYERS_TWO, PLAYERS_THREE] {
+            for ph in [PHASE_IDLE, PHASE_SEARCHING, PHASE_MATCHED] {
+                assert_eq!(
+                    decide(p, ph, true, GameMode::Offline),
+                    Decision::Dialog {
+                        text: T_OFFLINE_SOLO,
+                        request: REQ_NONE
+                    }
+                );
+            }
+        }
     }
 
     #[test]

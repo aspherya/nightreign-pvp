@@ -208,7 +208,7 @@ impl RegionCache {
 
 /// Copy `out.len()` bytes at `addr` into `out` with one `ReadProcessMemory` on our own process. False (and `out`
 /// unspecified) unless every byte was copied: an unmapped, no-access or guard page fails the call instead of faulting.
-fn copy_out(addr: usize, out: &mut [u8]) -> bool {
+pub(crate) fn copy_out(addr: usize, out: &mut [u8]) -> bool {
     if addr < MIN_VALID_ADDR || out.is_empty() {
         return false;
     }

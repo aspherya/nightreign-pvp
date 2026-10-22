@@ -20,6 +20,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use crate::features::mode::GameMode;
 use crate::mm::Mode;
 use crate::overlay::shared::{Command, HawkCmd, PvpveState, Relation, Snapshot};
 use target::{parse_target, pick, session_no, Target, TARGET_HELP};
@@ -52,6 +53,8 @@ pub(crate) enum MainReq {
     ReviveBlock(Option<bool>),
     /// HAWK-3: one `hawk_*` command; the reply is the hawk state line.
     Hawk(HawkCmd),
+    /// OFF-1: `mode br|offline` switches the game mode (now, or once back in the Roundtable); the reply is the mode line.
+    Mode(GameMode),
 }
 
 /// What a command does.
@@ -75,7 +78,8 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "echo", args: "text…", help: "write `console: echo: text` to the log (a note for whoever reads it)", run: echo },
     Spec { name: "mark", args: "[text…]", help: "write `MARK #n: text` to the log (dev mode also starts the MARK dump, like the old Mark key)", run: mark },
     Spec { name: "log", args: "[n]", help: "the last n log lines (default 20, at most 300) straight from the game", run: log_tail },
-    Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
+    Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, game mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
+    Spec { name: "mode", args: "[br|offline]", help: "game mode: br = Commence starts the queue, offline = Commence Solo starts a solo expedition at once; during an expedition the change waits for the Roundtable; no argument shows it", run: mode },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
     Spec { name: "team_restore", args: "[target]", help: "put back the team_type captured before the first write (default me)", run: team_restore },
@@ -377,6 +381,15 @@ fn hawk_boost(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::Hawk(HawkCmd::Boost(on))))
 }
 
+fn mode(args: &[String]) -> Result<Act, String> {
+    match args.first() {
+        None => Ok(Act::Reply(crate::features::mode::status_line())),
+        Some(a) => GameMode::parse(a)
+            .map(|m| Act::Main(MainReq::Mode(m)))
+            .ok_or_else(|| "expected br or offline".into()),
+    }
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -494,6 +507,10 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
             run(Command::Hawk(c));
             crate::game::hawk::status_line()
         }
+        MainReq::Mode(m) => {
+            run(Command::Mode(m));
+            crate::features::mode::status_line()
+        }
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
         MainReq::Team(value, t) => {
@@ -563,10 +580,11 @@ fn status_text(s: &Snapshot) -> String {
         "off".to_string()
     };
     format!(
-        "nrpvp {} (dev), pid {}\n{world}\n{me}\npvp: {pvp}, team_size {}\nmatchmaking: {mm}",
+        "nrpvp {} (dev), pid {}\n{world}\n{me}\npvp: {pvp}, team_size {}\n{}\nmatchmaking: {mm}",
         env!("CARGO_PKG_VERSION"),
         std::process::id(),
-        s.team_size
+        s.team_size,
+        crate::features::mode::status_line()
     )
 }
 
@@ -691,6 +709,28 @@ mod tests {
     }
 
     #[test]
+    fn mode_parses_and_maps_to_the_mode_command() {
+        assert!(execute_line("mode solo").contains("expected br or offline"));
+        assert!(execute_line("mode solo").contains("usage: mode [br|offline]"));
+        assert!(matches!(
+            mode(&["offline".into()]),
+            Ok(Act::Main(MainReq::Mode(GameMode::Offline)))
+        ));
+        assert!(matches!(
+            mode(&["BR".into()]),
+            Ok(Act::Main(MainReq::Mode(GameMode::BattleRoyale)))
+        ));
+        // No argument: answered on the pipe thread with the mode line.
+        assert!(execute_line("mode").starts_with("mode: "));
+        let mut ran = Vec::new();
+        let r = answer(MainReq::Mode(GameMode::Offline), &snap(), &mut |c| {
+            ran.push(c)
+        });
+        assert_eq!(ran, vec![Command::Mode(GameMode::Offline)]);
+        assert!(r.starts_with("mode: "), "{r}");
+    }
+
+    #[test]
     fn team_commands_map_to_the_existing_main_loop_commands() {
         let s = snap();
         let mut ran = Vec::new();
@@ -801,6 +841,7 @@ usage: revive_fail [n]"
         assert!(p.contains("p2") && p.contains("rival") && p.contains("me"));
         let st = answer(MainReq::Status, &s, &mut |_| {});
         assert!(st.contains("world loaded, 2 player(s)"));
+        assert!(st.contains("\nmode: "), "{st}");
         assert_eq!(
             answer(MainReq::Players, &Snapshot::default(), &mut |_| {}),
             "no players loaded"

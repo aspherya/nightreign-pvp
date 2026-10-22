@@ -29,7 +29,8 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `echo` | `text…` | Write `console: echo: text` to the log (a note for whoever reads the log) |
 | `mark` | `[text…]` | Write a numbered `MARK #n: text` line to the log |
 | `log` | `[n]` | The last n log lines (default 20, at most 300), straight from the game |
-| `status` | | World loaded or not, local player and its team value, PvP mode, matchmaking line, pid |
+| `status` | | World loaded or not, local player and its team value, PvP mode, game mode (`mode: br` / `mode: offline`), matchmaking line, pid |
+| `mode` | `[br\|offline]` | OFF-1 game mode. `br`: Commence starts the queue. `offline`: Commence with Solo starts the game's own solo expedition at once (Duo/Trio say "solo only"); switching to it leaves the queue. Asked during an expedition, the change waits for the Roundtable. No argument shows the mode. Logs `mode: <mode>` |
 | `players` | | Every player in this game's ChrSet: slot, `pN`, id, team value, relation (me / ally / rival) |
 | `team_set` | `<value> [target]` | Write team_type on this game's copy of the target's players (default `me`) |
 | `team_restore` | `[target]` | Put back the team_type captured before the first write (default `me`) |
