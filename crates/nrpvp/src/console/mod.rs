@@ -42,6 +42,14 @@ pub(crate) enum MainReq {
     Persist(bool, Target),
     Status,
     Players,
+    /// T-040: `revive_fail <n>` sets the forced-failure count; `revive_fail` alone reports what is left.
+    ReviveFail(Option<u32>),
+    /// T-040 follow-up: `early_redown 0|1` switches the get-up re-down experiment; `early_redown` alone reports it.
+    EarlyRedown(Option<bool>),
+    /// T-041 step 1: `bar_trace 0|1` switches the revive-bar write trace; `bar_trace` alone reports it.
+    BarTrace(Option<bool>),
+    /// T-041 step 3 prototype: `revive_block 0|1`; no argument reports it.
+    ReviveBlock(Option<bool>),
 }
 
 /// What a command does.
@@ -79,6 +87,10 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "pos_next", args: "", help: "snap-back test (T-028): select the next position candidate", run: |_| Ok(run_ack(Command::PosCycle, "next position candidate selected (see the log)")) },
     Spec { name: "pos_save", args: "", help: "snap-back test: save your current values of every position candidate", run: |_| Ok(run_ack(Command::PosSave, "position values saved (see the log)")) },
     Spec { name: "pos_go", args: "", help: "snap-back test: write the saved values into the selected candidate (you only)", run: |_| Ok(run_ack(Command::PosWrite, "position written; follow-up values at +100 ms / +500 ms / +2 s in the log")) },
+    Spec { name: "revive_fail", args: "[n]", help: "T-040 test: make the next n rival re-down tries fail (forced by console); no argument shows the count left", run: revive_fail },
+    Spec { name: "early_redown", args: "[0|1]", help: "experiment: knock a rival-revived player down during the get-up (1) or only after it (0, default); no argument shows the state", run: early_redown },
+    Spec { name: "bar_trace", args: "[0|1]", help: "T-041 trace: log which instruction writes the downed LOCAL player's revive bar (hardware write watch, slot 3); no argument shows ON/OFF and hits", run: bar_trace },
+    Spec { name: "revive_block", args: "[0|1]", help: "T-041 prototype: stop a rival's revive of LOCAL before the game starts the get-up (hardware breakpoint while downed); no argument shows ON/OFF and blocks", run: revive_block },
     Spec { name: "mm_join", args: "link|invite|direct|unlock_public|unlock_invisible|relock", help: "one join-method attempt for the ready match (dev, mm_join = true)", run: mm_join },
     Spec { name: "mm_sc_create", args: "", help: "create a lobby the game's way and see if Seamless Co-op adopts it (dev, mm_sc_create = true)", run: |_| Ok(mm(Command::MmScCreate, "SC lobby create test")) },
     Spec { name: "mm_quiet_test", args: "", help: "suppress the Steam invite window for 60 s (dev, mm_quiet_invite = true)", run: |_| Ok(mm(Command::MmQuietTest, "quiet invite test")) },
@@ -248,6 +260,44 @@ fn team_persist(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::Persist(on, t)))
 }
 
+fn revive_fail(args: &[String]) -> Result<Act, String> {
+    let n = match args.first() {
+        None => None,
+        Some(v) => Some(v.parse::<u32>().map_err(|_| "n must be a number")?),
+    };
+    Ok(Act::Main(MainReq::ReviveFail(n)))
+}
+
+fn early_redown(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        None => None,
+        Some("0") => Some(false),
+        Some("1") => Some(true),
+        Some(_) => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::EarlyRedown(on)))
+}
+
+fn revive_block(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        None => None,
+        Some("0") => Some(false),
+        Some("1") => Some(true),
+        Some(_) => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::ReviveBlock(on)))
+}
+
+fn bar_trace(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        None => None,
+        Some("0") => Some(false),
+        Some("1") => Some(true),
+        Some(_) => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::BarTrace(on)))
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -319,6 +369,48 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
             }
             format!("PvP marking paused; {n} player(s) restored on this game")
         }
+        MainReq::ReviveFail(Some(n)) => {
+            run(Command::ReviveFail(n));
+            format!("the next {n} rival re-down try(s) will fail with \"forced by console\"")
+        }
+        MainReq::ReviveFail(None) => {
+            format!("{} forced re-down failure(s) left", snap.revive_fail_left)
+        }
+        MainReq::EarlyRedown(Some(on)) => {
+            run(Command::EarlyRedown(on));
+            format!(
+                "early re-down (during the get-up) {}",
+                if on { "ON" } else { "OFF" }
+            )
+        }
+        MainReq::EarlyRedown(None) => format!(
+            "early re-down (during the get-up) {}",
+            if snap.early_redown { "ON" } else { "OFF" }
+        ),
+        MainReq::BarTrace(Some(on)) => {
+            run(Command::BarTrace(on));
+            format!(
+                "bar_trace {} (arms while LOCAL is downed; results in the log, lines start with T-041)",
+                if on { "ON" } else { "OFF" }
+            )
+        }
+        MainReq::BarTrace(None) => format!(
+            "bar_trace {}, {} write(s) captured so far",
+            if snap.bar_trace { "ON" } else { "OFF" },
+            snap.bar_trace_hits
+        ),
+        MainReq::ReviveBlock(Some(on)) => {
+            run(Command::ReviveBlock(on));
+            format!(
+                "revive_block {} (stops a rival's revive of LOCAL before the get-up; lines start with T-041)",
+                if on { "ON" } else { "OFF" }
+            )
+        }
+        MainReq::ReviveBlock(None) => format!(
+            "revive_block {}, {} block(s) so far",
+            if snap.revive_block { "ON" } else { "OFF" },
+            snap.revive_blocks
+        ),
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
         MainReq::Team(value, t) => {
@@ -512,6 +604,55 @@ mod tests {
             ran.push(c)
         });
         assert!(r.starts_with("error:") && ran.is_empty());
+    }
+
+    #[test]
+    fn revive_fail_sets_or_reports_the_forced_failure_count() {
+        assert_eq!(
+            run_one(&["revive_fail".into(), "x".into()]).unwrap_or_else(|e| e),
+            "n must be a number
+usage: revive_fail [n]"
+        );
+        let mut s = snap();
+        s.revive_fail_left = 2;
+        let mut ran = Vec::new();
+        let r = answer(MainReq::ReviveFail(Some(3)), &s, &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::ReviveFail(3)]);
+        assert!(r.contains("next 3"), "{r}");
+        ran.clear();
+        let r = answer(MainReq::ReviveFail(None), &s, &mut |c| ran.push(c));
+        assert!(ran.is_empty() && r.starts_with("2 forced"), "{r}");
+    }
+
+    #[test]
+    fn early_redown_switches_or_reports_the_experiment() {
+        assert!(run_one(&["early_redown".into(), "2".into()]).is_err());
+        let mut s = snap();
+        let mut ran = Vec::new();
+        let r = answer(MainReq::EarlyRedown(Some(true)), &s, &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::EarlyRedown(true)]);
+        assert!(r.ends_with("ON"), "{r}");
+        ran.clear();
+        s.early_redown = false;
+        let r = answer(MainReq::EarlyRedown(None), &s, &mut |c| ran.push(c));
+        assert!(ran.is_empty() && r.ends_with("OFF"), "{r}");
+    }
+
+    #[test]
+    fn bar_trace_switches_or_reports() {
+        assert!(run_one(&["bar_trace".into(), "x".into()]).is_err());
+        let mut s = snap();
+        let mut ran = Vec::new();
+        let r = answer(MainReq::BarTrace(Some(true)), &s, &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::BarTrace(true)]);
+        assert!(r.contains("ON"), "{r}");
+        ran.clear();
+        s.bar_trace_hits = 7;
+        let r = answer(MainReq::BarTrace(None), &s, &mut |c| ran.push(c));
+        assert!(
+            ran.is_empty() && r.contains("OFF") && r.contains("7 write"),
+            "{r}"
+        );
     }
 
     #[test]

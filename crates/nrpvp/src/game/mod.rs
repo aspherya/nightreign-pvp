@@ -6,6 +6,8 @@
 //! are executed here, on this thread, by [`run_command`]; nothing else writes game memory from another thread.
 //! R5 (2026-10-20) removed the overlay, the hotkeys, the discovery worker, the probes and the MARK dumps.
 
+#[cfg(feature = "dev")]
+pub(crate) mod bartrace;
 pub(crate) mod combat_state;
 pub(crate) mod event_flags;
 pub(crate) mod flags;
@@ -19,8 +21,10 @@ pub(crate) mod menuflow;
 #[cfg(feature = "dev")]
 pub(crate) mod menutrace;
 pub(crate) mod poswrite;
+pub(crate) mod reviveblock;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
+pub(crate) mod spawn;
 pub(crate) mod team;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
@@ -416,8 +420,29 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
             };
             team.refresh_live_next();
             team.fill_snapshot(&mut snap);
-            let text =
-                crate::console::answer(req, &snap, &mut |c| run_command(c, "console", &mut team));
+            snap.revive_fail_left = combat.as_ref().map_or(0, |c| c.forced_fails());
+            snap.early_redown = combat.as_ref().is_some_and(|c| c.early_redown());
+            snap.bar_trace = bartrace::enabled();
+            snap.bar_trace_hits = bartrace::hits();
+            snap.revive_block = reviveblock::enabled();
+            snap.revive_blocks = reviveblock::blocks();
+            let text = crate::console::answer(req, &snap, &mut |c| match c {
+                // T-040: the combat controller lives next to the team controller, not inside it.
+                Command::ReviveFail(n) => {
+                    if let Some(cc) = combat.as_mut() {
+                        cc.set_forced_fails(n);
+                    }
+                }
+                Command::EarlyRedown(on) => {
+                    if let Some(cc) = combat.as_mut() {
+                        cc.set_early_redown(on);
+                    }
+                }
+                // T-041: the trace is a module-level switch.
+                Command::BarTrace(on) => bartrace::set_enabled(on),
+                Command::ReviveBlock(on) => reviveblock::set_enabled(on),
+                c => run_command(c, "console", &mut team),
+            });
             let _ = reply.send(text);
         }
         team.tick();
@@ -452,6 +477,15 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
                 Vec::new()
             };
             c.tick(subjects);
+        }
+        // T-041 step 1 (dev only): arm / drain the revive-bar write watch.
+        #[cfg(feature = "dev")]
+        if let Some(c) = combat.as_ref() {
+            bartrace::tick(c, base, size);
+        }
+        // T-041: drop a rival's revive event before the game starts the get-up (both builds, always on).
+        if let Some(c) = combat.as_mut() {
+            reviveblock::tick(c, base);
         }
         let combat_spent = combat_started.elapsed();
         let spent = tick_started.elapsed();
@@ -509,6 +543,11 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         Command::PosCycle => team.pos_cycle(),
         Command::PosSave => team.pos_save(src),
         Command::PosWrite => team.pos_write(src),
+        // T-040: intercepted in the loop (it needs the combat controller); never reaches here.
+        Command::ReviveFail(_)
+        | Command::EarlyRedown(_)
+        | Command::BarTrace(_)
+        | Command::ReviveBlock(_) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {

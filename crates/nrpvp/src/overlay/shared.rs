@@ -38,6 +38,15 @@ pub(crate) enum Command {
     MmScCreate,
     /// MM-3f (dev only, `mm_quiet_invite`): the "test quiet invite" button.
     MmQuietTest,
+    /// T-040 (dev only): the next n re-down tries fail ("forced by console"). Handled by the main loop next to the combat
+    /// controller, not by `run_command`.
+    ReviveFail(u32),
+    /// T-040 follow-up (dev only): switch the get-up re-down experiment (`Core::early_redown`); handled like `ReviveFail`.
+    EarlyRedown(bool),
+    /// T-041 step 1 (dev only): switch the revive-bar write trace (`game::bartrace`); handled in the main loop like `ReviveFail`.
+    BarTrace(bool),
+    /// T-041 step 3 prototype (dev only): switch the revive block.
+    ReviveBlock(bool),
 }
 
 /// Which PlayerIns is local (the first valid one in ChrSet entry order, T-020).
@@ -124,6 +133,16 @@ impl PvpveState {
 /// The main loop's view of the game for the console, as plain values (no pointers are ever dereferenced from here).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Snapshot {
+    /// T-040: forced re-down failures still to come (`revive_fail`).
+    pub revive_fail_left: u32,
+    /// T-040 follow-up: the get-up re-down experiment is on (`early_redown`).
+    pub early_redown: bool,
+    /// T-041 step 1: the revive-bar write trace is on (`bar_trace`) and how many writes it has captured.
+    pub bar_trace: bool,
+    pub bar_trace_hits: u64,
+    /// T-041 step 3 prototype: the revive block is on (`revive_block`) and how many revives it stopped.
+    pub revive_block: bool,
+    pub revive_blocks: u32,
     /// WorldChrMan instance address, 0 = not live.
     pub wcm_instance: usize,
     /// PlayerIns-derived vtables known (RTTI recovered); writes are refused without them.

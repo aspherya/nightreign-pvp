@@ -184,57 +184,64 @@ fn classification_covers_every_kind_and_missing_data() {
         .starts_with("RIVAL id=0x2"));
 }
 
+/// T-033 tracker lines only (the T-040 state lines are tested on their own).
+fn step33(c: &mut Core, t: u64, f: &mut Fake) -> Vec<String> {
+    let mut l = c.step(t, &subjects(), f);
+    l.retain(|x| !x.starts_with("T-040"));
+    l
+}
+
 #[test]
 fn transitions_down_up_and_respawn_are_detected_and_logged_once() {
     // Tracker only: the rule is off (its own tests are below).
     let mut f = world();
     let mut c = Core::new(true, RevivePolicy::Vanilla);
     // First tick seeds.
-    let l = c.step(0, &subjects(), &mut f);
+    let l = step33(&mut c, 0, &mut f);
     assert_eq!(l.iter().filter(|x| x.contains("INIT")).count(), 3, "{l:?}");
     // Nothing changes: nothing logged.
-    assert!(c.step(100, &subjects(), &mut f).is_empty());
+    assert!(step33(&mut c, 100, &mut f).is_empty());
     // The rival downs LOCAL.
     f.downed(P0, 1, true);
     f.hp(G0, 0);
     f.attacker(P0, H1);
-    let l = c.step(200, &subjects(), &mut f);
+    let l = step33(&mut c, 200, &mut f);
     assert_eq!(l.len(), 1, "{l:?}");
     assert!(
         l[0].contains("who=LOCAL[0] id=0x6001 DOWN (downs=1, hp=0, last_attacker=RIVAL id=0x6002")
     );
     // Same state again (and a tick inside the 100 ms gate): no new line.
-    assert!(c.step(250, &subjects(), &mut f).is_empty());
-    assert!(c.step(300, &subjects(), &mut f).is_empty());
+    assert!(step33(&mut c, 250, &mut f).is_empty());
+    assert!(step33(&mut c, 300, &mut f).is_empty());
     // Revived at 50% HP, the field has been cleared: the latch supplies the attacker.
     f.downed(P0, 1, false);
     f.hp(G0, 120);
     f.attacker(P0, u64::MAX);
-    let l = c.step(400, &subjects(), &mut f);
+    let l = step33(&mut c, 400, &mut f);
     assert_eq!(l.len(), 1);
     assert!(
         l[0].contains("UP (downs=1, hp=120, last_attacker=RIVAL"),
         "{l:?}"
     );
     assert!(l[0].contains("(latched)"));
-    assert!(c.step(500, &subjects(), &mut f).is_empty());
+    assert!(step33(&mut c, 500, &mut f).is_empty());
     // Down again, bleed out: HP back to the maximum means RESPAWN.
     f.downed(P0, 2, true);
     f.hp(G0, 0);
     f.attacker(P0, 0xBEEF);
-    let l = c.step(600, &subjects(), &mut f);
+    let l = step33(&mut c, 600, &mut f);
     assert!(
         l[0].contains("DOWN (downs=2, hp=0, last_attacker=OTHER handle=0xBEEF"),
         "{l:?}"
     );
     f.downed(P0, 2, false);
     f.hp(G0, 240);
-    let l = c.step(700, &subjects(), &mut f);
+    let l = step33(&mut c, 700, &mut f);
     assert!(l[0].contains("RESPAWN (downs=2, hp=240"), "{l:?}");
     // A remote copy: no attacker is claimed.
     f.downed(P1, 1, true);
     f.hp(0x2001_0000, 0);
-    let l = c.step(800, &subjects(), &mut f);
+    let l = step33(&mut c, 800, &mut f);
     assert!(
         l[0].contains("who=REMOTE[1] id=0x6002 DOWN") && l[0].contains("n/a (remote copy)"),
         "{l:?}"
@@ -242,9 +249,9 @@ fn transitions_down_up_and_respawn_are_detected_and_logged_once() {
     // HP restored without a downed change.
     f.hp(G0, 100);
     f.hp(G0, 0);
-    c.step(900, &subjects(), &mut f);
+    step33(&mut c, 900, &mut f);
     f.hp(G0, 120);
-    let l = c.step(1000, &subjects(), &mut f);
+    let l = step33(&mut c, 1000, &mut f);
     assert!(l[0].contains("HP restored (downs=2, hp=120"), "{l:?}");
 }
 
@@ -473,6 +480,8 @@ fn rule_skips_and_logs_when_a_gate_fails() {
         f.set(P0 + OFF_HP_PTR, &bad.to_le_bytes());
         let l = drive_revive(&mut f, &mut c, H1, 120);
         assert!(f.writes.is_empty(), "pointer {bad:#X}");
+        // T-040: no longer "log and stop": the failure starts a pending re-down.
+        assert!(c.pending.is_some(), "pointer {bad:#X}");
         assert!(
             rule_lines(&l)[0].contains("not a plausible pointer"),
             "{l:?}"
@@ -932,4 +941,303 @@ fn player_mode_downed_rule_log_is_rate_limited_but_every_hit_is_acted_on() {
     let mut c = Core::new(true, RevivePolicy::Redown);
     c.step(0, &subjects(), &mut f);
     assert!(c.downed_line().is_none());
+}
+
+// ---- T-040 pending re-down and diagnostics ----
+
+fn t040(l: &[String], prefix: &str) -> Vec<String> {
+    l.iter()
+        .filter(|x| x.starts_with(prefix))
+        .cloned()
+        .collect()
+}
+fn set_hp_ptr(f: &mut Fake, v: u64) {
+    f.set(P0 + OFF_HP_PTR, &v.to_le_bytes());
+}
+fn good_hp_ptr() -> u64 {
+    (G0 + BLK) as u64
+}
+
+#[test]
+fn a_failed_redown_is_retried_each_step_and_succeeds_when_the_pointer_comes_back() {
+    for dev in [true, false] {
+        let mut f = world();
+        let mut c = Core::new(dev, RevivePolicy::Redown);
+        set_hp_ptr(&mut f, 0);
+        // Inside the 5 s limit of an earlier line: the pending line must still be logged.
+        c.last_rule_log_ms = Some(190);
+        let l = drive_revive(&mut f, &mut c, H1, 120);
+        let r = rule_lines(&l);
+        assert_eq!(r.len(), 1, "{l:?}");
+        assert_eq!(
+            r[0],
+            "rule: rival completed the revive meter of LOCAL but nothing was written yet: data module: no module list; old route: [PlayerIns+0xB78] = 0x0 is not a plausible pointer; retrying for 2000 ms"
+        );
+        assert!(f.writes.is_empty());
+        assert!(rule_lines(&c.step(250, &subjects(), &mut f)).is_empty());
+        assert!(rule_lines(&c.step(300, &subjects(), &mut f)).is_empty());
+        assert!(f.writes.is_empty());
+        set_hp_ptr(&mut f, good_hp_ptr());
+        let l = c.step(350, &subjects(), &mut f);
+        let r = rule_lines(&l);
+        assert_eq!(r.len(), 1, "{l:?}");
+        assert_eq!(
+            r[0],
+            "rule: rival completed the revive meter of LOCAL; downed again after 4 tries (150 ms late) (hp 120 -> 0, readback 0)"
+        );
+        assert_eq!(f.writes, vec![(auth_addr(G0), vec![0, 0, 0, 0])]);
+        assert_eq!(c.fired, 1);
+        assert!(c.pending.is_none());
+        // Done: nothing more is written.
+        assert!(rule_lines(&c.step(400, &subjects(), &mut f)).is_empty());
+        assert_eq!(f.writes.len(), 1);
+    }
+}
+
+#[test]
+fn a_redown_that_never_works_gives_up_at_2_s_and_writes_nothing() {
+    for dev in [true, false] {
+        let mut f = world();
+        let mut c = Core::new(dev, RevivePolicy::Redown);
+        set_hp_ptr(&mut f, 0x1234_5679);
+        drive_revive(&mut f, &mut c, H1, 120);
+        let mut gave_up = Vec::new();
+        for t in (250..2400u64).step_by(50) {
+            let l = c.step(t, &subjects(), &mut f);
+            if t < 2200 {
+                assert!(rule_lines(&l).is_empty(), "t={t} {l:?}");
+            }
+            gave_up.extend(rule_lines(&l).into_iter().cloned().map(|x| (t, x)));
+        }
+        assert_eq!(gave_up.len(), 1, "{gave_up:?}");
+        let (t, line) = &gave_up[0];
+        assert_eq!(*t, 2200);
+        assert!(
+            line.contains("gave up after 40 tries in 2000 ms, nothing written")
+                && line.contains(
+                    "first error: data module: no module list; old route: [PlayerIns+0xB78] = 0x12345679 is not a plausible pointer"
+                )
+                && line.contains("last error: data module: no module list; old route: [PlayerIns+0xB78] = 0x12345679"),
+            "{line}"
+        );
+        assert!(f.writes.is_empty());
+        assert!(c.pending.is_none());
+    }
+}
+
+#[test]
+fn a_pending_redown_is_cancelled_by_a_new_down_the_get_up_zero_hp_or_a_lost_player() {
+    type Change = fn(&mut Fake);
+    let cases: [(Change, &str); 4] = [
+        (|f| f.downed(P0, 2, true), "downed again (state 1)"),
+        (|f| f.set(P0 + OFF_DOWNED, &[2]), "getting up (state 2)"),
+        (|f| f.hp3(P0, G0, 0), "HP reads 0"),
+        (
+            |f| {
+                f.players.remove(&P0);
+            },
+            "not that PlayerIns",
+        ),
+    ];
+    for (change, why) in cases {
+        let mut f = world();
+        let mut c = Core::new(false, RevivePolicy::Redown);
+        set_hp_ptr(&mut f, 0);
+        drive_revive(&mut f, &mut c, H1, 120);
+        assert!(c.pending.is_some());
+        change(&mut f);
+        let l = c.step(250, &subjects(), &mut f);
+        let r = rule_lines(&l);
+        assert_eq!(r.len(), 1, "{why}: {l:?}");
+        assert!(
+            r[0].starts_with(
+                "rule: pending re-down of LOCAL cancelled after 1 tries, nothing written"
+            ) && r[0].contains(why),
+            "{r:?}"
+        );
+        assert!(c.pending.is_none());
+        // Even with the pointer fixed afterwards, nothing is written.
+        set_hp_ptr(&mut f, good_hp_ptr());
+        c.step(300, &subjects(), &mut f);
+        assert!(f.writes.is_empty(), "{why}");
+    }
+}
+
+#[test]
+fn the_pointer_error_carries_the_raw_value_or_says_unreadable() {
+    let mut f = world();
+    let mut c = Core::new(true, RevivePolicy::Redown);
+    set_hp_ptr(&mut f, u64::MAX);
+    let e = c.try_rule(P0, &mut f).err().unwrap_or_default();
+    assert_eq!(
+        e,
+        "data module: no module list; old route: [PlayerIns+0xB78] = 0xFFFFFFFFFFFFFFFF is not a plausible pointer"
+    );
+    f.bytes
+        .retain(|a, _| !(P0 + OFF_HP_PTR..P0 + OFF_HP_PTR + 8).contains(a));
+    let e = c.try_rule(P0, &mut f).err().unwrap_or_default();
+    assert_eq!(
+        e,
+        "data module: no module list; old route: [PlayerIns+0xB78] unreadable"
+    );
+}
+
+#[test]
+fn local_state_changes_are_logged_in_both_builds_with_the_block_and_the_hp_chain() {
+    for dev in [true, false] {
+        let mut f = world();
+        let mut c = Core::new(dev, RevivePolicy::Vanilla);
+        let l = c.step(0, &subjects(), &mut f);
+        assert!(t040(&l, "T-040").is_empty(), "first sight only seeds");
+        down_local(&mut f, 90.0, 14.9, 0.0);
+        f.hp3(P0, G0, 0);
+        let l = c.step(50, &subjects(), &mut f);
+        let s = t040(&l, "T-040 LOCAL state");
+        assert_eq!(s.len(), 1, "{l:?}");
+        assert!(
+            s[0].starts_with(
+                "T-040 LOCAL state 0 -> 1: bar 90, clock 14.9, pause 0, [+0xB78] = 0x20004000, hp 0 (mirror 0)"
+            ),
+            "{s:?}"
+        );
+        // The bar changing alone is not a state change.
+        setf(&mut f, P0 + OFF_REVIVE_BAR, 80.0);
+        let l = c.step(100, &subjects(), &mut f);
+        assert!(t040(&l, "T-040 LOCAL state").is_empty());
+        f.set(P0 + OFF_DOWNED, &[2]);
+        let l = c.step(150, &subjects(), &mut f);
+        assert!(t040(&l, "T-040 LOCAL state")[0].contains("state 1 -> 2: bar 80"));
+        f.set(P0 + OFF_DOWNED, &[0]);
+        let l = c.step(200, &subjects(), &mut f);
+        assert!(t040(&l, "T-040 LOCAL state")[0].contains("state 2 -> 0"));
+    }
+}
+
+#[test]
+fn state_lines_are_capped_at_30_a_minute_and_the_next_line_reports_the_rest() {
+    let mut f = world();
+    let mut c = Core::new(false, RevivePolicy::Vanilla);
+    c.step(0, &subjects(), &mut f);
+    let mut n = 0;
+    for i in 1..=40u64 {
+        f.set(P0 + OFF_DOWNED, &[u8::try_from(i % 2).unwrap_or(0)]);
+        n += t040(&c.step(i * 50, &subjects(), &mut f), "T-040 LOCAL state").len();
+    }
+    assert_eq!(n, 30);
+    assert_eq!(c.diag_suppressed, 10);
+    // A minute after the window started the cap is open again and the line says what was dropped.
+    f.set(P0 + OFF_DOWNED, &[1]);
+    let l = c.step(70_000, &subjects(), &mut f);
+    let s = t040(&l, "T-040 LOCAL state");
+    assert_eq!(s.len(), 1, "{l:?}");
+    assert!(s[0].ends_with("(10 suppressed)"), "{s:?}");
+    assert_eq!(c.diag_suppressed, 0);
+}
+
+#[test]
+fn restoring_a_bar_that_read_zero_while_downed_is_logged() {
+    let (mut f, mut c, t) = downed_world(false);
+    hit(&mut f, 0.0, H1);
+    let l = c.step(t + 50, &subjects(), &mut f);
+    let s = t040(&l, "T-040 LOCAL bar read");
+    assert_eq!(s.len(), 1, "{l:?}");
+    assert_eq!(
+        s[0],
+        "T-040 LOCAL bar read 0 while state 1 (before 90): downed rule restored it"
+    );
+    assert_eq!(getf(&f, P0 + OFF_REVIVE_BAR), 90.0);
+    // An ordinary hit (bar 90 -> 70) does not produce it.
+    hit(&mut f, 70.0, H1);
+    let l = c.step(t + 100, &subjects(), &mut f);
+    assert!(t040(&l, "T-040 LOCAL bar read").is_empty());
+}
+
+#[test]
+fn revive_fail_forces_the_next_tries_to_fail_without_touching_memory() {
+    let mut f = world();
+    let mut c = Core::new(false, RevivePolicy::Redown);
+    c.set_forced_fails(2);
+    assert_eq!(c.forced_fails(), 2);
+    let l = drive_revive(&mut f, &mut c, H1, 120);
+    assert!(rule_lines(&l)[0].contains("forced by console"), "{l:?}");
+    assert_eq!(c.forced_fails(), 1);
+    assert!(rule_lines(&c.step(250, &subjects(), &mut f)).is_empty());
+    assert_eq!(c.forced_fails(), 0);
+    assert!(f.writes.is_empty());
+    let l = c.step(300, &subjects(), &mut f);
+    assert!(
+        rule_lines(&l)[0].contains("downed again after 3 tries (100 ms late)"),
+        "{l:?}"
+    );
+    assert_eq!(f.writes.len(), 1);
+}
+
+// ---- T-040 run 1: the character data module route ----
+
+const BAG: usize = 0x3000_0000;
+const DM: usize = 0x3001_0000;
+
+/// LOCAL's module list -> data module with `hp` / `max`, PlayerGameData max HP `max`; the old `[+0xB78]+0x70` route holds
+/// 0xFFFFFFFF as on both Nucleus games in run 1.
+fn data_module(f: &mut Fake, hp: u32, max: u32) {
+    f.set(P0 + PLAYER_MODULES, &(BAG as u64).to_le_bytes());
+    f.set(BAG, &(DM as u64).to_le_bytes());
+    f.set(DM + DM_HP, &hp.to_le_bytes());
+    f.set(DM + DM_MAX_HP, &max.to_le_bytes());
+    f.set(G0 + GD_MAX_HP, &max.to_le_bytes());
+    f.set(auth_addr(G0), &u32::MAX.to_le_bytes());
+}
+
+#[test]
+fn the_redown_writes_the_data_module_when_the_old_route_holds_no_hp() {
+    for dev in [true, false] {
+        let mut f = world();
+        let mut c = Core::new(dev, RevivePolicy::Redown);
+        c.step(0, &subjects(), &mut f);
+        f.downed(P0, 1, true);
+        f.hp(G0, 0);
+        f.attacker(P0, H1);
+        c.step(100, &subjects(), &mut f);
+        f.downed(P0, 1, false);
+        f.hp(G0, 120);
+        data_module(&mut f, 120, 240);
+        f.attacker(P0, u64::MAX);
+        let l = c.step(200, &subjects(), &mut f);
+        let r = rule_lines(&l);
+        assert_eq!(r.len(), 1, "{l:?}");
+        assert_eq!(
+            r[0],
+            "rule: rival completed the revive meter of LOCAL; downed again (hp 120 -> 0, readback 0)"
+        );
+        assert_eq!(f.writes, vec![(DM + DM_HP, vec![0, 0, 0, 0])]);
+        assert!(c.pending.is_none());
+    }
+}
+
+#[test]
+fn the_data_module_gate_needs_hp_and_max_hp_to_agree_with_the_game_data() {
+    let mut f = world();
+    f.hp(G0, 120);
+    data_module(&mut f, 120, 240);
+    assert_eq!(data_module_hp(&f, P0), Ok((DM + DM_HP, 120)));
+    f.set(DM + DM_HP, &0u32.to_le_bytes());
+    f.hp(G0, 0);
+    assert!(data_module_hp(&f, P0).is_err(), "HP 0");
+    f.set(DM + DM_HP, &120u32.to_le_bytes());
+    f.hp(G0, 119);
+    assert!(data_module_hp(&f, P0).is_err(), "HP differs");
+    f.hp(G0, 120);
+    f.set(G0 + GD_MAX_HP, &260u32.to_le_bytes());
+    assert_eq!(
+        data_module_hp(&f, P0),
+        Err("gate failed (hp 120, max 240, PlayerGameData 120 / 260)".to_string())
+    );
+    // Both routes fail: the error names both.
+    let mut c = Core::new(true, RevivePolicy::Redown);
+    let e = c.try_rule(P0, &mut f).err().unwrap_or_default();
+    assert!(
+        e.starts_with("data module: gate failed") && e.contains("old route: hp gate failed"),
+        "{e}"
+    );
+    assert!(f.writes.is_empty());
 }

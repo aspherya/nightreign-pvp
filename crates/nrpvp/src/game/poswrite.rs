@@ -6,8 +6,9 @@
 //! every candidate again at +100 ms, +500 ms and +2 s to show whether the game snapped the value back and which other
 //! candidates followed. Everything here is a HYPOTHESIS test; nothing is verified until the HUMAN reports.
 //!
-//! Candidate syntax (config `pos_candidates`): `PlayerIns+0x6C0` (offset inside the PlayerIns) or `[PlayerIns+0x60]+0x1EC`
-//! (offset inside the object the pointer at `PlayerIns+0x60` points to). Offsets are hex with `0x` or decimal.
+//! Candidate syntax (config `pos_candidates`): `PlayerIns+0x6C0` (offset inside the PlayerIns), `[PlayerIns+0x60]+0x1EC`
+//! (offset inside the object the pointer at `PlayerIns+0x60` points to) or `Physics+0x70` (offset inside the player's
+//! `CS::CSChrPhysicsModule`, found by its vtable in the module list, see [`MODULES_OFF`]). Offsets are hex with `0x` or decimal.
 //!
 //! Safety gates of [`PosTest::write`] (all must pass): the caller re-resolved the LOCAL PlayerIns (ChrSet entry[0] rule, vtable
 //! check) right before; the values were saved for that same PlayerIns; the saved triple is finite with every |component| below
@@ -26,6 +27,11 @@ pub(crate) const MAX_ABS: f32 = 100_000.0;
 pub(crate) const FOLLOW_MS: [u64; 3] = [100, 500, 2000];
 /// Offsets above this are rejected when parsing (a PlayerIns is a few KiB; a pointee read is bounded too).
 const MAX_OFF: u64 = 0xFFFF;
+// Position offsets (MEMORY_MAP §8): `game::layout`, under the names this file used before.
+pub(crate) use super::layout::MODULES_SPAN;
+pub(crate) use super::layout::PHYSICS_VTABLE_RVA;
+pub(crate) use super::layout::PLAYER_MODULES as MODULES_OFF;
+pub(crate) use super::layout::PLAYER_ORIGIN as ORIGIN_OFF;
 
 /// Where one candidate triple lives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,6 +40,8 @@ pub(crate) enum Cand {
     Direct { off: u32 },
     /// `[PlayerIns+poff]+off`.
     Via { poff: u32, off: u32 },
+    /// `Physics+off`: inside the player's `CS::CSChrPhysicsModule`.
+    Physics { off: u32 },
 }
 
 impl Cand {
@@ -42,6 +50,7 @@ impl Cand {
         match *self {
             Cand::Direct { off } => format!("PlayerIns+0x{off:X}"),
             Cand::Via { poff, off } => format!("[PlayerIns+0x{poff:X}]+0x{off:X}"),
+            Cand::Physics { off } => format!("Physics+0x{off:X}"),
         }
     }
 }
@@ -60,23 +69,26 @@ fn parse_off(s: &str) -> Result<u32, String> {
     u32::try_from(v).map_err(|_| "offset out of range".to_string())
 }
 
-/// Strip a case-insensitive `PlayerIns` prefix and the `+` after it; the rest is the offset text.
 fn after_playerins(s: &str) -> Result<&str, String> {
+    after_name(s, "playerins")
+}
+
+/// Strip a case-insensitive `name` prefix and the `+` after it; the rest is the offset text.
+fn after_name<'a>(s: &'a str, name: &str) -> Result<&'a str, String> {
     let t = s.trim();
-    let name = "playerins";
     if t.len() < name.len()
         || !t.is_char_boundary(name.len())
         || !t[..name.len()].eq_ignore_ascii_case(name)
     {
-        return Err("expected PlayerIns".to_string());
+        return Err(format!("expected {name}"));
     }
     t[name.len()..]
         .trim_start()
         .strip_prefix('+')
-        .ok_or_else(|| "expected '+' after PlayerIns".to_string())
+        .ok_or_else(|| format!("expected '+' after {name}"))
 }
 
-/// Parse one candidate: `PlayerIns+0x6C0` or `[PlayerIns+0x60]+0x1EC`.
+/// Parse one candidate: `PlayerIns+0x6C0`, `[PlayerIns+0x60]+0x1EC` or `Physics+0x70`.
 pub(crate) fn parse_candidate(s: &str) -> Result<Cand, String> {
     let t = s.trim();
     if let Some(rest) = t.strip_prefix('[') {
@@ -90,6 +102,10 @@ pub(crate) fn parse_candidate(s: &str) -> Result<Cand, String> {
                 .ok_or_else(|| "expected '+offset' after ']'".to_string())?,
         )?;
         Ok(Cand::Via { poff, off })
+    } else if let Ok(rest) = after_name(t, "physics") {
+        Ok(Cand::Physics {
+            off: parse_off(rest)?,
+        })
     } else {
         Ok(Cand::Direct {
             off: parse_off(after_playerins(t)?)?,
@@ -113,9 +129,11 @@ pub(crate) fn parse_list(list: &[String]) -> (Vec<Cand>, Vec<String>) {
     (out, warnings)
 }
 
-/// The defaults of `pos_candidates` (FS-0 run 6 findings).
+/// The defaults of `pos_candidates`: the physics module position first (the field a community cheat table edits to move
+/// the player), then the FS-0 run 6 findings.
 pub(crate) fn default_candidates() -> Vec<String> {
     [
+        "Physics+0x70",
         "PlayerIns+0x6C0",
         "PlayerIns+0x6D0",
         "[PlayerIns+0x60]+0x1EC",
@@ -172,6 +190,8 @@ struct Saved {
     ptr: Option<usize>,
     /// First qword of the pointee if it is an exe-image address (the vtable).
     vtable: Option<usize>,
+    /// The local-frame origin at save time (Physics candidates): a later write is shifted by how far the origin moved.
+    origin: Option<[u8; 12]>,
 }
 
 /// A resolved candidate address plus the facts a later write is checked against.
@@ -180,6 +200,8 @@ struct Resolved {
     addr: usize,
     ptr: Option<usize>,
     vtable: Option<usize>,
+    /// Offset inside the module list where the object was found (Physics candidates).
+    slot: Option<usize>,
 }
 
 /// What a successful write did, for the log.
@@ -203,6 +225,35 @@ impl WriteReport {
             fmt3(self.readback)
         )
     }
+}
+
+/// The player's `CS::CSChrPhysicsModule` and the offset in the module list where it was found: the first pointer in the
+/// first [`MODULES_SPAN`] bytes of `[PlayerIns+MODULES_OFF]` whose pointee has the physics vtable (`base` = exe base).
+pub(crate) fn physics_module(
+    m: &dyn PosMem,
+    player: usize,
+    base: usize,
+) -> Result<(usize, usize), String> {
+    let list = m
+        .read_u64(player + MODULES_OFF)
+        .ok_or("the module list pointer is unreadable")? as usize;
+    if !is_ptr(list) {
+        return Err(format!(
+            "the module list pointer 0x{list:X} is null or implausible"
+        ));
+    }
+    let want = base + PHYSICS_VTABLE_RVA;
+    (0..MODULES_SPAN)
+        .step_by(8)
+        .find_map(|slot| {
+            let p = m.read_u64(list + slot)? as usize;
+            (is_ptr(p) && m.read_u64(p)? as usize == want).then_some((p, slot))
+        })
+        .ok_or_else(|| {
+            format!(
+                "no CS::CSChrPhysicsModule (vtable exe+0x{PHYSICS_VTABLE_RVA:X}) in the first 0x{MODULES_SPAN:X} bytes of [PlayerIns+0x{MODULES_OFF:X}]"
+            )
+        })
 }
 
 /// Candidate list, selection and the saved values.
@@ -281,6 +332,7 @@ impl PosTest {
                 addr: player + off as usize,
                 ptr: None,
                 vtable: None,
+                slot: None,
             }),
             Cand::Via { poff, off } => {
                 let ptr = m
@@ -297,6 +349,16 @@ impl PosTest {
                     addr: ptr + off as usize,
                     ptr: Some(ptr),
                     vtable,
+                    slot: None,
+                })
+            }
+            Cand::Physics { off } => {
+                let (p, slot) = physics_module(m, player, self.base)?;
+                Ok(Resolved {
+                    addr: p + off as usize,
+                    ptr: Some(p),
+                    vtable: Some(self.base + PHYSICS_VTABLE_RVA),
+                    slot: Some(slot),
                 })
             }
         }
@@ -342,12 +404,35 @@ impl PosTest {
         let mut any = false;
         for i in 0..self.cands.len() {
             let c = self.cands[i];
+            let mut found = String::new();
             let got = self.resolve(m, player, c).and_then(|r| {
+                if let (Some(slot), Some(p)) = (r.slot, r.ptr) {
+                    found = format!(
+                        " module list +0x{slot:X}, owner at +0x8 is {}",
+                        if m.read_u64(p + 8) == Some(player as u64) {
+                            "this PlayerIns"
+                        } else {
+                            "NOT this PlayerIns"
+                        }
+                    );
+                }
+                let origin = match c {
+                    Cand::Physics { .. } => {
+                        let o = m
+                            .read12(player + ORIGIN_OFF)
+                            .filter(|b| plausible(decode(b)))
+                            .ok_or("the origin at PlayerIns+0x80 is unreadable or implausible")?;
+                        found.push_str(&format!(" origin={}", fmt3(decode(&o))));
+                        Some(o)
+                    }
+                    _ => None,
+                };
                 m.read12(r.addr)
                     .map(|bytes| Saved {
                         bytes,
                         ptr: r.ptr,
                         vtable: r.vtable,
+                        origin,
                     })
                     .ok_or_else(|| format!("0x{:X} is unreadable", r.addr))
             });
@@ -362,7 +447,7 @@ impl PosTest {
                         _ => String::new(),
                     };
                     lines.push(format!(
-                        "T-032 POS saved candidate={} value={}{}{extra}",
+                        "T-032 POS saved candidate={} value={}{}{extra}{found}",
                         c.text(),
                         fmt3(decode(&s.bytes)),
                         if plausible(decode(&s.bytes)) {
@@ -404,7 +489,18 @@ impl PosTest {
                     .map_or("none".to_string(), |p| format!("0x{p:X}"))
             ));
         }
-        let new = decode(&saved.bytes);
+        let mut new = decode(&saved.bytes);
+        if let Some(o0) = saved.origin {
+            let o1 = m
+                .read12(player + ORIGIN_OFF)
+                .map(|b| decode(&b))
+                .filter(|o| plausible(*o))
+                .ok_or("the origin at PlayerIns+0x80 is unreadable or implausible; refusing")?;
+            let o0 = decode(&o0);
+            for i in 0..3 {
+                new[i] += o1[i] - o0[i];
+            }
+        }
         if !plausible(new) {
             return Err(format!(
                 "the saved value {} for {name} is not finite or has a component of at least {MAX_ABS}; refusing",
@@ -412,7 +508,7 @@ impl PosTest {
             ));
         }
         let now = self.resolve(&*m, player, c)?;
-        if matches!(c, Cand::Via { .. }) {
+        if !matches!(c, Cand::Direct { .. }) {
             match saved.vtable {
                 Some(v) if now.vtable != Some(v) => {
                     return Err(format!(
@@ -436,7 +532,11 @@ impl PosTest {
             .read12(now.addr)
             .map(|b| decode(&b))
             .ok_or("the target is unreadable")?;
-        m.write(now.addr, &saved.bytes)
+        let mut bytes = [0u8; 12];
+        for (i, v) in new.iter().enumerate() {
+            bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        m.write(now.addr, &bytes)
             .map_err(|e| format!("guarded write refused: {e}"))?;
         let readback = m
             .read12(now.addr)
@@ -529,8 +629,9 @@ mod tests {
         }
     }
 
+    /// The six FS-0 run 6 candidates (the defaults without the leading `Physics+0x70`).
     fn cands() -> Vec<Cand> {
-        parse_list(&default_candidates()).0
+        parse_list(&default_candidates()).0[1..].to_vec()
     }
 
     /// A PlayerIns at PLAYER with positions at 0x6C0 and 0x6D0, a pointer at 0x60 to POINTEE (vtable VT_A, triple at 0x1EC) and
@@ -609,6 +710,54 @@ mod tests {
     }
 
     #[test]
+    fn the_physics_module_is_found_by_its_vtable_in_the_module_list() {
+        const LIST: usize = 0x6000_0000;
+        const PHYS: usize = 0x7000_0000;
+        let vt = IMG + PHYSICS_VTABLE_RVA;
+        assert_eq!(
+            parse_candidate(" physics + 0x70 "),
+            Ok(Cand::Physics { off: 0x70 })
+        );
+        let mut f = world();
+        f.map(LIST, MODULES_SPAN);
+        f.map(PHYS, 0x200);
+        let mut t = PosTest::new(&[Cand::Physics { off: 0x70 }], IMG, IMG_SIZE);
+        // No module list pointer yet, then a list without the physics module: nothing saved, nothing written.
+        assert!(t.save(&f, PLAYER)[0].contains("skipped"));
+        f.put_u64(PLAYER + MODULES_OFF, LIST);
+        f.put_u64(LIST + 0x60, POINTEE); // another module (vtable VT_A)
+        assert!(t.save(&f, PLAYER)[0].contains("no CS::CSChrPhysicsModule"));
+        assert!(!t.has_saved());
+        // The physics module sits in a slot that is not ER's 0x68.
+        f.put_u64(LIST + 0x78, PHYS);
+        f.put_u64(PHYS, vt);
+        f.put_u64(PHYS + 8, PLAYER);
+        f.put3(PHYS + 0x70, [1.0, 2.0, 3.0]);
+        let lines = t.save(&f, PLAYER);
+        assert!(
+            lines[0].contains("module list +0x78, owner at +0x8 is this PlayerIns"),
+            "{}",
+            lines[0]
+        );
+        f.put3(PHYS + 0x70, [50.0, 2.0, 3.0]);
+        let r = t.write(&mut f, PLAYER).expect("write");
+        assert_eq!(r.addr, PHYS + 0x70);
+        assert_eq!(f.get3(PHYS + 0x70), [1.0, 2.0, 3.0]);
+        // The origin moved by (-32, 0, 24) since the save: the same world spot is now that far off in local numbers.
+        f.put3(PLAYER + ORIGIN_OFF, [-32.0, 0.0, 24.0]);
+        t.write(&mut f, PLAYER).expect("write after an origin move");
+        assert_eq!(f.get3(PHYS + 0x70), [-31.0, 2.0, 27.0]);
+        // An unreadable origin is refused rather than guessed.
+        f.put3(PLAYER + ORIGIN_OFF, [f32::NAN, 0.0, 0.0]);
+        assert!(t.write(&mut f, PLAYER).unwrap_err().contains("origin"));
+        f.put3(PLAYER + ORIGIN_OFF, [0.0; 3]);
+        // The object in that slot is no longer a physics module: refused.
+        f.put_u64(PHYS, VT_B);
+        assert!(t.write(&mut f, PLAYER).is_err());
+        assert_eq!(f.writes.len(), 2);
+    }
+
+    #[test]
     fn invalid_list_entries_are_skipped_with_a_warning() {
         let list: Vec<String> = [
             "PlayerIns+0x6C0",
@@ -623,9 +772,9 @@ mod tests {
         assert_eq!(c.len(), 2);
         assert_eq!(w.len(), 2);
         assert!(w[0].contains("nonsense") && w[1].contains("duplicate"));
-        assert_eq!(parse_list(&default_candidates()).0.len(), 6);
+        assert_eq!(parse_list(&default_candidates()).0.len(), 7);
         // An empty / all-invalid list uses the defaults in PosTest.
-        assert_eq!(PosTest::new(&[], IMG, IMG_SIZE).len(), 6);
+        assert_eq!(PosTest::new(&[], IMG, IMG_SIZE).len(), 7);
     }
 
     #[test]

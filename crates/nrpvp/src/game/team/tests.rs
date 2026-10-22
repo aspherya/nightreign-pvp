@@ -1199,7 +1199,12 @@ fn snap_back_writes_only_the_selected_candidate_of_the_local_player() {
         put3(&mut f, i, 0x6C0, [100.0 + i as f32, 1.0, 1.0]);
         put3(&mut f, i, 0x6D0, [200.0 + i as f32, 1.0, 1.0]);
     }
-    // Candidate 1 (PlayerIns+0x6C0) is written on the LOCAL player only; 0x6D0 is not.
+    // Candidate 1 (Physics+0x70) has no physics module in this fake: F6 is refused and nothing is written.
+    ctl.pos_write("F6");
+    assert_eq!(get3(&f, 2, 0x6C0), [102.0, 1.0, 1.0]);
+    assert!(ctl.pos_follow.is_empty());
+    // Candidate 2 (PlayerIns+0x6C0) is written on the LOCAL player only; 0x6D0 is not.
+    ctl.pos_cycle();
     ctl.pos_write("F6");
     assert_eq!(get3(&f, 2, 0x6C0), [12.0, 0.0, 0.0]);
     assert_eq!(get3(&f, 2, 0x6D0), [202.0, 1.0, 1.0]);
@@ -1207,7 +1212,7 @@ fn snap_back_writes_only_the_selected_candidate_of_the_local_player() {
         assert_eq!(get3(&f, i, 0x6C0), [100.0 + i as f32, 1.0, 1.0]);
     }
     assert_eq!(ctl.pos_follow.len(), 3);
-    // F9 selects the second candidate; F6 writes it.
+    // F9 selects the next candidate; F6 writes it.
     ctl.pos_cycle();
     ctl.pos_write("F6");
     assert_eq!(get3(&f, 2, 0x6D0), [22.0, 0.0, 0.0]);

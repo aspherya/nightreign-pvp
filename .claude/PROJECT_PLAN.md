@@ -29,7 +29,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 |---|---|---|---|---|
 | F1 | Public solo/duo/trio queues, 6 players per match in every mode | SC supports 6 players, reported shaky at 5–6. Public queueing, random matching, and party handling are not implemented | Matchmaking route and reliable six-player sessions; do not assume the ceiling can be raised | **Very high.** See §3 and S4/S7 |
 | F2 | Teams: allies can't hurt each other, rivals can | 29 is free-for-all | Team values or a hostility hook `[UNKNOWN]`; all clients agreeing on teams `[LEAD: derive from the per-player id]` | High |
-| F3 | Teams spawn at different positions | Nothing | How spawn points are chosen `[UNKNOWN]` | Medium |
+| F3 | **Hawk crossing** (2026-10-21, replaces "teams spawn at different positions"): the start hawk crosses the whole map, each player jumps off where they want | `[PROVEN]` moving the local player (world position kept, seen on both screens); the vanilla ride is a straight ~17 m/s line (T-028 run 4) | How the ride works (hawk object, what ends it), holding a player in the air, a safe fall from any point, a drop button. §13 | Medium-high |
 | F4 | PvP active immediately, PvE continues | `[PROVEN]` | Automatic rule verified in-game; sites of grace broken on 29 | Low |
 | F5 | Night 1: tide shrinks, **no boss** | The tide exists in vanilla | How to skip the night boss and still advance to Day 2 `[UNKNOWN]` (event scripts and flags) | High |
 | F6 | Day 2: map opens again, stronger enemies | Vanilla does this | Probably nothing | Low |
@@ -75,7 +75,7 @@ de-risks the rest.
 | **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree |
 | **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights |
 | **M6 Finale** | Sudden death, eliminations, win detection, winner's choice | F11, F12, F13 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable |
-| **M7 Scale and spawns** | Separate team spawns; validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
+| **M7 Scale and spawns** | Hawk crossing (§13); validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
 | **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players |
 
 M1 and M2 are next. M3–M6 can only be ordered after their spikes, because each could turn out trivial (the game already does it) or very hard.
@@ -170,6 +170,9 @@ interaction, the downed rule) were dropped; their history is in git.
   back on its next 50 ms pass, on both screens. Ideas, none tested: (a) run only the downed check on a faster pass (5–10 ms); (b) hook the
   function that applies revive damage and skip it for rivals. (b) would also close the "one hit removes the whole bar" gap and the
   teams-of-2+ attacker-screen gap (STATUS.md §4).
+- **Separate team spawns** (F3 before 2026-10-21, replaced by the hawk crossing, §13). Built on `t-028-snapback`, never run: at the
+  vanilla drop each game moves its own player `spawn_radius` m from the drop point, one direction per team (`team_spawns = true`).
+  Kept only as a fallback if the crossing fails.
 - **Robustness:** disconnect and reconnect mid-match; host migration (does SC support it?); desync detection; performance with 6 players
   and a full enemy load.
 - **Compatibility:** a version guard that refuses to run on an unknown game build and logs why; coexistence with other me3 mods (FPS
@@ -178,3 +181,79 @@ interaction, the downed rule) were dropped; their history is in git.
   `vs_player_dmg_correct_rate_*`; rewards and rankings.
 - **Fairness:** sessions are friends-only today, so anti-cheat is low priority. Public queues will need basic sanity checks and abuse
   handling (see §8 risk 6).
+
+## 13. Hawk crossing (Leonardo's idea, adopted 2026-10-21; replaces separate team spawns)
+
+**Design.** At the start of an expedition every player is on the hawk, as in vanilla. Instead of a short ride that drops everyone at one
+landing zone, the hawk keeps flying on the **same straight line** (vanilla start point, vanilla direction) until it reaches the far side of
+the map. Each player chooses when to jump off and lands where they want. Players who never jump are dropped automatically at the end
+of the line. Teammates are not forced together (they coordinate by voice, as in Fortnite). Whether everyone stays on one line or each
+team gets its own line can be decided later. The design puts one line through the whole map.
+
+**What we know (T-028 runs 3-4, 2026-10-14, solo; `re/MEMORY_MAP.md` §8).**
+- Moving the local player works: write the physics-module position, keeping world position (physics − origin). Other players see the
+  move (Nucleus, 2026-10-14). `[VERIFIED]`
+- The vanilla ride (run 4): the player starts about 160 m up and moves on a **straight line** at 16–18 m/s for about 12 s (about 210 m),
+  sinking slowly (y 162 → 108). While riding, the game marks the player as standing (ground byte 1). At release the ground byte goes
+  to 0. The player keeps the same horizontal speed and falls about 84 m in 3 s, then lands with **no damage**. `[VERIFIED: run 4 log]`
+- Each vanilla landing row (`SORTIE_STARTING_POINT_ST`, 20 rows) names a **hawk route** (`birdRouteEntityId`, a map entity). The game
+  has a `CSBirdMovePointMan` that appears at expedition load. `[SOURCE: S6]` The map is 6 × 6 tiles (`m60_41..46_35..40`). If NR
+  tiles are 256 m like Elden Ring's, that is about 1.5 km across `[HYPOTHESIS]`, so the full crossing takes about 90 s at the vanilla speed.
+
+**Leonardo's answers (2026-10-21, from playing vanilla).** (1) The start hawk cannot be left early. (2) Each player has their own
+hawk. (3) No fall damage, except falling into the void. (4) The vanilla button: to be traced with nrcon/nrscan in the next session.
+(5) No glide: after the drop the player falls straight to the spot. Leonardo's point: only the start hawk is locked (fixed direction,
+fixed drop). The hawks from **Spectral Hawk Trees** let the player steer for a while.
+- Consequences: we must provide the drop ourselves (1); each game moves only its own player, which matches how we already work (2); a
+  release from any height over solid ground is safe, so route 1's biggest risk goes away, but the line must stay over the map (3; the
+  void at the edges kills) `[HYPOTHESIS until HAWK-1 c]`.
+
+**Spectral Hawk Trees** (wiki extract `research/hawk/spectral-hawk-tree.md`): a tree summons a hawk that flies a **fixed route shown on the
+map** ("spectral road"). The player can steer off the route, which makes the hawk descend; with no input it flies the whole route. The
+trees are at fixed places and the start hawk also has a route (`birdRouteEntityId`), so both very likely use the same route system
+(`CSBirdMovePointMan`, flag 8800 "Bird movement icon") `[HYPOTHESIS]`. A Nexus mod, **Spectral hawk anywhere** (Dhafer, 2026-10-03;
+`research/hawk/spectral-hawk-anywhere-mod.md`), summons a tree hawk anywhere, at any time, so summoning a hawk without a tree is
+possible. The page does not say how it works. Its permissions forbid modifying or re-uploading the file, so we may only study it and
+write our own version (or ask the author).
+
+**What the Nexus mod showed (2026-10-21; facts in `TECHNICAL_NOTES.md` §4b).** The hawk is not a vehicle. Riding it is a state of the
+player character, run by the player action script `c0000.hks`. The engine tells the script which ride starts (1 = tree hawk, 4 = start
+hawk) and when the route ends (2). The **start hawk loop reads no input at all**, which is why it can't be left early. The **tree hawk
+loop can be left by holding the action button for 0.5 s or by pressing L3**, and the player can steer it. The Nexus mod adds one line
+that starts a tree-hawk ride whenever the player has SpEffect 707144, and the game accepts the script as plain text from a mod package.
+
+**The design splits into two jobs.**
+
+*Job A: the drop button on the start hawk.*
+- A1 (data): ship our own `c0000.hks` (text) that adds the tree-hawk exits (hold action 0.5 s, L3) to `Departure_MoveLoop_onUpdate`.
+  Same buttons as vanilla tree hawks. A community decompile exists for 1.03.1 and 1.03.4 and its hawk code is identical in both
+  (TECHNICAL_NOTES §4b), but whether either is an exact match for our exe is unproven. A wrong file can break any other move. Risks:
+  the whole 1 MB script is replaced (it conflicts with any mod that ships one) and every patch needs a re-check. Licence of the decompile
+  repo: not checked.
+- A2 (DLL, preferred): when the player presses the drop button, make the engine answer "route end" (2) to `GetBirdEventID` (env 377)
+  for this player. The vanilla script then starts the vanilla separation fall. Nothing is shipped and the script stays vanilla.
+  Needs: the exe code that answers env 377, and the field it reads (static reading with capstone, then a check in the game).
+
+*Job B: a route across the whole map.* **Found 2026-10-21 (TECHNICAL_NOTES §4c):** every start route is 3 points (start, waypoint,
+end) in `m60_00_00_99.msb`, about 200 m long. Limveld is about 1.5 km square in that file's frame.
+- B1 (data, preferred): ship a changed `m60_00_00_99.msb.dcx` in our game-data package. Keep each start route's start point and move
+  its waypoint and end point along the same direction to 100 m before the map edge. That is an in-place float edit with the same file
+  size, so no MSB writer is needed. Extended lengths: 600–1,530 m, 36–90 s at the vanilla speed (`experiments/HAWK-0/`). The engine's
+  own end-of-route signal then drops everyone left on the hawk at the far side, for free. Variant: also move the start point back to
+  the near edge, so every ride is a full edge-to-edge crossing. Open: does the hawk keep its speed and height over a long leg (the
+  vanilla routes sink about 80 m over 200 m; we can keep the end point high)? Does it clip through hills (keep points high)? Does a far
+  end point load correctly?
+- B2 (DLL): keep the vanilla route and move the player ourselves along the extended line. Fallback only.
+
+Likely v1: **B1 + A2**. A cheap first test needs no DLL code: a game-data package with one patched MSB, a start ride, and a look at
+whether the hawk flies the long route and drops at its end (HAWK-1b).
+
+Earlier ideas, dropped: summoning a tree hawk at the start (the start ride is already the right state; the Nexus mod's trick only
+starts a tree-hawk ride); flying a separate hawk object (the hawk is not an object, it is the player's own state).
+
+Plan: HAWK-0 done (2026-10-21). Next: HAWK-1b (route patch test, data only) and HAWK-1 (ride probe, drop-button trace). Then build
+HAWK-2. Cards in `TASKS.md`.
+
+**What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector
+(`game/spawn.rs::DropDetector`) are the B2 fallback and the ride logger of HAWK-1. The F3 "move each team 200 m apart at the drop" rule (`team_spawns`, off by
+default) stays in the code as a parked fallback (§12) until the crossing works, then it is deleted.

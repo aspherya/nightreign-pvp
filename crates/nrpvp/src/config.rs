@@ -154,11 +154,12 @@ ui_messages = true
 mm_sc_create = false
 mm_sc_create_type = \"public\"
 
-# T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF or [PlayerIns+0xPTR]+0xOFF
-# (3 x f32 each). Console pos_next selects one, pos_save saves the local player's values of ALL candidates, pos_go writes the
-# saved 12 bytes into the SELECTED candidate only and logs every candidate after 100 ms, 500 ms and 2 s.
+# T-032 snap-back test (dev mode only, LOCAL player only): position candidates, as PlayerIns+0xOFF, [PlayerIns+0xPTR]+0xOFF or
+# Physics+0xOFF (inside the player's physics module) (3 x f32 each). Console pos_next selects one, pos_save saves the local
+# player's values of ALL candidates, pos_go writes the saved 12 bytes into the SELECTED candidate only and logs every candidate
+# after 100 ms, 500 ms and 2 s.
 # Invalid entries are skipped with a warning.
-pos_candidates = [\"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
+pos_candidates = [\"Physics+0x70\", \"PlayerIns+0x6C0\", \"PlayerIns+0x6D0\", \"[PlayerIns+0x60]+0x1EC\", \"[PlayerIns+0x6B0]+0x17C\", \"[PlayerIns+0x6B0]+0x18C\", \"[PlayerIns+0x5F0]+0x64\"]
 
 # T-035 rival revive rule (dev mode only; the player build always uses \"redown\"): when a RIVAL completes the revive meter of
 # the LOCAL player, the player is downed again at once (HP written to 0) instead of being revived; allies revive as in vanilla.
@@ -168,6 +169,12 @@ rival_revive = \"redown\"
 # T-039 downed rule (both modes, always on): while the LOCAL player is downed, a hit by a RIVAL never advances the revive bar and
 # takes this many seconds (0.5..15) off the bleed-out clock. Hits by allies / yourself / the environment are left alone.
 rival_hit_seconds = 3.0
+
+# F3 separate team spawns (both modes, off unless set): when the hawk drops you at the start of an expedition, the mod moves your
+# own character spawn_radius metres (20..1000) from the drop point, each team in its own direction, 40 m higher; you then land
+# as usual. Teams come from the player ids, so every game agrees. Log lines start with \"T-028 SPAWN\".
+team_spawns = false
+spawn_radius = 200.0
 
 # T-018: absolute directory for the logs (default = next to the DLL). Logs go to <log_dir>\\<DLL folder name>\\nrpvp.log
 # and ...\\logs\\. Use a TOML single-quoted string so backslashes stay literal. Nucleus deletes its Instance<N> folders
@@ -243,6 +250,10 @@ pub(crate) struct Config {
     pub rival_revive: String,
     /// T-039: seconds a rival hit takes off a downed LOCAL player's bleed-out clock (clamped to 0.5..=15.0 in `parse`).
     pub rival_hit_seconds: f32,
+    /// F3: move the LOCAL player to its team's own point at the hawk drop.
+    pub team_spawns: bool,
+    /// F3: metres from the drop point (clamped to `spawn::RADIUS_RANGE` in `parse`).
+    pub spawn_radius: f32,
     /// T-018: absolute log directory; empty = next to the DLL.
     pub log_dir: String,
 }
@@ -283,6 +294,8 @@ impl Default for Config {
             pos_candidates: crate::game::poswrite::default_candidates(),
             rival_revive: REVIVE_REDOWN.to_string(),
             rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
+            team_spawns: false,
+            spawn_radius: crate::game::spawn::DEFAULT_RADIUS,
             log_dir: String::new(),
         }
     }
@@ -621,6 +634,21 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             warnings.push(format!(
                 "rival_hit_seconds = {v} is outside {lo}..={hi}; using {}",
                 cfg.rival_hit_seconds
+            ));
+        }
+    }
+    // F3: spawn_radius.
+    {
+        let (lo, hi) = crate::game::spawn::RADIUS_RANGE;
+        let v = cfg.spawn_radius;
+        if !v.is_finite() {
+            warnings.push("spawn_radius is not a finite number; using the default".to_string());
+            cfg.spawn_radius = crate::game::spawn::DEFAULT_RADIUS;
+        } else if !(lo..=hi).contains(&v) {
+            cfg.spawn_radius = v.clamp(lo, hi);
+            warnings.push(format!(
+                "spawn_radius = {v} is outside {lo}..={hi}; using {}",
+                cfg.spawn_radius
             ));
         }
     }
@@ -1424,6 +1452,7 @@ pvpve_scheme = \"all\"
         assert_eq!(
             c.pos_candidates,
             vec![
+                "Physics+0x70",
                 "PlayerIns+0x6C0",
                 "PlayerIns+0x6D0",
                 "[PlayerIns+0x60]+0x1EC",

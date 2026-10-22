@@ -26,7 +26,9 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 ### Day 1 — Exploration and looting
 
-- Spawn teams at different positions.
+- Start with a **hawk crossing** (Leonardo, 2026-10-21; replaces "spawn teams at different positions"): every player rides the
+  start hawk on one straight line across the whole map, like Fortnite's battle bus, and each player chooses where to jump off.
+  The line follows the vanilla start direction from the vanilla start point to the far side of the map.
 - Let players fight PvE enemies, clear camps, obtain equipment, and level up.
 - Enable PvP from the beginning of the expedition.
 - On PvP death, drop the player's carried inventory and allow them to respawn.

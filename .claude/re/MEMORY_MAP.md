@@ -67,7 +67,8 @@ written this way was never reset by the game or by Seamless Co-op (held 15+ minu
 
 | Where | Type | What it is | Behaviour | Confirmed by |
 |---|---|---|---|---|
-| `[PlayerIns+0xB78]+0x70` | u32 | **The real health value** | Writing 0 here on the owner's game downs the player at once | FS-0 run 9 |
+| `[PlayerIns+0xB78]+0x70` | u32 | **The real health value** — **NOT reliable**: on 2026-10-21 (T-040 Nucleus, both games) `+0xB78` held a pointer into a list of same-class objects (vtables `exe+0x2C340D0` / `exe+0x2C33520`) and `+0x70` read 0xFFFFFFFF; FS-UI2 had it implausible too. Worked in FS-0 runs 9/15/18/19 and Nucleus 2026-10-21 00:54 | Writing 0 here on the owner's game downs the player at once (when it is the health) | FS-0 run 9; disproved as a fixed route by T-040 run 1 |
+| `[[PlayerIns+0x1B8]+0x0]+0x140` / `+0x144` | u32 | Health / max health in the character data module (vtable `exe+0x2C10B88`), the module the game's own HP write `exe+0x428CDD` targets (§ "Character data" row below) | Matched PlayerGameData HP on both Nucleus games (240/240, 260/260) | `[VERIFIED: read on both games + poke 0 downed the player, T-040 run 1; the mod's re-down wrote it in both directions, T-040 run 2, 2026-10-21]` |
 | `PlayerIns+0xBA0` | u32 | Copy of health | Follows the real value. Writing it does nothing lasting | FS-0 runs 7–9 |
 | `[PlayerIns+0x5A0]+0x10` | u32 | Copy of health inside `CS::PlayerGameData` | Follows the real value; a write is overwritten immediately | FS-0 run 8 |
 
@@ -82,7 +83,15 @@ Seen values: 240 full, 0 while downed, 120 right after a revive (half), full aga
 | `PlayerIns+0x718` | f32 | **Bleed-out clock: seconds left** | Starts at about 14.9 and counts down in real time. **The player dies when it reaches 0.** 0 when not downed | run 14 |
 | `PlayerIns+0x71C` | f32 | **Pause timer** | Set to about 3.5 when a hit lands, then counts down. **While it is above 0 the bleed-out clock is frozen** | run 14 |
 | `PlayerIns+0x720` | f32 | Down-count cooldown | −1 before the first down. After a down, counts down from 180 while the player is up; frozen while downed. Likely the "penalty wears off after 3 minutes" rule | Likely (runs 7, 14) |
-| `PlayerIns+0x730` | u32 | **Number of downs** | 0, then 1, 2, 3. Decides which bar size is used. Stays at 3 | runs 7, 9, 14 |
+| `PlayerIns+0x730` | u8 (read as a byte by the game) | **Number of downs** | 0, then 1, 2, 3. Decides which bar size is used. Stays at 3 | runs 7, 9, 14; byte reads at `exe+0x66DF0B`, `exe+0x675033` (T-041) |
+| `PlayerIns+0x731` | u8 | "Go down" request: in state 0 the per-frame function calls `exe+0x66F3B0(chr, 1)` when it is set; cleared every frame (`exe+0x67539F`) | Who sets it: UNKNOWN | `[VERIFIED: disassembly exe+0x674F21, T-041]` |
+| `PlayerIns+0x732` | u8 | **"Revive completed"**: in state 1, on the owner's game, `exe+0x675159` reads it and calls `exe+0x66F3B0(chr, 2)` = start the get-up; cleared every frame (`exe+0x67539F`). **The bar does not decide the get-up**: one started with the bar at 40 (T-041 trace, Nucleus 22:42:36) | Who sets it: UNKNOWN (next trace) | `[VERIFIED: disassembly + trace, T-041]` |
+| `PlayerIns+0x728` | u64 | Handle of the player whose hit emptied the bar (`exe+0x66E028`); all-ones when cleared | | `[VERIFIED: disassembly, T-041]` |
+| Code: revive hit | `exe+0x66DEC0(victim, reviver, hit)` | bar -= max(1, trunc(hit+0x150 × downs factor × hit+0x258)); store at `exe+0x66DFC4`; bar 0 → `+0x728` = reviver handle; then pause `+0x71C` | runs on the victim's own game (main thread) | `[VERIFIED: trace RIP exe+0x66DFCC + disassembly, T-041]` |
+| Hook: cancel a rival's revive hit | breakpoint on the store `exe+0x66DFC4` (`movss [rdi+0x714], xmm1`, bytes `F3 0F 11 8F 14 07 00 00`); rdi = victim, `[rsi+8]` = reviver handle; xmm1 low 32 bits = current bar for a RIVAL reviver | The bar never drops, the player script never sees 0, no revival animation; teammates untouched | `[VERIFIED: Nucleus 2026-10-22, both directions + 2 v 1, T-041]` |
+| Code: who sets `+0x732` / `+0x731` | `exe+0x40D390` event dispatcher (163 types, jump table RVA `0x40E67C`, index = type−1): type **145** → `exe+0x40E5F1` `mov byte [rsi+0x732], 1`; type **144** → `exe+0x40E5E8` sets `+0x731`. The only other store is the PlayerIns constructor (`exe+0x66698B`). The revival animation emits type 145 every frame it plays | | `[VERIFIED: byte search + disassembly, T-041]` |
+| Script: what starts the revival | `c0000.hks` `NearDeathCommonFunction` / `NearDeathStart_onUpdate`: `env(GetNearDeathHealth) <= 0` (env id 372, very likely the bar `+0x714`) and no SpEffect **102455** → `W_NearDeathRevival` (the start state latches it until its EzState flag 0). SpEffect 102455 disables this revival | handoff `tasks/T-041-no-getup-handoff.md` | `[SOURCE: community decompile; env 372 = bar HYPOTHESIS]` |
+| Code: per-frame downed update | `exe+0x674EB0(chr, dt)` | state 1: pause countdown, bleed clock, bar regrows toward the max for this down (`exe+0x675141`, every frame), then the `+0x732` check; state 2 end → state 0 (`exe+0x67532E`) | | `[VERIFIED: trace RIP exe+0x675149 ×200/down + disassembly, T-041]` |
 | `PlayerIns+0x1F9` | u8 | Flag byte | Bit 0x10 is set while downed | run 7 |
 | `PlayerIns+0x728`, `+0x72C` | u32 ×2 | Unknown | Both read `0xFFFFFFFF`. Not used | run 14 |
 
@@ -117,13 +126,48 @@ To tell teammate from rival: read the handle, find which player in the list has 
 
 ## 8. Position (not finished)
 
-| Where | What we saw | Status |
-|---|---|---|
-| `PlayerIns+0x6C0` | Three numbers that move smoothly as the player moves, followed by 1.0 | Candidate. Reading only |
-| `PlayerIns+0x6D0` | A second, slightly different set of three | Candidate |
-| `[PlayerIns+0x60]+0x1EC`, `[PlayerIns+0x6B0]+0x17C`, `+0x18C` | More position-like sets | Candidates |
+**The physics module holds the position. Writing it moves the player**. **A teleport that keeps world position (physics − origin, below) lands on the saved spot and stays: confirmed solo, run 4 (2026-10-14); other players see the move (Nucleus, 2026-10-14).** Code: `game/layout.rs` (position group), `game/poswrite.rs`. (T-028 run 1, solo, 2026-10-13; log `.claude/experiments/T-028/run1_solo_teleport.log`).
 
-Which one actually moves the player when written is **unknown**. The snap-back test for this has not been run. Needed for separate team spawns.
+**What run 1 showed (9 writes, local player, solo expedition):**
+- The chain is `[[PlayerIns+0x1B8]+0x68]+0x70`. The owner at `+0x08` is the PlayerIns. **Confirmed.**
+- x and z arrive within 2 cm every time and are **not snapped back**. **Confirmed.**
+- Height is not reliable. Saved while standing at y 193.35; after the write the ground byte went to 0 and the player fell to 191.58 (1.8 m lower) and stood there. Later writes ended at 188.2 and 185.7, and after the last one the player fell out of the world (y 185 to -171 in 9 s) and the expedition ended. Cause UNKNOWN.
+- `+0x92` and `+0x93` read 1 while standing and 0 while falling. **Confirmed** as "on the ground".
+- **The numbers are relative to an origin that moves** (run 2, log `run2_solo_teleport.log`). x and z stay within about -32..+32; when the player walks past the edge the value jumps back by about 32 m while the player keeps moving smoothly (hawk flight: z went 2.7 → 29.2 → 4.4 nine times in a row). y is not re-centred. So a saved x, y, z is only valid until the next jump: writing it later puts the player 32 m (or a multiple) away, often in the air. This explains the "wrong height" and "fell through" results of runs 1 and 2. **The origin is `PlayerIns+0x80`** (x, y, z, 1.0 as f32; y stays 0; `+0xE0` holds a copy). **World position = physics position − origin.** Confirmed in run 3 (walk, log `run3_solo_walk.log`): local minus origin is a smooth path across all 12 jumps (hawk flight and on foot). The origin moves in steps of 8 m (seen: 24, 32 m) and kept growing across a map-tile change, so one frame covers the whole expedition map. Elden Ring has a "chunk position" at the same offset.
+- `PlayerIns+0x90` = the start position of this life in the same local frame (it shifts with the origin). `[HYPOTHESIS]` (Elden Ring `initial_position`).
+- `PlayerIns+0x38` … `+0x44` hold map-tile ids in the Elden Ring format, e.g. `0x3C2B2800` = m60_43_40_00, which changed to `0x3C2C2700` when the player crossed into the next tile. Not needed for a move inside one expedition map.
+- The start of the expedition (before the hawk) reads (0.00, 10.66, 67.00).
+- **The hawk ride** (run 4, world position, samples every ~0.2 s): starts at y ≈ 162; a straight line (direction about (-0.6, 0, -0.8)
+  on that map) at 16–18 m/s for about 12 s / 210 m, sinking to y ≈ 108. Ground byte `+0x92` = 1 for the whole ride. At release it turns 0,
+  the horizontal speed stays about 17 m/s, and the player falls about 84 m in 3 s to the ground (y ≈ 24) with no damage. Anim id at
+  `[time act]+0x20` read 9 throughout (no use as a ride marker). **Confirmed** (one run, one landing zone). What carries the player
+  (hawk object, animation, attachment) and what ends the ride: UNKNOWN (PROJECT_PLAN §13).
+
+Facts from the exe on disk:
+
+| What | Where | How we know |
+|---|---|---|
+| Class of the object that holds the position | `CS::CSChrPhysicsModule`, table at `exe+0x2C13720` | `[VERIFIED: RTTI of nightreign.exe 1.3.3.0 on disk]` |
+| Position x, y, z (f32) | `+0x70`, `+0x74`, `+0x78` in that object | `[VERIFIED: code at exe+0x46E5C1 reads [rbx+0x70]]`. Same offset as Elden Ring. The community table (§11) edits these three to move the player |
+| "Standing on solid ground" byte | `+0x92` in that object | `[HYPOTHESIS]` The same code tests `[rcx+0x92]`; the name is Elden Ring's |
+| Owner (the character) | `+0x08` in that object | Confirmed, run 1 |
+| The character's module list | `[PlayerIns+0x1B8]`: a block of 57 pointers, no class | `[HYPOTHESIS]` Seen in the run 7 dump. Elden Ring has it at `+0x190`; in Nightreign `+0x190` is `CS::SpecialEffect`, which is why the T-028 probe found nothing |
+| Which entry of the list is the physics module | `+0x68` (same as Elden Ring) | Confirmed, run 1 |
+
+Older candidates (FS-0 run 6: numbers that move smoothly with the player). Reading only; none was written yet.
+
+| Where | What it is |
+|---|---|
+| `PlayerIns+0x6C0` | Three numbers followed by 1.0 |
+| `PlayerIns+0x6D0` | A second, slightly different set |
+| `[PlayerIns+0x60]+0x1EC` | Inside `CS::PlayerCtrl` |
+| `[PlayerIns+0x6B0]+0x17C`, `+0x18C` | Inside `CS::CSFD4LocationBodyScaleModifier` (a model/bone object: unlikely to move the player) |
+| `[PlayerIns+0x5F0]+0x64` | Object with no class |
+
+Answered later: the wrong height and the falls came from the moving origin (above); other players **do** see the move (Nucleus, 2026-10-14,
+reported by Leonardo).
+Still UNKNOWN: how the map tile
+is stored and whether a far move must change it; what marks "landed after the hawk".
 
 ## 9. Things that turned out to be wrong
 
@@ -149,7 +193,7 @@ match unless noted). The offsets are the table author's; what each object is and
 | What | Offsets (table) | Code at (1.3.3.0) | Pattern | Our guess at the object |
 |---|---|---|---|---|
 | Health / max health, FP / max FP, stamina / max stamina | `+0x140` / `+0x14C`, `+0x150` / `+0x154`, `+0x15C` / `+0x160` | read `exe+0x7CBEBC`; **write** `exe+0x428CDD` (`mov [rdi+0x140],eax`) | `8B 88 40 01 00 00 89 8F`; `89 87 ?? ?? ?? ?? 33 D2 49 8B CE` | The character's data module (Elden Ring has the same fields 8 bytes lower). Relation to `[PlayerIns+0xB78]+0x70`: UNKNOWN |
-| Position x, y, z (the table edits these to move the player) | `+0x70`, `+0x74`, `+0x78` | `exe+0x46E5C1` (`movups xmm3,[rbx+0x70]`) | `0F 10 5B 70 F3 0F 10 93 98 01 00 00` | The physics module (same offset as Elden Ring). Not one of the §8 candidates |
+| Position x, y, z (the table edits these to move the player) | `+0x70`, `+0x74`, `+0x78` | `exe+0x46E5C1` (`movups xmm3,[rbx+0x70]`) | `0F 10 5B 70 F3 0F 10 93 98 01 00 00` | `CS::CSChrPhysicsModule` (§8). The table hooks this code and stores `rbx` (the object) with no filter, so its three "pos" rows point at whichever character ran the code last |
 | Runes, level | `+0x6C`, `+0x68` | `exe+0x830E3D` (`mov eax,[r14+0x6C]`) | `41 8B 46 6C 89 86 1C 01 00 00` | `CS::PlayerGameData` = `[PlayerIns+0x5A0]` (same offsets as Elden Ring) |
 | Murk, sovereign sigil (kept between runs: **never write**) | `+0xD0`, `+0x5C` | same | same | same object |
 | Vigor … arcane (8 values) | `+0x34` … `+0x50` | pattern not found in 1.3.3.0 | n/a | same object |
@@ -187,6 +231,10 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 | `MsgRepository` table | `[exe+0x3C246A8]`: `+0x8` table, `+0x10` slot count, `+0x14` category count; FMG = `[[+8] + slot*8] + category*8` | Read by `game/texttrace.rs` to map FMG pointers back to categories | `[VERIFIED: LookupEntry bounds checks; trace mapped every FMG]` |
 | `CSEventFlagMan` | slot `exe+0x3C115A8` | ER layout holds: divisor 1000, a red-black map of group → block; 143 groups have storage (list in `research/UI-0-ingame-ui.md` step 5). Flag 6001 ON / 6000 OFF, 7500 ON at DAY I | `[VERIFIED: UI-0 step 5 probe]` |
 | Our flags | group **10007** (10007000..10007999), 10008 spare | Storage present, no use in any NR talk ESD or EMEVD. 10007000 set by our table list and read by the DLL | `[VERIFIED: UI-0 step 6]`; use by the exe or params UNKNOWN |
+| Commence checks | `exe+0x9EEBE0` (ordinary function, has `.pdata`), called once per Commence press from `exe+0x9E81AE` / `exe+0xA4246E` with `rcx` = the menu; our breakpoint sits at `exe+0x9EEBFB` (first instruction after the prologue, `r14` = menu) | Checks 506040 / 506070 / 506024 / 506023 in turn. Jumping to `exe+0x9EEC1D` runs the game's own 506040 notice dialog and leaves through the normal epilogue. **FS-UI2: the host's start of the expedition with a Seamless Co-op party (3 rounds) logged no press here** `[HYPOTHESIS: SC's party start takes another path, or the settings pointer was not readable]` | `[VERIFIED: UI-1 trace + C1 prototype 2026-10-19; FS-UI2 2026-10-21]` |
+| Number of Players byte | `[[menu+0xFC8]+0x49]` (the list `exe+0x9FB020` reaches the same object as `[rcx+0x3E08]`) | **2 = one player, 1 = two, 0 = three.** Commence with 0/1 offline = 506023 "Cannot start multiplayer session in offline mode"; with 2 = departure. Seen at 0 again on the friend's PC after a round as host (FS-UI2; cause UNKNOWN) | `[VERIFIED: UI-1 trace; 0x9EF3F0 picks 130304 / 130305 from it]` |
+| Commence dialog text | CL_Dialogues (category 204) entry 506040's offset slot: `[[fmg+0x18]+idx*8]`, string = `fmg + offset` | One aligned 8-byte store points the dialog at our own UTF-16 text; the open dialog copies the text when it opens (does not follow later changes) | `[VERIFIED: C1 prototype, Leonardo saw the text]` |
+| CL_MenuText getter | `exe+0x7AC800` (`edx` = id) | Breakpoint here swaps 130409/130417/130408 → our 99100100..102 before SC's `LookupEntry` hook sees them: the list reads Solo / Duo / Trio | `[VERIFIED: UI-1 step 4 solo; FS-UI2 on two PCs]` |
 
 ## 10. Not found yet
 

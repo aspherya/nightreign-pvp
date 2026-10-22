@@ -390,6 +390,96 @@ Game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0. Baseline, 
   ran out). 0 errors / panics; ticks 1–4 ms, peaks 62 / 114 ms at the hits (the known run-21 spike, not new).
 - **Task D (snap-back) skipped** (Leonardo): still open, console `pos_save` / `pos_go` / `pos_next` ready.
 
+### 2026-10-13 — T-028 run 1 (solo, `scripts\launch.ps1`, snap-back test with `Physics+0x70`). Log: `.claude/experiments/T-028/run1_solo_teleport.log`
+Game 1.03.3, Seamless Co-op v1.1.3, mod build 2026-10-13 22:30 (branch `t-028-snapback`). One save, nine writes, first candidate only.
+**Position write moves the player: PASS for x and z** (within 2 cm, never snapped back). **Height: FAIL** (1.8 m to 7.7 m below the saved
+height; after write 9 the player fell out of the world). Leonardo: "it kinda worked, with some bugs". Cause found in runs 2-3.
+
+### 2026-10-14 — T-028 runs 2 and 3 (solo). Logs: `.claude/experiments/T-028/run2_solo_teleport.log`, `run3_solo_walk.log`
+Run 2: grass worked; rock → grass and cliff top arrived beside the saved spot and fell. The physics position is measured from an origin
+that moves. Run 3 (walk, no teleport): the origin is `PlayerIns+0x80` (`re/MEMORY_MAP.md` §8).
+
+### 2026-10-14 — T-028 run 4 (solo, origin-aware teleport, build 173f4fa). Log: `.claude/experiments/T-028/run4_solo_teleport.log`: **PASS**
+Leonardo: "it worked". Four save/teleport pairs, including a cliff top from 16 m below and saves 40–250 m apart. Height held within 0.6 m
+2 s after every write. The log also holds the full vanilla hawk ride (MEMORY_MAP §8).
+
+### 2026-10-14 — T-028 two screens (Nucleus, same build): **PASS (reported by Leonardo, logs not kept)**
+The other player saw the jump; both screens agreed; both could still hit each other afterwards.
+
+### 2026-10-21 — FS-UI2: Battle Royale from the table, player zip, two PCs (Leonardo "leo" + friend "Samuka Games"; zip 71f893d, nrpvp.dll F6B1C1FE9D813141; game 1.03.3, SC 1.1.3, me3 0.11.0). Logs: `.claude/experiments/FS-UI2/{host,client}` (host = Leonardo's PC, client = the friend's): **PASS (logs; on-screen answers pending)**
+- Same build and config on both (`mode: PLAYER`, `matchmaking=true mm_max_players=2 mm_min_players=2 team_size=1`, overlay off). 0 ERROR /
+  panic. Heartbeat worst passes 74 ms (combat step, in expeditions), otherwise 0–17 ms. The friend's clock is ~16 s ahead of Leonardo's.
+- **Step 0 (labels, FS-UI1):** both: `our labels found in CL_MenuText_dlc01 … Number of Players shows Solo / Duo / Trio (hwbp slot 3)`;
+  SC lobby and Roundtable worked with our package on both PCs. On-screen check of the labels: not reported yet.
+- **Step 2/3/4, three full rounds, both directions:** round 1 18:18–18:27 (Leonardo host), round 2 18:28–18:33 (friend host), round 3
+  18:33–18:37 (Leonardo host). Each: `MATCH READY` under 1 s after the second Commence → host `invite dialog suppressed` (quiet invite,
+  mask 0b1111) + `method (b) InviteUserToLobby -> true` → joiner `method (a) link` → `ALL PRESENT 2/2` 8–9 s after the invite → both
+  `local player is in an expedition (team_type 2)` within ~1 s → rivals (heartbeat `team 29, n writes`), downed rule fired (`rule: rival
+  hit on downed LOCAL …` 7× on Leonardo, 2× on the friend) → back at the Roundtable `state MatchReady -> Idle`, next Commence queued again.
+- **Hypothesis (host Commence switches byte 2 → 1): not exercised.** No `br_menu: Commence pressed` at match ready in any round; the
+  expedition started for both anyway. So the start with a SC party needs nothing from us (whether it bypasses `exe+0x9EEBFB` or hit it
+  with an unreadable settings pointer: UNKNOWN). Fallbacks (a)/(b) not needed.
+- **Messages (UI-2):** shown on both: searching (0), "(1 of 2)" (20, repeating every 6 s), host Invite Members (5), waiting for players
+  (6), waiting for the host (7), loading in (9), everyone is here host/joiner (10/11). **Never shown:** "match found!" (4) and "joining
+  the host…" (8): the next state arrived inside the 6 s gap. "Everyone is here" kept repeating through the departure (`NOT picked up …
+  not in the Roundtable?` 4–5× per round, harmless).
+- Friend, before round 3: Commence twice with Number of Players byte 0 → "Duo and Trio coming soon" box (`decision code 0x120`), then
+  Solo → queued. The byte was 0 after his round as host (the friend may have changed it; ask).
+- **Steps 1 and 5 (Stop Searching) not run**: no `stop searching` line on either PC. Already PASS solo (SMOKE-2 Part A, UI-2 solo).
+- **Defect seen:** `rule: rival completed the revive meter of LOCAL but nothing was written: [PlayerIns+0xB78] is not a plausible
+  pointer` (Leonardo, round 3 18:36:24): the re-down did not happen once.
+- **Crash 0xC0000374 (ntdll heap corruption) twice on Leonardo's PC** (Windows Application log 1000): 18:14:59 UTC and 18:37:14 UTC; both
+  were Alt-F4 quits (Leonardo saw no crash), so Alt-F4 hits the quit crash too. This zip predates R1/R5 (hudhook still linked, overlay off by
+  config), so it neither clears nor convicts the overlay; STATUS §1 known bug.
+
+### 2026-10-21 — T-040 runs 1 and 2: rival revive re-down (Leonardo, Nucleus 2 instances, dev build, `team_size = 1`). Logs: `.claude/experiments/T-040/`: **PASS (run 2)**
+- **Run 1 (21:52–21:59 UTC, build 18:33, retry only):** `revive_fail 3` on Instance0; Instance1 revived it. The retry ran as designed
+  (`gave up after 40 tries in 2023 ms`), but every try after the forced ones failed the HP gate: `authoritative 4294967295, mirror
+  1781645456, PlayerGameData 120`. **The revive stood: the FS-UI2 bug reproduced.** Live reads on both games: `[PlayerIns+0xB78]`
+  pointed into a list of same-class objects, `+0x70` = 0xFFFFFFFF, and `+0xBA0` held half a pointer; the health was at
+  `[[PlayerIns+0x1B8]+0x0]+0x140` (240 / 260, = PlayerGameData). Leonardo's `nrscan poke` of 0 there downed Instance0 at once
+  (22:03:37, `STATE … DOWN`). Root cause: **the re-down wrote to an address that is not always the health** (worked in FS-0 runs
+  9–19 and on 2026-10-21 00:54, not here); the single try was a second, smaller problem.
+- **Run 2 (22:12–22:17 UTC, build 19:06, nrpvp.dll 5324D6D949A6A449: data-module route first, old route as fallback):** both directions
+  re-downed on the first try: Instance1 22:16:05.2 and Instance0 22:16:46.5 `rule: rival completed the revive meter of LOCAL; downed
+  again (hp 130 -> 0, readback 0)`, next `STATE … DOWN (downs=2)` within 0.1 s. Both then bled out under further rival hits
+  (expected). 0 errors.
+- Seen by Leonardo and expected (STATUS §4 item 1): when a rival's last hit empties the bar in one go, the game starts the get-up
+  (~3.6 s, state 2) before the downed rule can undo it, so the player stands up and is then knocked down again.
+  Instance1 22:16:01.5 logged it: `T-040 LOCAL bar read 0 while state 1 (before 40)`.
+- **Run 3 (22:24–22:30 UTC, build 19:22, console `early_redown 1` on both): the early write does NOT shorten the get-up.** Instance0:
+  the last rival hit emptied the bar (`bar read 0 while state 1`, 22:29:15.2), the mod set health 0 `0 ms in` to the get-up
+  (22:29:15.4, `hp 100 -> 0, readback 0`), yet the game played the whole get-up and only then went `state 2 -> 1` (22:29:19.0, 3.6 s
+  later, bar 90). Leonardo: "the rival gets up and then dies", same as without it. Instance1's down ended in a bleed-out (no get-up).
+  Conclusion `[VERIFIED]`: once state 2 has started, an HP write cannot cut it; the get-up must be prevented before it starts.
+
+### 2026-10-21 — T-041: revive-bar trace and the revive block (Leonardo, Nucleus 2 instances, dev build, `team_size = 1`). Logs: `.claude/experiments/T-041/`: **PASS (block v2, one direction)**
+- **Trace (22:38–22:44 UTC, `bar_trace 1`):** no crash; writers of `PlayerIns+0x714`: `exe+0x675149` (every frame, bar regrowth),
+  `exe+0x66DFCC` (a reviver's hit), `exe+0x66F5ED` (get-up start), `exe+0x67533C` / `exe+0x67521E` (end of get-up / bleed-out), plus our
+  own rule (`nrpvp.dll`). Disassembly: the get-up is started by the byte `PlayerIns+0x732`, not by the bar (a get-up began with the bar
+  at 40, 22:42:36). MEMORY_MAP §6.
+- **Block v1 (23:00–23:01, clear `+0x732`):** blocked, but the game took its "neither flag" branch and stood the player up at once
+  (`state 1 -> 0`, HP 0), then downed them again 3.7 s later. FAIL.
+- **Block v2 (23:09–23:13, build a646288c59f2b1b0: jump to the game's own no-event exit `exe+0x67539F`):** Instance0 downed by the
+  rival; the hit at 23:11:37.0 emptied the bar; from 23:11:37.8 the revive event arrived every frame for 3.6 s (131 frames dropped,
+  all from the rival's handle) and **state stayed 1**; the player bled out at 23:11:46. **Leonardo: no stand-up on either screen**
+  (the rival's screen also showed the player staying down). Other downs: Instance1's bar never emptied (bled out, nothing to block);
+  an enemy down (attacker not a player) was left alone.
+- **Hit hook (2026-10-22 00:14–00:15 UTC, build 745ECEF467581CC3: breakpoint on the bar store `exe+0x66DFC4`, a rival's hit keeps
+  the current bar): PASS, both directions.** Instance0 downed: 3 rival hits `bar stays 40, clock 14.45 -> 11.45 … 4.96 -> 1.96,
+  pause … -> 0`, bled out at 00:14:47.6 still on its first down. Instance1 downed: 4 hits, same, bled out 00:15:24.5. No revive
+  event reached the game (`0 rival revive frame(s) dropped`), no extra down. **Leonardo: "it worked very well"**: no stand-up on
+  either screen, and the near-death gauge no longer flickers on rival hits (the old poll-based restore caused it).
+- **Teams, 3 instances, `team_size = 2` (2026-10-22 00:34–00:40 UTC, same build): PASS.** Teams agreed on all three games: 6001 + 6002
+  vs 6003. Rival downed (6003, Instance0): 4 rival hits cancelled (`bar stays 40`), bled out at 00:37:14. **Teammate revives work:**
+  6001 (Instance2) revived by ally 6002 at 00:38:06 (`revive_block: allowed a revive of LOCAL by a non-rival`, up at 120 HP); 6002
+  (Instance1) revived by ally 6001 at 00:40:21 (up at 130 HP). **Both in one down** (6001, second down, 00:39:02): the teammate's hits
+  lowered the bar normally (75.9, 65, 72.7 between regrowth) while 3 rival hits were cancelled and cost 3 s each; died at 00:39:15.
+  Leonardo: "it worked". T-040 and T-041 accepted.
+- Superseded (block v2 entries above): the downs counter rose to 2
+  (bar 90) during the blocked window without a new down on screen (source UNKNOWN; probably the rival's game, which believed the
+  player was getting up).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.
@@ -402,58 +492,5 @@ Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once i
 
 ## 6. Friend Session runbooks
 
-### FS-UI2 — In-game Battle Royale UI on the player zip, two PCs (≈40 min). **Status: ready (zip of 2026-10-20 01:28 UTC).**
-Tests UI-1 (Number of Players = Solo → Commence → our queue; Stop Searching; the host's Commence once the match is ready) and UI-2 (the
-blinking messages) with two players, and folds in FS-UI1 (Seamless Co-op with our game-data package on **both** PCs). Main open question:
-`[HYPOTHESIS]` at the match-ready Commence the DLL switches Number of Players from one player to two (byte 2 → 1) so the host's start is a
-multiplayer start that takes the joiner along (UI-1 step 3).
-**Zip:** `dist\NightreignPvP.zip`, built with `scripts\package-release.ps1 -MatchPlayers 2` (VERSION.txt: commit 71f893d clean, no overlay,
-nrpvp.dll `F6B1C1FE9D813141`, gamedata emevd `8B9459487BD2A5A3`, me3 0.11.0). Contains `nrpvp_launcher.exe`,
-`HOW TO INSTALL.txt`, `NightreignPvP\` with nrpvp.dll, nrpvp.toml (`matchmaking = true`, `mm_max_players = mm_min_players = 2`), VERSION.txt,
-`gamedata\` (event\m10_00_00_00.emevd.dcx + 15 × msg\<lang>\menu_dlc01.msgbnd.dcx) and me3. If the build is rebuilt from a commit, use that zip
-and its VERSION line instead; both players need the same zip.
-**Before (both, ~5 min):** back up `%APPDATA%\Nightreign\<steamid>\`. Delete the old `NightreignPvP` folder and `nrpvp_launcher.exe` from the
-game folder, then drag in both from the new zip (HOW TO INSTALL.txt). Steam running, different accounts, voice chat open, start with
-`nrpvp_launcher.exe` only. Leonardo checks once on his PC: `<Game>\NightreignPvP\nrpvp.me3.toml` (written by the launcher) ends with
-`[[packages]] id = "nrpvp-gamedata"`, and the log has `br_menu: Commence handler armed (hwbp slot 2)` and, after the Roundtable loads,
-`br_menu: our labels found in CL_MenuText_dlc01 ... (hwbp slot 3)`. Write down the time of every step (the logs have the rest).
-
-**0. Labels and Seamless Co-op with the package (both, 3 min; FS-UI1).** Each at their own Roundtable: table → Matchmaking Settings →
-Number of Players. Does the list read **Solo / Duo / Trio** on both PCs? Pick **Solo**, back out. Any missing texts (blank or `?` labels)
-anywhere in the menus? Pass = both see the three labels.
-
-**1. Stop Searching, one side (Leonardo, 3 min; the friend does not search).** Commence → box "Battle Royale: searching for players (Solo)…"
-→ OK. Within ~10 s a blinking "Battle Royale: searching for players…" / "(1 of 2)"; it comes back every ~6 s while searching (as soon as the previous one has faded). The button now reads
-**Stop Searching**: press it → box "stopped searching for players" → OK, blinking "Battle Royale: stopped searching." The button reads
-Commence again. Pass = all of that, and no match found (the friend was not searching).
-
-**2. Match found (both, 5 min).** Both pick Solo and press Commence within ~30 s of each other, OK the box. Expected messages, in order:
-"searching (1 of 2)" (maybe "(2 of 2)") → "Battle Royale: match found!" on both → one player (the host) gets **"Match found! Open
-Matchmaking Settings > Invite Members to bring the others in."**, the other "Waiting for the host…" / "Joining the host…". Write down who is
-host and every message each side saw (which ones were missing or came late).
-
-**3. Host opens Invite Members (host only, 3 min).** Host: Matchmaking Settings → Invite Members once. **No Steam window should open**
-(quiet invite, hwbp slots 0/1, now running next to the Commence/label breakpoints 2/3). The joiner presses nothing: "Joining the host…" →
-"Loading in…" → arrives in the host's Roundtable (SC). Then **"Everyone is here. Start the expedition!"** (host) and "Everyone is here. Waiting
-for the host to start." (joiner). Does SC's party list at the table look normal on both screens (FS-UI1)?
-
-**4. Host's Commence (host only, 5 min): the hypothesis.** Host: table → Number of Players still **Solo** → first boss → **Commence**.
-Pass = the departure starts **for both** and both load into the same expedition (rivals: you can hurt each other; the player build has no overlay any more, so the logs show the rival write).
-If it fails, write down exactly what each screen showed (a box? which text? solo expedition for the host only?), then try once:
-(a) host sets Number of Players = **Duo** (one of the old "Up to 6 players" options), Commence (the DLL passes it unchanged in this
-phase); if that fails, the same with **Trio**;
-(b) if that fails too: stop here and write down what each screen showed; Claude reads both logs (`br_menu: Commence pressed … queue phase 2`,
-`mm_join:` lines). (The player build has no Insert panel any more: the in-game menu and messages are the only UI.)
-After the expedition (or a short walk + quit to the Roundtable), both: does the search start again with Solo → Commence? (One round is enough.)
-
-**5. Friend stops searching (friend, 2 min).** Friend alone: Commence → Stop Searching, same checks as step 1 on the friend's PC.
-
-**After:** both send `<Game>\NightreignPvP\logs` (and the friend's `launcher.log`); Leonardo copies them into
-`.claude/experiments/FS-UI2/{host,client}`. Log lines to read: `br_menu: Commence pressed (#n): Number of Players byte …, queue phase …,
-decision code …` (step 4: byte 2 on the host and the multiplayer decision), `ui_msg: … shown` / `NOT picked up`, `hwbp: debug registers now
-[…] (mask …)` (mask 0b1111 on the host while the quiet invite is armed), the `mm_queue` / gate lines around MATCH READY and ALL PRESENT.
-**Stop rules:** a crash → note the time and the step, relaunch, continue from that step. The match-ready start failing in (a) and (b) is a
-result, not a blocker: finish steps 5 and the logs.
-
-Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1) were removed on 2026-10-20; their results are in §3 and their text in git
-(`git show 339ee04:.claude/TESTING.md`).
+No open runbook. Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1 on 2026-10-20; FS-UI2 on 2026-10-21) were removed; their results are in §3 and their text in git
+(`git show 339ee04:.claude/TESTING.md`; FS-UI2: `git show c727293:.claude/TESTING.md`).

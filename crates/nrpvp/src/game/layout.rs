@@ -53,15 +53,41 @@ pub(crate) const PLAYER_DOWNS: usize = 0x730;
 pub(crate) const PLAYER_HP_PTR: usize = 0xB78;
 /// u32 authoritative HP inside the [`PLAYER_HP_PTR`] target. Writing 0 on the owner's game downs the player (does not kill).
 pub(crate) const HP_FIELD: usize = 0x70;
-/// u32 HP mirror (read-only cross-check before a write).
+/// u32 HP mirror (read-only cross-check before a write). T-040 run 1: held part of a pointer on both Nucleus games, so the gates
+/// never rely on it alone.
 pub(crate) const PLAYER_HP_MIRROR: usize = 0xBA0;
+/// u32 current HP inside the character data module (entry 0 of [`PLAYER_MODULES`], vtable exe+0x2C10B88). Writing 0 on the
+/// owner's game downs the player (T-040 run 1, Nucleus 2026-10-21; MEMORY_MAP §5). The game's own HP write is exe+0x428CDD.
+pub(crate) const DATA_MODULE_HP: usize = 0x140;
+/// u32 max HP inside the character data module (MEMORY_MAP §5 "Character data" row).
+pub(crate) const DATA_MODULE_MAX_HP: usize = 0x14C;
+
+// ---- Position (MEMORY_MAP §8; T-028 runs 1-4, NR 1.3.3.0) ----
+/// PlayerIns -> the character's module list (a block of pointers, no vtable). Seen in the FS-0 run 7 dump (57 pointers); that it
+/// is the module list is a HYPOTHESIS (ER has it at +0x190, which is `CS::SpecialEffect` in NR). The physics module was found in it.
+pub(crate) const PLAYER_MODULES: usize = 0x1B8;
+/// Bytes of the module list searched for the physics module (it sits at +0x68, as in ER; T-028 run 1).
+pub(crate) const MODULES_SPAN: usize = 0x1C8;
+/// PlayerIns -> origin of the local frame the physics position is measured in (x, y, z f32; y stays 0). The game moves it in
+/// 8 m steps as the player walks, so world position = physics position - origin. T-028 run 3: a smooth path across every jump.
+pub(crate) const PLAYER_ORIGIN: usize = 0x80;
+/// x, y, z f32 position inside `CS::CSChrPhysicsModule`, relative to [`PLAYER_ORIGIN`]. Writing it moves the player and the
+/// other games see the move (T-028 run 1, run 4, Nucleus 2026-10-14).
+pub(crate) const PHYSICS_POS: usize = 0x70;
+/// u8 inside the physics module: 1 standing (and riding the hawk), 0 in the air. T-028 runs 1-4.
+pub(crate) const PHYSICS_GROUND: usize = 0x92;
 
 // ---- PlayerGameData (MEMORY_MAP §5) ----
 /// u32 HP mirror inside PlayerGameData.
 pub(crate) const GAMEDATA_HP: usize = 0x10;
+/// u32 max HP inside PlayerGameData (T-040 run 1: 260 while HP was 43).
+pub(crate) const GAMEDATA_MAX_HP: usize = 0x14;
 /// Readable RTTI name of the PlayerGameData class (used to recognise the object before reading it).
 pub(crate) const GAMEDATA_CLASS: &str = "CS::PlayerGameData";
 
 // ---- Class tables (MEMORY_MAP §1) ----
 /// RVA of the PlayerIns vtable seen by T-007a; only a sanity log against the RTTI result (RTTI is what the code trusts).
 pub(crate) const PLAYER_VTABLE_RVA: usize = 0x2C307F8;
+/// RVA of the `CS::CSChrPhysicsModule` vtable, read from the RTTI of `nightreign.exe` 1.3.3.0 on disk (2026-10-13). The game reads
+/// the position at +0x70 of this object (code at exe+0x46E5C1).
+pub(crate) const PHYSICS_VTABLE_RVA: usize = 0x2C1_3720;

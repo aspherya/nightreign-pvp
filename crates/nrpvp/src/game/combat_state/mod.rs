@@ -112,6 +112,92 @@ impl CombatCtl {
         }
     }
 
+    /// T-040 (console `revive_fail`): the next `n` re-down tries fail without reading memory.
+    pub(crate) fn set_forced_fails(&mut self, n: u32) {
+        self.core.set_forced_fails(n);
+    }
+
+    pub(crate) fn forced_fails(&self) -> u32 {
+        self.core.forced_fails()
+    }
+
+    /// T-040 follow-up (console `early_redown`): the get-up re-down experiment.
+    pub(crate) fn set_early_redown(&mut self, on: bool) {
+        self.core.early_redown = on;
+        tracing::info!(
+            "rule: early re-down (during the get-up) {}",
+            if on { "ON" } else { "OFF" }
+        );
+    }
+
+    pub(crate) fn early_redown(&self) -> bool {
+        self.core.early_redown
+    }
+
+    /// T-041 hit hook: the T-039 penalty for `n` rival hits whose bar decrease was cancelled inside the game (the bar did not move,
+    /// so `downed_step` sees no hit): the bleed-out clock loses `rival_hit_seconds` per hit and the pause timer is cleared. LOCAL
+    /// in state 1 only; same gates as `restore_after_rival_hit`.
+    pub(crate) fn penalize_rival_hits(&mut self, n: u32) {
+        let Some((addr, 1)) = self.local_state() else {
+            return;
+        };
+        let (Some(bar), Some(clock), Some(pause)) = (
+            read_f32(&self.mem, addr + OFF_REVIVE_BAR),
+            read_f32(&self.mem, addr + OFF_BLEED_CLOCK),
+            read_f32(&self.mem, addr + OFF_PAUSE),
+        ) else {
+            return;
+        };
+        if !(clock.is_finite() && (0.0..=60.0).contains(&clock)) {
+            return;
+        }
+        let new_clock = (clock - self.core.hit_seconds * n as f32).max(CLOCK_FLOOR);
+        let ok = self
+            .mem
+            .write(addr + OFF_BLEED_CLOCK, &new_clock.to_le_bytes())
+            .and_then(|()| self.mem.write(addr + OFF_PAUSE, &0f32.to_le_bytes()));
+        self.core.fired += n;
+        tracing::info!(
+            "rule: rival hit on downed LOCAL cancelled in the game (T-041 hook, {n} hit(s)): bar stays {bar}, clock {clock} -> {new_clock}, pause {pause} -> 0{}",
+            if ok.is_ok() { "" } else { " (write refused)" }
+        );
+    }
+
+    /// T-041 hit hook: clear LOCAL's pause timer again (the game writes it right after the cancelled hit's store).
+    pub(crate) fn clear_pause(&mut self) {
+        if let Some((addr, 1)) = self.local_state() {
+            if read_f32(&self.mem, addr + OFF_PAUSE).is_some_and(|p| p > 0.0) {
+                let _ = self.mem.write(addr + OFF_PAUSE, &0f32.to_le_bytes());
+            }
+        }
+    }
+
+    /// T-041: the character handles (`ChrIns` handle field) of the players this game marks as RIVAL, read-only.
+    pub(crate) fn rival_handles(&self) -> Vec<u64> {
+        if !self.rtti_ready {
+            return Vec::new();
+        }
+        self.subjects
+            .iter()
+            .filter(|s| !s.local && s.relation == Some(crate::overlay::shared::Relation::Rival))
+            .filter(|s| self.mem.is_player(s.addr))
+            .filter_map(|s| self.mem.read_u64(s.addr + CHR_HANDLE))
+            .filter(|&h| valid_handle(h))
+            .collect()
+    }
+
+    /// T-041: LOCAL's PlayerIns address and its state byte (`PlayerIns+0x710`), read-only.
+    pub(crate) fn local_state(&self) -> Option<(usize, u8)> {
+        if !self.rtti_ready {
+            return None;
+        }
+        let s = self.subjects.iter().find(|s| s.local)?;
+        if !self.mem.is_player(s.addr) {
+            return None;
+        }
+        Some((s.addr, self.mem.read_u8(s.addr + OFF_DOWNED)?))
+    }
+
     pub(crate) fn tick(&mut self, subjects: Vec<Subject>) {
         self.subjects = subjects;
         if !self.rtti_ready {

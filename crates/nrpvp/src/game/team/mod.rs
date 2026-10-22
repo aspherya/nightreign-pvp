@@ -4,6 +4,7 @@
 //! - [`chrset`]: read the player list (WorldChrMan ChrSet), recognise PlayerIns by RTTI vtable, decide who is LOCAL (entry[0]).
 //! - [`write`]: the one gated team_type write, persist re-application, the candidate list, the per-player watcher lines.
 //! - [`roster`]: pure rules glue: rosters from the per-player ids and the "rivals only" plan (no game memory).
+//! - [`spawns`]: F3 separate team spawns at the hawk drop (the rule itself is `game::spawn`).
 //! - this file: [`TeamCtl`], which ties them together each tick (PvPvE marking, persist, console commands, the snapshot).
 //!
 //! The write is a single u8 store at `PlayerIns+0x74`, only after the object's vtable was re-read and matched a PlayerIns-derived
@@ -25,6 +26,7 @@ mod manual;
 mod postest;
 mod pvpve;
 mod roster;
+mod spawns;
 #[cfg(test)]
 mod tests;
 mod view;
@@ -103,6 +105,8 @@ pub(crate) struct TeamCtl {
     pos: PosTest,
     /// T-032: pending follow-up value logs after an F6 write: (due, label, PlayerIns).
     pos_follow: Vec<(Instant, &'static str, usize)>,
+    /// F3: separate team spawns (None = `team_spawns` off).
+    spawn: Option<super::spawn::SpawnCtl>,
 }
 
 /// What the overlay shows about the players, from a quiet (non-logging) resolve.
@@ -192,6 +196,9 @@ impl TeamCtl {
             next_live: now,
             pos: PosTest::new(&poswrite::parse_list(&cfg.pos_candidates).0, base, size),
             pos_follow: Vec::new(),
+            spawn: cfg
+                .team_spawns
+                .then(|| super::spawn::SpawnCtl::new(cfg.spawn_radius, base)),
         }
     }
 
@@ -363,6 +370,12 @@ impl TeamCtl {
         if self.pvpve_enabled && self.pvpve_running && now >= self.next_pvpve {
             self.next_pvpve = now + self.pvpve_every;
             self.pvpve_tick();
+        }
+        if let Some(mut sp) = self.spawn.take() {
+            if sp.due(self.inst) {
+                self.spawn_tick(&mut sp);
+            }
+            self.spawn = Some(sp);
         }
     }
 
