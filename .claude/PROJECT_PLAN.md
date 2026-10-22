@@ -188,7 +188,8 @@ interaction, the downed rule) were dropped; their history is in git.
 landing zone, the hawk keeps flying on the **same straight line** (vanilla start point, vanilla direction) until it reaches the far side of
 the map. Each player chooses when to jump off and lands where they want. Players who never jump are dropped automatically at the end
 of the line. Teammates are not forced together (they coordinate by voice, as in Fortnite). **Decided 2026-10-22 (Leonardo): one single line for
-everyone, always the map diagonal from bottom to top** (data: every start route gets the same points).
+everyone, always the map diagonal** (data: every start route gets the same points). 2026-10-22: diagonal "B" of the route atlas, the
+longer and higher one; "bottom to top" dropped (TASKS HAWK-1b).
 
 **What we know (T-028 runs 3-4, 2026-10-14, solo; `re/MEMORY_MAP.md` §8).**
 - Moving the local player works: write the physics-module position, keeping world position (physics − origin). Other players see the
@@ -245,14 +246,36 @@ end) in `m60_00_00_99.msb`, about 200 m long. Limveld is about 1.5 km square in 
   end point load correctly?
 - B2 (DLL): keep the vanilla route and move the player ourselves along the extended line. Fallback only.
 
-Likely v1: **B1 + A2**. A cheap first test needs no DLL code: a game-data package with one patched MSB, a start ride, and a look at
-whether the hawk flies the long route and drops at its end (HAWK-1b).
+**v1 design (2026-10-22, after HAWK-3 run 1; Leonardo: drop and tree mode both work).** What the player feels:
 
-Earlier ideas, dropped: summoning a tree hawk at the start (the start ride is already the right state; the Nexus mod's trick only
-starts a tree-hawk ride); flying a separate hawk object (the hawk is not an object, it is the player's own state).
+| Phase | What happens | How (all in the DLL through the env swap of MEMORY_MAP §14, plus one data file) |
+|---|---|---|
+| 1. Cruise | Everyone rides the same straight diagonal line across the map. The stick does nothing; the hawk never leaves the line | Route: B1 data, one diagonal for every start route (HAWK-1b). Ride: we answer 1 (tree hawk) instead of 4 at the ride start, so the tree-hawk loop runs (it has the exits and steering), but **we answer 0 to 394 (direction time) during cruise**, so the script sees no stick and the hawk holds the route |
+| 2. Dive (the "slow down") | The player picks a spot: holding the stick off the line for a moment starts a dive. The hawk leaves the line, descends, and the player steers it toward the spot for a few seconds | We see the real 394 value (the hook reads the game's answer before replacing it). Stick held ≥ `dive_hold_ms` → stop hiding 394, so the vanilla off-route descent runs. Its 2-s auto-fall (384 escape time ≥ 2000, measured: 384 counts in ms) is stretched to `dive_secs` by capping the 384 answer below 2000 until that time is up |
+| 3. Drop | The player leaves the hawk on purpose: hold action (0.5 s) or L3, from cruise or dive, as on a Spectral Hawk Tree. When the dive time is up, the hawk drops the player | Vanilla tree-hawk exits; nothing to build. End of dive: stop capping 384 → the game's own fall |
+| 4. Nobody chose | Players still on the hawk at the far end are dropped there | The engine's route end (377 = 2), as in HAWK-1b; the route ends over land |
 
-Plan: HAWK-0 done (2026-10-21). HAWK-1b (2026-10-22): B1 works, the long route flies and drops at its end; 2 of 3 drops fell to y −26 (open, TASKS). Next: HAWK-A2 and HAWK-1 (ride probe, drop-button trace). Then build
-HAWK-2. Cards in `TASKS.md`.
+Why tree mode for the whole ride instead of "start hawk, then switch to tree mid-ride": the start-hawk loop only reads 377 == 2, so a
+mid-ride switch is UNKNOWN to work, while tree mode from the start is tested (run 1). Why hide the stick instead of trusting players:
+in tree mode any stick touch leaves the route and 2 s later the player falls (Leonardo's run-1 complaint: the ride felt short and he
+landed at the start; that run also used the vanilla 200 m route, `dist\gamedata` had no map files).
+
+Rules and limits:
+- Only LOCAL is changed (each game rewrites its own player's answers; `r8` = PlayerIns, MEMORY_MAP §14). Other players see the result
+  through normal player sync `[HYPOTHESIS until an FS]`.
+- Safety at the map edge: the line stays ≥ 150 m inside the known-land hull; a dive lasts `dive_secs` (default 7 s at
+  ×1.3 ≈ 160 m at 23 m/s), so a dive cannot reach the void from the line `[HYPOTHESIS: dive speed not measured]`.
+- Tunables (`nrpvp.toml`, `[hawk]`): `enabled`, `dive_hold` (default 400 units of 394), `dive_secs` (default 7), `dive_boost` (default on).
+  Speed of the cruise: the route data (17.4 m/s, vanilla). During a dive the script's own hawk speed goes to ×1.3 (the 99230 check).
+  Slowing the descent is UNKNOWN (engine-side).
+- **Accepted 2026-10-22 (HAWK-4, Leonardo: good enough):** cruise lock, stick-held dive (7 s, ×1.3), vanilla drop buttons, the tree
+  start animation cut (`IsAnimEnd` answered TRUE for 0.4 s; the vanilla-start variant is built but unused). Dive time and distance
+  stay open to player feedback.
+- If tree mode turns out wrong in multiplayer, the fallback for the drop alone is phase 3 on the vanilla start hawk: answer 2 when the
+  drop button is seen (needs the button's env id, not found yet).
+
+Plan: HAWK-1b (diagonal route data) → HAWK-4 (cruise lock + dive probe, dev, solo) → HAWK-2 (the player feature) → FS check. Cards in
+`TASKS.md`.
 
 **What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector
 (`game/spawn.rs::DropDetector`) are the B2 fallback and the ride logger of HAWK-1. The F3 "move each team 200 m apart at the drop" rule (`team_spawns`, off by

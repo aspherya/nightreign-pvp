@@ -47,6 +47,33 @@ pub(crate) enum Command {
     BarTrace(bool),
     /// T-041 step 3 prototype (dev only): switch the revive block.
     ReviveBlock(bool),
+    /// HAWK-3 (dev only): the hawk env swap (`game::hawk`); handled in the main loop like `ReviveFail`.
+    Hawk(HawkCmd),
+}
+
+/// HAWK-3 console commands (`hawk_*`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HawkCmd {
+    /// Log where the env switch is and whose code it is (no swap).
+    Env,
+    /// Trace the hawk ids per character (`true`), with every id of the rider too (second `true`), or stop.
+    Trace(bool, bool),
+    /// Answer "route ended" to the rider for a moment.
+    Drop,
+    /// Start-hawk rides answer "tree hawk".
+    Tree(bool),
+    /// HAWK-4: tree mode with the stick hidden until a dive starts.
+    Cruise(bool),
+    /// HAWK-4: dive hold (units of 394) and dive length (ms).
+    Dive(u32, u32),
+    /// HAWK-4 polish: ride start mode (0 show the tree start animation, 1 skip it, 2 vanilla start then tree ride).
+    Start(u8),
+    /// HAWK-4 polish: the hawk's x1.3 speed during a dive.
+    Boost(bool),
+    /// Everything off and the game's switch back.
+    Off,
+    /// Only the state line.
+    Status,
 }
 
 /// Which PlayerIns is local (the first valid one in ChrSet entry order, T-020).

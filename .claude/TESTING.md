@@ -515,6 +515,48 @@ The other player saw the jump; both screens agreed; both could still hit each ot
 - Frame: ride B also ran opposite to its map-file direction (180° holds), but the offset differs from run 1 by (789, 261) m, so
   `Physics+0x70` + origin is not one global frame (TECHNICAL_NOTES §4c).
 
+### 2026-10-22 — HAWK-3 run 1, env swap probe (Leonardo solo, dev uncommitted `main` + `game/hawk.rs`, vanilla routes, nrpvp.dll 96B0D469D120687E). Logs: `experiments/HAWK-3/nrpvp_2026-10-22_11-57-04.log`: **PASS**
+- One session, 11:57-12:07 UTC, four expeditions. No crash, no ERROR or panic; heartbeat 0-15 ms throughout with the swap on.
+- `hawk_env`: env object `exe+0x3C1D3D8` → switch at `+0x10` = **`exe+0x408030`** (game code, not Seamless Co-op). Swap ON at 11:58:36,
+  re-found on each of the 4 area loads, swap OFF at 12:05:31 with the original put back.
+- **`r8` of the env call is LOCAL's PlayerIns** (every expedition: "rider = LOCAL PlayerIns … (r8 of env is the PlayerIns)"). Six
+  other characters also ask for 377 in the Roundtable (answer 0); in the expeditions only LOCAL does.
+- **377 `GetBirdEventID` on the vanilla start ride:** −1 idle → **4** for under 100 ms at ride start (11:59:22.28) → −1 → 0 (11:59:30)
+  → **2 at the route end** (11:59:34.41, 12 s after the start). On the Spectral Hawk Tree rides: 0 blips and 2 at each end
+  (12:00:59, 12:02:06); the start value 1 was never sampled (shorter than one 50 ms tick).
+- **394 `GetBirdMovementDirectionTime`:** stays 0 on the start ride; climbs about 1,600/s while steering a tree hawk and falls back when
+  the stick is released (12:01:25). **384 `GetBirdPathEscapeTime`:** −1 on the route, counts up 16 → 1,721 off the route, back to −1.
+- `hawk_drop` (12:04:00.98, rider LOCAL): **359 answers of 2** in 1.5 s, no error. It came about 11 s into a 12 s ride (route end
+  expected ≈ 12:04:01.7), so the drop beat the route end by under 1 s; the engine's own 2 never followed (it did on the other rides).
+  The world unloaded 17 s later (12:04:18). **Leonardo: `hawk_drop` worked.** A rerun early in the ride is still worth one look.
+- `hawk_tree 1` (set 12:04:42 in the Roundtable): the next start ride answered **1 instead of 4 four times**, and during that start
+  ride **394 rose with the stick (12:05:03, 12:05:10)**, which it never does on a vanilla start ride: the tree-hawk loop ran and read
+  steering. 384 stayed −1 (never off the route). **Leonardo: `hawk_tree 1` worked**, but the ride felt much shorter than it
+  should and he landed at the start of the map: the run used the vanilla 200 m start route (`dist\gamedata` had no map files),
+  and a tree ride leaves the route as soon as the stick moves. Design answer: PROJECT_PLAN §13 v1 (cruise lock, dive, long line).
+- Trace `all`: ids 326 and 1116 alternate within a tick (an argument-dependent id) and flooded the log (≈ 4,000 lines); 224 tracks the
+  camera or stick angle. Button id for "hold action" not identified yet.
+
+### 2026-10-22 — HAWK-1b run 3, one diagonal line "B" for every start route (Leonardo solo, dev uncommitted `main`, `dist\gamedata` with `-HawkRoutes` line (858, 210, 678) → (512, 250, 1024) → (166, 448, 1370), nrpvp.dll 96B0D469D120687E). Logs: `experiments/HAWK-1b/nrpvp_2026-10-22_12-33-22.log`: **PASS**
+- Three expeditions in one session (loaded 12:34:06, 12:36:21, 12:38:48 UTC). No ERROR or panic; slowest main-loop pass 12 ms.
+- **Leonardo: all three rides were perfect, the same route each time, no fall damage.** The moved start point still puts the player on
+  the hawk, and the drop from the line's end (y 448 over ground ≈ y 194, about 250 m) does no damage.
+- Each expedition stayed loaded 90–100 s after it started (no reload mid-ride or right after the drop). No position samples were taken
+  this run (the ride sampler was not running), so length and speed of the ride are from Leonardo's report and the route data (979 m).
+
+### 2026-10-22 — HAWK-4 run 1, cruise lock and dive (Leonardo solo, branch `hawk-crossing` + HAWK-4 uncommitted, line B in `dist\gamedata`). Logs: `experiments/HAWK-3/nrpvp_2026-10-22_12-57-44.log`: **PASS (two polish points)**
+- Four expeditions, no ERROR or panic. Cruise held the line (stick taps ignored); dives started on a stick hold (real 394 = 401–418)
+  and ended after 4.0 s (three times) and 7.0 s (once, `hawk_dive 400 7000`), then the vanilla fall; the other rides ended through the
+  drop buttons. **Leonardo: "most of it is perfect"; overall result excellent.**
+- Polish 1: the tree-hawk **start animation** (the hawk grabbing the player) shows at the ride start; he does not want it seen.
+- Polish 2: the dive should **last longer and carry the player farther**.
+
+### 2026-10-22 — HAWK-4 run 2, start-animation cut and faster dive (Leonardo solo, branch `hawk-crossing`, line B in `dist\gamedata`, nrpvp.dll EA76EE9D80AFE6FA). Logs: `experiments/HAWK-3/nrpvp_2026-10-22_13-21-27.log`: **PASS**
+- Three expeditions, no ERROR or panic. Each ride logged "tree start: skipping the start animation" (default `hawk_start 1`); two
+  dives of 7.0 s (13:23:07–14, 13:27:16–24) with the x1.3 boost on (default), then the vanilla fall.
+- **Leonardo: good enough as it is.** `hawk_start 2` and `hawk_boost 0` were not tried (not needed). The one thing that may change
+  later from player feedback: the dive's time and distance.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

@@ -20,7 +20,8 @@ this file points to them.
 | Battle Royale in the stock table menu (UI-1) and status as the game's own messages (UI-2) | **Works with two players** (FS-UI2, 2026-10-21): 3 rounds, each PC host at least once: Solo → Commence → match → host's Invite Members (no Steam window) → same expedition as rivals → back to idle. The host starts the expedition the normal way; our menu code is not involved. Polish: "match found!" and "joining the host…" never show (the next state arrives within the 6 s gap) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal; a rival can never revive a rival** | **Works, clean (T-041, Nucleus 2026-10-22, free-for-all and 2 v 1):** the rival's hit is cancelled inside the game (hook on the bar store), so no stand-up and no gauge flicker on any screen; teammates revive normally. Fallbacks: revive-event block and the T-040 re-down. Not yet in a player zip or over real two-PC lag |
 
-Not started: the hawk crossing (design adopted 2026-10-21, replaces separate spawns; PROJECT_PLAN §13), keeping level on death, inventory drop, no-boss nights, final arena, sudden death, winner's choice.
+In progress: the hawk crossing (PROJECT_PLAN §13 v1): **works solo in the dev build** (one diagonal line, cruise, dive, drop;
+HAWK-1b/3/4 PASS 2026-10-22, branch `hawk-crossing`); not yet a player feature (HAWK-2) or tried with two players. Not started: keeping level on death, inventory drop, no-boss nights, final arena, sudden death, winner's choice.
 See `PROJECT_PLAN.md` §2 and §9.
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10. Not proven to be Seamless Co-op's;
@@ -36,7 +37,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 18:33 with T-040, uncommitted on `t-028-snapback`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
-| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` d3d1eb8 (T-028 teleport, T-040/T-041), built 2026-10-21 21:52, nrpvp.dll 8036B4B61971B2E4: SMOKE-3 PASS | `team_size = 1`, `team_spawns = false`, **`br_menu = false`** (2026-10-21: so Commence starts a vanilla solo expedition; with it on, Commence waits for a 2nd player). Set it back to `true` for queue tests |
+| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). branch `hawk-crossing` (`main` + hawk console: `hawk_*`, CONSOLE §0), built 2026-10-22, nrpvp.dll EA76EE9D80AFE6FA: HAWK-4 run 2 PASS. `dist\gamedata` also holds the hawk line B (`-HawkRoutes`) | `team_size = 1`, `team_spawns = false`, **`br_menu = false`** (2026-10-21: so Commence starts a vanilla solo expedition; with it on, Commence waits for a 2nd player). Set it back to `true` for queue tests |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
@@ -55,8 +56,13 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
    cliff, landed and held on `main` d3d1eb8; the teleport needs no change). HAWK-0 research is done
    (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). HAWK-1b (2026-10-22, TESTING §3): **the game flies our long start
    route and its own route end drops the player** (B1 works); 1 of 3 rides landed on ground, 2 fell to y −26 (sea, or ground not loaded
-   far from the vanilla drop: open). `dist\gamedata` holds the long routes (dev only). Next: HAWK-1b land check, HAWK-A2
+   far from the vanilla drop: open). `dist\gamedata` holds the single diagonal line B (dev only, 2026-10-22). Next: HAWK-1b land check, HAWK-A2
    (static RE), HAWK-1 (ride probe).
+   **HAWK-3 run 1 PASS (2026-10-22, TESTING §3):** the DLL swaps the game's hawk-answer pointer safely; `hawk_drop` and `hawk_tree`
+   work (Leonardo). Design v1 (cruise on one diagonal line, stick-held dive, vanilla drop buttons): PROJECT_PLAN §13. **HAWK-1b PASS
+   (2026-10-22, run 3):** one diagonal line for every start route, three perfect rides, no fall damage. **HAWK-4 PASS (2026-10-22, runs
+   1-2):** cruise lock, stick-held dive (7 s, ×1.3 speed), vanilla drop buttons, start animation cut; Leonardo: good enough. All
+   on branch `hawk-crossing` (dev console only). Next: HAWK-2 (the player feature, then an FS).
 
 Open from FS-0 run 21: whether teammates can damage each other (not visible in the logs), and what the lone rival's screen showed on the
 gauge of a downed enemy who has a teammate.
@@ -158,6 +164,8 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
   the ImGui panel and F-keys were deleted (R5, 2026-10-20). `CONSOLE.md`.
 - **Code structure** (2026-10-20): ports and adapters, typed memory views, feature modules, dev code behind a cargo feature; refactor
   before the next big features. `ARCHITECTURE.md`.
+- **The crossing line** (Leonardo, 2026-10-22): one line for every start route, diagonal "B" of the route atlas (the longer and higher;
+  the "bottom to top" rule is dropped). TASKS HAWK-1b.
 - **Match start = hawk crossing** (Leonardo, 2026-10-21): the start hawk flies one straight line across the whole map and each player
   jumps off where they want (Fortnite style). Replaces separate team spawns. `PROJECT_PLAN.md` §13.
 - **Matchmaking direction** (Leonardo, 2026-10-21): stay on Seamless Co-op as long as it carries us, with three must-haves: no

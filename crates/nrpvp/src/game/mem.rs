@@ -326,6 +326,28 @@ fn check_writable(addr: usize, len: usize) -> Result<(), &'static str> {
 /// Largest store [`write_bytes`] accepts.
 pub(crate) const MAX_WRITE_BYTES: usize = 16;
 
+/// HAWK-3 (dev only): replace the pointer-sized value at `addr` with `new` if it still holds `expected`, as ONE atomic store
+/// (a function pointer the game may call from another thread at any moment must never be seen half-written). Same `VirtualQuery`
+/// check and TOCTOU residual risk as [`write_u8`]. Returns the value found when it was not `expected`.
+#[cfg(feature = "dev")]
+pub(crate) fn swap_ptr(addr: usize, expected: usize, new: usize) -> Result<(), String> {
+    if !addr.is_multiple_of(size_of::<usize>()) {
+        return Err("address is not pointer-aligned".into());
+    }
+    check_writable(addr, size_of::<usize>())?;
+    // SAFETY: the aligned pointer-sized range was just verified to lie in committed, writable, non-guard memory (see the doc
+    // comment); `AtomicUsize` has the same layout as `usize`.
+    let slot = unsafe { std::sync::atomic::AtomicUsize::from_ptr(addr as *mut usize) };
+    slot.compare_exchange(
+        expected,
+        new,
+        std::sync::atomic::Ordering::SeqCst,
+        std::sync::atomic::Ordering::SeqCst,
+    )
+    .map(|_| ())
+    .map_err(|found| format!("slot changed under us (holds 0x{found:X})"))
+}
+
 /// T-032 (dev only): store 1..=[`MAX_WRITE_BYTES`] bytes at `addr` after the same `VirtualQuery` check as
 /// [`write_u8`], applied to the whole range (one committed, plain-writable, non-guard run). Same TOCTOU
 /// residual risk. The caller (`poswrite`) decides what may be written: the LOCAL player's position candidate

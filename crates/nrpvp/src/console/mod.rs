@@ -21,7 +21,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use crate::mm::Mode;
-use crate::overlay::shared::{Command, PvpveState, Relation, Snapshot};
+use crate::overlay::shared::{Command, HawkCmd, PvpveState, Relation, Snapshot};
 use target::{parse_target, pick, session_no, Target, TARGET_HELP};
 
 /// How long the pipe thread waits for the main loop (it ticks every 50 ms in a world, every 500 ms outside one).
@@ -50,6 +50,8 @@ pub(crate) enum MainReq {
     BarTrace(Option<bool>),
     /// T-041 step 3 prototype: `revive_block 0|1`; no argument reports it.
     ReviveBlock(Option<bool>),
+    /// HAWK-3: one `hawk_*` command; the reply is the hawk state line.
+    Hawk(HawkCmd),
 }
 
 /// What a command does.
@@ -91,6 +93,15 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "early_redown", args: "[0|1]", help: "experiment: knock a rival-revived player down during the get-up (1) or only after it (0, default); no argument shows the state", run: early_redown },
     Spec { name: "bar_trace", args: "[0|1]", help: "T-041 trace: log which instruction writes the downed LOCAL player's revive bar (hardware write watch, slot 3); no argument shows ON/OFF and hits", run: bar_trace },
     Spec { name: "revive_block", args: "[0|1]", help: "T-041 prototype: stop a rival's revive of LOCAL before the game starts the get-up (hardware breakpoint while downed); no argument shows ON/OFF and blocks", run: revive_block },
+    Spec { name: "hawk_env", args: "", help: "HAWK-3: where the game's env switch is and whose code it is (no change)", run: |_| Ok(Act::Main(MainReq::Hawk(HawkCmd::Env))) },
+    Spec { name: "hawk_trace", args: "[0|1|all]", help: "HAWK-3: log the hawk answers (377/384/394/395) per character; all = also every id the rider asks; no argument shows the state", run: hawk_trace },
+    Spec { name: "hawk_drop", args: "", help: "HAWK-3: answer \"route ended\" (377 = 2) to the rider for 1.5 s, so the start hawk drops you", run: |_| Ok(Act::Main(MainReq::Hawk(HawkCmd::Drop))) },
+    Spec { name: "hawk_tree", args: "0|1", help: "HAWK-3: start-hawk rides answer 1 (tree hawk) instead of 4 (set before the ride starts)", run: hawk_tree },
+    Spec { name: "hawk_cruise", args: "0|1", help: "HAWK-4: start rides fly the route as tree rides with the stick hidden; holding the stick starts a dive (set before the ride)", run: hawk_cruise },
+    Spec { name: "hawk_dive", args: "[hold] [ms]", help: "HAWK-4: dive trigger (394 units, default 400) and dive length (ms, default 7000); no argument shows the state", run: hawk_dive },
+    Spec { name: "hawk_start", args: "0|1|2", help: "HAWK-4: ride start: 0 show the tree start animation, 1 cut it (default), 2 vanilla start then tree ride 2 s later", run: hawk_start },
+    Spec { name: "hawk_boost", args: "0|1", help: "HAWK-4: dives fly at the hawk's x1.3 speed (1, default) or normal speed (0)", run: hawk_boost },
+    Spec { name: "hawk_off", args: "", help: "HAWK-3: everything off and the game's env switch put back", run: |_| Ok(Act::Main(MainReq::Hawk(HawkCmd::Off))) },
     Spec { name: "mm_join", args: "link|invite|direct|unlock_public|unlock_invisible|relock", help: "one join-method attempt for the ready match (dev, mm_join = true)", run: mm_join },
     Spec { name: "mm_sc_create", args: "", help: "create a lobby the game's way and see if Seamless Co-op adopts it (dev, mm_sc_create = true)", run: |_| Ok(mm(Command::MmScCreate, "SC lobby create test")) },
     Spec { name: "mm_quiet_test", args: "", help: "suppress the Steam invite window for 60 s (dev, mm_quiet_invite = true)", run: |_| Ok(mm(Command::MmQuietTest, "quiet invite test")) },
@@ -298,6 +309,74 @@ fn bar_trace(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::BarTrace(on)))
 }
 
+fn hawk_trace(args: &[String]) -> Result<Act, String> {
+    let c = match args.first().map(String::as_str) {
+        None => HawkCmd::Status,
+        Some("0") => HawkCmd::Trace(false, false),
+        Some("1") => HawkCmd::Trace(true, false),
+        Some("all") => HawkCmd::Trace(true, true),
+        Some(_) => return Err("expected 0, 1 or all".into()),
+    };
+    Ok(Act::Main(MainReq::Hawk(c)))
+}
+
+fn hawk_tree(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        Some("0") => false,
+        Some("1") => true,
+        _ => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Tree(on))))
+}
+
+fn hawk_cruise(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        Some("0") => false,
+        Some("1") => true,
+        _ => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Cruise(on))))
+}
+
+fn hawk_dive(args: &[String]) -> Result<Act, String> {
+    if args.is_empty() {
+        return Ok(Act::Main(MainReq::Hawk(HawkCmd::Status)));
+    }
+    let num = |i: usize, max: u32| -> Result<u32, String> {
+        args[i]
+            .parse::<u32>()
+            .ok()
+            .filter(|v| (1..=max).contains(v))
+            .ok_or_else(|| format!("'{}' must be a number 1..{max}", args[i]))
+    };
+    let hold = num(0, 100_000)?;
+    let ms = if args.len() > 1 {
+        num(1, 60_000)?
+    } else {
+        7000
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Dive(hold, ms))))
+}
+
+fn hawk_start(args: &[String]) -> Result<Act, String> {
+    let m = match args.first().map(String::as_str) {
+        Some("0") => 0,
+        Some("1") => 1,
+        Some("2") => 2,
+        _ => return Err("expected 0, 1 or 2".into()),
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Start(m))))
+}
+
+fn hawk_boost(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        Some("0") => false,
+        Some("1") => true,
+        _ => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Boost(on))))
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -411,6 +490,10 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
             if snap.revive_block { "ON" } else { "OFF" },
             snap.revive_blocks
         ),
+        MainReq::Hawk(c) => {
+            run(Command::Hawk(c));
+            crate::game::hawk::status_line()
+        }
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
         MainReq::Team(value, t) => {
@@ -568,6 +651,43 @@ mod tests {
         assert!(execute_line("team_set").contains("usage: team_set"));
         assert!(execute_line("team_set 29 bob").contains("unknown target"));
         assert!(execute_line("pvp 2").contains("expected 0 or 1"));
+    }
+
+    #[test]
+    fn hawk_commands_parse_and_map_to_the_hawk_command() {
+        assert!(execute_line("hawk_trace 2").contains("expected 0, 1 or all"));
+        assert!(execute_line("hawk_tree").contains("usage: hawk_tree 0|1"));
+        let cases = [
+            (&["all"][..], HawkCmd::Trace(true, true)),
+            (&["1"][..], HawkCmd::Trace(true, false)),
+            (&["0"][..], HawkCmd::Trace(false, false)),
+            (&[][..], HawkCmd::Status),
+        ];
+        for (args, want) in cases {
+            let args: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+            assert!(matches!(hawk_trace(&args), Ok(Act::Main(MainReq::Hawk(c))) if c == want));
+        }
+        assert!(execute_line("hawk_dive 0").contains("must be a number"));
+        assert!(matches!(
+            hawk_dive(&["600".into(), "5000".into()]),
+            Ok(Act::Main(MainReq::Hawk(HawkCmd::Dive(600, 5000))))
+        ));
+        assert!(matches!(
+            hawk_cruise(&["1".into()]),
+            Ok(Act::Main(MainReq::Hawk(HawkCmd::Cruise(true))))
+        ));
+        assert!(execute_line("hawk_start 3").contains("expected 0, 1 or 2"));
+        assert!(matches!(
+            hawk_start(&["2".into()]),
+            Ok(Act::Main(MainReq::Hawk(HawkCmd::Start(2))))
+        ));
+        assert!(matches!(
+            hawk_boost(&["0".into()]),
+            Ok(Act::Main(MainReq::Hawk(HawkCmd::Boost(false))))
+        ));
+        let mut ran = Vec::new();
+        answer(MainReq::Hawk(HawkCmd::Drop), &snap(), &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::Hawk(HawkCmd::Drop)]);
     }
 
     #[test]

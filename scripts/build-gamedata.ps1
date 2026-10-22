@@ -13,9 +13,12 @@
 param(
     [string]$Unpacked = 'Z:\Tools\nr-unpacked\1.03.3',
     [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
-    # HAWK-1b (dev only, never in a player zip): also write map\mapstudio\m60_00_00_99.msb.dcx with every start-hawk route stretched
-    # to the far side of Limveld (.claude\experiments\HAWK-0\patch_routes.py). Rebuild without the switch to go back to vanilla routes.
-    [switch]$HawkRoutes
+    # HAWK-1b (dev only, never in a player zip): also write map\mapstudio\m60_00_00_99.msb.dcx with every start-hawk route replaced
+    # by one line across Limveld (.claude\experiments\HAWK-0\patch_routes.py). Rebuild without the switch to go back to vanilla routes.
+    [switch]$HawkRoutes,
+    # The line: start; waypoint; end as x,y,z in the m60_00_00_99 frame. Default = diagonal "B" (Leonardo 2026-10-22: the longer and
+    # higher one), heights over every map variant (diagonal.py). Empty = the old per-route stretch of HAWK-1b runs 1-2.
+    [string]$HawkLine = '858,210,678;512,250,1024;166,448,1370'
 )
 $ErrorActionPreference = 'Stop'
 
@@ -125,7 +128,9 @@ if ($HawkRoutes) {
     if ($hh -ne '7338A794A4FF79C02B65D378607B1F0874BDF2ED1FC4885002432414B5B9EA9C') { throw "m60_00_00_99.msb.dcx hash $hh is not the pinned 1.03.3 hash" }
     $oodle = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\oo2core_9_win64.dll'
     $dst = Join-Path $out 'map\mapstudio\m60_00_00_99.msb.dcx'
-    & $py -I (Join-Path $repo '.claude\experiments\HAWK-0\patch_routes.py') $oodle $msb $dst
+    $routeArgs = @($oodle, $msb, $dst)
+    if ($HawkLine) { $routeArgs += @('--single', $HawkLine) }
+    & $py -I (Join-Path $repo '.claude\experiments\HAWK-0\patch_routes.py') @routeArgs
     if ($LASTEXITCODE -ne 0) { throw "patch_routes.py failed ($LASTEXITCODE)" }
-    Write-Host "HAWK-1b: long start routes in $dst (dev only; package-release.ps1 refuses a package that holds it)"
+    Write-Host "HAWK-1b: start routes ($(if ($HawkLine) { "one line $HawkLine" } else { 'stretched' })) in $dst (dev only; package-release.ps1 refuses a package that holds it)"
 }

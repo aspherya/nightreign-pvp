@@ -159,33 +159,17 @@ branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spa
 HAWK-0 (questions and desk research) is done (2026-10-21): answers and design in PROJECT_PLAN §13, engine facts in TECHNICAL_NOTES §4b
 (hawk = player script state) and §4c (routes in `m60_00_00_99.msb`), tools in `experiments/HAWK-0/`.
 
-### HAWK-1b — Long start route: land check
-Owner: OPUS → HUMAN | Status: open (2026-10-22)
-Done: the game loads a patched `m60_00_00_99.msb.dcx`; the hawk flies the long route at ~17 m/s and the engine drops the player at its
-end (TESTING §3, runs 1–2; tool `experiments/HAWK-0/patch_routes.py` via `scripts\build-gamedata.ps1 -HawkRoutes`, ends 50 m inside
-the land outline; `package-release.ps1` refuses `map\`). Open: 2 of 3 drops fell to y −26 and the second killed Leonardo (run 1 off the island; run 2 ride B ended
-among vanilla drop spots, so likely ground collision not loaded far from the vanilla drop, HYPOTHESIS). **Decision 2026-10-22
-(Leonardo): one single route, always: the map diagonal, bottom to top** (every start route gets the same points). Next build: that
-diagonal, ending exactly on a vanilla drop spot; acceptance: three rides in a row land on ground. Parked until the wrap-up and the
-Offline with Bots mode are in place.
+HAWK-A2 / HAWK-3 are done (2026-10-22, TESTING §3 HAWK-3 run 1): the env switch is found and swapped safely, `r8` = PlayerIns,
+`hawk_drop` and `hawk_tree` work in the game (Leonardo). Design v1 that follows from it: PROJECT_PLAN §13 "v1 design". HAWK-1 (ride
+probe) is dropped: the env trace answered what it was for. HAWK-1b is done (2026-10-22, TESTING §3 run 3: one diagonal line "B"
+for every start route, three rides PASS); HAWK-4 is done (2026-10-22, TESTING §3 HAWK-4 runs 1-2: cruise lock, dive, start
+animation cut; Leonardo: good enough). The line is built by `scripts\build-gamedata.ps1 -HawkRoutes` (TECHNICAL_NOTES §4c).
 
-### HAWK-A2 — Find what answers `GetBirdEventID` (env 377) in the exe
-Owner: OPUS (static, capstone) → HUMAN check later | Status: todo
-Find the HKS env dispatcher in `nightreign.exe` 1.3.3.0, the case for 377 (and 395 `GetBirdActionID`), and the object field it reads.
-Done when: the field is in MEMORY_MAP with its chain, and a dev console command can read it during a ride (checked in HAWK-1).
-
-### HAWK-1 — Ride probe (dev build, solo)
-Owner: SONNET/implementer → HUMAN | Status: todo (unblocked: `t-028-snapback` is in `main`, SMOKE-3 PASS 2026-10-21).
-Build (console, `add-console-command` skill): `pos_shift <dx> <dy> <dz>` moves the LOCAL player by metres in the world frame (world
-position kept, as `pos_go`). `pos_hold <secs>` holds the current world position every tick, then lets go. A ride logger records world
-position, ground byte and speed every 100 ms from expedition load to 30 s after landing, and lists every character within 30 m of the
-player during the ride (to find the hawk). The logger also runs on a Spectral Hawk Tree ride, to compare the two hawks.
-HUMAN (solo, about 15 min, two expeditions): (a) during the start ride, `pos_shift 50 0 0`: does the player stay moved, does the hawk
-follow, does the drop still happen on time? (b) during the start ride, `pos_hold 30`: is the player held past the 12 s ride, what does it
-look like, and what happens at release? (c) after landing, `pos_shift 0 100 0`: confirm no fall damage. (d) ride one Spectral Hawk Tree
-with no input, then a second one steering off the route, then try every button to leave it early (the trace shows which one works).
-Acceptance: the answers and the log. They choose route 0, 1 or 2 of §13.
-
-### HAWK-2 — Hawk crossing v1
-Owner: OPUS to card in detail after HAWK-1 | Status: later
-The first new feature, so the open halves of R2/R3 (typed views, `Feature` trait; ARCHITECTURE §6) are built with it.
+### HAWK-2 — Hawk crossing v1 (player feature)
+Owner: OPUS → SONNET/implementer → HUMAN | Status: next (HAWK-4 done 2026-10-22)
+What: PROJECT_PLAN §13 v1 as a player feature (cruise lock + dive + start cut with the accepted defaults; the console
+commands stay dev-only): `hawk.rs` leaves the dev-only build, `[hawk]` settings in `nrpvp.toml`, on by default
+in Battle Royale and offline mode, only LOCAL changed, swap removed when the expedition ends. The route file goes into the player
+game-data package (lift the `map\` refusal for that one file). The first new feature, so the open halves of R2/R3 (typed views,
+`Feature` trait; ARCHITECTURE §6) are built with it.
+HUMAN: one solo smoke; then the next FS: both players cruise, dive and drop where they want; each sees the other land.

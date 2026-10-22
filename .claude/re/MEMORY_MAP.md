@@ -236,6 +236,17 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 | Commence dialog text | CL_Dialogues (category 204) entry 506040's offset slot: `[[fmg+0x18]+idx*8]`, string = `fmg + offset` | One aligned 8-byte store points the dialog at our own UTF-16 text; the open dialog copies the text when it opens (does not follow later changes) | `[VERIFIED: C1 prototype, Leonardo saw the text]` |
 | CL_MenuText getter | `exe+0x7AC800` (`edx` = id) | Breakpoint here swaps 130409/130417/130408 → our 99100100..102 before SC's `LookupEntry` hook sees them: the list reads Solo / Duo / Trio | `[VERIFIED: UI-1 step 4 solo; FS-UI2 on two PCs]` |
 
+## 14. The hawk ride: the script's `env()` answers (HAWK-A2/HAWK-3, game 1.03.3)
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| Lua `env` stub | `exe+0x1624170` | `eax = [exe+0x467AFE0](L)`, then pushes `eax` (32-bit) as the answer | `[VERIFIED: static, 2026-10-22]` |
+| Env callback | `exe+0xD403F0` (put in the slot by the constructor `exe+0xD400B0`) | Reads the id (Lua arg 1), then **tail-jumps** to `[[exe+0x3C1D3D8] + 0x10]` with `ecx` = id, `rdx` = L, `r8` = `[[ctx]+0x28]` (`ctx` from `exe+0x15C93C0(L)`) | `[VERIFIED: static, 2026-10-22]`; `r8` = the PlayerIns (row below) |
+| Env object | global `exe+0x3C1D3D8` (made at `exe+0xD5775A`) | `+0x10` = the env switch, **`exe+0x408030`**, set at run time (where: UNKNOWN). Stays the same across area loads. `game/hawk.rs` swaps it for a pass-through (one atomic store); no crash, 0 ms cost | `[VERIFIED: HAWK-3 run 1, 2026-10-22]` |
+| `r8` of the switch | | **The character's PlayerIns** (LOCAL's in every expedition) | `[VERIFIED: HAWK-3 run 1]` |
+| 377 `GetBirdEventID` | answered by the switch | −1 idle; **4** for one or two frames when the start ride begins; 0 blips during rides; **2** at the route end (one or two frames). Answering 2 ourselves is accepted (359 answers, no error); answering 1 instead of 4 makes the start ride run the tree-hawk loop (394 then reacts to the stick) | `[VERIFIED: HAWK-3 run 1]`; on-screen effect pending |
+| 394 / 384 | | 394 direction time: rises ~1,600/s while the stick is held on a tree-hawk ride, 0 on a vanilla start ride. 384 escape time: −1 on the route, counts up while off it | `[VERIFIED: HAWK-3 run 1]` |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).

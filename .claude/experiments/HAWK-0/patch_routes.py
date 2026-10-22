@@ -1,6 +1,9 @@
 """HAWK-1b: write m60_00_00_99.msb.dcx with every start-hawk route stretched across Limveld.
 
-Usage: patch_routes.py <oo2core_9_win64.dll> <vanilla m60_00_00_99.msb.dcx> <out .msb.dcx> [--margin 50] [--dry]
+Usage: patch_routes.py <oo2core_9_win64.dll> <vanilla m60_00_00_99.msb.dcx> <out .msb.dcx> [--margin 50] [--single x,y,z;x,y,z;x,y,z] [--dry]
+
+--single (HAWK-1b, 2026-10-22, Leonardo: one route for everyone): every start route gets exactly these 3 points (start, waypoint,
+end; file frame, see TECHNICAL_NOTES 4c). Chosen line "B" from diagonal.py, heights following the terrain of every map variant.
 
 Each start route (EVENT type 25 named 出撃ルート, not marked 【不使用】 = unused) keeps its start point. Its other points move onto the
 line start -> vanilla end (horizontal direction kept), spread evenly up to `margin` metres inside the land outline, all at the start
@@ -68,6 +71,12 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     margin = float(sys.argv[sys.argv.index('--margin') + 1]) if '--margin' in sys.argv else 50.0
     if '--margin' in sys.argv: args.remove(sys.argv[sys.argv.index('--margin') + 1])
+    single = None
+    if '--single' in sys.argv:
+        spec = sys.argv[sys.argv.index('--single') + 1]
+        args.remove(spec)
+        single = [tuple(float(v) for v in q.split(',')) for q in spec.split(';')]
+        assert len(single) == 3 and all(len(q) == 3 for q in single), '--single needs 3 points x,y,z'
     dry = '--dry' in sys.argv
     oodle_path, src, dst = args
     oodle = ctypes.WinDLL(oodle_path)
@@ -104,6 +113,16 @@ def main():
     hull = convex_hull(land)
     print(f'{len(routes)} start routes, margin {margin:.0f} m, land outline {len(hull)} corners from {len(land)} points')
     for n, eid, idx in routes:
+        if single:
+            # 3-point routes take start, waypoint, end; the 2-point network-test routes (NT専用) take start and end.
+            assert len(idx) in (2, 3), f'{n}: {len(idx)} points, --single expects 2 or 3'
+            shared = [v for v in idx if use[v] > 1]
+            assert not shared, f'{n}: points {shared} are used by other routes too'
+            for k, q in zip(idx, single if len(idx) == 3 else [single[0], single[2]]):
+                struct.pack_into('<3f', b, pts[k] + 0x14, *q)
+            L = sum(math.dist((p[0], p[2]), (q[0], q[2])) for p, q in zip(single, single[1:]))
+            print(f'{n:28} entity {eid}  -> single route {L:5.0f} m ({L / 17.4:4.0f} s at 17.4 m/s)')
+            continue
         shared = [v for v in idx[1:] if use[v] > 1]
         assert not shared, f'{n}: points {shared} are used by other routes too'
         p = [struct.unpack_from('<3f', raw, pts[k] + 0x14) for k in idx]

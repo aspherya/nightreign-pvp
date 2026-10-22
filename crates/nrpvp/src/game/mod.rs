@@ -14,6 +14,8 @@ pub(crate) mod flags;
 #[cfg(feature = "dev")]
 pub(crate) mod flagwatch;
 pub(crate) mod fmg;
+#[cfg(feature = "dev")]
+pub(crate) mod hawk;
 pub(crate) mod image;
 pub(crate) mod layout;
 pub(crate) mod mem;
@@ -441,6 +443,8 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
                 // T-041: the trace is a module-level switch.
                 Command::BarTrace(on) => bartrace::set_enabled(on),
                 Command::ReviveBlock(on) => reviveblock::set_enabled(on),
+                // HAWK-3: module-level state like the trace.
+                Command::Hawk(h) => hawk::command(h, base, size),
                 c => run_command(c, "console", &mut team),
             });
             let _ = reply.send(text);
@@ -483,6 +487,16 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
         if let Some(c) = combat.as_ref() {
             bartrace::tick(c, base, size);
         }
+        // HAWK-3 (dev only): keep the env swap in place, end a drop, log the hawk answers.
+        #[cfg(feature = "dev")]
+        hawk::tick(
+            base,
+            size,
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+        );
         // T-041: drop a rival's revive event before the game starts the get-up (both builds, always on).
         if let Some(c) = combat.as_mut() {
             reviveblock::tick(c, base);
@@ -547,7 +561,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         Command::ReviveFail(_)
         | Command::EarlyRedown(_)
         | Command::BarTrace(_)
-        | Command::ReviveBlock(_) => {}
+        | Command::ReviveBlock(_)
+        | Command::Hawk(_) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
