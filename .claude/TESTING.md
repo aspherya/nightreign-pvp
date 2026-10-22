@@ -557,6 +557,16 @@ The other player saw the jump; both screens agreed; both could still hit each ot
 - **Leonardo: good enough as it is.** `hawk_start 2` and `hawk_boost 0` were not tried (not needed). The one thing that may change
   later from player feedback: the dive's time and distance.
 
+### 2026-10-22 — HAWK-2 solo smoke, hawk crossing always on (Leonardo solo, branch `claude/interesting-tharp-1c1237` 447aa1f, `scripts\launch.ps1` from the worktree: developer DLL in PLAYER mode, `matchmaking = false`, no `[hawk]` table, line B in `dist\gamedata`, nrpvp.dll E58D614C024A9FE2). Logs: `experiments/HAWK-2/nrpvp_2026-10-22_15-05-19.log`: **PASS**
+- No console (player mode) and no command: `[hawk] HawkConfig { enabled: true, dive_hold: 400, dive_secs: 7.0, ... }` →
+  `HAWK-2 hawk crossing ON` at startup, `HAWK-3 swap ON` 8 s later (exe+0x408030 → env_hook).
+- Ride: `rider = LOCAL PlayerIns`, start animation cut, `phase none -> cruise` (15:06:14), `cruise -> dive (real 394 = 400)`
+  (15:06:22), `dive -> dive over` 7.0 s later. No ERROR or panic; heartbeat 0–26 ms.
+- In the Roundtable 8 other characters asked hawk ids (`(other)`); none was a rider, and the overrides now act on LOCAL only.
+- **Leonardo: "it worked now, it's how I wanted it."** A first try the same day ran the old `hawk-crossing` DLL from the main
+  checkout's `dist` (cruise off until `hawk_cruise 1`, no HAWK lines in the log): not a defect of this build.
+- Not checked: a Spectral Hawk Tree ride after the crossing (must stay vanilla), and two players (next FS).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

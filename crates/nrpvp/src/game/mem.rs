@@ -326,10 +326,9 @@ fn check_writable(addr: usize, len: usize) -> Result<(), &'static str> {
 /// Largest store [`write_bytes`] accepts.
 pub(crate) const MAX_WRITE_BYTES: usize = 16;
 
-/// HAWK-3 (dev only): replace the pointer-sized value at `addr` with `new` if it still holds `expected`, as ONE atomic store
-/// (a function pointer the game may call from another thread at any moment must never be seen half-written). Same `VirtualQuery`
-/// check and TOCTOU residual risk as [`write_u8`]. Returns the value found when it was not `expected`.
-#[cfg(feature = "dev")]
+/// HAWK-3 / HAWK-2 (both builds): replace the pointer-sized value at `addr` with `new` if it still holds `expected`, as ONE atomic
+/// store (a function pointer the game may call from another thread at any moment must never be seen half-written). Same
+/// `VirtualQuery` check and TOCTOU residual risk as [`write_u8`]. Returns the value found when it was not `expected`.
 pub(crate) fn swap_ptr(addr: usize, expected: usize, new: usize) -> Result<(), String> {
     if !addr.is_multiple_of(size_of::<usize>()) {
         return Err("address is not pointer-aligned".into());

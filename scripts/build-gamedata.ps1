@@ -7,14 +7,18 @@
 #   texts are refused); every other file of the bundle is passed through.
 #   event\m10_00_00_00.emevd.dcx (UI-2): the Roundtable's event script with our events from gamedata\emevd-events.json appended by
 #   scripts\emevd_add_events.py (needs Python 3; the default install path is tried, then `python` on PATH).
+#   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
+#   (.claude\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 # Game content stays out of git: dist\ is gitignored. The unpack must be game 1.03.3 (pinned hash below); after a game patch, re-unpack,
 # check the result in game, then update the pin.
 [CmdletBinding()]
 param(
     [string]$Unpacked = 'Z:\Tools\nr-unpacked\1.03.3',
     [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
-    # HAWK-1b (dev only, never in a player zip): also write map\mapstudio\m60_00_00_99.msb.dcx with every start-hawk route replaced
-    # by one line across Limveld (.claude\experiments\HAWK-0\patch_routes.py). Rebuild without the switch to go back to vanilla routes.
+    # HAWK-2: the crossing line is built by default (it is part of the game). -VanillaRoutes leaves map\ out (vanilla 200 m start
+    # routes; dev comparisons only: package-release.ps1 refuses such a package).
+    [switch]$VanillaRoutes,
+    # HAWK-1b's opt-in switch; kept so old command lines still work. No effect: the routes are always built now.
     [switch]$HawkRoutes,
     # The line: start; waypoint; end as x,y,z in the m60_00_00_99 frame. Default = diagonal "B" (Leonardo 2026-10-22: the longer and
     # higher one), heights over every map variant (diagonal.py). Empty = the old per-route stretch of HAWK-1b runs 1-2.
@@ -117,8 +121,9 @@ if (@($ev.events).Count -gt 0) {
     Write-Host ("{0}  {1}  {2}  ({3} events)" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), @($ev.events).Count)
 }
 
-# HAWK-1b: long start-hawk routes (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
-if ($HawkRoutes) {
+# HAWK-1b/HAWK-2: the crossing line for every start-hawk route (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
+if ($HawkRoutes) { Write-Host '-HawkRoutes is the default now (HAWK-2); the switch has no effect' }
+if (-not $VanillaRoutes) {
     $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
     if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
     if (-not $py) { throw 'Python 3 not found (needed for patch_routes.py)' }
@@ -132,5 +137,5 @@ if ($HawkRoutes) {
     if ($HawkLine) { $routeArgs += @('--single', $HawkLine) }
     & $py -I (Join-Path $repo '.claude\experiments\HAWK-0\patch_routes.py') @routeArgs
     if ($LASTEXITCODE -ne 0) { throw "patch_routes.py failed ($LASTEXITCODE)" }
-    Write-Host "HAWK-1b: start routes ($(if ($HawkLine) { "one line $HawkLine" } else { 'stretched' })) in $dst (dev only; package-release.ps1 refuses a package that holds it)"
+    Write-Host "HAWK-2: start routes ($(if ($HawkLine) { "one line $HawkLine" } else { 'stretched' })) in $dst"
 }

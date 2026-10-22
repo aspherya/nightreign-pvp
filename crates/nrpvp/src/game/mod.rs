@@ -14,7 +14,6 @@ pub(crate) mod flags;
 #[cfg(feature = "dev")]
 pub(crate) mod flagwatch;
 pub(crate) mod fmg;
-#[cfg(feature = "dev")]
 pub(crate) mod hawk;
 pub(crate) mod image;
 pub(crate) mod layout;
@@ -242,6 +241,8 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
     let mut team = team::TeamCtl::new(cfg, base, size);
     // T-035: combat-state tracker and the rival revive rule (both modes).
     let mut combat = Some(combat_state::CombatCtl::new(cfg, base));
+    // HAWK-2: the hawk crossing's settings (`[hawk]`); the swap goes in on the first tick that finds the env object.
+    hawk::configure(&cfg.hawk);
     // WorldChrMan instance last seen (0 = none/null), for the "instance is now" log line.
     let mut last_wcm_inst: usize = 0;
     // The PlayerIns vtables and the combat tracker's RTTI are taken from `rtti` once (it never changes after startup).
@@ -487,8 +488,7 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
         if let Some(c) = combat.as_ref() {
             bartrace::tick(c, base, size);
         }
-        // HAWK-3 (dev only): keep the env swap in place, end a drop, log the hawk answers.
-        #[cfg(feature = "dev")]
+        // HAWK-2 (both builds): keep the env swap in place, run the hawk crossing's ride phases, log the hawk answers.
         hawk::tick(
             base,
             size,

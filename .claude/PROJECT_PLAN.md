@@ -265,7 +265,9 @@ Rules and limits:
   through normal player sync `[HYPOTHESIS until an FS]`.
 - Safety at the map edge: the line stays ≥ 150 m inside the known-land hull; a dive lasts `dive_secs` (default 7 s at
   ×1.3 ≈ 160 m at 23 m/s), so a dive cannot reach the void from the line `[HYPOTHESIS: dive speed not measured]`.
-- Tunables (`nrpvp.toml`, `[hawk]`): `enabled`, `dive_hold` (default 400 units of 394), `dive_secs` (default 7), `dive_boost` (default on).
+- Tunables (`nrpvp.toml`, `[hawk]`, built in HAWK-2): `enabled` (default on), `dive_hold` (default 400 units of 394, 50..5000),
+  `dive_secs` (default 7, 1..15), `dive_boost` (default on), `start_cut` (default on). The table must be the last part of the file.
+  A tree ride the game starts itself (Spectral Hawk Tree, native 377 = 1) ends the lock and stays vanilla.
   Speed of the cruise: the route data (17.4 m/s, vanilla). During a dive the script's own hawk speed goes to ×1.3 (the 99230 check).
   Slowing the descent is UNKNOWN (engine-side).
 - **Accepted 2026-10-22 (HAWK-4, Leonardo: good enough):** cruise lock, stick-held dive (7 s, ×1.3), vanilla drop buttons, the tree

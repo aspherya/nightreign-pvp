@@ -38,7 +38,17 @@ $body = @(if (Test-Path $htoml) { Get-Content $htoml | Where-Object { $_ -notmat
 # T-018: logs go outside Nucleus's Instance<N> folders (deleted on close). TOML single-quoted literal = no escapes.
 $logDir = Join-Path $repo 'dist\nucleus-logs'
 New-Item -ItemType Directory -Force $logDir | Out-Null
-Set-Content -Path $htoml -Value ($body + "dev_mode = true" + "log_dir = '$logDir'" + "pvpve = $($Pvpve.ToString().ToLower())" + "pvpve_scheme = '$Scheme'" + "team_size = $TeamSize" + "mm_queue = false" + "br_menu = false") -Encoding Ascii
+$keys = @("dev_mode = true", "log_dir = '$logDir'", "pvpve = $($Pvpve.ToString().ToLower())", "pvpve_scheme = '$Scheme'", "team_size = $TeamSize", "mm_queue = false", "br_menu = false")
+# HAWK-2: top-level keys must come before the first [table] line (e.g. [hawk]); after it they would belong to that table.
+$firstTable = @(0..($body.Count) | Where-Object { $_ -lt $body.Count -and $body[$_] -match '^\s*\[' } | Select-Object -First 1)
+if ($firstTable.Count -eq 1) {
+    $i = $firstTable[0]
+    $head = if ($i -gt 0) { @($body[0..($i - 1)]) } else { @() }
+    $body = $head + $keys + @($body[$i..($body.Count - 1)])
+} else {
+    $body = $body + $keys
+}
+Set-Content -Path $htoml -Value $body -Encoding Ascii
 [IO.File]::WriteAllText($list, (($lines + 'nrpvp.dll') -join "`r`n"))  # no trailing newline (see above)
 Write-Output "Deployed nrpvp.dll ($((Get-Item $dll).LastWriteTime)) to $HandlerDir"
 Get-Content $list

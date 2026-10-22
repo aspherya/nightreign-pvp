@@ -163,10 +163,26 @@ HAWK-A2 / HAWK-3 are done (2026-10-22, TESTING §3 HAWK-3 run 1): the env switch
 `hawk_drop` and `hawk_tree` work in the game (Leonardo). Design v1 that follows from it: PROJECT_PLAN §13 "v1 design". HAWK-1 (ride
 probe) is dropped: the env trace answered what it was for. HAWK-1b is done (2026-10-22, TESTING §3 run 3: one diagonal line "B"
 for every start route, three rides PASS); HAWK-4 is done (2026-10-22, TESTING §3 HAWK-4 runs 1-2: cruise lock, dive, start
-animation cut; Leonardo: good enough). The line is built by `scripts\build-gamedata.ps1 -HawkRoutes` (TECHNICAL_NOTES §4c).
+animation cut; Leonardo: good enough). The line is built by `scripts\build-gamedata.ps1` (by default since HAWK-2; TECHNICAL_NOTES §4c).
 
 ### HAWK-2 — Hawk crossing v1 (player feature)
-Owner: OPUS → SONNET/implementer → HUMAN | Status: next (HAWK-4 done 2026-10-22)
+Owner: OPUS → SONNET/implementer → HUMAN | Status: **solo smoke PASS 2026-10-22** (TESTING §3; Leonardo: "how I wanted it").
+Branch `claude/interesting-tharp-1c1237`, not merged. Open: merge (Leonardo), the Spectral Hawk Tree check (step 4 below, not
+done yet), and the FS with two players; then remove this card.
+Built: `game/hawk/` in both builds (`mod.rs` hook + swap + ride phases; `dev.rs` console and traces, dev build only). Settings
+`[hawk]` (`enabled`, `dive_hold`, `dive_secs`, `dive_boost`, `start_cut`; defaults = HAWK-4's accepted values, on) read at
+startup; the `hawk_*` commands are session overrides. Only LOCAL: once the main loop knows LOCAL's PlayerIns the hook acts on that
+character only (before that, the HAWK-3 rider rule). A native tree ride (Spectral Hawk Tree) ends the lock; the pass-through swap
+stays for the session (inert outside start rides). Route file: built by default (`-VanillaRoutes` to skip), required by
+`package-release.ps1` and checked by the launcher. **Not a `Feature` yet:** the trait is on the unmerged OFF-1 branch
+(`claude/offline-mode-ccabe0`); moving it there = `configure` → constructor, `tick` → `Feature::tick` with `local` from the `World`.
+Solo smoke (Leonardo, player terms): from the worktree folder run `scripts\launch.ps1` (its `dist\nrpvp.toml` is player mode with
+`matchmaking = false`, so there is no console and Commence starts a normal solo expedition). (1) Commence Solo; the hawk takes
+you without the grab animation and flies the long diagonal line; moving the stick briefly does nothing. (2) Hold the stick in any
+direction: the hawk leaves the line, goes faster and down; steer to a spot; after about 7 s it drops you. (3) Second run: hold
+action (or L3) during the cruise: you drop at once. (4) In the expedition, ride a Spectral Hawk Tree if one is near: it must
+behave as in vanilla (steerable, no lock). PASS = all of it with no nrcon command; `dist\nrpvp.log` shows `HAWK-2 hawk crossing
+ON`, `HAWK-3 swap ON`, `HAWK-4 phase none -> cruise` (and `-> dive`).
 What: PROJECT_PLAN §13 v1 as a player feature (cruise lock + dive + start cut with the accepted defaults; the console
 commands stay dev-only): `hawk.rs` leaves the dev-only build, `[hawk]` settings in `nrpvp.toml`, on by default
 in Battle Royale and offline mode, only LOCAL changed, swap removed when the expedition ends. The route file goes into the player

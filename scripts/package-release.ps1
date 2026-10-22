@@ -4,7 +4,7 @@
 #   NightreignPvP\nrpvp.dll       the mod
 #   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4), mm_max_players = -MatchPlayers (default 2 until release); PvP is always on, no dev_mode)
 #   NightreignPvP\gamedata\...    our game-data package (dist\gamedata from scripts\build-gamedata.ps1: Battle Royale texts + Roundtable
-#                                 messages, UI-1/UI-2); the launcher loads it as an me3 [[packages]] entry
+#                                 messages, UI-1/UI-2; the hawk crossing line, HAWK-2); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # R1: the zip gets a PLAYER nrpvp.dll, built here with `--no-default-features` (no developer tooling) into target\player\. The script
@@ -23,12 +23,15 @@ $dist = Join-Path $repo 'dist'
 # (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry.
 $gamedata = Join-Path $dist 'gamedata'
 $gdFiles = @(Get-ChildItem -LiteralPath $gamedata -Recurse -File -ErrorAction SilentlyContinue)
-if (Test-Path -LiteralPath (Join-Path $gamedata 'map')) {
-    throw "dist\gamedata holds the HAWK-1b test routes (map\). Run scripts\build-gamedata.ps1 without -HawkRoutes before packaging."
+# HAWK-2: the crossing line (map\mapstudio\m60_00_00_99.msb.dcx) is part of the package; it is the only file allowed under map\.
+$routes = Join-Path $gamedata 'map\mapstudio\m60_00_00_99.msb.dcx'
+$gdMap = @($gdFiles | Where-Object { $_.FullName -like (Join-Path $gamedata 'map\*') })
+if ($gdMap.Count -ne 1 -or -not (Test-Path -LiteralPath $routes)) {
+    throw "dist\gamedata\map must hold exactly map\mapstudio\m60_00_00_99.msb.dcx (the hawk crossing line; found $($gdMap.Count) file(s)). Run scripts\build-gamedata.ps1 (without -VanillaRoutes) first."
 }
 $gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
-if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 16) {
-    throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx). Run scripts\build-gamedata.ps1 first."
+if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 17) {
+    throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx + the hawk route file). Run scripts\build-gamedata.ps1 first."
 }
 foreach ($f in 'bin\me3.exe', 'bin\me3-launcher.exe', 'bin\me3_mod_host.dll', 'LICENSE-MIT', 'LICENSE-APACHE') {
     if (-not (Test-Path -LiteralPath (Join-Path $Me3Dir $f))) { throw "me3 file missing: $Me3Dir\$f" }
@@ -71,14 +74,20 @@ $toml = @(
     '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
     "mm_max_players = $MatchPlayers",
     "mm_min_players = $MatchPlayers",
-    'team_candidates = [29, 6, 3, 16, 13, 2, 1]'
+    'team_candidates = [29, 6, 3, 16, 13, 2, 1]',
+    '',
+    '# Hawk crossing: the start hawk flies one line across the map. Hold the stick to dive, then steer; leave the hawk with the',
+    '# Spectral Hawk Tree buttons (hold action, or L3). Keep this table last.',
+    '[hawk]',
+    'enabled = true'
 ) -join "`r`n"
 [IO.File]::WriteAllText((Join-Path $mod 'nrpvp.toml'), $toml + "`r`n", $ascii)
 
 $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
 $dirty = if (& git -C $repo status --porcelain 2>$null) { 'dirty' } else { 'clean' }
 $gdHash = (Get-FileHash (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx') -Algorithm SHA256).Hash.Substring(0,16)
-$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, me3 0.11.0"
+$routeHash = (Get-FileHash $routes -Algorithm SHA256).Hash.Substring(0,16)
+$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, hawk routes $routeHash, me3 0.11.0"
 [IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
 
 $zipName = 'NightreignPvP.zip'

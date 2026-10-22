@@ -181,6 +181,18 @@ spawn_radius = 200.0
 # on close; point this somewhere permanent. Falls back to the DLL folder if unusable. Read before logging starts.
 # log_dir = 'C:\\some\\folder'
 
+# HAWK-2 hawk crossing (both modes, on by default): every start ride flies the one crossing line (the route file in the game-data
+# package). The stick does nothing while you cruise; hold it in any direction to dive (dive_hold, 50..=5000 units: the game counts
+# about 1600 per second of holding), then steer for dive_secs seconds (1..=15) before the hawk drops you. Leave the hawk any
+# time with the vanilla Spectral Hawk Tree buttons (hold action, or L3). dive_boost = the hawk's x1.3 speed while diving;
+# start_cut = skip the hawk's grab animation at the ride start. enabled = false gives the vanilla start ride.
+# Keep this table last: every key below a [table] line belongs to that table.
+[hawk]
+enabled = true
+dive_hold = 400
+dive_secs = 7.0
+dive_boost = true
+start_cut = true
 ";
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -256,6 +268,49 @@ pub(crate) struct Config {
     pub spawn_radius: f32,
     /// T-018: absolute log directory; empty = next to the DLL.
     pub log_dir: String,
+    /// HAWK-2: the hawk crossing (`[hawk]`).
+    pub hawk: HawkConfig,
+}
+
+/// HAWK-2: `[hawk]` in `nrpvp.toml`, the hawk crossing (PROJECT_PLAN §13 v1). Defaults = the values accepted in HAWK-4 (2026-10-22).
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[serde(default)]
+pub(crate) struct HawkConfig {
+    /// Start rides cruise the route, dive on a held stick (false = the vanilla start ride).
+    pub enabled: bool,
+    /// Real `GetBirdMovementDirectionTime` (394) value that starts the dive (clamped to [`HAWK_DIVE_HOLD_RANGE`] in `parse`).
+    pub dive_hold: u32,
+    /// Dive length in seconds (clamped to [`HAWK_DIVE_SECS_RANGE`] in `parse`).
+    pub dive_secs: f32,
+    /// The hawk's x1.3 speed (SpEffect 99230 check) during a dive.
+    pub dive_boost: bool,
+    /// Skip the tree ride's start animation.
+    pub start_cut: bool,
+}
+
+/// The keys of [`HawkConfig`] (anything else in `[hawk]` is reported by `parse`).
+const HAWK_KEYS: [&str; 5] = [
+    "enabled",
+    "dive_hold",
+    "dive_secs",
+    "dive_boost",
+    "start_cut",
+];
+const HAWK_DIVE_HOLD_RANGE: (u64, u64) = (50, 5000);
+/// Upper bound: a dive at x1.3 covers about 23 m/s, and the line stays about 150 m inside the land (PROJECT_PLAN §13).
+const HAWK_DIVE_SECS_RANGE: (f32, f32) = (1.0, 15.0);
+const HAWK_DIVE_SECS_DEFAULT: f32 = 7.0;
+
+impl Default for HawkConfig {
+    fn default() -> Self {
+        HawkConfig {
+            enabled: true,
+            dive_hold: 400,
+            dive_secs: HAWK_DIVE_SECS_DEFAULT,
+            dive_boost: true,
+            start_cut: true,
+        }
+    }
 }
 
 impl Default for Config {
@@ -297,6 +352,7 @@ impl Default for Config {
             team_spawns: false,
             spawn_radius: crate::game::spawn::DEFAULT_RADIUS,
             log_dir: String::new(),
+            hawk: HawkConfig::default(),
         }
     }
 }
@@ -652,6 +708,46 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             ));
         }
     }
+    // HAWK-2: [hawk] dive_hold and dive_secs; keys that only landed in [hawk] because they were added below it.
+    {
+        if let Ok(t) = toml::from_str::<toml::Table>(text) {
+            if let Some(toml::Value::Table(h)) = t.get("hawk") {
+                let stray: Vec<&str> = h
+                    .keys()
+                    .map(String::as_str)
+                    .filter(|k| !HAWK_KEYS.contains(k))
+                    .collect();
+                if !stray.is_empty() {
+                    warnings.push(format!(
+                        "[hawk] has no setting {}; ignored (settings outside [hawk] must come before the [hawk] line)",
+                        stray.join(" / ")
+                    ));
+                }
+            }
+        }
+        let mut hold = u64::from(cfg.hawk.dive_hold);
+        let (lo, hi) = HAWK_DIVE_HOLD_RANGE;
+        if !(lo..=hi).contains(&hold) {
+            let c = hold.clamp(lo, hi);
+            warnings.push(format!(
+                "[hawk] dive_hold = {hold} is outside {lo}..={hi}; using {c}"
+            ));
+            hold = c;
+        }
+        cfg.hawk.dive_hold = u32::try_from(hold).unwrap_or(400);
+        let (lo, hi) = HAWK_DIVE_SECS_RANGE;
+        let v = cfg.hawk.dive_secs;
+        if !v.is_finite() {
+            warnings.push("[hawk] dive_secs is not a finite number; using the default".to_string());
+            cfg.hawk.dive_secs = HAWK_DIVE_SECS_DEFAULT;
+        } else if !(lo..=hi).contains(&v) {
+            cfg.hawk.dive_secs = v.clamp(lo, hi);
+            warnings.push(format!(
+                "[hawk] dive_secs = {v} is outside {lo}..={hi}; using {}",
+                cfg.hawk.dive_secs
+            ));
+        }
+    }
     // T-035: the T-033/T-034 finisher experiment is gone; its keys are ignored (one line).
     if let Ok(t) = toml::from_str::<toml::Table>(text) {
         let old: Vec<&str> = ["finisher", "hotkey_finisher"]
@@ -835,6 +931,7 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.mm_quiet_invite,
         cfg.log_dir
     );
+    tracing::info!("T-008: effective config: [hawk] {:?}", cfg.hawk);
     cfg
 }
 
@@ -1414,6 +1511,38 @@ pvpve_scheme = \"all\"
             assert_eq!(w.len(), 1, "{w:?}");
         }
         assert!(parse("rival_hit_seconds = \"x\"").is_err());
+    }
+
+    #[test]
+    fn hawk2_settings_default_on_parse_and_clamp() {
+        assert_eq!(Config::default().hawk, HawkConfig::default());
+        assert!(HawkConfig::default().enabled);
+        // A player DLL refuses dev_mode with a warning, so the dev pass only runs in the dev build.
+        for dev in [cfg!(feature = "dev"), false] {
+            let pre = if dev { "dev_mode = true\n" } else { "" };
+            let run = |t: &str| parse(&format!("{pre}{t}")).expect("ok");
+            // No [hawk] table: on, with the HAWK-4 values.
+            let (c, w) = run("team_size = 1\n");
+            assert_eq!(c.hawk, HawkConfig::default());
+            assert!(w.is_empty(), "{w:?}");
+            let (c, w) = run("[hawk]\nenabled = false\ndive_secs = 4\n");
+            assert!(!c.hawk.enabled);
+            assert_eq!(c.hawk.dive_secs, 4.0);
+            assert_eq!(c.hawk.dive_hold, 400);
+            assert!(w.is_empty(), "{w:?}");
+            let (c, w) = run("[hawk]\ndive_hold = 1\ndive_secs = 99\n");
+            assert_eq!((c.hawk.dive_hold, c.hawk.dive_secs), (50, 15.0));
+            assert_eq!(w.len(), 2, "{w:?}");
+            let (c, w) = run("[hawk]\ndive_secs = nan\n");
+            assert_eq!(c.hawk.dive_secs, 7.0);
+            assert_eq!(w.len(), 1, "{w:?}");
+        }
+        assert!(parse("[hawk]\nenabled = \"yes\"\n").is_err());
+        // A top-level key added below [hawk] belongs to [hawk]: it does not apply, and one warning says why.
+        let (c, w) = parse("[hawk]\nenabled = true\nteam_size = 2\n").expect("ok");
+        assert_eq!(c.team_size, 1);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("team_size"), "{w:?}");
     }
 
     #[test]

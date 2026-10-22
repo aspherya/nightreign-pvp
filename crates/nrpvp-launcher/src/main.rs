@@ -7,7 +7,8 @@
 //! <Game>\SeamlessCoop\nrsc.dll            (the player already has this)
 //! <Game>\nrpvp_launcher.exe               (this program)
 //! <Game>\NightreignPvP\nrpvp.dll, nrpvp.toml
-//! <Game>\NightreignPvP\gamedata\msg\..., event\...   (our game-data package: texts + Roundtable events, UI-1/UI-2)
+//! <Game>\NightreignPvP\gamedata\msg\..., event\..., map\...   (our game-data package: texts + Roundtable events, UI-1/UI-2;
+//!                                                              the hawk crossing line, HAWK-2)
 //! <Game>\NightreignPvP\me3\me3.exe, me3-launcher.exe, me3_mod_host.dll   (bundled me3, MIT/Apache-2.0)
 //! ```
 //!
@@ -27,6 +28,8 @@ const TITLE: &str = "Nightreign PvP";
 const MOD_DIR: &str = "NightreignPvP";
 /// The game-data package inside [`MOD_DIR`] (built by scripts\build-gamedata.ps1, shipped by scripts\package-release.ps1).
 const GAMEDATA_DIR: &str = "gamedata";
+/// HAWK-2: the start-hawk routes inside [`GAMEDATA_DIR`] (every start route = the one crossing line).
+const ROUTES_FILE: &str = r"map\mapstudio\m60_00_00_99.msb.dcx";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 /// me3 keeps running while the game runs; if it exits with an error inside this window, tell the player.
 const EARLY_EXIT_WINDOW: Duration = Duration::from_secs(8);
@@ -98,6 +101,11 @@ fn check(game: &Path) -> Option<String> {
         ),
         (
             game.join(MOD_DIR).join(GAMEDATA_DIR).join("event").join("m10_00_00_00.emevd.dcx"),
+            "The NightreignPvP\\gamedata folder is missing or incomplete.\n\nCopy the whole NightreignPvP folder again from the zip.",
+        ),
+        (
+            // HAWK-2: the hawk crossing line.
+            game.join(MOD_DIR).join(GAMEDATA_DIR).join(ROUTES_FILE),
             "The NightreignPvP\\gamedata folder is missing or incomplete.\n\nCopy the whole NightreignPvP folder again from the zip.",
         ),
     ];
@@ -227,6 +235,10 @@ mod tests {
         let event = dir.join(MOD_DIR).join(GAMEDATA_DIR).join("event");
         fs::create_dir_all(&event).unwrap();
         fs::write(event.join("m10_00_00_00.emevd.dcx"), b"x").unwrap();
+        assert!(check(&dir).unwrap().contains("gamedata folder is missing"));
+        let routes = dir.join(MOD_DIR).join(GAMEDATA_DIR).join(ROUTES_FILE);
+        fs::create_dir_all(routes.parent().unwrap()).unwrap();
+        fs::write(&routes, b"x").unwrap();
         assert!(check(&dir).is_none());
         let _ = fs::remove_dir_all(&dir);
     }
