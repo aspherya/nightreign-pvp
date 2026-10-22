@@ -36,7 +36,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 18:33 with T-040, uncommitted on `t-028-snapback`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
-| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` 2026-10-21 (R5, R2-lite, R3-split): SMOKE-2 PASS | `team_size = 1` |
+| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` d3d1eb8 (T-028 teleport, T-040/T-041), built 2026-10-21 21:52, nrpvp.dll 8036B4B61971B2E4: SMOKE-3 next | `team_size = 1`, `team_spawns = false` |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
@@ -55,7 +55,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
    (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). Next: HAWK-1b
    (long start route, data only, solo 5 min), HAWK-A2 (static RE), HAWK-1 (ride probe).
 
-**SMOKE-3 (Leonardo solo + Claude over nrcon, about 5 min, dev build of `t-028-snapback` from `scripts\launch.ps1`).** Start an
+**SMOKE-3 (Leonardo solo + Claude over nrcon, about 5 min, dev build of `main` d3d1eb8 in `dist`, from `scripts\launch.ps1`).** Start an
 expedition and land. Stand still, `pos_save`; walk or climb about 20–50 m away, `pos_go`: you must jump back to the saved spot and stay
 there (no fall, no sinking). Repeat once from a different height (rock or cliff). `team_spawns` stays off. Pass = both jumps land and
 hold, the log shows `T-032 POS write` with `Physics+0x70`, no crash.
@@ -128,10 +128,10 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 
 ## 7. Repository state
 
-- `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split (SMOKE-1 2026-10-20, SMOKE-2 2026-10-21). Leonardo pushes.
-- Branch `t-028-snapback`: T-028 teleport (origin-aware, `Physics+0x70`) and the parked F3 team-spawn rule; `main` merged in on
-  2026-10-21 (offsets moved to `game/layout.rs`, glue in `team/spawns.rs`). Goes to `main` after SMOKE-3.
-- Tests: `cargo test --workspace` → 385 pass on `main` (353 nrpvp; 388 / 356 on `t-028-snapback`), 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
+- `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split, T-028 teleport, T-040/T-041 (SMOKE-1 2026-10-20, SMOKE-2 2026-10-21). Leonardo pushes.
+- `t-028-snapback` (T-028 teleport, parked F3 team-spawn rule, T-040/T-041) is merged into `main` (3ea3168, 2026-10-21); the branch
+  can be deleted. SMOKE-3 checks the teleport on that build.
+- Tests: `cargo test --workspace` → 404 pass on `main` d3d1eb8 (372 nrpvp, 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
   self-scan `poke_add_is_followed`). R5 removed ~110 tests together with the code they tested. fmt, clippy `-D warnings` (dev and player builds) clean; the same checks
   run in GitHub Actions (`.github/workflows/ci.yml`) on every push.
 - Builds: `cargo build --release` = developer DLL (feature `dev`, default: console, RE tracers); `--no-default-features` = player DLL
