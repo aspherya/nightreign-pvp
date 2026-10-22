@@ -51,7 +51,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 3. **MM-3g + MM-7** (no Invite Members click, auto-start; one shared RE spike), **MM-8** (host by best connection), **MM-9** (host
    leaves: FS observation, then a clean match end), **S10** (study SC toward host migration); then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
 4. **Hawk crossing** (PROJECT_PLAN §13, TASKS HAWK-0..2). The teleport (T-028) passed on 2026-10-14 (solo + Nucleus). `t-028-snapback`
-   now holds `main` merged in and needs **SMOKE-3** (the teleport on the merged build, below) before it goes to `main`. HAWK-0 research is done
+   was merged into `main` on 2026-10-22 (Leonardo, with T-040/T-041); **SMOKE-3** (the teleport on that build, below) is still owed. HAWK-0 research is done
    (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). Next: HAWK-1b
    (long start route, data only, solo 5 min), HAWK-A2 (static RE), HAWK-1 (ride probe).
 
