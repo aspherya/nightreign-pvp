@@ -22,12 +22,22 @@ pub(crate) const EFLAGS_RF: u32 = 0x1_0000;
 pub(crate) const EXCEPTION_CONTINUE_EXECUTION: i32 = -1;
 pub(crate) const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 
-/// DR7 for execute breakpoints: local-enable bit `2*i` for every set bit `i` of `mask`; RW and LEN fields stay 00 (execute, 1 byte)
+/// Bit `WRITE_SHIFT + i` of a slot mask: slot `i` is a 4-byte write watch (data breakpoint) instead of an execute breakpoint.
+pub(crate) const WRITE_SHIFT: u32 = 4;
+
+/// DR7 for the slots in `mask`: bits 0..3 enable slot `i` (local-enable bit `2*i`); an enabled slot is an execute breakpoint (RW and
+/// LEN fields 00) unless bit `4+i` is set, which makes it a 4-byte write watch (RW = 01 at bit `16+4i`, LEN = 11 at bit `18+4i`)
 /// (Intel SDM vol. 3, 17.2.4).
 pub(crate) fn dr7_for(mask: u8) -> u64 {
     (0..TARGETS as u32)
         .filter(|i| mask & (1 << i) != 0)
-        .fold(0u64, |acc, i| acc | (1u64 << (2 * i)))
+        .fold(0u64, |acc, i| {
+            let mut v = 1u64 << (2 * i);
+            if mask & (1 << (WRITE_SHIFT + i)) != 0 {
+                v |= (0b01u64 << (16 + 4 * i)) | (0b11u64 << (18 + 4 * i));
+            }
+            acc | v
+        })
 }
 
 /// Decode the vtable displacement out of a flat-API thunk: `mov rax,[rcx]` (48 8B 01) followed by `jmp qword ptr [rax+disp]` as
@@ -174,6 +184,18 @@ mod tests {
         assert_eq!(dr7_for(0b1111), 0b0101_0101);
         // RW / LEN fields (bits 16..32) stay zero = execute breakpoints.
         assert_eq!(dr7_for(0xF) >> 16, 0);
+    }
+
+    #[test]
+    fn dr7_write_slots_set_rw_and_len() {
+        // slot 3 write watch: L3 = bit 6, RW3 (bits 28-29) = 01, LEN3 (bits 30-31) = 11
+        let v = dr7_for(0b1000 | (0b1000 << WRITE_SHIFT));
+        assert_eq!(v, (1 << 6) | (0b01 << 28) | (0b11 << 30));
+        // slot 0 write + slot 2 execute
+        let v = dr7_for(0b0101 | (1 << WRITE_SHIFT));
+        assert_eq!(v, 0b01_0001 | (0b01 << 16) | (0b11 << 18));
+        // a write flag without the enable bit does nothing
+        assert_eq!(dr7_for(1 << (WRITE_SHIFT + 1)), 0);
     }
 
     #[test]

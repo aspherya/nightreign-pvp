@@ -49,6 +49,11 @@ All Steam calls run on our own worker thread through the game's `steam_api64.dll
 | 10 | everyone | Back at the Roundtable after the expedition: the match is over, queue idle again | `Not in a queue` |
 
 Time in FS-MM3: queue to match found 4 s, Invite Members to joiner in the lobby 3 s, loaded in 6 s later.
+FS-UI2 (2026-10-21, player zip, table menu, 3 rounds, each PC host at least once): second Commence to MATCH READY under 1 s; match
+ready to the host's Invite Members 11–12 s; invite to ALL PRESENT 8–9 s; both players entered the expedition within about 1 s of each
+other (the two PCs' clocks differ by ~16 s; lined up on the invite/link lines).
+Step 9 needs nothing from our menu code: the host's start with the SC party logged no `br_menu: Commence pressed`, and both loaded in
+(`re/MEMORY_MAP.md` §13).
 
 ## 4. Lobby data (queue lobby)
 

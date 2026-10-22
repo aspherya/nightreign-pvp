@@ -112,6 +112,54 @@ impl CombatCtl {
         }
     }
 
+    /// T-040 (console `revive_fail`): the next `n` re-down tries fail without reading memory.
+    pub(crate) fn set_forced_fails(&mut self, n: u32) {
+        self.core.set_forced_fails(n);
+    }
+
+    pub(crate) fn forced_fails(&self) -> u32 {
+        self.core.forced_fails()
+    }
+
+    /// T-040 follow-up (console `early_redown`): the get-up re-down experiment.
+    pub(crate) fn set_early_redown(&mut self, on: bool) {
+        self.core.early_redown = on;
+        tracing::info!(
+            "rule: early re-down (during the get-up) {}",
+            if on { "ON" } else { "OFF" }
+        );
+    }
+
+    pub(crate) fn early_redown(&self) -> bool {
+        self.core.early_redown
+    }
+
+    /// T-041: the character handles (`ChrIns` handle field) of the players this game marks as RIVAL, read-only.
+    pub(crate) fn rival_handles(&self) -> Vec<u64> {
+        if !self.rtti_ready {
+            return Vec::new();
+        }
+        self.subjects
+            .iter()
+            .filter(|s| !s.local && s.relation == Some(crate::overlay::shared::Relation::Rival))
+            .filter(|s| self.mem.is_player(s.addr))
+            .filter_map(|s| self.mem.read_u64(s.addr + CHR_HANDLE))
+            .filter(|&h| valid_handle(h))
+            .collect()
+    }
+
+    /// T-041: LOCAL's PlayerIns address and its state byte (`PlayerIns+0x710`), read-only.
+    pub(crate) fn local_state(&self) -> Option<(usize, u8)> {
+        if !self.rtti_ready {
+            return None;
+        }
+        let s = self.subjects.iter().find(|s| s.local)?;
+        if !self.mem.is_player(s.addr) {
+            return None;
+        }
+        Some((s.addr, self.mem.read_u8(s.addr + OFF_DOWNED)?))
+    }
+
     pub(crate) fn tick(&mut self, subjects: Vec<Subject>) {
         self.subjects = subjects;
         if !self.rtti_ready {

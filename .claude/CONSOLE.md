@@ -41,6 +41,10 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `mm_join` | `link\|invite\|direct\|unlock_public\|unlock_invisible\|relock` | One join-method attempt for the ready match (dev, `mm_join = true`) |
 | `mm_sc_create` | | Create a lobby the game's way; does Seamless Co-op adopt it? (dev, `mm_sc_create = true`) |
 | `mm_quiet_test` | | Suppress the Steam invite window for 60 s (dev, `mm_quiet_invite = true`) |
+| `revive_fail` | `[n]` | T-040 test switch: the next n rival re-down tries fail ("forced by console") without reading memory; no argument shows how many are left |
+| `early_redown` | `[0\|1]` | T-040 follow-up experiment: knock a rival-revived player down during the get-up (1) instead of after it (0, default); no argument shows the state. Dev only, resets at launch |
+| `bar_trace` | `[0\|1]` | T-041 step 1 trace: while LOCAL is downed, a hardware write watch (slot 3, only if free) logs which instruction writes the revive bar, as `T-041 BAR WRITE #n: rip=exe+0x… value=… tid=…`; no argument shows ON/OFF and the hit count. Dev only, resets at launch |
+| `revive_block` | `[0\|1]` | T-041 prototype: while LOCAL is downed, a hardware breakpoint on `exe+0x675159` clears the "revive completed" flag when the reviver is a rival, so no get-up starts; no argument shows ON/OFF and the block count. **On by default** (both builds run the block); the command only switches it off for a comparison run. Dev only |
 | `pos_next` / `pos_save` / `pos_go` | | Snap-back test (Task D): select a candidate, save your values, write them back (you only) |
 | `whoami` (pipe only) | | `pid <pid> <DLL folder>`; `nrcon list` uses it |
 

@@ -34,9 +34,62 @@ impl RevivePolicy {
 pub(crate) use crate::game::layout::HP_FIELD as HP_PTR_FIELD;
 pub(crate) use crate::game::layout::PLAYER_HP_MIRROR as OFF_HP_MIRROR;
 pub(crate) use crate::game::layout::PLAYER_HP_PTR as OFF_HP_PTR;
+// T-040: the character data module route (MEMORY_MAP §5, T-040 run 1).
+pub(crate) use crate::game::layout::{
+    DATA_MODULE_HP as DM_HP, DATA_MODULE_MAX_HP as DM_MAX_HP, GAMEDATA_MAX_HP as GD_MAX_HP,
+    PLAYER_MODULES,
+};
 
 /// In the player build the rule's log lines are limited to one per this many milliseconds (the write itself is not limited).
 pub(crate) const PLAYER_LOG_MS: u64 = 5000;
+
+/// T-040: how long a failed re-down is retried (the state byte must read 0 and the gates must pass).
+pub(crate) const REDOWN_RETRY_MS: u64 = 2000;
+/// T-040: at most this many `T-040 LOCAL ...` diagnostic lines per [`DIAG_WINDOW_MS`] (the rest are counted).
+pub(crate) const DIAG_MAX_LINES: u32 = 30;
+pub(crate) const DIAG_WINDOW_MS: u64 = 60_000;
+
+/// T-040: a re-down that failed at the UP event and is retried every step until `deadline_ms`.
+#[derive(Clone, Debug)]
+pub(crate) struct PendingRedown {
+    pub(super) addr: usize,
+    pub(super) first_ms: u64,
+    pub(super) deadline_ms: u64,
+    pub(super) tries: u32,
+    pub(super) first_err: String,
+    pub(super) last_err: String,
+}
+
+/// T-040: the HP field of LOCAL's character data module, `[[PlayerIns+0x1B8]+0x0]+0x140` (MEMORY_MAP section 5, NR 1.3.3.0,
+/// T-040 run 1: read on both Nucleus games, writing 0 downed the player). Gate: HP > 0 and equal to PlayerGameData's HP, and the
+/// module's max HP equal to PlayerGameData's max HP. `Ok((field address, hp))`.
+pub(crate) fn data_module_hp(mem: &dyn CombatMem, addr: usize) -> Result<(usize, u32), String> {
+    let bag = mem
+        .read_u64(addr + PLAYER_MODULES)
+        .and_then(|v| usize::try_from(v).ok())
+        .filter(|&v| is_ptr(v))
+        .ok_or("no module list")?;
+    let dm = mem
+        .read_u64(bag)
+        .and_then(|v| usize::try_from(v).ok())
+        .filter(|&v| is_ptr(v))
+        .ok_or("no data module")?;
+    let g = gamedata_of(mem, addr).ok_or("no PlayerGameData")?;
+    let (hp, max) = (mem.read_u32(dm + DM_HP), mem.read_u32(dm + DM_MAX_HP));
+    let (ghp, gmax) = (mem.read_u32(g + GD_HP), mem.read_u32(g + GD_MAX_HP));
+    match (hp, max, ghp, gmax) {
+        (Some(h), Some(m), Some(gh), Some(gm)) if h > 0 && h == gh && m == gm => {
+            Ok((dm + DM_HP, h))
+        }
+        _ => Err(format!(
+            "gate failed (hp {}, max {}, PlayerGameData {} / {})",
+            opt(hp),
+            opt(max),
+            opt(ghp),
+            opt(gmax)
+        )),
+    }
+}
 
 /// The write gate: the authoritative value must be non-zero and equal to the mirror or the PlayerGameData HP (at least one must
 /// agree). Everything else means the offsets do not describe this build and nothing is written.
@@ -71,9 +124,20 @@ pub(crate) struct Core {
     /// Nothing (more) to do for a get-up: no down was seen before it, the store was made, or the reviver is not a rival.
     pub(super) getup_done: bool,
     pub(super) getup_gate_logged: bool,
+    /// T-040 follow-up: when the current get-up (state 2) was first seen, for the early re-down timing line.
+    pub(super) getup_since_ms: Option<u64>,
     pub(super) last_dn_log_ms: Option<u64>,
     /// Rule writes made this session.
     pub(crate) fired: u32,
+    /// T-040: the re-down that is being retried, see [`Core::pending_step`].
+    pub(super) pending: Option<PendingRedown>,
+    /// T-040: LOCAL's last seen (PlayerIns, state byte), for the `T-040 LOCAL state` lines.
+    pub(super) diag_state: Option<(usize, u8)>,
+    pub(super) diag_window_ms: u64,
+    pub(super) diag_count: u32,
+    pub(super) diag_suppressed: u32,
+    /// T-040 (console `revive_fail`; only the dev console ever sets it): the next n `try_rule` calls fail without reading memory.
+    pub(super) forced_fails: u32,
 }
 
 impl Core {
@@ -92,9 +156,25 @@ impl Core {
             early_redown: false,
             getup_done: true,
             getup_gate_logged: false,
+            getup_since_ms: None,
             last_dn_log_ms: None,
             fired: 0,
+            pending: None,
+            diag_state: None,
+            diag_window_ms: 0,
+            diag_count: 0,
+            diag_suppressed: 0,
+            forced_fails: 0,
         }
+    }
+
+    /// T-040: the console's `revive_fail <n>`.
+    pub(crate) fn set_forced_fails(&mut self, n: u32) {
+        self.forced_fails = n;
+    }
+
+    pub(crate) fn forced_fails(&self) -> u32 {
+        self.forced_fails
     }
 
     /// T-039: `rival_hit_seconds` (clamped again here, so a bad value can never reach the clock).
@@ -128,6 +208,7 @@ impl Core {
         if self.dev {
             lines.extend(events.iter().map(Event::line));
         }
+        lines.extend(self.pending_step(now_ms, subjects, mem));
         for ev in &events {
             if rule_should_fire(self.policy, ev) {
                 lines.extend(self.apply_rule(now_ms, ev.addr, mem));
@@ -138,7 +219,138 @@ impl Core {
         if self.dev {
             lines.extend(self.watch_block(subjects, mem));
         }
+        lines.extend(self.state_diag(now_ms, subjects, mem));
         lines
+    }
+
+    /// T-040: `None` = this diagnostic line is over the cap; otherwise the `(n suppressed)` suffix to append (maybe empty).
+    pub(super) fn diag_allow(&mut self, now_ms: u64) -> Option<String> {
+        if self.diag_count == 0 || now_ms.saturating_sub(self.diag_window_ms) >= DIAG_WINDOW_MS {
+            self.diag_window_ms = now_ms;
+            self.diag_count = 0;
+        }
+        if self.diag_count >= DIAG_MAX_LINES {
+            self.diag_suppressed += 1;
+            return None;
+        }
+        self.diag_count += 1;
+        let n = std::mem::take(&mut self.diag_suppressed);
+        Some(if n > 0 {
+            format!(" ({n} suppressed)")
+        } else {
+            String::new()
+        })
+    }
+
+    /// T-040, both builds, every call, read-only: one line per change of LOCAL's state byte (0 up, 1 downed, 2 getting up) with
+    /// the downed block and the HP chain, so a missed re-down can be explained from the player-build log. Offsets: MEMORY_MAP
+    /// sections 5 and 6 (NR 1.3.3.0). The first sight of a PlayerIns only seeds.
+    pub(super) fn state_diag(
+        &mut self,
+        now_ms: u64,
+        subjects: &[Subject],
+        mem: &dyn CombatMem,
+    ) -> Vec<String> {
+        let Some(addr) = subjects
+            .iter()
+            .find(|s| s.local && mem.is_player(s.addr))
+            .map(|s| s.addr)
+        else {
+            self.diag_state = None;
+            return Vec::new();
+        };
+        let Some(state) = mem.read_u8(addr + OFF_DOWNED) else {
+            return Vec::new();
+        };
+        let prev = self.diag_state.replace((addr, state));
+        let Some((pa, ps)) = prev else {
+            return Vec::new();
+        };
+        if pa != addr || ps == state {
+            return Vec::new();
+        }
+        let Some(note) = self.diag_allow(now_ms) else {
+            return Vec::new();
+        };
+        let ptr = mem
+            .read_u64(addr + OFF_HP_PTR)
+            .map_or("?".to_string(), |v| format!("0x{v:X}"));
+        let gd = gamedata_of(mem, addr).and_then(|g| mem.read_u32(g + GD_HP));
+        vec![format!(
+            "T-040 LOCAL state {ps} -> {state}: bar {}, clock {}, pause {}, [+0x{OFF_HP_PTR:X}] = {ptr}, hp {} (mirror {}){note}",
+            opt(read_f32(mem, addr + OFF_REVIVE_BAR)),
+            opt(read_f32(mem, addr + OFF_BLEED_CLOCK)),
+            opt(read_f32(mem, addr + OFF_PAUSE)),
+            opt(gd),
+            opt(mem.read_u32(addr + OFF_HP_MIRROR)),
+        )]
+    }
+
+    /// T-040: retry a failed re-down. Cancels (one line, nothing written) when LOCAL is another PlayerIns or none, the state byte
+    /// reads 1 or 2 (a new down / the get-up), or every readable HP is 0 (dead or down); gives up at the deadline. Otherwise
+    /// [`Core::try_rule`] runs again with all its gates. Lines are never rate-limited (they are rare).
+    pub(super) fn pending_step(
+        &mut self,
+        now_ms: u64,
+        subjects: &[Subject],
+        mem: &mut dyn CombatMem,
+    ) -> Vec<String> {
+        let Some(mut p) = self.pending.take() else {
+            return Vec::new();
+        };
+        let local = subjects
+            .iter()
+            .find(|s| s.local && mem.is_player(s.addr))
+            .map(|s| s.addr);
+        let cancel = |p: &PendingRedown, why: &str| {
+            vec![format!(
+                "rule: pending re-down of LOCAL cancelled after {} tries, nothing written: {why}",
+                p.tries
+            )]
+        };
+        if local != Some(p.addr) {
+            return cancel(&p, "LOCAL is not that PlayerIns any more");
+        }
+        match mem.read_u8(p.addr + OFF_DOWNED) {
+            Some(1) => return cancel(&p, "LOCAL was downed again (state 1)"),
+            Some(2) => return cancel(&p, "LOCAL is getting up (state 2)"),
+            _ => {}
+        }
+        let hps = [
+            mem.read_u32(p.addr + OFF_HP_MIRROR),
+            gamedata_of(mem, p.addr).and_then(|g| mem.read_u32(g + GD_HP)),
+        ];
+        if hps.iter().any(Option::is_some) && hps.iter().flatten().all(|&h| h == 0) {
+            return cancel(&p, "HP reads 0 (dead or already down)");
+        }
+        if now_ms >= p.deadline_ms {
+            return vec![format!(
+                "rule: rival completed the revive meter of LOCAL but the re-down never went through: gave up after {} tries in {} ms, nothing written (first error: {}; last error: {})",
+                p.tries,
+                now_ms.saturating_sub(p.first_ms),
+                p.first_err,
+                p.last_err
+            )];
+        }
+        if mem.read_u8(p.addr + OFF_DOWNED) != Some(0) {
+            // Unreadable state byte: wait, the deadline still applies.
+            self.pending = Some(p);
+            return Vec::new();
+        }
+        p.tries += 1;
+        match self.try_rule(p.addr, mem) {
+            Ok((before, back)) => vec![format!(
+                "rule: rival completed the revive meter of LOCAL; downed again after {} tries ({} ms late) (hp {before} -> 0, readback {})",
+                p.tries,
+                now_ms.saturating_sub(p.first_ms),
+                opt(back)
+            )],
+            Err(why) => {
+                p.last_err = why;
+                self.pending = Some(p);
+                Vec::new()
+            }
+        }
     }
 
     /// T-039, every call (the main loop's 50 ms tick), LOCAL only. While LOCAL's state byte is 1 it remembers the revive bar; when
@@ -165,6 +377,7 @@ impl Core {
         if state != Some(2) {
             self.getup_done = state != Some(1);
             self.getup_gate_logged = false;
+            self.getup_since_ms = None;
         }
         if state != Some(1) {
             self.dn = None;
@@ -209,6 +422,15 @@ impl Core {
                 match self.restore_after_rival_hit(addr, st.bar_before, bar, clock, pause, mem) {
                     // Keep bar_before: several rival hits never accumulate on the bar.
                     Ok(new_clock) => {
+                        // T-040: the "bar 0 while state 1" frame, the suspected cause of a missed re-down.
+                        if bar <= BAR_HIT_EPS {
+                            if let Some(note) = self.diag_allow(now_ms) {
+                                lines.push(format!(
+                                    "T-040 LOCAL bar read {bar} while state 1 (before {}): downed rule restored it{note}",
+                                    st.bar_before
+                                ));
+                            }
+                        }
                         if self.may_log_downed(now_ms) {
                             lines.push(format!(
                                 "rule: rival hit on downed LOCAL: bar {bar} -> {} restored, clock {clock} -> {new_clock}, pause {pause} -> 0",
@@ -250,6 +472,7 @@ impl Core {
         if !self.early_redown || self.getup_done || self.policy != RevivePolicy::Redown {
             return Vec::new();
         }
+        let into = now_ms.saturating_sub(*self.getup_since_ms.get_or_insert(now_ms));
         let infos = player_infos(mem, subjects);
         let raw = [OFF_LAST_ATTACKER, OFF_CUR_ATTACKER]
             .into_iter()
@@ -264,7 +487,7 @@ impl Core {
                 self.getup_done = true;
                 if self.may_log(now_ms) {
                     vec![format!(
-                        "rule: rival completed the revive meter of LOCAL; health set to 0 during the get-up (hp {before} -> 0, readback {})",
+                        "rule: rival completed the revive meter of LOCAL; health set to 0 during the get-up, {into} ms in (hp {before} -> 0, readback {})",
                         opt(back)
                     )]
                 } else {
@@ -275,7 +498,7 @@ impl Core {
                 if self.dev && !self.getup_gate_logged {
                     self.getup_gate_logged = true;
                     vec![format!(
-                        "rule: LOCAL is getting up after a rival's hit; nothing written yet: {why}"
+                        "rule: LOCAL is getting up after a rival's hit; nothing written yet ({into} ms in): {why}"
                     )]
                 } else {
                     Vec::new()
@@ -462,7 +685,24 @@ impl Core {
         addr: usize,
         mem: &mut dyn CombatMem,
     ) -> Vec<String> {
-        let outcome = self.try_rule(addr, mem);
+        let (before, back) = match self.try_rule(addr, mem) {
+            Ok(v) => v,
+            Err(why) => {
+                // T-040: keep trying for REDOWN_RETRY_MS; these lines are rare and never go through the 5 s limit.
+                let line = format!(
+                    "rule: rival completed the revive meter of LOCAL but nothing was written yet: {why}; retrying for {REDOWN_RETRY_MS} ms"
+                );
+                self.pending = Some(PendingRedown {
+                    addr,
+                    first_ms: now_ms,
+                    deadline_ms: now_ms + REDOWN_RETRY_MS,
+                    tries: 1,
+                    first_err: why.clone(),
+                    last_err: why,
+                });
+                return vec![line];
+            }
+        };
         if !self.may_log(now_ms) {
             return Vec::new();
         }
@@ -472,15 +712,10 @@ impl Core {
         } else {
             String::new()
         };
-        vec![match outcome {
-            Ok((before, back)) => format!(
-                "rule: rival completed the revive meter of LOCAL; downed again (hp {before} -> 0, readback {}){note}",
-                opt(back)
-            ),
-            Err(why) => format!(
-                "rule: rival completed the revive meter of LOCAL but nothing was written: {why}{note}"
-            ),
-        }]
+        vec![format!(
+            "rule: rival completed the revive meter of LOCAL; downed again (hp {before} -> 0, readback {}){note}",
+            opt(back)
+        )]
     }
 
     /// The gated write; `Ok((hp before, readback))`.
@@ -489,14 +724,44 @@ impl Core {
         addr: usize,
         mem: &mut dyn CombatMem,
     ) -> Result<(u32, Option<u32>), String> {
+        // T-040: console test switch (`revive_fail`); nothing but the dev console ever sets it.
+        if self.forced_fails > 0 {
+            self.forced_fails -= 1;
+            return Err("forced by console".to_string());
+        }
         if !mem.is_player(addr) {
             return Err(format!("0x{addr:X} no longer has a PlayerIns vtable"));
         }
-        let p = mem
+        // T-040 run 1: the character data module is the first route; `[PlayerIns+0xB78]+0x70` held no HP on either Nucleus game.
+        let dm_err = match data_module_hp(mem, addr) {
+            Ok((target, before)) => {
+                mem.write(target, &0u32.to_le_bytes())
+                    .map_err(|e| format!("write refused: {e}"))?;
+                self.fired += 1;
+                return Ok((before, mem.read_u32(target)));
+            }
+            Err(why) => why,
+        };
+        self.try_hp_ptr(addr, mem)
+            .map_err(|why| format!("data module: {dm_err}; old route: {why}"))
+    }
+
+    /// The pre-T-040 route: `[PlayerIns+0xB78]+0x70`, gated by the mirror or PlayerGameData. Only a fallback now.
+    fn try_hp_ptr(
+        &mut self,
+        addr: usize,
+        mem: &mut dyn CombatMem,
+    ) -> Result<(u32, Option<u32>), String> {
+        // T-040: the error carries the raw value (MEMORY_MAP section 5).
+        let raw = mem
             .read_u64(addr + OFF_HP_PTR)
-            .and_then(|v| usize::try_from(v).ok())
+            .ok_or_else(|| format!("[PlayerIns+0x{OFF_HP_PTR:X}] unreadable"))?;
+        let p = usize::try_from(raw)
+            .ok()
             .filter(|&v| is_ptr(v))
-            .ok_or_else(|| format!("[PlayerIns+0x{OFF_HP_PTR:X}] is not a plausible pointer"))?;
+            .ok_or_else(|| {
+                format!("[PlayerIns+0x{OFF_HP_PTR:X}] = 0x{raw:X} is not a plausible pointer")
+            })?;
         let target = p + HP_PTR_FIELD;
         let auth = mem.read_u32(target);
         let mirror = mem.read_u32(addr + OFF_HP_MIRROR);

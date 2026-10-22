@@ -10,13 +10,13 @@
 //! features that do off while one of them is on.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
 use std::sync::Once;
 use std::time::{Duration, Instant};
 
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
-use crate::dr::{apply_all, TARGETS};
+use crate::dr::{apply_all, TARGETS, WRITE_SHIFT};
 
 /// Slot of MM-3f's flat `ActivateGameOverlayInviteDialog` export.
 pub(crate) const SLOT_QUIET_FLAT: usize = 0;
@@ -31,17 +31,23 @@ const TICK: Duration = Duration::from_millis(100);
 const APPLY_EVERY: Duration = Duration::from_secs(2);
 
 static SLOTS: [AtomicUsize; TARGETS] = [const { AtomicUsize::new(0) }; TARGETS];
+/// Bit `i` set: slot `i` is a 4-byte write watch ([`set_write`]).
+static WRITE: AtomicU8 = AtomicU8::new(0);
 static DIRTY: AtomicBool = AtomicBool::new(false);
 static START: Once = Once::new();
 
-/// The addresses and enable mask of a slot table (0 = slot unused).
-pub(crate) fn wanted(slots: &[usize; TARGETS]) -> ([u64; TARGETS], u8) {
+/// The addresses and mask of a slot table (0 = slot unused). Bits 0..3 enable a slot; `writes` (bit `i` = slot `i`) turns the enabled
+/// slot into a write watch (mask bit `4+i`, see `dr::dr7_for`).
+pub(crate) fn wanted(slots: &[usize; TARGETS], writes: u8) -> ([u64; TARGETS], u8) {
     let mut addrs = [0u64; TARGETS];
     let mut mask = 0u8;
     for (i, a) in slots.iter().enumerate() {
         if *a != 0 {
             addrs[i] = *a as u64;
             mask |= 1 << i;
+            if writes & (1 << i) != 0 {
+                mask |= 1 << (WRITE_SHIFT as usize + i);
+            }
         }
     }
     (addrs, mask)
@@ -50,6 +56,21 @@ pub(crate) fn wanted(slots: &[usize; TARGETS]) -> ([u64; TARGETS], u8) {
 /// Put an execute breakpoint on `addr` in `slot` (on every thread, within ~100 ms).
 pub(crate) fn set(slot: usize, addr: usize) {
     ensure_thread();
+    if WRITE.fetch_and(!(1 << slot), Ordering::Relaxed) & (1 << slot) != 0 {
+        DIRTY.store(true, Ordering::Relaxed);
+    }
+    if SLOTS[slot].swap(addr, Ordering::Relaxed) != addr {
+        DIRTY.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Put a 4-byte write watch on `addr` (4-aligned) in `slot` (dev tracing only).
+#[cfg(feature = "dev")]
+pub(crate) fn set_write(slot: usize, addr: usize) {
+    ensure_thread();
+    if WRITE.fetch_or(1 << slot, Ordering::Relaxed) & (1 << slot) == 0 {
+        DIRTY.store(true, Ordering::Relaxed);
+    }
     if SLOTS[slot].swap(addr, Ordering::Relaxed) != addr {
         DIRTY.store(true, Ordering::Relaxed);
     }
@@ -57,9 +78,15 @@ pub(crate) fn set(slot: usize, addr: usize) {
 
 /// Free `slot`.
 pub(crate) fn clear(slot: usize) {
+    WRITE.fetch_and(!(1 << slot), Ordering::Relaxed);
     if SLOTS[slot].swap(0, Ordering::Relaxed) != 0 {
         DIRTY.store(true, Ordering::Relaxed);
     }
+}
+
+/// Nobody holds `slot` right now.
+pub(crate) fn is_free(slot: usize) -> bool {
+    SLOTS[slot].load(Ordering::Relaxed) == 0
 }
 
 fn ensure_thread() {
@@ -91,7 +118,7 @@ fn run() {
     loop {
         std::thread::sleep(TICK);
         let snap: [usize; TARGETS] = std::array::from_fn(|i| SLOTS[i].load(Ordering::Relaxed));
-        let (addrs, mask) = wanted(&snap);
+        let (addrs, mask) = wanted(&snap, WRITE.load(Ordering::Relaxed));
         let changed = DIRTY.swap(false, Ordering::Relaxed) || last != Some((addrs, mask));
         let now = Instant::now();
         if !changed && now < next_apply {
@@ -104,8 +131,9 @@ fn run() {
             apply_all(pid, own, &addrs, mask, changed, &mut applied, &mut scratch);
         if changed {
             tracing::info!(
-                "hwbp: debug registers now {:?} (mask {mask:#06b}): {written} thread(s) written, {failed} failed{}",
+                "hwbp: debug registers now {:?} (mask {mask:#010b}; write watch on slot(s) {:?}): {written} thread(s) written, {failed} failed{}",
                 addrs.iter().map(|a| format!("0x{a:X}")).collect::<Vec<_>>(),
+                (0..TARGETS).filter(|i| mask & (1 << (WRITE_SHIFT as usize + i)) != 0).collect::<Vec<_>>(),
                 first.map_or(String::new(), |(t, e)| format!("; first: thread {t}: {e}"))
             );
         }
@@ -120,7 +148,17 @@ mod tests {
 
     #[test]
     fn wanted_builds_mask_from_used_slots() {
-        assert_eq!(wanted(&[0, 0, 0, 0]), ([0; 4], 0));
-        assert_eq!(wanted(&[0x10, 0, 0x30, 0]), ([0x10, 0, 0x30, 0], 0b0101));
+        assert_eq!(wanted(&[0, 0, 0, 0], 0), ([0; 4], 0));
+        assert_eq!(wanted(&[0x10, 0, 0x30, 0], 0), ([0x10, 0, 0x30, 0], 0b0101));
+    }
+
+    #[test]
+    fn wanted_marks_write_watches_only_on_used_slots() {
+        assert_eq!(
+            wanted(&[0x10, 0, 0, 0x40], 0b1000),
+            ([0x10, 0, 0, 0x40], 0b1000_1001)
+        );
+        // a write flag on an unused slot is ignored
+        assert_eq!(wanted(&[0, 0, 0, 0], 0b1000), ([0; 4], 0));
     }
 }

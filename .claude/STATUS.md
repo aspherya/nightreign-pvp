@@ -14,10 +14,10 @@ this file points to them.
 | Automatic: each player's game marks rivals hostile, no keys | **Works** (Nucleus, 2 players). Teammates and yourself stay on the normal value, so sites of grace and pickups work |
 | Teams from player IDs (`team_size` 1, 2 or 3) | **Works** for `team_size` 1 and 2 (Nucleus run 21: 3 players, 2 v 1, all three games agreed). `team_size = 3` not run |
 | Teammate revive | **Works** (Nucleus run 21: 3 of 3) |
-| One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader + game-data package) | **Works** on Leonardo's PC. Not yet tried on a second PC |
-| Player build: PvP always on, no keys, **no overlay** (2026-10-20: the in-game menu and messages are the only UI) | Built; untested in game (FS-UI2) |
+| One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled loader + game-data package) | **Works** on two PCs (FS-UI2: Leonardo + friend, game data next to SC on both) |
+| Player build: PvP always on, no keys, **no overlay** (2026-10-20: the in-game menu and messages are the only UI) | **Works on two PCs** (FS-UI2, 2026-10-21, zip 71f893d) |
 | **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Started from the table (UI-1) in the player zip since 2026-10-20; 2-player matches until release, 6 in the final game; 3–6 players only in automated tests |
-| Battle Royale in the stock table menu (UI-1) and status as the game's own messages (UI-2) | **Works solo** (dev build); in the player zip, FS-UI2 next |
+| Battle Royale in the stock table menu (UI-1) and status as the game's own messages (UI-2) | **Works with two players** (FS-UI2, 2026-10-21): 3 rounds, each PC host at least once: Solo → Commence → match → host's Invite Members (no Steam window) → same expedition as rivals → back to idle. The host starts the expedition the normal way; our menu code is not involved. Polish: "match found!" and "joining the host…" never show (the next state arrives within the 6 s gap) |
 | A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
 
@@ -27,13 +27,15 @@ See `PROJECT_PLAN.md` §2 and §9.
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10. Not proven to be Seamless Co-op's;
 our thread that rewrites debug registers and the overlay's teardown were the suspects. The overlay is gone since R5 (2026-10-20): if
 quits stop crashing on the new builds, it was the overlay; if not, the debug-register thread is next. **2026-10-21: the first quit on
-the new build did not crash** (SMOKE-2); keep watching before calling it fixed.
+the new build did not crash** (SMOKE-2); keep watching before calling it fixed. FS-UI2 (same day, the older zip 71f893d: hudhook
+still linked, overlay off by config): both Windows crash records on Leonardo's PC were his Alt-F4 quits (Leonardo saw no crash), so
+Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real check.
 
 ## 2. What is deployed where
 
 | Place | Mode | Settings |
 |---|---|---|
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 08:00, same as `dist`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 2` (set for run 21), PvP on |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 18:33 with T-040, uncommitted on `t-028-snapback`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
 | `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` 2026-10-21 (R5, R2-lite, R3-split): SMOKE-2 PASS | `team_size = 1` |
 
@@ -41,11 +43,14 @@ the new build did not crash** (SMOKE-2); keep watching before calling it fixed.
 
 ## 3. Next, in order
 
-1. **FS-UI2** (HUMAN + friend; runbook TESTING.md §6): both PCs on the new zip, match started from the table, checks the match-ready
-   Commence `[HYPOTHESIS]` (one player is switched to two first) and our game files next to SC on two PCs.
+1. **FS-UI2: PASS (2026-10-21, TESTING §3).** MM-4, UI-1, UI-2 accepted and removed from TASKS. Its rival-revive miss is fixed
+   by **T-040** (Nucleus PASS 2026-10-21: the re-down now writes the character data module's HP, the old `+0xB78` route was not
+   always the health; retry 2 s; diagnostics in the player build). **T-041** (2026-10-21): the "stand up then drop" is gone in a
+   Nucleus test (dev `revive_block`: the game's "revive completed" event is dropped for rivals); player-build version next. Still open: a new player zip (post-R5, with T-040) for the next FS.
 2. **SMOKE-2: PASS (2026-10-21, TESTING §3).** R5, R2-lite, R3-split merged into `main`. Next engineering step: the open halves of R2/R3
    with the first new feature (ARCHITECTURE §6).
-3. **MM-3g** (no Invite Members click), then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
+3. **MM-3g + MM-7** (no Invite Members click, auto-start; one shared RE spike), **MM-8** (host by best connection), **MM-9** (host
+   leaves: FS observation, then a clean match end), **S10** (study SC toward host migration); then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
 4. **Hawk crossing** (PROJECT_PLAN §13, TASKS HAWK-0..2). The teleport (T-028) passed on 2026-10-14 (solo + Nucleus). `t-028-snapback`
    now holds `main` merged in and needs **SMOKE-3** (the teleport on the merged build, below) before it goes to `main`. HAWK-0 research is done
    (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). Next: HAWK-1b
@@ -156,4 +161,11 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
   before the next big features. `ARCHITECTURE.md`.
 - **Match start = hawk crossing** (Leonardo, 2026-10-21): the start hawk flies one straight line across the whole map and each player
   jumps off where they want (Fortnite style). Replaces separate team spawns. `PROJECT_PLAN.md` §13.
+- **Matchmaking direction** (Leonardo, 2026-10-21): stay on Seamless Co-op as long as it carries us, with three must-haves: no
+  Steam window or invite ever on a player's screen, everyone arrives ready and the match starts by itself, and the "host" stops being a
+  player-facing role. Asking SC's author is out of scope. Studying how SC works (read-only, for interop; never patched, copied or
+  redistributed, hard rule 3) is approved, to prepare our own matchmaking/session layer if SC becomes the roadblock.
+- **Host leaving mid-match** (Leonardo, 2026-10-21): for now accept that the match ends, and end it cleanly; the real goal is **host
+  migration** (Destiny / old CoD style), worked on as far as it goes. The host is picked by the matchmaker (best connection), never by
+  luck, and has no player-facing role. **A server host (a PC running the game with no player) is rejected** for now.
 - **One owner doc per topic** (2026-10-20); the map is in `CLAUDE.md`. Finished task cards and runbooks leave the docs (git keeps them).

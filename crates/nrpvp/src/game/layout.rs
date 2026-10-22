@@ -53,8 +53,14 @@ pub(crate) const PLAYER_DOWNS: usize = 0x730;
 pub(crate) const PLAYER_HP_PTR: usize = 0xB78;
 /// u32 authoritative HP inside the [`PLAYER_HP_PTR`] target. Writing 0 on the owner's game downs the player (does not kill).
 pub(crate) const HP_FIELD: usize = 0x70;
-/// u32 HP mirror (read-only cross-check before a write).
+/// u32 HP mirror (read-only cross-check before a write). T-040 run 1: held part of a pointer on both Nucleus games, so the gates
+/// never rely on it alone.
 pub(crate) const PLAYER_HP_MIRROR: usize = 0xBA0;
+/// u32 current HP inside the character data module (entry 0 of [`PLAYER_MODULES`], vtable exe+0x2C10B88). Writing 0 on the
+/// owner's game downs the player (T-040 run 1, Nucleus 2026-10-21; MEMORY_MAP §5). The game's own HP write is exe+0x428CDD.
+pub(crate) const DATA_MODULE_HP: usize = 0x140;
+/// u32 max HP inside the character data module (MEMORY_MAP §5 "Character data" row).
+pub(crate) const DATA_MODULE_MAX_HP: usize = 0x14C;
 
 // ---- Position (MEMORY_MAP §8; T-028 runs 1-4, NR 1.3.3.0) ----
 /// PlayerIns -> the character's module list (a block of pointers, no vtable). Seen in the FS-0 run 7 dump (57 pointers); that it
@@ -74,6 +80,8 @@ pub(crate) const PHYSICS_GROUND: usize = 0x92;
 // ---- PlayerGameData (MEMORY_MAP §5) ----
 /// u32 HP mirror inside PlayerGameData.
 pub(crate) const GAMEDATA_HP: usize = 0x10;
+/// u32 max HP inside PlayerGameData (T-040 run 1: 260 while HP was 43).
+pub(crate) const GAMEDATA_MAX_HP: usize = 0x14;
 /// Readable RTTI name of the PlayerGameData class (used to recognise the object before reading it).
 pub(crate) const GAMEDATA_CLASS: &str = "CS::PlayerGameData";
 
