@@ -484,7 +484,7 @@ fn watch(m: &GameModule, cfg: &Config, scan: &Scan, derived: Vec<Found>, rtti: R
             bartrace::tick(c, base, size);
         }
         // T-041: drop a rival's revive event before the game starts the get-up (both builds, always on).
-        if let Some(c) = combat.as_ref() {
+        if let Some(c) = combat.as_mut() {
             reviveblock::tick(c, base);
         }
         let combat_spent = combat_started.elapsed();

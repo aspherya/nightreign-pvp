@@ -465,7 +465,18 @@ The other player saw the jump; both screens agreed; both could still hit each ot
   all from the rival's handle) and **state stayed 1**; the player bled out at 23:11:46. **Leonardo: no stand-up on either screen**
   (the rival's screen also showed the player staying down). Other downs: Instance1's bar never emptied (bled out, nothing to block);
   an enemy down (attacker not a player) was left alone.
-- Open: the other direction (Instance1 downed); a teammate's revive with `team_size = 2` must still work; the downs counter rose to 2
+- **Hit hook (2026-10-22 00:14–00:15 UTC, build 745ECEF467581CC3: breakpoint on the bar store `exe+0x66DFC4`, a rival's hit keeps
+  the current bar): PASS, both directions.** Instance0 downed: 3 rival hits `bar stays 40, clock 14.45 -> 11.45 … 4.96 -> 1.96,
+  pause … -> 0`, bled out at 00:14:47.6 still on its first down. Instance1 downed: 4 hits, same, bled out 00:15:24.5. No revive
+  event reached the game (`0 rival revive frame(s) dropped`), no extra down. **Leonardo: "it worked very well"**: no stand-up on
+  either screen, and the near-death gauge no longer flickers on rival hits (the old poll-based restore caused it).
+- **Teams, 3 instances, `team_size = 2` (2026-10-22 00:34–00:40 UTC, same build): PASS.** Teams agreed on all three games: 6001 + 6002
+  vs 6003. Rival downed (6003, Instance0): 4 rival hits cancelled (`bar stays 40`), bled out at 00:37:14. **Teammate revives work:**
+  6001 (Instance2) revived by ally 6002 at 00:38:06 (`revive_block: allowed a revive of LOCAL by a non-rival`, up at 120 HP); 6002
+  (Instance1) revived by ally 6001 at 00:40:21 (up at 130 HP). **Both in one down** (6001, second down, 00:39:02): the teammate's hits
+  lowered the bar normally (75.9, 65, 72.7 between regrowth) while 3 rival hits were cancelled and cost 3 s each; died at 00:39:15.
+  Leonardo: "it worked". T-040 and T-041 accepted.
+- Superseded (block v2 entries above): the downs counter rose to 2
   (bar 90) during the blocked window without a new down on screen (source UNKNOWN; probably the rival's game, which believed the
   player was getting up).
 

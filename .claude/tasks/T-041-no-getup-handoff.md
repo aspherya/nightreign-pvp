@@ -71,7 +71,10 @@ character empties the 40 bar in one hit; Instance0's normal hits do not (use a h
 - `game/reviveblock.rs`: always-on revive block v2 (both builds). `game/bartrace.rs`: dev trace, **off by default** (on = `bar_trace 1`;
   it watches `+0x730` now — that target crashed; switch the offset back to `layout::PLAYER_REVIVE_BAR` before using it again).
 - `dr.rs`/`hwbp.rs`: write watches (`set_write`), `is_free`. Console: `revive_fail`, `early_redown`, `bar_trace`, `revive_block`.
-- Nucleus deploy: build `43928771ED3FCB71` (trace off, revive block v2 on), deployed 2026-10-21.
+- Committed 3384bca. Then the **hit hook** was built (uncommitted): `reviveblock.rs` also arms `exe+0x66DFC4` while LOCAL is downed;
+  for a RIVAL reviver it keeps xmm1 = the current bar; the main loop applies the clock penalty (`CombatCtl::penalize_rival_hits`) and
+  clears the pause for 4 ticks (`clear_pause`). Log: `T-041 hit hook: armed`, `rule: rival hit on downed LOCAL cancelled in the game`.
+  Nucleus deploy: build `745ECEF467581CC3` (hit hook + revive block v2, trace off), 2026-10-21; **PASS** (TESTING §3, 2026-10-22: both directions and 2 v 1); T-040/T-041 accepted.
 - Tests 372 nrpvp + 4/3/25; clippy dev + player clean at the time of writing.
 
 ## Rules to keep (from this session)

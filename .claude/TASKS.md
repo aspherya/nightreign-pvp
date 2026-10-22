@@ -45,84 +45,13 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 
 ## PvP rules
 
-### T-040 — Rival revive: retry the re-down for 2 s, and say why when it fails
-Owner: SONNET/implementer → OPUS review → HUMAN (Nucleus, solo) | Status: solo PASS (Nucleus run 2, 2026-10-21); FS watch item next | Depends on: — | Phase: M2 rules (bug from FS-UI2)
-Goal: a rival's completed revive is always knocked down again, even when `[PlayerIns+0xB78]` is not readable at the UP moment, and the
-player-build log shows enough to explain a miss next time.
-Context: TESTING.md §3 FS-UI2 entry ("Defect seen"); the RCA (Leonardo approved fix A + D, 2026-10-21): `Core::apply_rule` /
-`try_rule` (`crates/nrpvp/src/game/combat_state/rules.rs:459-518`) run **once** per UP event (`tracker.rs:256` `rule_should_fire`); on
-`Err` they log and stop, so the revive stands. In FS-UI2 round 3 (host log 18:36:17.9–18:36:24.1) the one try hit `[PlayerIns+0xB78] is
-not a plausible pointer`. Why the pointer was bad is UNKNOWN (leading hypothesis: the tick before, the bar read 0 with the state byte
-still 1 and the downed rule wrote 40 back). `early_redown` (retry during state 2) stays **off**. Offsets: `re/MEMORY_MAP.md` §5/§6.
-Steps:
-1. **Pending re-down (A).** When `try_rule` fails at a rival UP event, keep `pending: Option<PendingRedown { addr, deadline_ms
-   (now + 2000), tries, first_err, last_err }>` on `Core`. Each `step` (50 ms tick), before the other rules: if pending, LOCAL is still
-   the same `addr` with a PlayerIns vtable, the state byte reads 0, call `try_rule` again (it keeps all its gates: plausible pointer,
-   HP > 0 agreeing with mirror/PlayerGameData). On `Ok` → clear, log one line `rule: rival completed the revive meter of LOCAL; downed
-   again after N tries (… ms late) (hp a -> 0, readback b)`. Cancel without writing (one line, why) when: the deadline passes; the
-   state byte is 1 (a new down) or 2; LOCAL's addr changes / no vtable; HP reads 0 (dead or already down). A success on the first try
-   behaves exactly as today (same line). The give-up line names tries, ms and the last error.
-2. **Better error text (D, part 1).** The pointer error must carry the raw value: `[PlayerIns+0xB78] = 0x… is not a plausible
-   pointer` or `… unreadable`. Same for the HP gate failure (auth / mirror / gamedata values).
-3. **LOCAL state diagnostics in the player build (D, part 2).** One line per change of LOCAL's state byte (0/1/2 transitions only, not
-   per bar change): `T-040 LOCAL state a -> b: bar …, clock …, pause …, [+0xB78] = 0x…, hp …`. Player build and dev build both; at
-   most 30 lines per minute (count the rest, report `(n suppressed)` on the next line). Also one line when the downed rule restores a
-   bar that had read ≤ `BAR_HIT_EPS` (the suspicious "bar 0 while state 1" frame). Do not change the existing 5 s rate limit of the
-   other rule lines; the pending/give-up lines must **not** be swallowed by it (they are rare; log them always).
-4. **Dev-only console test switch.** A console command (use the `add-console-command` skill; dev build only, `#[cfg(feature = "dev")]`
-   path) `revive_fail <n>`: the next `n` `try_rule` calls return `Err("forced by console")` without reading memory. `revive_fail` with no
-   argument prints the remaining count. Lets a Nucleus run force the first try(s) to fail. CONSOLE.md table updated by the skill.
-5. Unit tests in `combat_state/tests.rs` (fake `CombatMem`): pointer null for 3 ticks then valid → re-down on try 4, one success line;
-   still invalid at 2 s → give-up line, nothing written; new down (state 1) during pending → cancelled, nothing written; HP 0 during
-   pending → cancelled; first try OK → unchanged behaviour (existing test still passes, update the one at `tests.rs:469-479` that locks
-   in "log and stop" to the new pending behaviour); state-change diagnostics lines (and the 30/min cap); `revive_fail` count.
-Deliverables: `combat_state/{rules,tracker?,tests}.rs`, console command files, `CONSOLE.md` row. No doc edits beyond CONSOLE.md
-(Opus updates STATUS/TESTING/MEMORY_MAP).
-Acceptance (implementer): `cargo test --workspace`, `cargo clippy --workspace --all-targets -D warnings` for dev and
-`--no-default-features` (player) builds, `cargo fmt --check`; `scripts\build.ps1` OK.
-Acceptance (HUMAN, Nucleus 2 instances, ~10 min): deploy with `team_size = 1`. Down player A; `nrcon -i <A> revive_fail 3`; player B
-revives A (rival). Pass = A gets up and is knocked down again within ~0.2 s (log `downed again after 4 tries`), plus `T-040 LOCAL state`
-lines for 0→1→2→0. Then once without `revive_fail`: normal first-try re-down unchanged. Then `revive_fail 100`: give-up line after
-2 s, A stays up (proves the deadline). The real trigger (two-PC lag) goes into the next FS runbook as a watch item.
-Out of scope: fix B (not restoring a bar that already read 0) and `early_redown`; any change to the downed rule's hit handling.
-Result (implementer + Opus review, 2026-10-21, uncommitted on `t-028-snapback`): `Core::pending_step` / `PendingRedown` in
-`combat_state/rules.rs`, `state_diag` + bar-0 line, error text with the raw value, `revive_fail` (dev console; `forced_fails` inert in
-the player build). Lines: `… nothing was written yet: <err>; retrying for 2000 ms`, `… downed again after N tries (M ms late) …`,
-`… gave up after N tries in M ms …`, `pending re-down of LOCAL cancelled after N tries …: <reason>`, `T-040 LOCAL state a -> b: …`,
-`T-040 LOCAL bar read 0 while state 1 …`. `revive_fail 3` = re-down lands on try 4 (the UP-event try counts). Tests 356 → 365 nrpvp,
-fmt/clippy (dev + player) clean, `dist\nrpvp.dll` built and deployed to Nucleus with `-TeamSize 1` (18:33 local). Note:
-`cargo test -p nrpvp --no-default-features` has 21 failures in config/team tests that assume the `dev` feature; config is untouched by
-this card and CI runs only `dev_mode_needs` in that build (pre-existing, not chased). Retries happen on the combat tracker's tick
-(~100 ms), so "M ms late" reads in steps of ~50–100 ms.
-**Run 1 found the real root cause** (TESTING §3): `[PlayerIns+0xB78]+0x70` is not always the health. Opus added the data-module
-route `[[PlayerIns+0x1B8]+0x0]+0x140` (gate: HP > 0, HP and max HP equal to PlayerGameData `+0x10` / `+0x14`; `data_module_hp` in
-`rules.rs`, constants in `game/layout.rs`), the old route as fallback; 367 nrpvp tests. Run 2: PASS both directions.
-
----
-
-### T-041 — No get-up at all: stop a rival's hit from completing the revive bar inside the game
-**Handoff (read first): `tasks/T-041-no-getup-handoff.md`** — root cause found (the player script revives when the bar touches 0); next: hook
-the hit store `exe+0x66DFC4` so a rival's hit never lowers the bar.
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (Nucleus, solo) | Status: dev prototype `revive_block` PASS one direction (Nucleus 2026-10-21, TESTING §3: no stand-up on either screen); always on in both builds since build 1155C5D9204B3ADA (free hardware slot, 0/1 in the player build, while LOCAL is downed); next: other direction, teammate check (`team_size = 2`) |
-Depends on: T-040 | Phase: M2 rules
-Goal: when a rival's hit would empty a downed player's revive bar, the bar never reaches 0, so the game never starts the get-up
-(no "stand up, then drop"), and the gauge never flickers on either screen.
-Why: our rule polls every 50 ms and undoes a rival's hit afterwards; a hit big enough to empty the bar makes the game start the get-up
-in the same frame, and T-040 run 3 showed an HP write during the get-up does not cut it (TESTING §3).
-Steps:
-1. **Find the writer (dev trace, Nucleus, ~5 min):** a hardware **data** breakpoint (write) on LOCAL's `PlayerIns+0x714` (revive bar)
-   while LOCAL is downed; log RIP, registers and the return-address stack of every write (reuse the `hwbp.rs` VEH pattern; slots 2/3
-   are free in an expedition because Commence/labels only matter at the Roundtable — the trace may borrow them, dev only).
-2. **Read the function statically** (capstone): where the hit's amount is subtracted, where `bar <= 0` leads to state 2 (`+0x710`), and
-   where the attacker handle is at that moment (`+0x1A0` on the owner's game).
-3. **Intercept (no code patch):** hardware execute breakpoint just before the subtraction / the `<= 0` branch; in the VEH, if the
-   attacker is a RIVAL, keep the bar (and clear the pause, take `rival_hit_seconds` off the clock, as T-039 does today); teammates and
-   enemies untouched. The poll-based rule stays as the fallback.
-4. Slot budget: execute breakpoint armed only while LOCAL is downed in an expedition; never at the Roundtable (Commence/labels) or while
-   the quiet invite needs slots 0/1.
-Acceptance (HUMAN, Nucleus): a rival empties the bar in one hit → the downed player stays down, no get-up, no gauge flicker on either
-screen; a teammate (team_size 2 run) still revives normally.
-Out of scope: changing what a rival's hit does to the bleed-out clock (T-039 rule stays).
+**Done 2026-10-22: T-040 and T-041 accepted** (Leonardo: "worked very well"; TESTING §3). A rival's hit on a downed player is now
+cancelled inside the game (hardware breakpoint on the bar store `exe+0x66DFC4`): no stand-up, no gauge flicker, the bleed-out penalty
+stays; teammates revive normally (3-instance run, `team_size = 2`). Fallbacks still on: the revive-event block (`exe+0x675159`) and the
+T-040 re-down (data-module HP, 2 s retry). Cards removed; text in git (`git show 3384bca:.claude/TASKS.md`); full story and addresses in
+`tasks/T-041-no-getup-handoff.md` and MEMORY_MAP §6. Follow-ups (no card yet): a player zip with this build for the next FS (real
+two-PC lag); confirm in the player build that the hooks' two hardware slots (0/1, only while downed) never clash with the quiet invite (0/1, only at
+the Roundtable at match ready).
 
 ---
 

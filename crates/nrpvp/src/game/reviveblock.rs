@@ -32,6 +32,9 @@ const NO_EVENT_BYTES: [u8; 9] = [0x66, 0xC7, 0x83, 0x31, 0x07, 0x00, 0x00, 0x00,
 pub(crate) const PLAYER_REVIVE_DONE: usize = 0x732;
 /// u64 handle of the player whose hit emptied the bar (`exe+0x66E028`); all-ones when none.
 pub(crate) const PLAYER_REVIVER: usize = 0x728;
+/// `movss dword ptr [rdi+0x714], xmm1` in `exe+0x66DEC0` (a reviver's hit on the downed player's bar; rdi = victim, rsi = reviver).
+pub(crate) const RVA_HIT_STORE: usize = 0x66DFC4;
+const HIT_STORE_BYTES: [u8; 8] = [0xF3, 0x0F, 0x11, 0x8F, 0x14, 0x07, 0x00, 0x00];
 const MAX_RIVALS: usize = 8;
 
 static ENABLED: AtomicBool = AtomicBool::new(true);
@@ -44,10 +47,18 @@ static RIVALS: [AtomicU64; MAX_RIVALS] = [const { AtomicU64::new(0) }; MAX_RIVAL
 static BLOCKS: AtomicU32 = AtomicU32::new(0);
 static ALLOWED: AtomicU32 = AtomicU32::new(0);
 static LAST_HANDLE: AtomicU64 = AtomicU64::new(0);
+/// `exe+RVA_HIT_STORE` (0 = not resolved); never reset.
+static HIT_ADDR: AtomicUsize = AtomicUsize::new(0);
+/// Rival hits whose bar decrease was cancelled (the main loop applies the T-039 clock penalty for each).
+static RIVAL_HITS: AtomicU32 = AtomicU32::new(0);
 static VEH_ONCE: Once = Once::new();
 
 struct State {
     slot: Option<usize>,
+    hit_slot: Option<usize>,
+    seen_hits: u32,
+    /// Ticks left in which the game's pause write after a cancelled rival hit is cleared again (it lands after our trap).
+    clear_pause_ticks: u8,
     seen_blocks: u32,
     seen_allowed: u32,
     /// BLOCKS / ALLOWED when the slot was armed: one line per kind per down, the totals at the disarm.
@@ -58,6 +69,9 @@ struct State {
 }
 static STATE: Mutex<State> = Mutex::new(State {
     slot: None,
+    hit_slot: None,
+    seen_hits: 0,
+    clear_pause_ticks: 0,
     seen_blocks: 0,
     seen_allowed: 0,
     base_blocks: 0,
@@ -106,8 +120,31 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         if rec.is_null() || ctx.is_null() || (*rec).ExceptionCode != STATUS_SINGLE_STEP {
             return EXCEPTION_CONTINUE_SEARCH;
         }
+        let rip = (*ctx).Rip as usize;
+        let hit_addr = HIT_ADDR.load(Ordering::Relaxed);
+        if hit_addr != 0 && rip == hit_addr {
+            // A reviver's hit is about to store the new bar (xmm1) into `[rdi+0x714]`. For LOCAL and a RIVAL reviver (`[rsi+8]` is
+            // its handle, the same field `exe+0x66E01B` copies into `+0x728`), store the current bar instead: the bar never drops,
+            // so the player script never sees it at 0 and never starts the revival animation (handoff T-041). Only xmm1's low
+            // 32 bits change; the store itself then runs as normal.
+            let victim = (*ctx).Rdi as usize;
+            let reviver = (*ctx).Rsi as usize;
+            if victim != 0 && victim == LOCAL.load(Ordering::Relaxed) && reviver > 0x10000 {
+                let h = *((reviver + super::layout::CHR_HANDLE) as *const u64);
+                if h != 0 && h != u64::MAX && RIVALS.iter().any(|r| r.load(Ordering::Relaxed) == h)
+                {
+                    let bar = *((victim + super::layout::PLAYER_REVIVE_BAR) as *const u32);
+                    let x = &mut (*ctx).Anonymous.Anonymous.Xmm1;
+                    x.Low = (x.Low & 0xFFFF_FFFF_0000_0000) | u64::from(bar);
+                    LAST_HANDLE.store(h, Ordering::Relaxed);
+                    RIVAL_HITS.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            (*ctx).EFlags |= EFLAGS_RF;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
         let addr = ADDR.load(Ordering::Relaxed);
-        if addr == 0 || (*ctx).Rip as usize != addr {
+        if addr == 0 || rip != addr {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let chr = (*ctx).Rbx as usize;
@@ -148,7 +185,7 @@ fn free_slot() -> Option<usize> {
 }
 
 /// Main loop, right after the combat tick: publish LOCAL and the rival handles, arm while LOCAL is downed, log what the VEH did.
-pub(crate) fn tick(combat: &CombatCtl, base: usize) {
+pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
     let mut st = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     let local = combat.local_state();
     let want = enabled() && local.is_some_and(|(_, s)| s == 1);
@@ -184,13 +221,43 @@ pub(crate) fn tick(combat: &CombatCtl, base: usize) {
                 tracing::info!("T-041 revive_block: no free hardware slot, not armed");
             }
         }
-    } else if let Some(s) = st.slot.take() {
+        if st.hit_slot.is_none() && !st.bytes_bad {
+            let target = base + RVA_HIT_STORE;
+            if super::mem::read::<[u8; 8]>(target) != Some(HIT_STORE_BYTES) {
+                st.bytes_bad = true;
+                tracing::warn!("T-041 hit hook: code bytes at exe+0x{RVA_HIT_STORE:X} differ from game 1.03.3; not armed");
+            } else if let Some(s) = free_slot() {
+                ensure_veh();
+                HIT_ADDR.store(target, Ordering::Relaxed);
+                hwbp::set(s, target);
+                st.hit_slot = Some(s);
+                tracing::info!("T-041 hit hook: armed on exe+0x{RVA_HIT_STORE:X} (slot {s}): a rival's hit no longer lowers LOCAL's bar");
+            }
+        }
+    } else if let Some(s) = st.hit_slot.take() {
         hwbp::clear(s);
-        tracing::info!(
+        tracing::info!("T-041 hit hook: disarmed (slot {s})");
+    }
+    // The T-039 penalty for each cancelled rival hit (the poll rule sees no bar drop any more).
+    let hits = RIVAL_HITS.load(Ordering::Relaxed);
+    if hits != st.seen_hits {
+        let n = hits.wrapping_sub(st.seen_hits);
+        st.seen_hits = hits;
+        combat.penalize_rival_hits(n);
+        st.clear_pause_ticks = 4;
+    } else if st.clear_pause_ticks > 0 {
+        st.clear_pause_ticks -= 1;
+        combat.clear_pause();
+    }
+    if !want {
+        if let Some(s) = st.slot.take() {
+            hwbp::clear(s);
+            tracing::info!(
             "T-041 revive_block: disarmed (slot {s}); this down: {} rival revive frame(s) dropped, {} other revive(s) allowed",
             BLOCKS.load(Ordering::Relaxed).wrapping_sub(st.base_blocks),
             ALLOWED.load(Ordering::Relaxed).wrapping_sub(st.base_allowed)
         );
+        }
     }
     let (b, a) = (
         BLOCKS.load(Ordering::Relaxed),

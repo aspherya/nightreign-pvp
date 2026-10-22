@@ -18,8 +18,7 @@ this file points to them.
 | Player build: PvP always on, no keys, **no overlay** (2026-10-20: the in-game menu and messages are the only UI) | **Works on two PCs** (FS-UI2, 2026-10-21, zip 71f893d) |
 | **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Started from the table (UI-1) in the player zip since 2026-10-20; 2-player matches until release, 6 in the final game; 3–6 players only in automated tests |
 | Battle Royale in the stock table menu (UI-1) and status as the game's own messages (UI-2) | **Works with two players** (FS-UI2, 2026-10-21): 3 rounds, each PC host at least once: Solo → Commence → match → host's Invite Members (no Steam window) → same expedition as rivals → back to idle. The host starts the expedition the normal way; our menu code is not involved. Polish: "match found!" and "joining the host…" never show (the next state arrives within the 6 s gap) |
-| A rival can't revive a rival (rule v1: bar filled by a rival → knocked down again) | **Works** (Nucleus) |
-| **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal** | **Works in free-for-all (Nucleus runs 15–20, accepted by Leonardo 2026-10-12).** Right on both screens, with a brief flicker per hit. **Works with teams of 2 (Nucleus run 21, 3 instances, 2026-10-12):** teammates revived, rivals finished, both in the same down. Not handled: the attacker's gauge when the downed rival has a teammate |
+| **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal; a rival can never revive a rival** | **Works, clean (T-041, Nucleus 2026-10-22, free-for-all and 2 v 1):** the rival's hit is cancelled inside the game (hook on the bar store), so no stand-up and no gauge flicker on any screen; teammates revive normally. Fallbacks: revive-event block and the T-040 re-down. Not yet in a player zip or over real two-PC lag |
 
 Not started: the hawk crossing (design adopted 2026-10-21, replaces separate spawns; PROJECT_PLAN §13), keeping level on death, inventory drop, no-boss nights, final arena, sudden death, winner's choice.
 See `PROJECT_PLAN.md` §2 and §9.
@@ -45,8 +44,8 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 
 1. **FS-UI2: PASS (2026-10-21, TESTING §3).** MM-4, UI-1, UI-2 accepted and removed from TASKS. Its rival-revive miss is fixed
    by **T-040** (Nucleus PASS 2026-10-21: the re-down now writes the character data module's HP, the old `+0xB78` route was not
-   always the health; retry 2 s; diagnostics in the player build). **T-041** (2026-10-21): the "stand up then drop" is gone in a
-   Nucleus test (dev `revive_block`: the game's "revive completed" event is dropped for rivals); player-build version next. Still open: a new player zip (post-R5, with T-040) for the next FS.
+   always the health; retry 2 s; diagnostics in the player build). **T-041** (2026-10-22): accepted, no stand-up and no flicker
+   (STATUS §1). Next for players: a new zip from this branch for the next FS. Still open: a new player zip (post-R5, with T-040) for the next FS.
 2. **SMOKE-2: PASS (2026-10-21, TESTING §3).** R5, R2-lite, R3-split merged into `main`. Next engineering step: the open halves of R2/R3
    with the first new feature (ARCHITECTURE §6).
 3. **MM-3g + MM-7** (no Invite Members click, auto-start; one shared RE spike), **MM-8** (host by best connection), **MM-9** (host
@@ -75,7 +74,7 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    Accepted for now (Leonardo, 2026-10-12): a single rival hit that removes the whole bar (first down, bar 40; runs 18 and 19) lets the
    player get up; rule v1 downs them again 3.7 s later. `Core::getup_step` would do it at once but is **off** (`early_redown = false`):
    never exercised in the game, effect UNKNOWN.
-   Gauge flicker (up to 50 ms per rival hit, both screens): improvement ideas in `PROJECT_PLAN.md` §12.
+   Gauge flicker: **solved by T-041** (2026-10-22): the rival's hit is cancelled before the bar changes.
    Attacker-side gauge with teams of 2+: a copy cannot tell who hit, so `remote_step` only acts for a downed rival with no teammate.
    With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved. Run 21 confirmed the rule
    itself is right with teams; what that gauge looked like on the lone rival's screen was not reported.
