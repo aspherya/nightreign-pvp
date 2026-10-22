@@ -613,6 +613,39 @@ Owned by STATUS.md §1 ("Known bug") so there is one list.
 
 Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once it passes.
 
+### REG-1 — regression of everything on `main` 0145f72 (2026-10-22; Leonardo solo, about 40 minutes)
+
+Builds (all from `main` 0145f72, clean): **player zip** `.claude\worktrees\offline-mode-ccabe0\dist\NightreignPvP.zip` (VERSION:
+nrpvp.dll DB60DAF8E06D743C, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`) and the **dev
+build** in the same `dist\` (launched by that folder's `scripts\launch.ps1`, `mode = "offline"`). Alt-F4 between parts is fine.
+
+**Part A — player zip (what players get), one PC.** Install it as usual (unzip into the game folder, replacing the old
+`NightreignPvP\`), start `nrpvp_launcher.exe`.
+1. Roundtable, Matchmaking Settings > Number of Players: the list reads **Solo / Duo / Trio**.
+2. Solo > Commence: the box **"searching for players (Solo)"**; the button reads **Stop Searching**; press it: "stopped searching".
+3. Duo > Commence: "Duo and Trio Battle Royale are coming soon".
+4. Quit. Edit `NightreignPvP\nrpvp.toml`: add a line `mode = "offline"` **above** `[hawk]`. Start again. Solo > Commence: the
+   expedition starts at once.
+5. Hawk: the ride **cruises the long line** (stick does not steer), holding the stick **dives**, the drop buttons **drop**. You land
+   without fall damage. **No bots appear** (players never get bots).
+6. Later in the expedition, ride a Spectral Hawk Tree once: it must behave like the vanilla game.
+7. Quit. Remove the `mode` line again (players get Battle Royale).
+
+**Part B — dev build, bots and combat against them.** In PowerShell: `cd C:\Users\Leonardo\source\repos\nightreign-pvp\.claude\worktrees\offline-mode-ccabe0`,
+then `.\scripts\launch.ps1`.
+1. Solo > Commence (offline: starts at once). Ride and land. **5 bots arrive at the landing** and attack you, each other and monsters.
+2. Kill at least one. Let them down you once: tell me what the purple bar and the bleed-out did (bots do not count as rivals for the
+   downed rule yet: expected vanilla behaviour; OFF-7 changes it).
+3. Die or quit to the Roundtable, start a **second** expedition: a **new set of 5** arrives at the landing.
+
+**Part C — PvP between players (optional, Nucleus, two windows).** In the same folder:
+`powershell -ExecutionPolicy Bypass -File scripts\deploy-nucleus.ps1 -TeamSize 1`, then start two instances in Nucleus as usual.
+1. In the expedition the other window's player is a rival (you can hurt each other).
+2. Down the other one: your hits never fill their purple bar and take time off their bleed-out; they bleed out.
+3. The hawk crossing in both windows (cruise, dive, drop).
+
+Report per part: what matched, what did not. I read the logs (`dist\logs\`, `dist\nucleus-logs\`).
+
 ---
 
 ## 6. Friend Session runbooks
