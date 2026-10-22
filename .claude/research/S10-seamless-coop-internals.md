@@ -134,8 +134,8 @@ this doc's §1a list, which is the map of what SC had to change.
 
 ## 6. Runbooks (HUMAN, Leonardo solo)
 
-**R1: hook census (about 5 min, dev build, read-only).** Run the commands from the repo folder that has `experiments\S10\` (the
-`s10-sc-study` worktree `C:\Users\Leonardo\source\repos\nightreign-pvp-s10` until that branch is merged). Start the game with `.\scripts\launch.ps1`. At the Roundtable, run
+**R1: hook census (about 5 min, dev build, read-only).** Run the commands from the repo root (`C:\Users\Leonardo\source\repos\nightreign-pvp`).
+Start the game with `.\scripts\launch.ps1`. At the Roundtable, run
 `%LOCALAPPDATA%\Programs\Python\Python312\python.exe .claude\experiments\S10\hook_census.py --out .claude\experiments\S10\census_roundtable.txt`.
 Start a Solo expedition. Once landed, run it again with `--out …\census_expedition.txt`. Quit. Send both files (addresses and module
 names only). The census reads memory and never writes. Pass = files written. Claude then maps every redirect to a game function and
