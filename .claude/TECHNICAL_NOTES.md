@@ -199,6 +199,21 @@ It only matters if we ship our own `c0000.hks`.
 | In game (OFF-4 run, 2026-10-22) | `2003[97]` from our `common.emevd` event spawns the bots in an expedition: they appear, follow the host and fight enemies; the host cannot hurt them (team 2, allies). `2003[98]` removes them. **At most 2 bots** per manager (list sized to 2 in the constructor; table store holds 2 rows): the vanilla design is solo player + 2 AI teammates `[VERIFIED: OFF-4 run + static]` |
 | Custom AI logic | The game loads `c0000.hks` as plain Lua from a package (§4b), so a plain-text roaming logic script for bots may load the same way `[HYPOTHESIS]` |
 
+### 4e. The night and its boss in the event scripts (M5-1)
+
+`[VERIFIED: static, the 278 real 1.03.3 event files decoded, 2026-10-22]`. Full memo: `research/M5-no-boss-nights.md`; the clock's
+memory: `re/MEMORY_MAP.md` §16.
+
+| Finding | Detail |
+|---|---|
+| In game (M5-2 run, 2026-10-22) | After `clock end`: 7515 + 7501 ON 0.4 s later; 120 s later 7504 and the boss map's `49240200` / `49240201` (`m49_24`) ON and the boss appeared, as read |
+| The night boss lives in its own map | 36 boss maps `m47_70`..`m52_13`, one per boss. 35 start the common events **`90055000`** (minions; 7501 / 7506) and **`90055001`** (sets the map's `XXXX0200` "fight starts" when the minions die or 120 s pass). The boss is enabled only on `XXXX0200` |
+| "Night N done" = flags **7502 / 7507** | Set only by the boss-defeat handler `90065900` and by `common` 1190 / 1191 (any boss map's `XXXX0800` / `XXXX0850`). No timer sets them |
+| Everything after hangs off 7502 / 7507 | Flask refill (1303 / 1304), interval 7503 / 7508 (1100), interval grace (`90005580`), Day 2 = `Reset Time of Day` 20 s after 7503 (1103), Day 3 warp after 7508 (`90005910`) |
+| Night flag 7515 | `common` 1107: on while the play-area clock reads 23:59, which the engine holds once reached (MEMORY_MAP §16) |
+| No event instruction sets the clock to a chosen time | `2003[89] Reset Time of Day` always goes to the morning; its hour arguments are unused |
+| Our decoder | `experiments/M5-1/emdec.py` (any NR `.emevd`; names and argument layouts from DarkScript3's `nr-common.emedf.json`) |
+
 ---
 
 ## 5. Design decisions log

@@ -21,6 +21,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use crate::features::bots::BotsCmd;
+use crate::features::clock::ClockCmd;
 use crate::features::mode::GameMode;
 use crate::mm::Mode;
 use crate::overlay::shared::{Command, HawkCmd, PvpveState, Relation, Snapshot};
@@ -58,6 +59,12 @@ pub(crate) enum MainReq {
     Mode(GameMode),
     /// OFF-4: `bots <table>` / `bots_clear` ask the bot feature; the reply is the bots line.
     Bots(BotsCmd),
+    /// M5: `clock [time]` reads or sets the play-area clock; the reply is the clock line.
+    Clock(ClockCmd),
+    /// M5-3: `night_end` ends the current night now; the reply is the nights line.
+    NightEnd,
+    /// M5-4: `flag <id> [0|1]` reads or writes an event flag; the reply is the flag line.
+    Flag(u32, Option<bool>),
 }
 
 /// What a command does.
@@ -86,6 +93,9 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "bots", args: "[10|30|50|10000]", help: "OFF-4 (offline mode): start the game's own NPC bots from NPCBotTableParam table 10 / 30 / 50 (2 Nightfarers, level 1) or 10000 (2 of 8, level 6); no argument shows the last request, the bot manager's state and the OFF-5 match line", run: bots },
     Spec { name: "bots_hostile", args: "[0|1]", help: "offline bots attack you (1, default) or fight on your side (0); takes effect at once, also for the bots already there; no argument shows the bot lines", run: bots_hostile },
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
+    Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
+    Spec { name: "night_end", args: "", help: "M5-3: end the current night now (no-boss nights end by themselves after 180 s at 23:59); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
+    Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
     Spec { name: "team_restore", args: "[target]", help: "put back the team_type captured before the first write (default me)", run: team_restore },
@@ -415,6 +425,29 @@ fn bots_hostile(args: &[String]) -> Result<Act, String> {
     }
 }
 
+fn clock(args: &[String]) -> Result<Act, String> {
+    match args.first() {
+        None => Ok(Act::Main(MainReq::Clock(ClockCmd::Show))),
+        Some(a) => {
+            crate::features::clock::parse(a).map(|t| Act::Main(MainReq::Clock(ClockCmd::Set(t))))
+        }
+    }
+}
+
+fn flag(args: &[String]) -> Result<Act, String> {
+    let id = args
+        .first()
+        .and_then(|a| a.parse::<u32>().ok())
+        .ok_or("flag id must be a number")?;
+    let value = match args.get(1).map(String::as_str) {
+        None => None,
+        Some("1") => Some(true),
+        Some("0") => Some(false),
+        Some(_) => return Err("value must be 0 or 1".into()),
+    };
+    Ok(Act::Main(MainReq::Flag(id, value)))
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -539,6 +572,18 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
         MainReq::Bots(b) => {
             run(Command::Bots(b));
             crate::features::bots::status_line()
+        }
+        MainReq::Clock(c) => {
+            run(Command::Clock(c));
+            crate::features::clock::status_line()
+        }
+        MainReq::NightEnd => {
+            run(Command::NightEnd);
+            crate::features::nights::status_line()
+        }
+        MainReq::Flag(f, v) => {
+            run(Command::Flag(f, v));
+            crate::game::flags::console_reply()
         }
         MainReq::Status => status_text(snap),
         MainReq::Players => players_text(snap),
@@ -777,6 +822,46 @@ mod tests {
             bots_hostile(&["0".into()]),
             Ok(Act::Main(MainReq::Bots(BotsCmd::Hostile(false))))
         ));
+    }
+
+    #[test]
+    fn clock_parses_and_maps_to_the_clock_command() {
+        use crate::game::views::ClockTime;
+        assert!(execute_line("clock 25:00").contains("0-23"));
+        assert!(execute_line("clock noon").contains("usage: clock"));
+        assert!(matches!(
+            clock(&[]),
+            Ok(Act::Main(MainReq::Clock(ClockCmd::Show)))
+        ));
+        let night = ClockCmd::Set(ClockTime::new(22, 55, 0).unwrap());
+        assert!(matches!(clock(&["night".into()]), Ok(Act::Main(MainReq::Clock(c))) if c == night));
+        let mut ran = Vec::new();
+        let r = answer(MainReq::Clock(night), &snap(), &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::Clock(night)]);
+        assert!(r.starts_with("clock: "), "{r}");
+    }
+
+    #[test]
+    fn flag_parses_and_maps_to_its_command() {
+        assert!(execute_line("flag x").contains("must be a number"));
+        assert!(execute_line("flag 7000 2").contains("0 or 1"));
+        assert!(matches!(
+            flag(&["7005".into()]),
+            Ok(Act::Main(MainReq::Flag(7005, None)))
+        ));
+        let mut ran = Vec::new();
+        answer(MainReq::Flag(7000, Some(true)), &snap(), &mut |c| {
+            ran.push(c)
+        });
+        assert_eq!(ran, vec![Command::Flag(7000, Some(true))]);
+    }
+
+    #[test]
+    fn night_end_maps_to_its_command() {
+        let mut ran = Vec::new();
+        let r = answer(MainReq::NightEnd, &snap(), &mut |c| ran.push(c));
+        assert_eq!(ran, vec![Command::NightEnd]);
+        assert!(r.starts_with("nights: "), "{r}");
     }
 
     #[test]

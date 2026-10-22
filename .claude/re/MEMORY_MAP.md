@@ -259,12 +259,26 @@ Dormant in vanilla play (no shipped event script starts it). Story and params: `
 | Character sets (handle lookup) | `[WorldChrMan+0x170B8 + i*8]`, i = 0..=0x84 | The game's handle lookup `exe+0x518F30` picks a set and an entry from the handle (decode tables filled at run time); our bots' handles `0x…10E0000n` are in **set 14** (bits 20..27, the ER encoding). OFF-5 searches the sets with the player ChrSet layout (`+0x10` count, `+0x18` entries, 16 bytes each) and accepts an entry only when its `ChrIns+0x08` handle matches. Bot ChrIns: `+0x68` = 600040000 (its NpcParam id), team 2 as spawned | `[VERIFIED: static + OFF-5 run 1, 2026-10-22: 4 bots found in set 14]` |
 | Solo gate | `[[exe+0x3C13258]+0xDC8]+0x14` (i32) | `2003[97]` does nothing when it is above 1. What it counts: UNKNOWN (party size `[HYPOTHESIS]`) | `[VERIFIED: static]` |
 
+## 16. The play-area clock: `WorldPlayAreaManager` (M5-1, game 1.03.3)
+
+The expedition's day clock (07:00 → 23:59:59) that the circle and the night run on. Story and the event side:
+`research/M5-no-boss-nights.md`; script `experiments/M5-1/m5_clock.py`. Used by the console `clock` (`features/clock.rs`,
+`game/views.rs` `PlayArea`).
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| `WorldPlayAreaManager` | FD4 singleton, slot `exe+0x3C13158` | Null at the title, re-created on area loads (singleton log 2026-10-09) | `[VERIFIED: singleton log TC-004]` |
+| Clock | `+0xF8` `DLDateTime`: u64 time value (0 = no clock), packed u64 at `+0x100`: year bits 0–11, ms 12–21, month 22–25, weekday 26–28, day 29–33, **hour 34–38, minute 39–44, second 45–50**. `+0x108` = the previous frame's copy | The event condition `1[7] IF Play Area Current Time In Range` (`exe+0x603070`) reads hour/minute/second from these bits. Set at expedition start by `exe+0x68B130` / `exe+0x68DBC0` | `[VERIFIED: static + M5-2 run 2026-10-22: 07:00:00 at the landing, read every tick]` |
+| Per-frame update | `exe+0x698430` (called from `exe+0x68E060`) | Adds frame time × speed (`+0x118` f32; base `+0x11C` from a param; **72.9** in a normal expedition, M5-2 run: a day 07:00 → 24:00 ≈ 14 real minutes). `+0x130` u8 = advanced this frame (0 while paused, during a reset, …). An advance past midnight is undone and the clock set to **23:59:59**: the night clock holds there | `[VERIFIED: static]` |
+| **Set-time mailbox** | `+0x124` hour, `+0x128` minute, `+0x12C` second (i32, −1 = empty; the constructor `exe+0x688E80` writes −1) | Same update: when hour ≤ 23, minute ≤ 59, second ≤ 59 (unsigned compares, so −1 never passes) it calls the setter `exe+0x68FF30(mgr, h, m, s)` (adds the differences to the `DLDateTime`), writes −1 into all three, and when `CSSessionManager` (`exe+0x3C21EC8`) `+0xC` == 3 packs the time and calls `exe+0xDDF410` (network send `[HYPOTHESIS]`). Our `clock` writes second, minute, then hour | `[VERIFIED: static + M5-2 run 2026-10-22: `clock end` written at 08:45:19, the next 50 ms tick read 23:58:32]` |
+| Reset to morning | `+0x135..+0x13A` from/to hour and minute, `+0x13C` f32 duration, `+0x140` u8 request | Filled by `exe+0x68C1B0`, the body of event instruction `2003[89] Reset Time of Day`; its hour arguments are **unused** (the target comes from a param, default 07:00) | `[VERIFIED: static]` |
+| Circle schedule | `PlayAreaCreateCommonParam` row 0 (regulation 1.03.3) | First circle 12:30 → 16:09, final circle 20:24 → 00:00, `secondCircleRadius` 40, `initialCircleRadius` 700, rain SpEffects 99810 / 99811 | `[VERIFIED: regulation.bin read with WitchyBND 2026-10-22]` |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).
 - Level and rune count (expected inside `CS::PlayerGameData`; not read yet).
 - Inventory and the game's "drop item" function.
-- The expedition clock (the day/night flags are readable since UI-0: 7500 ON at DAY I, §13).
 - Each player's Steam ID inside the game (needed to map the queue roster to expedition players for Duo/Squad teams, MM-6). The
   Steam IDs themselves are known from the lobbies.
 - The game function behind Invite Members that we could call ourselves (MM-3g); only its call chain is known (§12).

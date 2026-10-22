@@ -1,4 +1,5 @@
-"""Append our event-script events to an ER/NR EMEVD (decompressed .emevd), in place. Used by scripts/build-gamedata.ps1 (UI-2).
+"""Append our event-script events to an ER/NR EMEVD (decompressed .emevd), and replace existing events' bodies, in place. Used by
+scripts/build-gamedata.ps1 (UI-2, OFF-4, M5-3).
 
 Usage: python emevd_add_events.py <file.emevd> <events.json>
 
@@ -8,24 +9,77 @@ END Restart [1000:4]. Event 0 gets one Initialize Event(slot 0, id) [2000:0] per
 OFF-4: instead of a message, an event may carry "bots": <table id> (the game's NPC bot start, 2003:97 with one s32, research/OFF-3-bots.md)
 or "bots_clear": true (2003:98, no arguments). Neither is in DarkScript3's NR EMEDF; the argument layout comes from the bank 2003
 dispatcher (case 97 reads one s32 at args+0; case 98 reads none).
+M5-3 (research/M5-no-boss-nights.md): an event may carry "night_end": 1 | 2 with "secs" and "flag": once the night is on (7515), it is
+night 1 (7505 off) or 2 (7505 on), that night is not done yet (7502 / 7507 off) and this game is the host (own world), it waits "secs"
+or our "flag", then sets the night-done flag network-wide (and 8020 when the special event 7700 / 7720 is on, as the boss-defeat
+handler 90065900 does), clears our flag, and heals as that handler does (SpEffect 102121 + Bonfire-like Recovery). It ends (no restart).
+"replace": [{"id": <existing event>, "body": "end" | "disable_chr", "param": <byte offset X of the character parameter>}] gives an
+existing event a new body: "end" = END; "disable_chr" = Change Character Enable State(X, Disabled), Set Character AI State(X, Disabled),
+END, with X substituted from the event's parameters like the game's own events do.
 
 Layout (SoulsFormats EMEVD, DS3/ER 64-bit; verified on NR 1.03.3 m10_00_00_00.emevd, see .claude/experiments/UI-0/emevd_dump.py):
 header 0x90 | events (0x30 each) | instructions (0x20 each: bank i32, id i32, argsLen i64, argsOff i64 rel. to args, layerOff i64 = -1)
-| args blob | parameters (0x20 each) | linked files (8 each) | strings. Event instruction offsets are relative to the instruction table,
-argument offsets to the args blob, so appending to the end of each table keeps every existing offset valid. Event 0's instruction list is
-copied to the end of the table with our Initialize Event lines added (the old copy stays, unreferenced); event 0 has no parameters.
+| args blob | parameters (0x20 each: instruction index i64 rel. to the event, target byte i64, source byte i64, byte count i32, 1 i32)
+| linked files (8 each) | strings. Event instruction offsets are relative to the instruction table, argument offsets to the args blob,
+parameter offsets to the parameter table, so appending to the end of each table keeps every existing offset valid. Event 0's
+instruction list and every replaced event's body are written at the end of the table (the old copies stay, unreferenced).
 Argument packing (DarkScript3 nr-common.emedf.json, checked against the file): 3:0 = s8 group, u8 state, u8 type, pad, u32 flag;
-2003:66 = u8 type, pad3, u32 flag, u8 state, pad3; 1000:4 = u8 end type, pad3; 2000:0 = s32 slot, u32 event id, u32 param;
-2007:1 = s32 msg, s16 type, s16 options, u32 entity, f32 distance; 2007:3 = s32 msg, u8 pad state, pad3; 2007:4 = s32 msg.
+2003:66 and 2003:69 = u8 type, pad3, u32 flag, u8 state, pad3; 1000:4 = u8 end type, pad3; 2000:0 = s32 slot, u32 event id, u32 param;
+2007:1 = s32 msg, s16 type, s16 options, u32 entity, f32 distance; 2007:3 = s32 msg, u8 pad state, pad3; 2007:4 = s32 msg;
+0:0 = s8 group, u8 state, s8 target group, pad; 1:0 = s8 group, pad3, f32 seconds; 3:26 = s8 group, u8 world type, pad2;
+1003:1 = u8 lines, u8 state, u8 type, pad, u32 flag; 1001:0 = f32 seconds; 2004:8 = s32 entity, s32 SpEffect; 2004:47 = none;
+2004:5 and 2004:1 = s32 entity, u8 state, pad3.
 """
 import json, struct, sys
 
 HEADER = 0x90
 EV = 0x30
 INS = 0x20
+PAR = 0x20
+
+MAIN, AND_01, OR_01 = 0, 1, -1
+NIGHT = 7515
+DAY2 = 7505
+NIGHT_DONE = {1: 7502, 2: 7507}
+SPECIAL = {1: 7700, 2: 7720}
+BOSSES_DONE = 8020
+
+
+def flag_cond(group, on, flag):
+    return (3, 0, struct.pack('<bBBxI', group, 1 if on else 0, 0, flag))
+
+
+def set_flag(flag, on, network=False):
+    return (2003, 69 if network else 66, struct.pack('<B3xIB3x', 0, flag, 1 if on else 0))
+
+
+def night_end_instrs(ev):
+    n, secs, flag = ev['night_end'], float(ev['secs']), ev['flag']
+    if n not in NIGHT_DONE:
+        raise SystemExit(f"night_end must be 1 or 2, not {n!r}")
+    return [
+        flag_cond(AND_01, True, NIGHT),
+        flag_cond(AND_01, n == 2, DAY2),
+        flag_cond(AND_01, False, NIGHT_DONE[n]),
+        (3, 26, struct.pack('<bBxx', AND_01, 0)),             # this game is in its own world (host or solo)
+        (0, 0, struct.pack('<bBbx', MAIN, 1, AND_01)),
+        (1, 0, struct.pack('<b3xf', OR_01, secs)),             # the night lasts secs...
+        flag_cond(OR_01, True, flag),                          # ...or until our flag (console night_end, later the match)
+        (0, 0, struct.pack('<bBbx', MAIN, 1, OR_01)),
+        set_flag(NIGHT_DONE[n], True, network=True),
+        (1003, 1, struct.pack('<BBBxI', 1, 0, 0, SPECIAL[n])),  # skip the next line when the special event is off
+        set_flag(BOSSES_DONE, True, network=True),
+        set_flag(flag, False),
+        (2004, 8, struct.pack('<ii', 20000, 102121)),
+        (1001, 0, struct.pack('<f', 0.1)),
+        (2004, 47, b''),
+        (1000, 4, struct.pack('<B3x', 0)),
+    ]
 
 
 def build_event_instrs(ev):
+    if 'night_end' in ev:
+        return night_end_instrs(ev)
     flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')
     out = [(3, 0, struct.pack('<bBBxI', 0, 1, 0, flag))]
     if 'bots' in ev:
@@ -45,6 +99,17 @@ def build_event_instrs(ev):
     return out
 
 
+def replacement(r):
+    """(instructions, parameters) of a replaced event body; a parameter is (instruction index, target byte, source byte, count)."""
+    if r['body'] == 'end':
+        return [(1000, 4, struct.pack('<B3x', 0))], []
+    if r['body'] == 'disable_chr':
+        x = r['param']
+        ins = [(2004, 5, struct.pack('<iB3x', 0, 0)), (2004, 1, struct.pack('<iB3x', 0, 0)), (1000, 4, struct.pack('<B3x', 0))]
+        return ins, [(0, 0, x, 4), (1, 0, x, 4)]
+    raise SystemExit(f"unknown replacement body {r['body']!r}")
+
+
 def main(path, spec_path):
     b = bytearray(open(path, 'rb').read())
     if b[:4] != b'EVD\0' or b[4:8] != bytes.fromhex('00ff01ff'):
@@ -58,15 +123,18 @@ def main(path, spec_path):
         raise SystemExit('layers/unk tables not supported')
     if not (h['eventsOff'] == HEADER and h['instrOff'] == HEADER + EV * h['eventCount']
             and h['argsOff'] == h['instrOff'] + INS * h['instrCount'] and h['paramsOff'] == h['argsOff'] + h['argsLen']
-            and h['linkedOff'] == h['paramsOff'] + 0x20 * h['paramCount'] and h['stringsOff'] == h['linkedOff'] + 8 * h['linkedCount']):
+            and h['linkedOff'] == h['paramsOff'] + PAR * h['paramCount'] and h['stringsOff'] == h['linkedOff'] + 8 * h['linkedCount']):
         raise SystemExit('unexpected section layout')
-    spec = json.load(open(spec_path, encoding='utf-8'))['events']
+    whole = json.load(open(spec_path, encoding='utf-8'))
+    spec = whole.get('events', [])
+    replace = whole.get('replace', [])
 
     events = [bytearray(b[h['eventsOff'] + i * EV: h['eventsOff'] + (i + 1) * EV]) for i in range(h['eventCount'])]
-    ids = {struct.unpack_from('<q', e, 0)[0] for e in events}
+    index = {struct.unpack_from('<q', e, 0)[0]: i for i, e in enumerate(events)}
     instrs = [bytearray(b[h['instrOff'] + i * INS: h['instrOff'] + (i + 1) * INS]) for i in range(h['instrCount'])]
     args = bytearray(b[h['argsOff']: h['argsOff'] + h['argsLen']])
-    rest = b[h['paramsOff']: h['stringsOff'] + h['stringsLen']]  # params + linked + strings, copied as is
+    params = bytearray(b[h['paramsOff']: h['linkedOff']])
+    tail = b[h['linkedOff']: h['stringsOff'] + h['stringsLen']]  # linked files + strings, copied as is
 
     def add_instr(bank, iid, a):
         if not a:  # no arguments: length 0, offset -1 (as the game's own argument-less instructions)
@@ -79,9 +147,26 @@ def main(path, spec_path):
         instrs.append(bytearray(struct.pack('<iiqqq', bank, iid, len(a), off, -1)))
         return len(instrs) - 1
 
+    # Replaced bodies (M5-3): new instructions and parameter entries at the end; the event keeps its id and rest behaviour.
+    for r in replace:
+        if r['id'] not in index:
+            raise SystemExit(f"event {r['id']} to replace does not exist")
+        i = index[r['id']]
+        eid, ic, io, pc, po, rb, pad = struct.unpack('<qqqqqII', events[i])
+        lines, pars = replacement(r)
+        first = len(instrs)
+        for bank, iid, a in lines:
+            add_instr(bank, iid, a)
+        poff = len(params)
+        for k, tgt, src, n in pars:
+            if src + n > 4 * 32:
+                raise SystemExit(f"parameter X{src} out of range")
+            params.extend(struct.pack('<qqqii', k, tgt, src, n, 1))
+        events[i] = bytearray(struct.pack('<qqqqqII', eid, len(lines), first * INS, len(pars), poff if pars else -1, rb, pad))
+
     # Our events.
     for ev in spec:
-        if ev['id'] in ids:
+        if ev['id'] in index:
             raise SystemExit(f"event id {ev['id']} already exists")
         first = len(instrs)
         lines = build_event_instrs(ev)
@@ -90,25 +175,26 @@ def main(path, spec_path):
         events.append(bytearray(struct.pack('<qqqqqII', ev['id'], len(lines), first * INS, 0, -1, 0, 0)))
 
     # Event 0: copy its list to the end, add our Initialize Event lines.
-    e0 = events[0]
-    eid, ic, io, pc, po, rb, pad = struct.unpack('<qqqqqII', e0)
-    if eid != 0 or pc != 0:
-        raise SystemExit('event 0 missing or has parameters')
-    first = len(instrs)
-    for k in range(io // INS, io // INS + ic):
-        instrs.append(bytearray(instrs[k]))
-    for ev in spec:
-        add_instr(2000, 0, struct.pack('<iII', 0, ev['id'], 0))
-    events[0] = bytearray(struct.pack('<qqqqqII', 0, ic + len(spec), first * INS, 0, -1, rb, pad))
+    if spec:
+        e0 = events[0]
+        eid, ic, io, pc, po, rb, pad = struct.unpack('<qqqqqII', e0)
+        if eid != 0 or pc != 0:
+            raise SystemExit('event 0 missing or has parameters')
+        first = len(instrs)
+        for k in range(io // INS, io // INS + ic):
+            instrs.append(bytearray(instrs[k]))
+        for ev in spec:
+            add_instr(2000, 0, struct.pack('<iII', 0, ev['id'], 0))
+        events[0] = bytearray(struct.pack('<qqqqqII', 0, ic + len(spec), first * INS, 0, -1, rb, pad))
 
     while len(args) % 16:
         args.append(0)
-    n_ev, n_in = len(events), len(instrs)
+    n_ev, n_in, n_par = len(events), len(instrs), len(params) // PAR
     events_off = HEADER
     instr_off = events_off + EV * n_ev
     args_off = instr_off + INS * n_in
     params_off = args_off + len(args)
-    linked_off = params_off + 0x20 * h['paramCount']
+    linked_off = params_off + len(params)
     strings_off = linked_off + 8 * h['linkedCount']
     out = bytearray(b[:HEADER])
     for e in events:
@@ -116,13 +202,15 @@ def main(path, spec_path):
     for i in instrs:
         out += i
     out += args
-    out += rest
+    out += params
+    out += tail
     struct.pack_into('<I', out, 12, len(out))
     for name, val in [(0x10, n_ev), (0x18, events_off), (0x20, n_in), (0x28, instr_off), (0x38, args_off), (0x48, args_off),
-                      (0x58, params_off), (0x68, linked_off), (0x70, len(args)), (0x78, args_off), (0x88, strings_off)]:
+                      (0x50, n_par), (0x58, params_off), (0x68, linked_off), (0x70, len(args)), (0x78, args_off), (0x88, strings_off)]:
         struct.pack_into('<q', out, name, val)
     open(path, 'wb').write(out)
-    print(f'{path}: +{len(spec)} events (now {n_ev}), +{n_in - h["instrCount"]} instructions, {len(b)} -> {len(out)} bytes')
+    print(f'{path}: +{len(spec)} events (now {n_ev}), {len(replace)} replaced, +{n_in - h["instrCount"]} instructions, '
+          f'+{n_par - h["paramCount"]} parameters, {len(b)} -> {len(out)} bytes')
 
 
 if __name__ == '__main__':

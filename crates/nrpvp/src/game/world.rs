@@ -4,7 +4,7 @@
 //! read their own data (they move onto it when a card touches them).
 
 use super::gamemem::GameMem;
-use super::views::{BotMan, BotManState, ChrIns, Place, WorldChrMan};
+use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea, WorldChrMan};
 
 /// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
 pub(crate) const MAX_WATCHED: usize = 6;
@@ -33,10 +33,12 @@ pub(crate) struct Inputs<'a> {
     pub bot_man: usize,
     /// Bot handles to find, each with the set it was last found in.
     pub watched: &'a [(u64, Option<usize>)],
+    /// M5: `WorldPlayAreaManager` instance, 0 = none.
+    pub play_area: usize,
 }
 
 /// One tick's view of the game.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct World {
     /// WorldChrMan instance, 0 = no world (title, menu or a load screen).
     pub wcm_instance: usize,
@@ -50,6 +52,8 @@ pub(crate) struct World {
     pub bots: Option<BotManState>,
     /// OFF-5: the watched bot characters that were found, in the order asked.
     pub bot_chrs: [Option<BotChr>; MAX_WATCHED],
+    /// M5: the play-area clock (`None` = no manager, or no clock running: outside an expedition).
+    pub clock: Option<ClockState>,
 }
 
 impl World {
@@ -81,6 +85,9 @@ impl World {
                 .then(|| BotMan::new(mem, i.bot_man).state())
                 .flatten(),
             bot_chrs,
+            clock: (i.play_area != 0)
+                .then(|| PlayArea::new(mem, i.play_area).clock())
+                .flatten(),
         }
     }
 

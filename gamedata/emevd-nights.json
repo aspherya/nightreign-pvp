@@ -1,0 +1,8 @@
+{
+  "_comment": "M5-3 (research/M5-no-boss-nights.md): nights with no boss and no minions, for every player. Appended to event/common.emevd.dcx by scripts/build-gamedata.ps1 (after emevd-bots.json in the dev package). night_end 1 / 2: once the night is on (7515, the clock at 23:59) the host's game waits secs, or our flag 10007400 (dev console night_end), then sets that night's done flag 7502 / 7507 network-wide (8020 too when the special event is on) and heals as the boss-defeat handler does; the game's own morning follows (flasks, grace, Day 2 at 07:00, after night 2 the Day 3 warp). crates/nrpvp/src/features/nights.rs uses the same flag (a unit test checks both files). One event per line.",
+  "file": "event/common.emevd.dcx",
+  "events": [
+    { "id": 99100800, "night_end": 1, "secs": 180, "flag": 10007400 },
+    { "id": 99100801, "night_end": 2, "secs": 180, "flag": 10007400 }
+  ]
+}

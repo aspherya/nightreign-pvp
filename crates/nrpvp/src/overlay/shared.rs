@@ -53,6 +53,12 @@ pub(crate) enum Command {
     Mode(crate::features::mode::GameMode),
     /// OFF-4 (dev console): start or clear the game's NPC bots (`crate::features::bots`); handled in the main loop by the feature list.
     Bots(crate::features::bots::BotsCmd),
+    /// M5 (dev console): show or set the play-area clock (`crate::features::clock`); handled in the main loop by the feature list.
+    Clock(crate::features::clock::ClockCmd),
+    /// M5-3 (dev console): end the current night now (`crate::features::nights`); handled in the main loop by the feature list.
+    NightEnd,
+    /// M5-4 (dev console): read an event flag, or write one of ours / the research list (`game::flags::console_cmd`).
+    Flag(u32, Option<bool>),
 }
 
 /// HAWK-3 console commands (`hawk_*`).

@@ -124,3 +124,20 @@ pub(crate) const WCM_CHRSETS: usize = 0x170B8;
 pub(crate) const WCM_CHRSET_COUNT: usize = 0x85;
 /// A set larger than this is not plausible (sanity bound for the search).
 pub(crate) const CHRSET_MAX_CAPACITY: u32 = 0x2000;
+
+// ---- The play-area clock, WorldPlayAreaManager (MEMORY_MAP §16; M5-1 static reading, game 1.03.3) ----
+/// Singleton name in the FD4 map (slot `exe+0x3C13158` in 1.03.3; found by name, never by address).
+pub(crate) const PLAYAREA_NAME: &str = "WorldPlayAreaManager";
+/// `DLDateTime` of the play-area clock: u64 FILETIME-like value (0 = no clock running), then the packed fields at
+/// [`PLAYAREA_CLOCK_PACKED`] (hour bits 34..39, minute 39..45, second 45..51). Read by the event conditions `1[6]`/`1[7]`.
+pub(crate) const PLAYAREA_CLOCK: usize = 0xF8;
+pub(crate) const PLAYAREA_CLOCK_PACKED: usize = 0x100;
+/// f32 clock speed the per-frame update multiplies the frame time by.
+pub(crate) const PLAYAREA_SPEED: usize = 0x118;
+/// i32 set-time mailbox (hour, minute, second; -1 = empty). The game's update (`exe+0x698430`) applies a valid triple with its
+/// own setter (`exe+0x68FF30`), empties it, and in a session sends the time to the other players.
+pub(crate) const PLAYAREA_SET_HOUR: usize = 0x124;
+pub(crate) const PLAYAREA_SET_MINUTE: usize = 0x128;
+pub(crate) const PLAYAREA_SET_SECOND: usize = 0x12C;
+/// u8 1 while the clock advanced in the last update (0 = held: paused, a cutscene, a reset in progress).
+pub(crate) const PLAYAREA_RUNNING: usize = 0x130;

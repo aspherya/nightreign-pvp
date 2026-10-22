@@ -8,7 +8,9 @@
 
 pub(crate) mod bot_match;
 pub(crate) mod bots;
+pub(crate) mod clock;
 pub(crate) mod mode;
+pub(crate) mod nights;
 
 use crate::config::Config;
 use crate::game::world::World;
@@ -30,6 +32,8 @@ pub(crate) struct Ctx {
     pub flags: Vec<(u32, bool)>,
     /// OFF-5: writes on the bot manager and on bot characters (each re-checked against the live memory in [`Ctx::flush`]).
     pub bot_writes: Vec<BotWrite>,
+    /// M5: a time for the play-area clock (the game's set-time mailbox, written in [`Ctx::flush`]).
+    pub clock: Option<crate::game::views::ClockTime>,
 }
 
 /// A write a bot feature asks for (OFF-5).
@@ -48,6 +52,8 @@ pub(crate) struct Targets {
     pub base: usize,
     /// `CSNpcBotMan` instance, 0 = none.
     pub bot_man: usize,
+    /// `WorldPlayAreaManager` instance, 0 = none.
+    pub play_area: usize,
 }
 
 impl Ctx {
@@ -88,6 +94,17 @@ impl Ctx {
                 tracing::warn!("features: {w:?} failed: {e}");
             }
         }
+        if let Some(time) = self.clock.take() {
+            let r = if t.play_area == 0 {
+                Err("no play-area manager")
+            } else {
+                crate::game::views::PlayArea::new(mem, t.play_area).request_time(time)
+            };
+            match r {
+                Ok(()) => tracing::info!("features: clock {time} handed to the game"),
+                Err(e) => tracing::warn!("features: clock {time} failed: {e}"),
+            }
+        }
     }
 }
 
@@ -104,6 +121,8 @@ pub(crate) struct Features {
     pub mode: mode::ModeFeature,
     pub bots: bots::BotsFeature,
     pub bot_match: bot_match::BotMatch,
+    pub clock: clock::ClockFeature,
+    pub nights: nights::NightsFeature,
 }
 
 impl Features {
@@ -115,11 +134,19 @@ impl Features {
                 usize::try_from(cfg.offline_bots).unwrap_or(0),
                 cfg.pvpve_team,
             ),
+            clock: clock::ClockFeature::default(),
+            nights: nights::NightsFeature,
         }
     }
 
-    fn all(&mut self) -> [&mut dyn Feature; 3] {
-        [&mut self.mode, &mut self.bots, &mut self.bot_match]
+    fn all(&mut self) -> [&mut dyn Feature; 5] {
+        [
+            &mut self.mode,
+            &mut self.bots,
+            &mut self.bot_match,
+            &mut self.clock,
+            &mut self.nights,
+        ]
     }
 
     pub(crate) fn tick(&mut self, world: &World, ctx: &mut Ctx) {

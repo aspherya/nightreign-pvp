@@ -1,4 +1,4 @@
-# Status and handoff (updated 2026-10-21)
+# Status and handoff (updated 2026-10-22)
 
 Read this first when picking the project up again. **This is the only doc that says what is true now**: what works, what is built but
 untested, what comes next, the traps we already fell into, and the decisions made. Other docs own their topic (doc map in `CLAUDE.md`);
@@ -103,7 +103,15 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    the battle royale); OFF-2 (Solo/Duo/Trio (Offline) menu entries) later. `TASKS.md`.
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
-5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
+5. **No-boss nights (M5, Leonardo 2026-10-22: the nights become a player brawl): M5-1 research GO** (2026-10-22,
+   `research/M5-no-boss-nights.md`): replace two shared events in `common_func.emevd` (no minions, no boss) and add a timed
+   "night done" (7502 / 7507) in `common.emevd`; the circle and the rest of the night run on the clock. **M5-2** console `clock`
+   (jump the play-area clock through the game's own set-time mailbox, MEMORY_MAP §16): **solo PASS 2026-10-22** (TESTING §3).
+   **M5-3** (no boss, no minions; nights end 180 s after 23:59 with the normal morning): **solo PASS nights 1 and 2, 2026-10-22**.
+   **M5-4** (research) in progress: Nucleus run 1 showed the alive flags drop on downed and a bled-out player comes back after ~7 s
+   even at night; open: the night-end sync, the per-game endings, the comeback's code. **M5-D** decided (knock 15 s, then eliminated +
+   spectate). Then M5-5 / M5-6 / M6-1 (TASKS). Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
+   **OFF-8** (downed state in an offline solo match) now blocks OFF-7.
 6. Matchmaking: how it works and its logs are in `MATCHMAKING.md`; design history in `research/S9-matchmaking-decision.md` §5c–5g.
    Next: MM-3g (trigger the game's Invite Members from the queue so no one clicks; call chain in S9 §5d), then MM-6 Duo/Squad.
 7. Structure: R0, R1, R5 done; R2 and R3 half done (offsets in `game/layout.rs`; `team/` and `combat_state/` split by job). The open
@@ -131,6 +139,9 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 - **Nucleus `dlllist.txt` must not end with a newline.** It makes Nucleus fail with "WaitForSingleObject failed 258". The deploy script writes it correctly; never edit it by hand.
 - **Under Nucleus, keys reach a window only when it has focus** (END unlocks input). Use the console instead: `nrcon --all <cmd>` reaches every instance.
 - **Nucleus deletes its instance folders on close.** Logs go to `dist\nucleus-logs\` for that reason.
+- **Nucleus does not load our game-data package** (it starts the game through Seamless Co-op's launcher, not me3): no no-boss
+  nights, vanilla hawk route. Event-script features are tested solo with `scripts\launch.ps1`; under Nucleus use the dev console
+  (`flag`, `clock`) instead.
 - **Never run the scanner or any tool against the normal game.** Steam launch = vanilla with anti-cheat. Mods only through Nucleus, `nrpvp_launcher.exe`, or `scripts\launch.ps1`.
 - **Never touch the vanilla saves** (`%APPDATA%\Nightreign\<id>\NR0000.sl2*`).
 - **Player ids change between the lobby and the expedition** (run 21: joiners were `0x6003`/`0x6004` in the lobby, `0x6002`/`0x6003` in
@@ -187,6 +198,12 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
   Steam window or invite ever on a player's screen, everyone arrives ready and the match starts by itself, and the "host" stops being a
   player-facing role. Asking SC's author is out of scope. Studying how SC works (read-only, for interop; never patched, copied or
   redistributed, hard rule 3) is approved, to prepare our own matchmaking/session layer if SC becomes the roadblock.
+- **Nights are elimination rounds** (Leonardo, 2026-10-22; `re/PROJECT_SCOPE.md` §2): no boss, no minions; no respawn at night,
+  the dead spectate; a night ends only when one player (team) is left, no timer; only that winner is healed; the others respawn
+  spread out at the morning; night 2's winner wins the match, the rest lose; no Day 3 / Nightlord; the 40 m final circle stays.
+  At night 0 HP = knocked for the normal 15 s (Solo too; rival hits −3 s, teammates revive); bleed-out over = eliminated until
+  the morning, spectating (M5-D, 2026-10-22).
+  Research and tests come before code: Leonardo runs Nucleus multi-instance checks for it before the first UAT with his friend.
 - **Host leaving mid-match** (Leonardo, 2026-10-21): for now accept that the match ends, and end it cleanly; the real goal is **host
   migration** (Destiny / old CoD style), worked on as far as it goes. The host is picked by the matchmaker (best connection), never by
   luck, and has no player-facing role. **A server host (a PC running the game with no player) is rejected** for now.

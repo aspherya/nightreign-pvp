@@ -605,6 +605,53 @@ The other player saw the jump; both screens agreed; both could still hit each ot
   the 6th bot of round 3 was removed by the clear. No console used.
 - Ticks of 82–103 ms in the windows with flag writes (as in run 1). No ERROR or panic.
 
+### 2026-10-22 — M5-2 console `clock` (Leonardo solo, branch `claude/eager-goldwasser-7a1f35` 6f21122, worktree `dist\`, `mode = "offline"`, `offline_bots = 0`, nrpvp.dll SHA-256 244FB81D8CDDBA10). Logs: `experiments/M5-2/nrpvp_2026-10-22_19-17-50.log`: **PASS**
+- Landed with the clock at 07:00:00, `speed 72.90` (about 73 game seconds per real second: a full day 07:00 → 24:00 ≈ 14 real
+  minutes). `clock` read 08:34:18 (19:20:35).
+- `clock end` at 19:20:44.514 (clock 08:45:19); the mailbox was written at 44.587 and the next tick (44.637) read **23:58:32**:
+  the game applied it within one frame. 0.4 s later the night started: flags **7515** (night) and **7501** (night 1 minions) ON
+  (19:20:45.043).
+- Vanilla night as M5-1 read it: at 19:22:47 (the 120 s minion timer) **7504** and the boss map's **49240200** ("fight starts",
+  map `m49_24`) and **49240201** (timer flag) ON; the boss appeared (Leonardo). Leonardo was downed at 19:23:10 and lost; back to the
+  Roundtable at 19:23:41.
+- Not checked: what the circle did on the jump (Leonardo did not report it; goes into M5-3's run). Defect: the line "the game applied
+  23:58:30" was logged before the write (the tick before the flush); fixed after the run (the clock must read the time asked).
+- For OFF-8: in this solo run the downed block went state 0 → 1 (bar 40, bleed-out 15) at 19:23:10, → 2 at 19:23:14.9, → 0 with
+  HP 185 at 19:23:17.4, then the loss. So the block does enter state 1 for ~5 s in solo; what Leonardo saw on screen there is not
+  reported.
+- No ERROR or panic; ticks 0–72 ms.
+
+### 2026-10-22 — M5-3 no-boss night 1 (Leonardo solo, branch `claude/eager-goldwasser-7a1f35` fd7d3d0, worktree `dist\`, `mode = "offline"`, `offline_bots = 0`). Logs: `experiments/M5-3/nrpvp_2026-10-22_19-44-35.log`: **PASS (night 1; night 2 not run yet)**
+- `clock circle` (19:48:29, 10:18 → 20:20): the circle moved and started its second shrink (Leonardo: "not the final shrink but it
+  did move the circle and the circle is moving"): the circle follows a clock jump.
+- `clock end` (19:49:14, → 23:58:32): **7515 ON at 19:49:15.15; no 7501 / 7504 and no boss-map `XXXX0200`** (vanilla run: 7501 at
+  once, 7504 + `49240200` 120 s later). Leonardo: no minions, no boss, circle closed, "worked exactly like you mentioned".
+- Night end exactly 180.0 s later (19:52:15.18): **7502 + 7503 ON**, 7515 off; heal, flasks, grace (Leonardo); 7520 at +20 s
+  (common 1103), **7505 + clock 07:00:00 at 19:53:02** (Day 2), 7517 at +5 s (common 1104).
+- No ERROR or panic.
+
+### 2026-10-22 — M5-3 no-boss nights 1 and 2 (Leonardo solo, same build fd7d3d0). Logs: `experiments/M5-3/nrpvp_2026-10-22_20-06-58.log`: **PASS**
+- One expedition, both nights. Night 1 ended at 20:14:57 (7502, 7503), Day 2 at 20:15:48 (7505, clock 07:00). `clock night` then
+  `clock end` on Day 2 (20:17:03): 7515 at 20:17:04, **7507 + 7508 at 20:20:04.27 (180.0 s)**, 9018, 9051 (flask refill, common
+  1304). **No 7501 / 7504 / 7506 / 7509 and no boss-map fight flag in the whole run.** Leonardo: everything as described.
+- The Day 3 way out appeared; Leonardo used it (to see it): 7521 + 9052 at 20:20:51 (`90005910`, warp to the Spirit Shelter), world
+  unloaded at 20:21:17, Spirit Shelter flags (12000000+) at 20:21:18, then the flag manager was gone and the screen stayed black;
+  the log ends at 20:21:23 (the game stopped: crash or closed, not known). Day 3 is out of scope (no Nightlord, PROJECT_SCOPE §2), so
+  this only matters if the Spirit Shelter is ever reused; cause UNKNOWN.
+
+### 2026-10-22 — M5-4 Nucleus run 1 (Leonardo, 2 instances, branch `claude/eager-goldwasser-7a1f35` 6c5cedf, host = Instance1 / p1). Logs: `experiments/M5-4/Instance{0,1}/`: **PARTIAL (no clean night kill; vanilla minions and storm)**
+- Under Nucleus our event files are not loaded (no me3): vanilla minions came at 23:59 (7501), and the hawk flew the vanilla route.
+- **Alive flags 7005 / 7006 are the same in both games** (network flags), and **drop the moment a player is downed** at night
+  (21:25:44.54 down → 7005 off at .54; 21:30:55.36 → 7006 off at .39), back ON ~2 s after the player stands again.
+- **A bled-out player comes back by itself ~7 s later with full HP, by day and at night:** p2 at day (down 21:29:56, bleed-out
+  over 21:30:11 with HP 0, HP 240 at 21:30:18) and **at night with p1 still up** (down 21:30:55, over 21:31:10, 7006 ON 21:31:12,
+  HP 240 at 21:31:17). No spectator state was seen in the logs; where p2 came back: Leonardo to say.
+- **Wipe:** when both were down at night at the same time (twice: 21:25:44/46 and 21:32:05, p1 downed by an enemy while p2 was
+  down) → 9017, 7516 + 7519 4 s later, both games back to the Roundtable ~10 s later (game over), as `common` 1180 reads.
+- The downed rules held under Nucleus: p1's hits on downed p2 were cancelled (`rule: rival hit on downed LOCAL cancelled … clock
+  15 -> 12`, 21:32:03 and :04).
+- Not reached: the DLL's 7502 in the host's game reaching the client; the per-game endings (7000 / 7001).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

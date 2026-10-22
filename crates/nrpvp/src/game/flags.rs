@@ -76,6 +76,62 @@ pub(crate) fn set(base: usize, flag: u32, on: bool) -> Result<bool, &'static str
     Ok(prev)
 }
 
+/// M5-4 research (dev console `flag`): the game's own flags a developer may write besides our group, for Nucleus runs where our
+/// event files are not loaded: 7000 game clear (win), 7001 game over (loss), 7502 / 7507 night 1 / night 2 done
+/// (`research/M5-no-boss-nights.md`). The game writes these bytes rarely (once per expedition each), so the read-modify-write is safe
+/// enough for a test tool. Never used by features.
+#[cfg(feature = "dev")]
+pub(crate) const RESEARCH_WRITABLE: [u32; 4] = [7000, 7001, 7502, 7507];
+
+/// Last `flag` console answer (main loop writes, pipe thread reads).
+#[cfg(feature = "dev")]
+static LAST_CONSOLE: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// Console `flag <id> [0|1]` (dev, main loop): read any flag; write ours or [`RESEARCH_WRITABLE`]. The answer is kept for
+/// [`console_reply`].
+#[cfg(feature = "dev")]
+pub(crate) fn console_cmd(base: usize, flag: u32, value: Option<bool>) {
+    let line = match value {
+        None => match get(base, flag) {
+            Ok(on) => format!("flag {flag}: {}", if on { "ON" } else { "off" }),
+            Err(e) => format!("flag {flag}: error: {e}"),
+        },
+        Some(on) if writable(flag) || RESEARCH_WRITABLE.contains(&flag) => {
+            let r = locate(base, flag).and_then(|(addr, bit)| {
+                let b = super::mem::read::<u8>(addr).ok_or("flag byte unreadable")?;
+                if (b >> bit) & 1 != u8::from(on) {
+                    super::mem::write_u8(addr, with_bit(b, bit, on))?;
+                }
+                Ok((b >> bit) & 1 == 1)
+            });
+            match r {
+                Ok(prev) => format!(
+                    "flag {flag}: set {} (was {})",
+                    if on { "ON" } else { "off" },
+                    if prev { "ON" } else { "off" }
+                ),
+                Err(e) => format!("flag {flag}: error: {e}"),
+            }
+        }
+        Some(_) => format!(
+            "flag {flag}: not writable (ours 10007000..=10007999, research {RESEARCH_WRITABLE:?})"
+        ),
+    };
+    tracing::info!("flag: {line}");
+    *LAST_CONSOLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = line;
+}
+
+/// The last `flag` answer (console).
+#[cfg(feature = "dev")]
+pub(crate) fn console_reply() -> String {
+    LAST_CONSOLE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
 /// UI-2 spike (dev, `ui_msg_test = true`): after the flag manager is live in a world, set each test flag of
 /// `gamedata/emevd-events.json` in turn and read it back 2 s later (our event clears it once it has shown its message).
 pub(crate) fn spawn_msg_test(base: usize) {

@@ -9,6 +9,10 @@
 #   scripts\emevd_add_events.py (needs Python 3; the default install path is tried, then `python` on PATH).
 #   event\common.emevd.dcx (OFF-4): the event script every map runs, with our bot events from gamedata\emevd-bots.json (the game's own
 #   NPC bot instructions 2003:97 / 2003:98, started by our flags 10007300+; research\OFF-3-bots.md).
+#   event\common.emevd.dcx + event\common_func.emevd.dcx (M5-3, research\M5-no-boss-nights.md): nights with no boss and no minions
+#   (gamedata\emevd-nights-func.json replaces the shared boss/minion events, gamedata\emevd-nights.json adds the timed night end).
+#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only (the bots) are
+#   left out of a second copy written to dist\gamedata-player\, which package-release.ps1 puts into the player zip instead.
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 # Game content stays out of git: dist\ is gitignored. The unpack must be game 1.03.3 (pinned hash below); after a game patch, re-unpack,
@@ -35,16 +39,20 @@ $entriesFile = Join-Path $repo 'gamedata\fmg-entries.json'
 # engus menu_dlc01.msgbnd.dcx of game 1.03.3 (UI-0 step 2).
 $pinned = 'E33F1C338878DA423D95CF54589072D99425F2A92C10603E5C93BDA9323184DB'
 # event\m10_00_00_00.emevd.dcx of game 1.03.3 (UI-0 step 2).
-# event\common.emevd.dcx of game 1.03.3 (OFF-4).
+# event\common.emevd.dcx of game 1.03.3 (OFF-4). event\common_func.emevd.dcx of game 1.03.3 (M5-3).
 $pinnedEmevd = @{
     'event/m10_00_00_00.emevd.dcx' = 'A4D87CAEBE834496F66B958E1FCDE0190006CB97ACE6805AB1A02A00C642D55B'
     'event/common.emevd.dcx'       = '0018635B07959514CD9F1DF4E4889959B649C04E175567E6D8A8E2F11B0E2805'
+    'event/common_func.emevd.dcx'  = '374186FCC2782FA9EABCEEE4F8ADA8854C50DB309CC7D476D262EF3B7B105794'
 }
-# One event script per file (each names its target in "file").
+# Our event scripts (each names its target in "file"), applied in this order; Dev = left out of the player copy.
 $eventsFiles = @(
-    (Join-Path $repo 'gamedata\emevd-events.json'),
-    (Join-Path $repo 'gamedata\emevd-bots.json')
+    @{ Path = (Join-Path $repo 'gamedata\emevd-events.json'); Dev = $false },
+    @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json'); Dev = $true },
+    @{ Path = (Join-Path $repo 'gamedata\emevd-nights.json'); Dev = $false },
+    @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json'); Dev = $false }
 )
+$outPlayer = Join-Path $repo 'dist\gamedata-player'
 
 if (-not (Test-Path $Witchy)) { throw "WitchyBND not found at $Witchy" }
 $engus = Join-Path $Unpacked 'msg\engus\menu_dlc01.msgbnd.dcx'
@@ -65,6 +73,7 @@ function Escape-Xml([string]$s) { [System.Security.SecurityElement]::Escape($s) 
 
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
+if (Test-Path $outPlayer) { Remove-Item -Recurse -Force $outPlayer }
 New-Item -ItemType Directory -Force $work, $out | Out-Null
 
 $langs = Get-ChildItem (Join-Path $Unpacked 'msg') -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'menu_dlc01.msgbnd.dcx') }
@@ -104,32 +113,50 @@ foreach ($lang in $langs) {
 }
 Write-Host "OK: $out ($($langs.Count) languages; FMGs: $(($fmgs | ForEach-Object Name) -join ', '))"
 
-# UI-2 / OFF-4: our event-script events.
-foreach ($eventsFile in $eventsFiles) {
-    $ev = Get-Content $eventsFile -Raw | ConvertFrom-Json
-    if (@($ev.events).Count -gt 0) {
-        $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
-        if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
-        if (-not $py) { throw 'Python 3 not found (needed for scripts\emevd_add_events.py)' }
-        $rel = $ev.file
-        $src = Join-Path $Unpacked ($rel -replace '/', '\')
-        if (-not (Test-Path $src)) { throw "Unpacked game file not found: $src" }
-        $hh = (Get-FileHash $src).Hash
-        if ($pinnedEmevd[$rel] -ne $hh) { throw "$rel hash $hh is not the pinned 1.03.3 hash" }
-        $ew = Join-Path $work 'event'
-        New-Item -ItemType Directory -Force $ew | Out-Null
-        $dcx = Join-Path $ew (Split-Path $src -Leaf)
-        Copy-Item $src $dcx
-        Invoke-Witchy @($dcx)
-        $plain = $dcx -replace '\.dcx$', ''
-        & $py -I (Join-Path $PSScriptRoot 'emevd_add_events.py') $plain $eventsFile
-        if ($LASTEXITCODE -ne 0) { throw "emevd_add_events.py failed ($LASTEXITCODE)" }
-        Remove-Item $dcx
-        Invoke-Witchy @($plain)
-        $dst = Join-Path $out (Split-Path ($rel -replace '/', '\') -Parent)
-        New-Item -ItemType Directory -Force $dst | Out-Null
-        Copy-Item $dcx $dst
-        Write-Host ("{0}  {1}  {2}  ({3} events)" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), @($ev.events).Count)
+# UI-2 / OFF-4 / M5-3: our event-script events, grouped by the game file they change.
+$py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
+if (-not $py) { throw 'Python 3 not found (needed for scripts\emevd_add_events.py)' }
+$byFile = [ordered]@{}
+foreach ($e in $eventsFiles) {
+    $rel = (Get-Content $e.Path -Raw | ConvertFrom-Json).file
+    if (-not $byFile.Contains($rel)) { $byFile[$rel] = @() }
+    $byFile[$rel] += $e
+}
+# Build one game file from the pinned original with the given event files; returns the .dcx path.
+function Build-Emevd([string]$rel, $files, [string]$tag) {
+    $src = Join-Path $Unpacked ($rel -replace '/', '\')
+    if (-not (Test-Path $src)) { throw "Unpacked game file not found: $src" }
+    $hh = (Get-FileHash $src).Hash
+    if ($pinnedEmevd[$rel] -ne $hh) { throw "$rel hash $hh is not the pinned 1.03.3 hash" }
+    $ew = Join-Path $work "event-$tag"
+    New-Item -ItemType Directory -Force $ew | Out-Null
+    $dcx = Join-Path $ew (Split-Path $src -Leaf)
+    Copy-Item $src $dcx
+    Invoke-Witchy @($dcx)
+    $plain = $dcx -replace '\.dcx$', ''
+    foreach ($f in $files) {
+        & $py -I (Join-Path $PSScriptRoot 'emevd_add_events.py') $plain $f.Path | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw "emevd_add_events.py failed ($LASTEXITCODE) on $($f.Path)" }
+    }
+    Remove-Item $dcx
+    Invoke-Witchy @($plain)
+    return $dcx
+}
+foreach ($rel in $byFile.Keys) {
+    $files = $byFile[$rel]
+    $dcx = Build-Emevd $rel $files 'dev'
+    $dst = Join-Path $out (Split-Path ($rel -replace '/', '\') -Parent)
+    New-Item -ItemType Directory -Force $dst | Out-Null
+    Copy-Item $dcx $dst
+    Write-Host ("{0}  {1}  {2}  ({3} event file(s))" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), $files.Count)
+    $player = @($files | Where-Object { -not $_.Dev })
+    if ($player.Count -ne $files.Count -and $player.Count -gt 0) {
+        $pdcx = Build-Emevd $rel $player 'player'
+        $pdst = Join-Path $outPlayer (Split-Path ($rel -replace '/', '\') -Parent)
+        New-Item -ItemType Directory -Force $pdst | Out-Null
+        Copy-Item $pdcx $pdst
+        Write-Host ("{0}  {1}  {2}  (player copy, {3} event file(s), no dev-only events)" -f $rel, (Get-Item $pdcx).Length, (Get-FileHash $pdcx).Hash.Substring(0, 16), $player.Count)
     }
 }
 

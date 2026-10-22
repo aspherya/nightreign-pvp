@@ -276,6 +276,8 @@ fn watch(
     let mut wcm_slot: Option<usize> = None;
     // OFF-4: the NPC bot manager's slot (FD4 singleton, found by name once the FD4 names resolve).
     let mut botman_slot: Option<usize> = None;
+    // M5: the play-area manager's slot (the day clock), found by name like the bot manager.
+    let mut playarea_slot: Option<usize> = None;
     let mut last_change_poll = Instant::now() - CHANGE_POLL;
     let mut last_inst: BTreeMap<String, usize> = BTreeMap::new();
     // T-019 heartbeat: loop iterations, and the slowest iteration (work only, not the sleep) since the last line.
@@ -332,6 +334,12 @@ fn watch(
         // 2. Find the target.
         if wcm_slot.is_none() {
             wcm_slot = all.iter().find(|f| f.name == TARGET).map(|f| f.slot);
+        }
+        if playarea_slot.is_none() {
+            playarea_slot = all
+                .iter()
+                .find(|f| f.name == layout::PLAYAREA_NAME)
+                .map(|f| f.slot);
         }
         if botman_slot.is_none() {
             botman_slot = all
@@ -439,6 +447,7 @@ fn watch(
         team.set_instance(wcm_inst);
         // R3 / OFF-1: this tick's read model (the local player as the downed rule last resolved it) and the features' outbox.
         let bot_man = botman_slot.and_then(instance_of).unwrap_or(0);
+        let play_area = playarea_slot.and_then(instance_of).unwrap_or(0);
         let watched = features.bot_match.watched();
         let world = world::World::read(
             &mem,
@@ -451,6 +460,7 @@ fn watch(
                 mm_phase: crate::mm::phase(),
                 bot_man,
                 watched: &watched,
+                play_area,
             },
         );
         let mut fctx = Ctx::default();
@@ -491,6 +501,9 @@ fn watch(
                 Command::Bots(crate::features::bots::BotsCmd::Hostile(on)) => {
                     features.bot_match.set_hostile(on)
                 }
+                Command::Clock(c) => features.clock.request(c, "console", &world, &mut fctx),
+                Command::NightEnd => features.nights.request_end("console", &world, &mut fctx),
+                Command::Flag(f, v) => crate::game::flags::console_cmd(base, f, v),
                 Command::Bots(b) => features.bots.request(
                     b,
                     "console",
@@ -503,7 +516,14 @@ fn watch(
             let _ = reply.send(text);
         }
         features.tick(&world, &mut fctx);
-        fctx.flush(crate::features::Targets { base, bot_man }, &mem);
+        fctx.flush(
+            crate::features::Targets {
+                base,
+                bot_man,
+                play_area,
+            },
+            &mem,
+        );
         team.tick();
         let team_spent = team_started.elapsed();
 
@@ -618,7 +638,10 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         | Command::ReviveBlock(_)
         | Command::Hawk(_)
         | Command::Mode(_)
-        | Command::Bots(_) => {}
+        | Command::Bots(_)
+        | Command::Clock(_)
+        | Command::NightEnd
+        | Command::Flag(..) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {

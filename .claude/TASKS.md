@@ -162,8 +162,25 @@ hostile to you, each other and monsters (team 29), no console (`offline_bots = 5
 Leonardo's use of bots (2026-10-22): **a sparring partner for testing alone**: combat, the near-death rules and the hawk; a full
 battle-royale feel comes after.
 
+### OFF-8 — Near-death state in an offline solo match
+Owner: OPUS (RE) → SONNET/implementer → HUMAN solo | Status: ready | Phase: M9 | Blocks: OFF-7
+Goal: in offline mode a player whose health reaches 0 goes into the downed state (purple bar, bleed-out) as in a multiplayer
+session, instead of dying at once.
+Context: Leonardo, REG-1 part B (2026-10-22): in a solo session the player dies at once, no downed state, so the near-death rules
+(T-039/T-041) and OFF-7 cannot be tested solo. In multiplayer, health 0 downs (STATUS §6 "Setting health to 0 does not kill").
+MEMORY_MAP §6 (downed block, bleed-out), §15 (solo gate).
+Steps: (1) static RE: find where the game chooses "downed" or "dead" at 0 health (start from the writers of the downed block in
+MEMORY_MAP §6 and the death path; look for a check of the session's player count / multiplayer state / an SpEffect); write what it
+reads into MEMORY_MAP §6. (2) Pick the smallest switch that makes the solo player go down in offline mode only (a value the check
+reads, or an event-script route if one exists, e.g. a SpEffect). (3) Dev console switch first, then on by default in offline mode.
+**Possible conflict:** the NPC bot system only starts when its solo gate count `[[exe+0x3C13258]+0xDC8]+0x14` is ≤ 1 (MEMORY_MAP §15).
+If the downed/dead choice reads the same count (or the same "party" object), raising it for the downed state would stop the bots
+from spawning; then switch it only after OFF-5's bots are kept, or find a narrower check.
+Acceptance (HUMAN solo): offline expedition, let a monster or a bot bring you to 0 health: you are downed (purple bar, bleed-out
+clock), and dying from the bleed-out ends as in a session; bots still spawn after the landing. Log line names the switch.
+
 ### OFF-7 — Bots count as rivals in the near-death rules
-Owner: SONNET/implementer → HUMAN solo | Status: ready | Phase: M9
+Owner: SONNET/implementer → HUMAN solo | Status: blocked by OFF-8 (no downed state in a solo session) | Phase: M9
 Goal: a bot's hit on the downed LOCAL player is handled like a rival player's (T-039/T-041: no progress on the purple bar, 3 s off
 the bleed-out), so the near-death rules can be tested solo against bots.
 Context: `game/combat_state/rules.rs` (`Core::step`: the attacker handle must be a rival's), `CombatCtl::rival_handles`,
@@ -179,6 +196,58 @@ to test the teammate revive solo later (not in this card).
 In order: spread starts (move each bot to its own drop point along the hawk line when the ride starts, the T-028 teleport on NPCs),
 roaming (our own logic script: plain-text logic may load like `c0000.hks`, TECHNICAL_NOTES §4b; or DLL steering), day levels
 (tables 10000/20000/30000 = levels 6/11/13), bot deaths counted by the match. Sizes in `research/OFF-3-bots.md`.
+
+## Match flow: nights with no boss (M5; research `research/M5-no-boss-nights.md`)
+
+**M5-1 done (2026-10-22, static research): GO.** The night boss lives in its own map and appears only through two shared events in
+`common_func.emevd`; "night done" = flags 7502 / 7507, which everything after the night waits on; the circle and the night run on
+the play-area clock. Engine facts: TECHNICAL_NOTES §4e, MEMORY_MAP §16.
+
+**M5-2 done (2026-10-22, solo PASS, TESTING §3):** console `clock [night|circle|end|hh:mm[:ss]]` jumps the play-area clock
+(the game applied `clock end` within one frame; the vanilla night followed). Card removed; text in git (`git show 6f21122:.claude/TASKS.md`).
+
+**M5-3 done (2026-10-22, solo PASS nights 1 and 2, TESTING §3):** no boss and no minions on either night (all seven boss/minion
+events in `common_func` emptied, `gamedata/emevd-nights-func.json`); each night ends 180 s after 23:59 through `common` events
+99100800/99100801 (`gamedata/emevd-nights.json`), then the game's morning; console `night_end`. The 180 s timer is a stop-gap until
+M5-5 (a night ends only when one player is left). Taking the Day 3 way out ended in a black screen (out of scope: no Day 3). Card
+removed; text in git (`git show 7fa7bdf:.claude/TASKS.md`).
+
+### M5-4 — Research: death at night, the alive count, the endings
+Owner: OPUS (static) + HUMAN (Nucleus) | Status: in progress (static done; Nucleus run 1 PARTIAL) | Feeds: M5-5, M5-6, M6-1
+**Known (memo §6, TESTING §3 Nucleus run 1, 2026-10-22):** the alive flags 7005–7007 are shared and drop when a player is
+**downed** (not when dead); the wipe check `common` 1180 ends the expedition for everyone when every standing player is down at
+night; **a bled-out player comes back by itself ~7 s later with full HP, by day and at night** (no spectator phase); win =
+banner 4000 → 15 s → local 7000, failure = banner 4010 → 7516 → 5 s → local 7001. A third down at night showed **no bleed-out
+countdown** (clock stayed 15 for 17 s; Leonardo: "the near death circle was there forever"); cause UNKNOWN.
+**Open:** (a) does 7502 set by the host's DLL reach the client (daytime test, `flag`); (b) do 7000 / 7001 give each game its own
+ending (daytime test); (c) static RE: where the game brings a bled-out player back after ~7 s, and the dead-player camera;
+(d) why the bleed-out froze. Nucleus caveat: our event files are not loaded there (no me3), so vanilla minions and the vanilla
+hawk route appear.
+Next Nucleus steps (daytime, no fighting; the agent drives `nrcon` and Leonardo watches): new expedition, both land apart;
+`-i <host> flag 7502 1` → do both games go to the morning (7503 / 7505 in the client)?; then `-i <A> flag 7000 1` and
+`-i <B> flag 7001 1` → what each screen shows.
+
+**M5-D decided (Leonardo, 2026-10-22; PROJECT_SCOPE §2):** at night a player at 0 HP is **knocked** for the normal 15 s
+bleed-out (Solo too); rivals finish a knocked player with hits (−3 s each, the existing T-041 rule); teammates can revive a knocked
+teammate (Duo/Trio); **bleed-out over = eliminated**: no ~7 s comeback, the player spectates someone still fighting, and nobody can
+revive them until the morning; a team is out when nobody on it stands; the night ends the moment one player (team) is left standing.
+Revival items count as a revive (the winner check waits for pending revivals 7010–7012). Day deaths stay vanilla.
+
+### M5-5 — A night ends when one player (team) is left; only the winner is healed
+Owner: OPUS → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 and M5-D)
+The DLL counts who is still in at night (its own count, not 7005–7007: they cover 3 players and drop on downed) and, when one
+player (team) is left, sets our night-end flag (`features/nights.rs`); the 180 s timer goes; the heal moves to an event that runs
+in every game and heals only a living local player (today's night-end event is host-only); the wipe check 1180 is replaced.
+
+### M5-6 — Eliminated players stay out until the morning (spectate), then respawn spread out
+Owner: OPUS (RE) → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 (c) and M5-D)
+Block the ~7 s comeback at night; a random living player to watch (choice later); at the morning every eliminated player respawns
+at a different safe place.
+
+### M6-1 — Night 2 ends the match: win for the last player (team), failure for the rest; no Day 3
+Owner: OPUS → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 (b))
+After night 2 is decided: the winner's game plays banner 4000 → 7000, every other game banner 4010 → 7001 (per-game events,
+"is my player standing"); `90005910` (the Day 3 warp) gets an empty body.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 

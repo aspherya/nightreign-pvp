@@ -24,6 +24,21 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 ## 2. Expedition phases
 
+**Nights are elimination rounds (Leonardo, 2026-10-22; supersedes the Night 1 / Night 2 / sudden-death / Nightlord rules below
+where they differ):**
+- A night has **no boss and no minions**; the night is only the player fight inside the closed circle (built: M5-3).
+- **No respawns at night.** At 0 HP a player is **knocked** for the normal 15 s bleed-out (Solo too); a rival's hit takes 3 s
+  off; a teammate can revive a knocked teammate (Duo/Trio). When the bleed-out ends the player is **eliminated** until the morning:
+  no comeback, no revive, and they **spectate** a player still fighting (a random one for now; choosing whom to watch comes later)
+  (decided 2026-10-22).
+- A night ends **only when one player is left** (one team, once Duo/Trio exist): no timer.
+- **Only the night's winner is healed** at the end of the night. The others **respawn at the morning, spread over different
+  places**.
+- **Night 2 ends the match:** its last player (team) wins (victory screen); everyone else gets the expedition's failure ending.
+  **No Day 3 and no Nightlord.**
+- The final circle keeps the game's size (40 m radius) for now: "the idea is to be a mess"; change it only if players complain.
+- Day rules are unchanged (respawning on, PvE, loot).
+
 ### Day 1 — Exploration and looting
 
 - Start with a **hawk crossing** (Leonardo, 2026-10-21; replaces "spawn teams at different positions"): every player rides the
