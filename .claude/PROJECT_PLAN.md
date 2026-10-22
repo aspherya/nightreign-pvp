@@ -187,8 +187,8 @@ interaction, the downed rule) were dropped; their history is in git.
 **Design.** At the start of an expedition every player is on the hawk, as in vanilla. Instead of a short ride that drops everyone at one
 landing zone, the hawk keeps flying on the **same straight line** (vanilla start point, vanilla direction) until it reaches the far side of
 the map. Each player chooses when to jump off and lands where they want. Players who never jump are dropped automatically at the end
-of the line. Teammates are not forced together (they coordinate by voice, as in Fortnite). Whether everyone stays on one line or each
-team gets its own line can be decided later. The design puts one line through the whole map.
+of the line. Teammates are not forced together (they coordinate by voice, as in Fortnite). **Decided 2026-10-22 (Leonardo): one single line for
+everyone, always the map diagonal from bottom to top** (data: every start route gets the same points).
 
 **What we know (T-028 runs 3-4, 2026-10-14, solo; `re/MEMORY_MAP.md` §8).**
 - Moving the local player works: write the physics-module position, keeping world position (physics − origin). Other players see the
@@ -251,7 +251,7 @@ whether the hawk flies the long route and drops at its end (HAWK-1b).
 Earlier ideas, dropped: summoning a tree hawk at the start (the start ride is already the right state; the Nexus mod's trick only
 starts a tree-hawk ride); flying a separate hawk object (the hawk is not an object, it is the player's own state).
 
-Plan: HAWK-0 done (2026-10-21). Next: HAWK-1b (route patch test, data only) and HAWK-1 (ride probe, drop-button trace). Then build
+Plan: HAWK-0 done (2026-10-21). HAWK-1b (2026-10-22): B1 works, the long route flies and drops at its end; 2 of 3 drops fell to y −26 (open, TASKS). Next: HAWK-A2 and HAWK-1 (ride probe, drop-button trace). Then build
 HAWK-2. Cards in `TASKS.md`.
 
 **What happens to the earlier work.** The T-028 teleport (`game/poswrite.rs`, layout §8 offsets) and the hawk-ride detector

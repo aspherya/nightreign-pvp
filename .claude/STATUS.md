@@ -36,7 +36,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 18:33 with T-040, uncommitted on `t-028-snapback`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`) | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
-| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` d3d1eb8 (T-028 teleport, T-040/T-041), built 2026-10-21 21:52, nrpvp.dll 8036B4B61971B2E4: SMOKE-3 next | `team_size = 1`, `team_spawns = false` |
+| `dist\nrpvp.dll` + `dist\nrpvp.toml` (used by `scripts\launch.ps1`) + `dist\nrcon.exe` | developer + console (no panel since R5). `main` d3d1eb8 (T-028 teleport, T-040/T-041), built 2026-10-21 21:52, nrpvp.dll 8036B4B61971B2E4: SMOKE-3 PASS | `team_size = 1`, `team_spawns = false`, **`br_menu = false`** (2026-10-21: so Commence starts a vanilla solo expedition; with it on, Commence waits for a 2nd player). Set it back to `true` for queue tests |
 
 `dist\friend-kit.zip` is the **old** kit from 2026-10-10. Do not send it; send `NightreignPvP.zip`.
 
@@ -51,14 +51,12 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 3. **MM-3g + MM-7** (no Invite Members click, auto-start; one shared RE spike), **MM-8** (host by best connection), **MM-9** (host
    leaves: FS observation, then a clean match end), **S10** (study SC toward host migration); then **MM-6** (Duo/Trio). Later polish: live count inside the searching box (UI-1 C3).
 4. **Hawk crossing** (PROJECT_PLAN §13, TASKS HAWK-0..2). The teleport (T-028) passed on 2026-10-14 (solo + Nucleus). `t-028-snapback`
-   was merged into `main` on 2026-10-22 (Leonardo, with T-040/T-041); **SMOKE-3** (the teleport on that build, below) is still owed. HAWK-0 research is done
-   (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). Next: HAWK-1b
-   (long start route, data only, solo 5 min), HAWK-A2 (static RE), HAWK-1 (ride probe).
-
-**SMOKE-3 (Leonardo solo + Claude over nrcon, about 5 min, dev build of `main` d3d1eb8 in `dist`, from `scripts\launch.ps1`).** Start an
-expedition and land. Stand still, `pos_save`; walk or climb about 20–50 m away, `pos_go`: you must jump back to the saved spot and stay
-there (no fall, no sinking). Repeat once from a different height (rock or cliff). `team_spawns` stays off. Pass = both jumps land and
-hold, the log shows `T-032 POS write` with `Physics+0x70`, no crash.
+   was merged into `main` on 2026-10-22 (Leonardo, with T-040/T-041); **SMOKE-3 PASS** (2026-10-21, TESTING §3: both jumps, flat and
+   cliff, landed and held on `main` d3d1eb8; the teleport needs no change). HAWK-0 research is done
+   (2026-10-21: the hawk is a player script state; the start routes are 3-point, 200 m routes in `m60_00_00_99.msb`). HAWK-1b (2026-10-22, TESTING §3): **the game flies our long start
+   route and its own route end drops the player** (B1 works); 1 of 3 rides landed on ground, 2 fell to y −26 (sea, or ground not loaded
+   far from the vanilla drop: open). `dist\gamedata` holds the long routes (dev only). Next: HAWK-1b land check, HAWK-A2
+   (static RE), HAWK-1 (ride probe).
 
 Open from FS-0 run 21: whether teammates can damage each other (not visible in the logs), and what the lone rival's screen showed on the
 gauge of a downed enemy who has a teammate.
@@ -79,7 +77,7 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    With teams, a rival's hit on a downed enemy will again stay on the attacker's gauge until this is solved. Run 21 confirmed the rule
    itself is right with teams; what that gauge looked like on the lone rival's screen was not reported.
    New in run 21: the combat step peaked at 63–225 ms around rival hits with three games running (cause UNKNOWN, rule still fired).
-2. Hawk crossing: HAWK-1b / HAWK-A2 / HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
+2. Hawk crossing: HAWK-1b (land check) / HAWK-A2 / HAWK-1 → HAWK-2 (`TASKS.md`; design and known facts in `PROJECT_PLAN.md` §13).
 3. Death rules: keep level, starting items, respawn protection (`research/S5-death-respawn.md`; level and runes are not located yet).
 4. Inventory drop on death (`research/S2-inventory-drops.md`).
 5. No-boss nights, final arena, sudden death, winner's choice (`research/S3-match-flow.md`, `S4-mod-channel.md`).
@@ -128,9 +126,9 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 
 ## 7. Repository state
 
-- `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split, T-028 teleport, T-040/T-041 (SMOKE-1 2026-10-20, SMOKE-2 2026-10-21). Leonardo pushes.
+- `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split, T-028 teleport, T-040/T-041 (SMOKE-1 2026-10-20, SMOKE-2 and SMOKE-3 2026-10-21). Leonardo pushes.
 - `t-028-snapback` (T-028 teleport, parked F3 team-spawn rule, T-040/T-041) is merged into `main` (3ea3168, 2026-10-21); the branch
-  can be deleted. SMOKE-3 checks the teleport on that build.
+  can be deleted (SMOKE-3 PASS: the teleport works on `main`).
 - Tests: `cargo test --workspace` → 404 pass on `main` d3d1eb8 (372 nrpvp, 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
   self-scan `poke_add_is_followed`). R5 removed ~110 tests together with the code they tested. fmt, clippy `-D warnings` (dev and player builds) clean; the same checks
   run in GitHub Actions (`.github/workflows/ci.yml`) on every push.

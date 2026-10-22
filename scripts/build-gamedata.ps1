@@ -12,7 +12,10 @@
 [CmdletBinding()]
 param(
     [string]$Unpacked = 'Z:\Tools\nr-unpacked\1.03.3',
-    [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe'
+    [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
+    # HAWK-1b (dev only, never in a player zip): also write map\mapstudio\m60_00_00_99.msb.dcx with every start-hawk route stretched
+    # to the far side of Limveld (.claude\experiments\HAWK-0\patch_routes.py). Rebuild without the switch to go back to vanilla routes.
+    [switch]$HawkRoutes
 )
 $ErrorActionPreference = 'Stop'
 
@@ -109,4 +112,20 @@ if (@($ev.events).Count -gt 0) {
     New-Item -ItemType Directory -Force $dst | Out-Null
     Copy-Item $dcx $dst
     Write-Host ("{0}  {1}  {2}  ({3} events)" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), @($ev.events).Count)
+}
+
+# HAWK-1b: long start-hawk routes (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
+if ($HawkRoutes) {
+    $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+    if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
+    if (-not $py) { throw 'Python 3 not found (needed for patch_routes.py)' }
+    $msb = Join-Path $Unpacked 'map\mapstudio\m60_00_00_99.msb.dcx'
+    # map\mapstudio\m60_00_00_99.msb.dcx of game 1.03.3 (HAWK-0).
+    $hh = (Get-FileHash $msb).Hash
+    if ($hh -ne '7338A794A4FF79C02B65D378607B1F0874BDF2ED1FC4885002432414B5B9EA9C') { throw "m60_00_00_99.msb.dcx hash $hh is not the pinned 1.03.3 hash" }
+    $oodle = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\oo2core_9_win64.dll'
+    $dst = Join-Path $out 'map\mapstudio\m60_00_00_99.msb.dcx'
+    & $py -I (Join-Path $repo '.claude\experiments\HAWK-0\patch_routes.py') $oodle $msb $dst
+    if ($LASTEXITCODE -ne 0) { throw "patch_routes.py failed ($LASTEXITCODE)" }
+    Write-Host "HAWK-1b: long start routes in $dst (dev only; package-release.ps1 refuses a package that holds it)"
 }

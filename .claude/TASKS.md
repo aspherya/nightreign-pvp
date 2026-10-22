@@ -133,14 +133,15 @@ branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spa
 HAWK-0 (questions and desk research) is done (2026-10-21): answers and design in PROJECT_PLAN §13, engine facts in TECHNICAL_NOTES §4b
 (hawk = player script state) and §4c (routes in `m60_00_00_99.msb`), tools in `experiments/HAWK-0/`.
 
-### HAWK-1b — Long start route, data only (no DLL code)
-Owner: OPUS builds → HUMAN (solo, about 5 min) | Status: todo
-Build: a script (`experiments/HAWK-0/`) that writes a patched `m60_00_00_99.msb.dcx`: every start route keeps its start point; its
-waypoint and end point move along the same direction to 100 m before the map edge, at the start height (no sinking). Recompress with
-Oodle Kraken (same DCX header), add it under `map/mapstudio/` in `dist\gamedata` (dev launch only, not the player zip).
-HUMAN: launch with `scripts\launch.ps1`, start an expedition, watch the start ride. Report: does the hawk fly past the usual drop
-spot, how far and how long (the log has the ride), does it drop you at the end, anything odd (clipping, falling through, a crash on
-loading). Acceptance: the hawk follows the long route and drops at its end. If the game ignores or rejects the file: record it, then B2.
+### HAWK-1b — Long start route: land check
+Owner: OPUS → HUMAN | Status: open (2026-10-22)
+Done: the game loads a patched `m60_00_00_99.msb.dcx`; the hawk flies the long route at ~17 m/s and the engine drops the player at its
+end (TESTING §3, runs 1–2; tool `experiments/HAWK-0/patch_routes.py` via `scripts\build-gamedata.ps1 -HawkRoutes`, ends 50 m inside
+the land outline; `package-release.ps1` refuses `map\`). Open: 2 of 3 drops fell to y −26 and the second killed Leonardo (run 1 off the island; run 2 ride B ended
+among vanilla drop spots, so likely ground collision not loaded far from the vanilla drop, HYPOTHESIS). **Decision 2026-10-22
+(Leonardo): one single route, always: the map diagonal, bottom to top** (every start route gets the same points). Next build: that
+diagonal, ending exactly on a vanilla drop spot; acceptance: three rides in a row land on ground. Parked until the wrap-up and the
+Offline with Bots mode are in place.
 
 ### HAWK-A2 — Find what answers `GetBirdEventID` (env 377) in the exe
 Owner: OPUS (static, capstone) → HUMAN check later | Status: todo
@@ -148,7 +149,7 @@ Find the HKS env dispatcher in `nightreign.exe` 1.3.3.0, the case for 377 (and 3
 Done when: the field is in MEMORY_MAP with its chain, and a dev console command can read it during a ride (checked in HAWK-1).
 
 ### HAWK-1 — Ride probe (dev build, solo)
-Owner: SONNET/implementer → HUMAN | Status: todo | Depends on: `t-028-snapback` merged into `main`.
+Owner: SONNET/implementer → HUMAN | Status: todo (unblocked: `t-028-snapback` is in `main`, SMOKE-3 PASS 2026-10-21).
 Build (console, `add-console-command` skill): `pos_shift <dx> <dy> <dz>` moves the LOCAL player by metres in the world frame (world
 position kept, as `pos_go`). `pos_hold <secs>` holds the current world position every tick, then lets go. A ride logger records world
 position, ground byte and speed every 100 ms from expedition load to 30 s after landing, and lists every character within 30 m of the

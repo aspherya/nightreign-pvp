@@ -480,6 +480,41 @@ The other player saw the jump; both screens agreed; both could still hit each ot
   (bar 90) during the blocked window without a new down on screen (source UNKNOWN; probably the rival's game, which believed the
   player was getting up).
 
+### 2026-10-21 — SMOKE-3: teleport on `main` (Leonardo solo + Claude over nrcon; `scripts\launch.ps1`, dev build `main` d3d1eb8, nrpvp.dll 8036B4B61971B2E4; game 1.03.3, SC 1.1.3, me3 0.11.0; `br_menu = false` in `dist\nrpvp.toml` so Commence starts a vanilla solo expedition). Log: `.claude/experiments/SMOKE-3/nrpvp_2026-10-22_01-00-43.log`: **PASS**
+- **Jump 1 (flat ground, ~33 m away):** saved `Physics+0x70=(17.105,91.550,22.102)` origin (80,0,-272) at 01:02:28; `pos_go` at 01:02:41
+  wrote `(-14.895,91.550,14.102)` (the origin had moved by (32,0,8): same world spot), readback equal, unchanged at +100 ms / +500 ms /
+  +2 s; `PlayerIns+0x6C0` followed within 1 m.
+- **Jump 2 (cliff, 13 m below the saved spot):** saved `(13.231,93.485,-6.404)` origin (40,0,-216); `pos_go` from `(6.738,80.127,1.251)`
+  wrote the saved value, held at +100 ms / +500 ms / +2 s (`PlayerIns+0x6C0` y 93.42 → 93.40). Leonardo: "working fine", no fall.
+- 0 errors / panics; slowest tick 12 ms. The T-028 teleport works unchanged on `main`.
+
+### 2026-10-22 — HAWK-1b run 1, long start routes (Leonardo solo, dev `main` d3d1eb8 + `dist\gamedata` with `-HawkRoutes` box margin 150 m, nrpvp.dll 8036B4B61971B2E4). Logs: `experiments/HAWK-1b/`: **PASS (mechanism), route end over the void**
+- Trace: `ride_sampler.sh` sent `pos_save` once a second; world position = `Physics+0x70` + origin. br_menu off, solo Commence.
+- **The game loads our `m60_00_00_99.msb.dcx` from the me3 package** and the hawk flies the patched route: route `08_000` (start height
+  198.9, 552 m after the patch, vanilla 203 m). Samples 01:18:43 → 01:19:14: world (108.8, 198.83, 84.6) → (−404.5, 198.83, 270.1),
+  a straight 546 m leg in 31.3 s = **17.4 m/s, height constant to 0.01 m** (no sinking, no clipping reported).
+- **The engine's route end drops the player:** the fall starts between 01:19:14.3 and 01:19:15.4 (y 198.8 → 189 → 158 → 105 → 47 → −9 →
+  −26). No input, no DLL code.
+- **Defect: the end point was off the island.** Leonardo: fell into the void. The game put him back on land at world (−304.8, 17.8, 441.7)
+  by 01:19:25 and play went on. Cause: the route end (1052, 1134) in map-file coordinates is inside the old box guess (TECHNICAL_NOTES §4c)
+  but outside the island. Fix built the same day: route ends now stop 50 m inside the outline of known land points (TASKS HAWK-1b).
+- Frame: the leg's direction in the world samples is the exact opposite of the route's direction in the map file, so world = map file
+  rotated 180° about the vertical, plus an offset (TECHNICAL_NOTES §4c, one ride).
+- 0 errors / panics.
+
+### 2026-10-22 — HAWK-1b run 2, land-safe route ends (Leonardo solo, dev `main` d3d1eb8 + `dist\gamedata` with `-HawkRoutes`, ends 50 m inside the land outline, nrpvp.dll 8036B4B61971B2E4). Logs: `experiments/HAWK-1b/nrpvp_2026-10-22_01-25-33.log`: **PARTIAL**
+- Two expeditions in one session. 0 errors / panics.
+- **Ride A, route 08_000 (346 m):** 01:26:41 → 01:27:01, y 198.8 constant, drop at the route end, **landed on ground** (y 199 → 45 by
+  01:27:06, then walking at y ≈ 45).
+- **Ride B, route 01_000 (987 m):** 01:31:49 → 01:32:46, 963 m in 56 s = 17.1 m/s. Height not constant: y 274.1, climbs to 294.1 at
+  01:32:03–06 (the route points are all at 274.1), then sinks slowly to 274 by 01:32:47. Drop at the route end, then a fall from y 274
+  to **y −25.8** (01:32:54), the same floor as the run 1 void fall; the world unloaded at 01:32:59 (death). Yet the route end (650, 549) in map
+  coordinates lies 57–78 m from four vanilla drop spots, i.e. inside land. Leonardo (his retest): **the route end killed him**.
+- Open: was ride B a fall into the sea or a fall through ground that was not loaded yet? Run 1 (void) ended ~350 m past the vanilla
+  drop, ride B ~790 m past it, ride A (fine) ~140 m past it.
+- Frame: ride B also ran opposite to its map-file direction (180° holds), but the offset differs from run 1 by (789, 261) m, so
+  `Physics+0x70` + origin is not one global frame (TECHNICAL_NOTES §4c).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

@@ -23,6 +23,9 @@ $dist = Join-Path $repo 'dist'
 # (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry.
 $gamedata = Join-Path $dist 'gamedata'
 $gdFiles = @(Get-ChildItem -LiteralPath $gamedata -Recurse -File -ErrorAction SilentlyContinue)
+if (Test-Path -LiteralPath (Join-Path $gamedata 'map')) {
+    throw "dist\gamedata holds the HAWK-1b test routes (map\). Run scripts\build-gamedata.ps1 without -HawkRoutes before packaging."
+}
 $gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
 if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 16) {
     throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx). Run scripts\build-gamedata.ps1 first."
