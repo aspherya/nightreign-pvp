@@ -10,8 +10,9 @@
 //!    a bot not wanted is left alone and removed by `2003[98]` at the end;
 //! 4. next round with another table, until the count is reached; then `2003[98]` (removes only what is still in the slots).
 //!
-//! Every tick, each kept bot that is found (by handle, `World::bot_chrs`) and is not on the rival team gets the rival team value
-//! (`pvpve_team`, 29), so it attacks the player. If the manager ever puts more new bots in its slots than asked, they are counted
+//! Every tick, each kept bot that is found (by handle, `World::bot_chrs`) and is not on the wanted team gets it: the rival value
+//! (`pvpve_team`, 29: attacks the player, the other bots and monsters) while hostile (the default), or the game's own bot value
+//! [`ALLY_TEAM`] (2: fights on the player's side) after the dev console's `bots_hostile 0`. If the manager ever puts more new bots in its slots than asked, they are counted
 //! like a round's spawn; nothing grows past the wanted count. Offline mode only; a new expedition starts a new set.
 //! Log lines start with `bot_match:`.
 
@@ -36,6 +37,8 @@ pub(crate) const ROUND_TABLES: [(i32, u32); 3] =
 pub(crate) const FLAG_CLEAR: u32 = super::bots::FLAG_CLEAR;
 /// The most bots a match asks for (5 rivals for a 6-player Solo match).
 pub(crate) const MAX_BOTS: usize = 5;
+/// The team the game gives its bots (`NpcParam 600040000`): allies of the player.
+pub(crate) const ALLY_TEAM: u8 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Stage {
@@ -55,9 +58,10 @@ struct Kept {
     handle: u64,
     /// Character set it was last found in (search hint).
     set: Option<usize>,
-    /// Logged once it was found / made a rival.
+    /// Logged once it was found.
     seen: bool,
-    rival: bool,
+    /// The team last written (0 = none yet), so each change is logged once.
+    applied: u8,
     /// Ticks in a row it was not found (the world searches every set for it, so a missing bot is looked for less often).
     misses: u32,
     /// Seen before and missing for [`GONE_AFTER`] ticks: dead or removed; no longer watched.
@@ -70,7 +74,7 @@ impl Kept {
             handle,
             set: None,
             seen: false,
-            rival: false,
+            applied: 0,
             misses: 0,
             gone: false,
         }
@@ -85,8 +89,10 @@ const RETRY_EVERY: u32 = 20;
 pub(crate) struct BotMatch {
     /// Bots wanted (`offline_bots`, 0..=5; 0 = off).
     want: usize,
-    /// Team value written on kept bots (`pvpve_team`).
+    /// Team value written on kept bots while hostile (`pvpve_team`).
     rival_team: u8,
+    /// Hostile (default) or friendly bots (dev console `bots_hostile`); kept across expeditions.
+    hostile: bool,
     stage: Stage,
     kept: Vec<Kept>,
     /// Handles seen in the manager's slots and dealt with (kept or left for the clear), so they are not counted twice.
@@ -101,6 +107,7 @@ impl BotMatch {
         BotMatch {
             want: want.min(MAX_BOTS),
             rival_team,
+            hostile: true,
             stage: Stage::Idle,
             kept: Vec::new(),
             handled: Vec::new(),
@@ -207,8 +214,27 @@ impl BotMatch {
         self.stage = Stage::Spawning { n, at: now };
     }
 
-    /// Keep every found bot on the rival team; remember where it was found.
+    /// Hostile bots (rival team) or friendly ones (the game's ally team). Takes effect on the next tick, for the bots already here too.
+    pub(crate) fn set_hostile(&mut self, on: bool) {
+        self.hostile = on;
+        tracing::info!(
+            "bot_match: bots are now {} (team {})",
+            if on { "hostile" } else { "friendly" },
+            self.target_team()
+        );
+    }
+
+    fn target_team(&self) -> u8 {
+        if self.hostile {
+            self.rival_team
+        } else {
+            ALLY_TEAM
+        }
+    }
+
+    /// Keep every found bot on the wanted team; remember where it was found.
     fn keep_rivals(&mut self, world: &World, ctx: &mut Ctx) {
+        let target = self.target_team();
         for k in &mut self.kept {
             if k.gone {
                 continue;
@@ -234,19 +260,19 @@ impl BotMatch {
                     b.team
                 );
             }
-            if b.team != self.rival_team {
+            if b.team != target {
                 ctx.bot_writes.push(BotWrite::Team {
                     chr: b.chr,
                     handle: k.handle,
-                    team: self.rival_team,
+                    team: target,
                 });
-                if !k.rival {
-                    k.rival = true;
+                if k.applied != target {
+                    k.applied = target;
                     tracing::info!(
                         "bot_match: bot 0x{:X}: team {} -> {}",
                         k.handle,
                         b.team,
-                        self.rival_team
+                        target
                     );
                 }
             }
@@ -262,11 +288,12 @@ impl BotMatch {
     /// One line for the console.
     pub(crate) fn status(&self) -> String {
         format!(
-            "bot_match: {:?}, {} of {} kept ({} rival)",
+            "bot_match: {:?}, {} of {} kept, {} ({} alive)",
             self.stage,
             self.kept.len(),
             self.want,
-            self.kept.iter().filter(|k| k.rival).count()
+            if self.hostile { "hostile" } else { "friendly" },
+            self.kept.iter().filter(|k| !k.gone).count()
         )
     }
 }
@@ -432,7 +459,7 @@ mod tests {
         d.stage = Stage::Done;
         d.kept.push(Kept {
             seen: true,
-            rival: true,
+            applied: 29,
             ..Kept::new(0xA0)
         });
         let mut ctx = Ctx::default();
@@ -457,6 +484,35 @@ mod tests {
         }
         assert!(d.kept[0].gone);
         assert!(d.watched().is_empty());
+    }
+
+    #[test]
+    fn friendly_bots_go_back_to_the_ally_team_and_hostile_again() {
+        let mut d = BotMatch::new(1, 29);
+        d.stage = Stage::Done;
+        d.kept.push(Kept::new(0xA0));
+        let mut w = world([E, E]);
+        w.bot_chrs[0] = Some(BotChr {
+            handle: 0xA0,
+            chr: 0x7000,
+            set: 14,
+            team: 29,
+            npc_id: 0,
+        });
+        d.set_hostile(false);
+        let mut ctx = Ctx::default();
+        d.step(0, GameMode::Offline, &w, &mut ctx);
+        let team = |t| BotWrite::Team {
+            chr: 0x7000,
+            handle: 0xA0,
+            team: t,
+        };
+        assert_eq!(ctx.bot_writes, vec![team(ALLY_TEAM)]);
+        w.bot_chrs[0].as_mut().expect("bot").team = ALLY_TEAM;
+        d.set_hostile(true);
+        let mut ctx = Ctx::default();
+        d.step(50, GameMode::Offline, &w, &mut ctx);
+        assert_eq!(ctx.bot_writes, vec![team(29)]);
     }
 
     /// Every round table has its event in gamedata/emevd-bots.json.

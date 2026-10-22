@@ -488,6 +488,9 @@ fn watch(
                 Command::Hawk(h) => hawk::command(h, base, size),
                 // OFF-1: features get their commands with this tick's world.
                 Command::Mode(m) => features.mode.request(m, "console", &world, &mut fctx),
+                Command::Bots(crate::features::bots::BotsCmd::Hostile(on)) => {
+                    features.bot_match.set_hostile(on)
+                }
                 Command::Bots(b) => features.bots.request(
                     b,
                     "console",

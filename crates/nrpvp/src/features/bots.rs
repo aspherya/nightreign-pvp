@@ -24,6 +24,8 @@ pub(crate) enum BotsCmd {
     Spawn(i32),
     /// Remove every bot (`2003[98]`).
     Clear,
+    /// Hostile (`true`) or friendly bots in the offline match (handled by `bot_match`, not by a flag).
+    Hostile(bool),
 }
 
 /// Tables our events know, with their flags (`gamedata/emevd-bots.json`; a unit test checks both files). 10 / 30 / 50: 2
@@ -57,6 +59,7 @@ pub(crate) fn plan(cmd: BotsCmd, mode: GameMode, world: &World) -> Result<u32, S
                 )
             }),
         BotsCmd::Clear => Ok(FLAG_CLEAR),
+        BotsCmd::Hostile(_) => Err("bots_hostile is handled by the match (bot_match)".into()),
     }
 }
 
