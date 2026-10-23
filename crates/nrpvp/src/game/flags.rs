@@ -39,8 +39,10 @@ fn locate(base: usize, flag: u32) -> Result<(usize, u32), &'static str> {
         .ok_or("flag manager not live")?;
     let hdr = rc.read_prefix(inst, EF_HEADER_LEN);
     let mut l = parse_layout(&hdr).ok_or("flag manager header unreadable")?;
-    l.blocks_readable = rc.readable_len(l.blocks, 1) > 0;
-    l.head_readable = rc.readable_len(l.head, NODE_LEN) >= NODE_LEN;
+    // M5-5: plain copies, not `readable_len` (a `VirtualQuery` even on the direct cache): the night match reads 12 flags per
+    // 50 ms tick, and the queries made each tick of the Nucleus run take 1-2.4 s (2026-10-23, run 3; STATUS traps).
+    l.blocks_readable = super::mem::read::<u8>(l.blocks).is_some();
+    l.head_readable = super::mem::copy_out(l.head, &mut [0u8; NODE_LEN]);
     l.head_is_nil = rc.read::<u8>(l.head.wrapping_add(NODE_IS_NIL));
     if !checks_ok(&structural_checks(&l)) {
         return Err("flag manager layout checks failed");
@@ -67,6 +69,24 @@ pub(crate) fn set(base: usize, flag: u32, on: bool) -> Result<bool, &'static str
     if !writable(flag) {
         return Err("flag outside our range 10007000..=10007999");
     }
+    write(base, flag, on)
+}
+
+/// M5-5 / M6-1: the game's own flags the night match writes when our event file is not loaded (Nucleus runs, where no me3
+/// package is applied): 7502 night 1 done (host only; the host's own event script then passes 7503 / 7505 to everyone, M5-4 run 2),
+/// 7000 win / 7001 failure (each game for itself; M5-4 run 2: the result screen followed in both games). Each is written at most
+/// once per expedition, so the read-modify-write rarely meets a game write of the same byte.
+pub(crate) const MATCH_WRITABLE: [u32; 3] = [7000, 7001, 7502];
+
+/// Set one of [`MATCH_WRITABLE`]. Returns the previous state.
+pub(crate) fn set_match_flag(base: usize, flag: u32, on: bool) -> Result<bool, &'static str> {
+    if !MATCH_WRITABLE.contains(&flag) {
+        return Err("not a match flag the DLL may write");
+    }
+    write(base, flag, on)
+}
+
+fn write(base: usize, flag: u32, on: bool) -> Result<bool, &'static str> {
     let (addr, bit) = locate(base, flag)?;
     let b = super::mem::read::<u8>(addr).ok_or("flag byte unreadable")?;
     let prev = (b >> bit) & 1 == 1;
@@ -79,7 +99,7 @@ pub(crate) fn set(base: usize, flag: u32, on: bool) -> Result<bool, &'static str
 /// M5-4 research (dev console `flag`): the game's own flags a developer may write besides our group, for Nucleus runs where our
 /// event files are not loaded: 7000 game clear (win), 7001 game over (loss), 7502 / 7507 night 1 / night 2 done
 /// (`research/M5-no-boss-nights.md`). The game writes these bytes rarely (once per expedition each), so the read-modify-write is safe
-/// enough for a test tool. Never used by features.
+/// enough for a test tool. Features use [`set_match_flag`].
 #[cfg(feature = "dev")]
 pub(crate) const RESEARCH_WRITABLE: [u32; 4] = [7000, 7001, 7502, 7507];
 
@@ -97,14 +117,7 @@ pub(crate) fn console_cmd(base: usize, flag: u32, value: Option<bool>) {
             Err(e) => format!("flag {flag}: error: {e}"),
         },
         Some(on) if writable(flag) || RESEARCH_WRITABLE.contains(&flag) => {
-            let r = locate(base, flag).and_then(|(addr, bit)| {
-                let b = super::mem::read::<u8>(addr).ok_or("flag byte unreadable")?;
-                if (b >> bit) & 1 != u8::from(on) {
-                    super::mem::write_u8(addr, with_bit(b, bit, on))?;
-                }
-                Ok((b >> bit) & 1 == 1)
-            });
-            match r {
+            match write(base, flag, on) {
                 Ok(prev) => format!(
                     "flag {flag}: set {} (was {})",
                     if on { "ON" } else { "off" },
@@ -178,6 +191,12 @@ mod tests {
     fn only_our_group_is_writable() {
         assert!(writable(10_007_000) && writable(10_007_999) && writable(10_007_100));
         assert!(!writable(10_006_999) && !writable(10_008_000) && !writable(6001));
+    }
+
+    #[test]
+    fn match_flags_are_only_the_endings_and_night_one() {
+        assert_eq!(MATCH_WRITABLE, [7000, 7001, 7502]);
+        assert!(MATCH_WRITABLE.iter().all(|f| !writable(*f)));
     }
 
     #[test]

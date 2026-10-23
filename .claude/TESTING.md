@@ -652,6 +652,50 @@ The other player saw the jump; both screens agreed; both could still hit each ot
   15 -> 12`, 21:32:03 and :04).
 - Not reached: the DLL's 7502 in the host's game reaching the client; the per-game endings (7000 / 7001).
 
+### 2026-10-22 — M5-4 Nucleus run 2 (Leonardo, 2 instances, `main` b10b303 dev build, `nrcon` driven by the agent; host = Instance0 / p1 in the first expedition, Instance1 / p1 later). Logs: `experiments/M5-4b/`: **PASS (b, c)**
+- **(b) 7502 written by the host's DLL** (day, `flag 7502 1` in the host only): the client's 7502 stayed **off** (a DLL write is
+  local), but the host's own `common` 1100 passed **7503 and 7505 to both games** at once, and both clocks went to **07:00 (Day 2)**
+  26 s later (Leonardo saw the banner in both windows). So the host's DLL setting 7502 is enough to bring everyone to the morning.
+- **(b) Endings**: `flag 7000 1` in the host and `flag 7001 1` in the client at the same moment: both flags read **off** again 5 s
+  later (consumed), both games showed the result screen and went back to the Roundtable; **the 7000 game played the first-Nightlord
+  win cutscene in the Roundtable, the 7001 game did not** (Leonardo). Each game takes its own result. Side effect: the host's
+  Seamless Co-op save counts one Nightlord win.
+- **(c) The frozen bleed-out at night is the vanilla night rule** (static cause: memo §6): night (7515) and in-circle flag 9015 ON
+  at 22:42:18, p2 knocked by p1 at 22:42:29 and **stayed down 44 s without bleeding out** until a monster downed p1 (both down →
+  1180 wipe, 9017 / 7516, game over). Before the night (20:24–23:00) every knock bled out after 15 s and came back ~7 s later.
+- Trap: `clock end` on a fresh day closes the circle at once; both players outside it died in the storm (first try). Use
+  `clock circle` and walk in.
+
+### 2026-10-23 — M5-5 / M5-6 / M6-1 solo run (Leonardo solo, branch `claude/great-turing-b2e494` e5a211a, `scripts\launch.ps1` with `dist\gamedata` built from it, dev toml of `main`). Log: `experiments/M5-5/solo_nrpvp_2026-10-23_00-08-46.log`: **PASS**
+- Night 1 (`clock circle`, then `clock end` inside the circle): `night_match: night 1 begins: 1 player(s), 1 team(s) (fewer than
+  2: …)`; no boss, no minions. `night_end`: our flag 10007400 went off at once (our event ran, no fallback), 7502 / 7503 ON, Day 2
+  07:00, `night_match: night 1 is over; morning`.
+- Heal event (`flag 10007410 1` after taking damage): the flag cleared within 2 s; **full HP, flask charges and FP** (Leonardo).
+- Night 2 + `night_end`: 7507 and 7508 ON, a flask charge added (vanilla refill 1304), **no Day 3 prompt or warp** (90005910 empty).
+- Win event (`flag 10007411 1`): **victory banner**, then the match ended (Leonardo).
+- Found afterwards: the loop's slowest tick was ~0.6 s in the expedition (0 ms before): the 12 night-flag reads per tick went
+  through `readable_len` (a `VirtualQuery`). Fixed in 409e2d6.
+
+### 2026-10-23 — M5-5 / M5-6 Nucleus runs 3–5 (Leonardo, 2 instances, same branch; run 3 e5a211a, runs 4–5 409e2d6 + `god` dc0ba23; no event files under Nucleus, so the DLL fallbacks write 7502 / 7000 / 7001). Logs: `experiments/M5-5/Instance{0,1}_*`: **PASS (night 1 end, hold, morning, elimination); night 2 ending by count not run**
+- **Run 3** (host = Instance1 / p1): p2 was down (monster) when the night began at 00:30:46 UTC; 1 s later both games: `night 1
+  decided: team … is the last one standing` (host: "won, host"; p2's game: "lost"). Host: heal flag set (no event under Nucleus:
+  no heal), 10007400 set, still ON → `writing the game's 7502` (4.2 s late: the slow loop above) → 7503 in both. p2's game: **held**
+  (its clock had ~3 s left when the night was decided, no bleed-out), then `morning: asking the game to stand LOCAL up` → **UP with
+  HP 120 one second later** (the game's own get-up through `+0x732`, revive block in mode Anyone, rule v1 exempt), then **moved from
+  world (291.6, 66.2, 183.7) to its morning spot (-49.0, 77.7, -281.1)**. Rival hits on downed p2 on Day 2 still took 3 s off.
+  The loop: slowest tick 1–2.4 s (the `VirtualQuery` reads), fixed before run 4.
+- **Run 4** (both players team 6 by `team_set 6 me` + `team_persist`, so monsters ignore them; PvP hits still landed): the moment
+  the night began both alive flags dropped (`common` 1182 counts team 6 as out) and the vanilla wipe 1180 ended the expedition
+  (loss banner in both). **Team 6 breaks the night under Nucleus**; with our event file 1180 is empty. The knock was by day
+  (23:3x on the clock): vanilla bleed-out and comeback, as designed.
+- **Run 5** (host = Instance0 / p1 with `god 1`, `night_count 0` in both): night 01:08:39 UTC; p1 knocked p2 at 01:08:49 (inside
+  the circle: the vanilla freeze held the clock at 15) → `LOCAL eliminated (bleed-out 15.00 s left, down 16.0 s)` (the backup timer),
+  revive block mode Nobody; p1's hits cancelled; **p2 stayed down 33 s with no bleed-out and no comeback** (the old build: back at
+  +22 s). At 01:09:22 a night monster downed p1 in one hit (bigger than full HP, `god` cannot help) → both down → vanilla 1180
+  wipe (Nucleus only) → game over.
+- Not run: night 2 decided by count with two players (the winner's game 7000, the other 7001). Covered by unit tests, by run 2
+  (the flags) and by the solo win banner; check it in the next Nucleus or friend session (TASKS M5-5).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

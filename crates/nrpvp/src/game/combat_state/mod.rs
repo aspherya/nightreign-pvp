@@ -59,6 +59,39 @@ pub(crate) const CLOCK_FLOOR: f32 = 0.05;
 pub(crate) const DEFAULT_RIVAL_HIT_SECONDS: f32 = 3.0;
 pub(crate) const RIVAL_HIT_SECONDS_RANGE: (f32, f32) = (0.5, 15.0);
 
+use crate::game::layout::{DATA_MODULE_HP as DM_HP_OFF, DATA_MODULE_MAX_HP as DM_MAX_HP_OFF};
+
+/// Dev console `god 0|1` (off at launch; only the console sets it).
+pub(crate) static GOD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// M5-5: the team key of a player: its roster team when the rosters are known, else its own session id (free-for-all).
+pub(crate) fn team_key(team_no: Option<u8>, id: u64) -> u64 {
+    team_no.map_or(id, |t| (1 << 63) | u64::from(t))
+}
+
+/// M5-5: one ChrSet player as the night match sees it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Fighter {
+    pub addr: usize,
+    /// Session player id (`ChrIns+0x78`): the same on every game.
+    pub id: u64,
+    /// [`team_key`]: equal for teammates on every game.
+    pub team: u64,
+    pub local: bool,
+    /// `PlayerIns+0x710`: 0 up, 1 downed, 2 getting up.
+    pub state: u8,
+    pub hp: u32,
+    /// Bleed-out seconds left (`PlayerIns+0x718`; meaningful while downed, and fresh only for LOCAL).
+    pub clock: f32,
+}
+
+impl Fighter {
+    /// Up and alive: not downed and HP above 0 (a bled-out player waiting for the respawn has HP 0).
+    pub(crate) fn standing(&self) -> bool {
+        self.state != 1 && self.hp > 0
+    }
+}
+
 /// Tracker period.
 pub(crate) const STATE_MS: u64 = 100;
 
@@ -151,7 +184,7 @@ impl CombatCtl {
         if !(clock.is_finite() && (0.0..=60.0).contains(&clock)) {
             return;
         }
-        let new_clock = (clock - self.core.hit_seconds * n as f32).max(CLOCK_FLOOR);
+        let new_clock = (clock - self.core.hit_seconds * n as f32).max(self.core.clock_floor);
         let ok = self
             .mem
             .write(addr + OFF_BLEED_CLOCK, &new_clock.to_le_bytes())
@@ -198,10 +231,89 @@ impl CombatCtl {
         Some((s.addr, self.mem.read_u8(s.addr + OFF_DOWNED)?))
     }
 
+    /// M5-5: every ChrSet player as the night match needs it (read-only): state byte, HP, bleed-out clock, team key.
+    pub(crate) fn fighters(&self) -> Vec<Fighter> {
+        if !self.rtti_ready {
+            return Vec::new();
+        }
+        self.subjects
+            .iter()
+            .filter(|s| self.mem.is_player(s.addr))
+            .filter_map(|s| {
+                let r = read_state(&self.mem, s.addr);
+                Some(Fighter {
+                    addr: s.addr,
+                    id: s.id?,
+                    team: team_key(s.team_no, s.id?),
+                    local: s.local,
+                    state: self.mem.read_u8(s.addr + OFF_DOWNED)?,
+                    hp: r.hp?,
+                    clock: read_f32(&self.mem, s.addr + OFF_BLEED_CLOCK).unwrap_or(0.0),
+                })
+            })
+            .collect()
+    }
+
+    /// M5-5: the floor of the rival-hit penalty (`None` = the day value [`CLOCK_FLOOR`]).
+    pub(crate) fn set_clock_floor(&mut self, floor: Option<f32>) {
+        let f = floor.unwrap_or(CLOCK_FLOOR);
+        if (f - self.core.clock_floor).abs() > f32::EPSILON {
+            self.core.clock_floor = f;
+            tracing::info!("rule: rival-hit clock floor now {f} s");
+        }
+    }
+
+    /// M5-6: rule v1 stays off for `ms` (our own get-up after a rival's knock is not a rival's revive).
+    pub(crate) fn exempt_getup(&mut self, ms: u64) {
+        let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        self.core.exempt_until_ms = now_ms.saturating_add(ms);
+    }
+
+    /// M5-6: hold LOCAL's bleed-out clock at `secs` (LOCAL downed only). Writing the clock is VERIFIED (MEMORY_MAP section 6).
+    pub(crate) fn hold_clock(&mut self, secs: f32) -> Result<(), &'static str> {
+        let Some((addr, 1)) = self.local_state() else {
+            return Err("LOCAL is not downed");
+        };
+        self.mem
+            .write(addr + OFF_BLEED_CLOCK, &secs.to_le_bytes())?;
+        self.mem.write(addr + OFF_PAUSE, &0f32.to_le_bytes())
+    }
+
+    /// M5-6: ask the game to stand LOCAL up: the "revive completed" byte (`PlayerIns+0x732`), which the per-frame downed function
+    /// reads on the owner's game and answers with the get-up (`exe+0x675159` -> `exe+0x66F3B0(chr, 2)`; MEMORY_MAP section 6).
+    /// LOCAL downed only; the game clears the byte every frame, so the caller repeats until the state changes.
+    pub(crate) fn request_getup(&mut self) -> Result<(), &'static str> {
+        let Some((addr, 1)) = self.local_state() else {
+            return Err("LOCAL is not downed");
+        };
+        self.mem
+            .write(addr + crate::game::reviveblock::PLAYER_REVIVE_DONE, &[1])
+    }
+
+    /// Dev console `god 1` (test aid, 2026-10-23: monsters kept downing the knocking player in two-window night tests): LOCAL,
+    /// while up, is put back to full HP every tick through the character data module (the field T-040 writes; MEMORY_MAP §5).
+    fn god_refill(&mut self) {
+        let Some((addr, 0)) = self.local_state() else {
+            return;
+        };
+        if let Ok((field, hp)) = data_module_hp(&self.mem, addr) {
+            let max = self
+                .mem
+                .read_u32(field - DM_HP_OFF + DM_MAX_HP_OFF)
+                .unwrap_or(0);
+            if hp < max {
+                let _ = self.mem.write(field, &max.to_le_bytes());
+            }
+        }
+    }
+
     pub(crate) fn tick(&mut self, subjects: Vec<Subject>) {
         self.subjects = subjects;
         if !self.rtti_ready {
             return;
+        }
+        if GOD.load(std::sync::atomic::Ordering::Relaxed) {
+            self.god_refill();
         }
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         for l in self.core.step(now_ms, &self.subjects, &mut self.mem) {

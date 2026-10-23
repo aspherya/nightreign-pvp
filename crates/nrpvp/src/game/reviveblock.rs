@@ -11,8 +11,12 @@
 //! the reviver (`+0x728`, else the last attacker `+0x1A0`) is a RIVAL, RIP goes to the game's own no-event exit
 //! (`exe+0x67539F`, which clears the flags): the revive event is dropped and LOCAL stays downed.
 //! Teammates are untouched. Armed only while LOCAL is downed, in a free hardware slot. No code is patched.
+//!
+//! M5-6: [`set_mode`] widens or lifts the block: [`ReviveMode::Nobody`] (LOCAL is eliminated at night: no reviver at all, teammates
+//! included, neither on the bar nor on the revive event) and [`ReviveMode::Anyone`] (our own morning get-up writes the revive event
+//! itself; the last attacker may be a rival, so the rival block must not drop it).
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::{Mutex, Once, PoisonError};
 
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
@@ -38,6 +42,32 @@ const HIT_STORE_BYTES: [u8; 8] = [0xF3, 0x0F, 0x11, 0x8F, 0x14, 0x07, 0x00, 0x00
 const MAX_RIVALS: usize = 8;
 
 static ENABLED: AtomicBool = AtomicBool::new(true);
+/// [`ReviveMode`] as a byte (the VEH reads it).
+static MODE: AtomicU8 = AtomicU8::new(0);
+
+/// M5-6: who may revive LOCAL.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ReviveMode {
+    /// T-041: everyone but a rival (the normal rule).
+    #[default]
+    Rivals,
+    /// Nobody (LOCAL eliminated at night).
+    Nobody,
+    /// Everyone (our own get-up at the morning).
+    Anyone,
+}
+
+/// M5-6 (main loop): set who may revive LOCAL; logs a change.
+pub(crate) fn set_mode(m: ReviveMode) {
+    let v = match m {
+        ReviveMode::Rivals => 0,
+        ReviveMode::Nobody => 1,
+        ReviveMode::Anyone => 2,
+    };
+    if MODE.swap(v, Ordering::Relaxed) != v {
+        tracing::info!("T-041 revive_block: mode {m:?}");
+    }
+}
 /// The breakpoint address (0 = not resolved); never reset, so a late hit after a disarm is still ours.
 static ADDR: AtomicUsize = AtomicUsize::new(0);
 /// `exe+RVA_NO_EVENT` (0 = not resolved: nothing is blocked).
@@ -131,13 +161,19 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             let reviver = (*ctx).Rsi as usize;
             if victim != 0 && victim == LOCAL.load(Ordering::Relaxed) && reviver > 0x10000 {
                 let h = *((reviver + super::layout::CHR_HANDLE) as *const u64);
-                if h != 0 && h != u64::MAX && RIVALS.iter().any(|r| r.load(Ordering::Relaxed) == h)
-                {
+                let rival = h != 0
+                    && h != u64::MAX
+                    && RIVALS.iter().any(|r| r.load(Ordering::Relaxed) == h);
+                let mode = MODE.load(Ordering::Relaxed);
+                // M5-6: an eliminated LOCAL (mode 1) keeps its bar against everyone; the rival penalty stays a mode-0 rule.
+                if (mode == 0 && rival) || mode == 1 {
                     let bar = *((victim + super::layout::PLAYER_REVIVE_BAR) as *const u32);
                     let x = &mut (*ctx).Anonymous.Anonymous.Xmm1;
                     x.Low = (x.Low & 0xFFFF_FFFF_0000_0000) | u64::from(bar);
                     LAST_HANDLE.store(h, Ordering::Relaxed);
-                    RIVAL_HITS.fetch_add(1, Ordering::Relaxed);
+                    if mode == 0 {
+                        RIVAL_HITS.fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
             (*ctx).EFlags |= EFLAGS_RF;
@@ -162,7 +198,12 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
                     last
                 };
                 let skip = SKIP.load(Ordering::Relaxed);
-                if rival(who) && skip != 0 {
+                let block = match MODE.load(Ordering::Relaxed) {
+                    1 => true,
+                    2 => false,
+                    _ => rival(who),
+                };
+                if block && skip != 0 {
                     // Leave the event block the way the game does when there is no event (`je 0x67539F` at `exe+0x675153`, same
                     // registers): the flags are cleared there and LOCAL stays downed. Clearing only `+0x732` sent the game into the
                     // "neither flag" branch, which stands the player up at once (T-041 Nucleus run, 23:01:10).
@@ -269,7 +310,7 @@ pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
         st.seen_blocks = b;
         if first {
             tracing::info!(
-            "T-041 revive_block: BLOCKED a rival's revive of LOCAL (reviver handle 0x{:X}); {b} block(s) so far",
+            "T-041 revive_block: BLOCKED a revive of LOCAL (rival, or anyone while eliminated; reviver handle 0x{:X}); {b} block(s) so far",
             LAST_HANDLE.load(Ordering::Relaxed)
         );
         }

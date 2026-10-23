@@ -1241,3 +1241,38 @@ fn the_data_module_gate_needs_hp_and_max_hp_to_agree_with_the_game_data() {
     );
     assert!(f.writes.is_empty());
 }
+
+#[test]
+fn our_morning_get_up_is_not_taken_for_a_rival_revive_while_exempt() {
+    let mut f = world();
+    let mut c = Core::new(false, RevivePolicy::Redown);
+    // M5-6: the night match exempts rule v1 around its own get-up (LOCAL was last hit by a rival).
+    c.exempt_until_ms = 10_000;
+    drive_revive(&mut f, &mut c, H1, 120);
+    assert!(f.writes.is_empty(), "no re-down during the exemption");
+    assert_eq!(c.fired, 0);
+    // After it, the rule is back.
+    c.exempt_until_ms = 0;
+    f.downed(P0, 2, true);
+    f.hp3(P0, G0, 0);
+    f.attacker(P0, H1);
+    c.step(500, &subjects(), &mut f);
+    f.downed(P0, 2, false);
+    f.hp3(P0, G0, 90);
+    f.attacker(P0, u64::MAX);
+    c.step(600, &subjects(), &mut f);
+    assert_eq!(f.writes.len(), 1);
+}
+
+#[test]
+fn the_night_floor_keeps_the_clock_above_the_elimination_point() {
+    let (mut f, mut c, t) = downed_world(true);
+    c.clock_floor = crate::features::night_match::NIGHT_CLOCK_FLOOR;
+    setf(&mut f, P0 + OFF_BLEED_CLOCK, 2.0);
+    c.step(t + 50, &subjects(), &mut f);
+    hit(&mut f, 70.0, H1);
+    c.step(t + 100, &subjects(), &mut f);
+    let clock = getf(&f, P0 + OFF_BLEED_CLOCK);
+    assert!((clock - 0.9).abs() < 1e-6);
+    assert!(clock <= crate::features::night_match::ELIM_CLOCK);
+}

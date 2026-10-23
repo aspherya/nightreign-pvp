@@ -12,7 +12,12 @@ dispatcher (case 97 reads one s32 at args+0; case 98 reads none).
 M5-3 (research/M5-no-boss-nights.md): an event may carry "night_end": 1 | 2 with "secs" and "flag": once the night is on (7515), it is
 night 1 (7505 off) or 2 (7505 on), that night is not done yet (7502 / 7507 off) and this game is the host (own world), it waits "secs"
 or our "flag", then sets the night-done flag network-wide (and 8020 when the special event 7700 / 7720 is on, as the boss-defeat
-handler 90065900 does), clears our flag, and heals as that handler does (SpEffect 102121 + Bonfire-like Recovery). It ends (no restart).
+handler 90065900 does), clears our flag, and ends (no restart). M5-5: no heal there any more (that event runs only in the host's game);
+it ends without setting anything when the night is already done (the DLL's fallback write got there first).
+M5-5 / M6-1: per-game events (Set Network Sync State Disabled first, as the game's own per-player events do), started by our flag,
+which they clear: "heal": true = Bonfire-like Recovery of the local player, then restart (the night winner); "ending": "win" | "lose"
+with "banner" (TextEffect param id: 4000 win, 4010 failure) and "secs" = banner, wait, then the local flag 7000 (win) / 7001 (failure),
+as the Nightlord maps (x002590) and the wipe check (common 1180) do. It ends.
 "replace": [{"id": <existing event>, "body": "end" | "disable_chr", "param": <byte offset X of the character parameter>}] gives an
 existing event a new body: "end" = END; "disable_chr" = Change Character Enable State(X, Disabled), Set Character AI State(X, Disabled),
 END, with X substituted from the event's parameters like the game's own events do.
@@ -28,7 +33,8 @@ Argument packing (DarkScript3 nr-common.emedf.json, checked against the file): 3
 2007:1 = s32 msg, s16 type, s16 options, u32 entity, f32 distance; 2007:3 = s32 msg, u8 pad state, pad3; 2007:4 = s32 msg;
 0:0 = s8 group, u8 state, s8 target group, pad; 1:0 = s8 group, pad3, f32 seconds; 3:26 = s8 group, u8 world type, pad2;
 1003:1 = u8 lines, u8 state, u8 type, pad, u32 flag; 1001:0 = f32 seconds; 2004:8 = s32 entity, s32 SpEffect; 2004:47 = none;
-2004:5 and 2004:1 = s32 entity, u8 state, pad3.
+2004:5 and 2004:1 = s32 entity, u8 state, pad3; 1003:2 = u8 end type, u8 state, u8 type, pad, u32 flag; 2000:2 = u8 state, pad3;
+2007:19 = s32 TextEffect param id.
 """
 import json, struct, sys
 
@@ -64,15 +70,37 @@ def night_end_instrs(ev):
         (3, 26, struct.pack('<bBxx', AND_01, 0)),             # this game is in its own world (host or solo)
         (0, 0, struct.pack('<bBbx', MAIN, 1, AND_01)),
         (1, 0, struct.pack('<b3xf', OR_01, secs)),             # the night lasts secs...
-        flag_cond(OR_01, True, flag),                          # ...or until our flag (console night_end, later the match)
+        flag_cond(OR_01, True, flag),                          # ...or until our flag (the DLL: one team left; console night_end)
         (0, 0, struct.pack('<bBbx', MAIN, 1, OR_01)),
+        end_if_flag(True, NIGHT_DONE[n]),                      # the DLL's fallback write already ended this night
         set_flag(NIGHT_DONE[n], True, network=True),
         (1003, 1, struct.pack('<BBBxI', 1, 0, 0, SPECIAL[n])),  # skip the next line when the special event is off
         set_flag(BOSSES_DONE, True, network=True),
         set_flag(flag, False),
-        (2004, 8, struct.pack('<ii', 20000, 102121)),
-        (1001, 0, struct.pack('<f', 0.1)),
-        (2004, 47, b''),
+        (1000, 4, struct.pack('<B3x', 0)),
+    ]
+
+
+def end_if_flag(on, flag):
+    return (1003, 2, struct.pack('<BBBxI', 0, 1 if on else 0, 0, flag))
+
+
+RESULT = {'win': 7000, 'lose': 7001}
+
+
+def local_instrs(ev):
+    """M5-5 / M6-1: per-game events started by our flag."""
+    flag = ev['flag']
+    out = [(2000, 2, struct.pack('<B3x', 0)), flag_cond(MAIN, True, flag), set_flag(flag, False)]
+    if ev.get('heal'):
+        return out + [(2004, 47, b''), (1000, 4, struct.pack('<B3x', 1))]
+    kind = ev['ending']
+    if kind not in RESULT:
+        raise SystemExit(f"ending must be win or lose, not {kind!r}")
+    return out + [
+        (2007, 19, struct.pack('<i', ev['banner'])),
+        (1001, 0, struct.pack('<f', float(ev['secs']))),
+        set_flag(RESULT[kind], True),
         (1000, 4, struct.pack('<B3x', 0)),
     ]
 
@@ -80,6 +108,8 @@ def night_end_instrs(ev):
 def build_event_instrs(ev):
     if 'night_end' in ev:
         return night_end_instrs(ev)
+    if ev.get('heal') or 'ending' in ev:
+        return local_instrs(ev)
     flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')
     out = [(3, 0, struct.pack('<bBBxI', 0, 1, 0, flag))]
     if 'bots' in ev:

@@ -10,6 +10,7 @@ pub(crate) mod bot_match;
 pub(crate) mod bots;
 pub(crate) mod clock;
 pub(crate) mod mode;
+pub(crate) mod night_match;
 pub(crate) mod nights;
 
 use crate::config::Config;
@@ -24,7 +25,7 @@ pub(crate) trait Feature {
 }
 
 /// Side effects the features asked for this tick; the main loop carries them out ([`Ctx::flush`]).
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, PartialEq)]
 pub(crate) struct Ctx {
     /// Commands for the matchmaking worker (sent with `crate::mm::send`, which never calls Steam on this thread).
     pub mm: Vec<crate::mm::Cmd>,
@@ -34,6 +35,8 @@ pub(crate) struct Ctx {
     pub bot_writes: Vec<BotWrite>,
     /// M5: a time for the play-area clock (the game's set-time mailbox, written in [`Ctx::flush`]).
     pub clock: Option<crate::game::views::ClockTime>,
+    /// M5-5 / M5-6: the night match's requests on LOCAL and the downed rule (carried out by the main loop, which owns them).
+    pub night: Vec<night_match::NightAct>,
 }
 
 /// A write a bot feature asks for (OFF-5).
@@ -123,6 +126,7 @@ pub(crate) struct Features {
     pub bot_match: bot_match::BotMatch,
     pub clock: clock::ClockFeature,
     pub nights: nights::NightsFeature,
+    pub night_match: night_match::NightMatch,
 }
 
 impl Features {
@@ -136,16 +140,18 @@ impl Features {
             ),
             clock: clock::ClockFeature::default(),
             nights: nights::NightsFeature,
+            night_match: night_match::NightMatch::default(),
         }
     }
 
-    fn all(&mut self) -> [&mut dyn Feature; 5] {
+    fn all(&mut self) -> [&mut dyn Feature; 6] {
         [
             &mut self.mode,
             &mut self.bots,
             &mut self.bot_match,
             &mut self.clock,
             &mut self.nights,
+            &mut self.night_match,
         ]
     }
 

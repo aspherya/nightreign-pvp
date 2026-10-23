@@ -94,7 +94,10 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "bots_hostile", args: "[0|1]", help: "offline bots attack you (1, default) or fight on your side (0); takes effect at once, also for the bots already there; no argument shows the bot lines", run: bots_hostile },
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
-    Spec { name: "night_end", args: "", help: "M5-3: end the current night now (no-boss nights end by themselves after 180 s at 23:59); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
+    Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
+    Spec { name: "night_status", args: "", help: "M5-5: the night match: day / night n / morning, players, teams, how many stand, whether LOCAL is eliminated, the winner, LOCAL's spot", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
+    Spec { name: "night_count", args: "[0|1]", help: "M5-5 test switch: 1 (default) a night ends when one team is left standing; 0 it never ends by count (two-window elimination tests; night_end still ends it); no argument shows it", run: night_count },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
@@ -432,6 +435,40 @@ fn clock(args: &[String]) -> Result<Act, String> {
             crate::features::clock::parse(a).map(|t| Act::Main(MainReq::Clock(ClockCmd::Set(t))))
         }
     }
+}
+
+fn god(args: &[String]) -> Result<Act, String> {
+    use std::sync::atomic::Ordering;
+    let g = &crate::game::combat_state::GOD;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("0") if args.len() == 1 => g.store(false, Ordering::Relaxed),
+        Some("1") if args.len() == 1 => g.store(true, Ordering::Relaxed),
+        _ => return Err("usage: god [0|1]".into()),
+    }
+    let on = g.load(Ordering::Relaxed);
+    if !args.is_empty() {
+        tracing::info!("console: god {}", if on { "ON" } else { "OFF" });
+    }
+    Ok(Act::Reply(format!(
+        "god {}: {}",
+        u8::from(on),
+        if on {
+            "this game's player is refilled to full HP every tick while up"
+        } else {
+            "off"
+        }
+    )))
+}
+
+fn night_count(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        None => None,
+        Some("0") if args.len() == 1 => Some(false),
+        Some("1") if args.len() == 1 => Some(true),
+        _ => return Err("usage: night_count [0|1]".into()),
+    };
+    Ok(Act::Reply(crate::features::night_match::count_cmd(on)))
 }
 
 fn flag(args: &[String]) -> Result<Act, String> {

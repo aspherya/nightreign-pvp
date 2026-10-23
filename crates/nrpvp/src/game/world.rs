@@ -8,6 +8,49 @@ use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea, Wor
 
 /// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
 pub(crate) const MAX_WATCHED: usize = 6;
+/// M5-5: players in a match (Seamless Co-op's limit).
+pub(crate) const MAX_FIGHTERS: usize = 6;
+
+/// M5-5: the event flags the night match reads (game 1.03.3, `research/M5-no-boss-nights.md` §1 and §6), filled by the main loop
+/// through `game::flags`. `None` in the [`World`] = the flag manager is not live.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct NightFlags {
+    /// 7515: the clock reads 23:59 (`common` 1107).
+    pub night: bool,
+    /// 7505: day 2 (set by `common` 1100 once the morning after night 1 has come).
+    pub day2: bool,
+    /// 7502 (host; network-wide only when our event sets it) or 7503 (the interval, passed to every game by the host's events).
+    pub night1_done: bool,
+    /// 7507 or 7508.
+    pub night2_done: bool,
+    /// 7010-7012: a revive item is working on someone (`common` 1183).
+    pub reviving: bool,
+    /// Our flags, read back for the fallback (still ON = our event file is not loaded).
+    pub our_night_end: bool,
+    pub our_win: bool,
+    pub our_lose: bool,
+}
+
+impl NightFlags {
+    /// The flags to read, in [`NightFlags::from_values`] order.
+    pub(crate) const IDS: [u32; 12] = [
+        7515, 7505, 7502, 7503, 7507, 7508, 7010, 7011, 7012, 10_007_400, 10_007_411, 10_007_412,
+    ];
+
+    /// From the values of [`NightFlags::IDS`].
+    pub(crate) fn from_values(v: [bool; 12]) -> Self {
+        NightFlags {
+            night: v[0],
+            day2: v[1],
+            night1_done: v[2] || v[3],
+            night2_done: v[4] || v[5],
+            reviving: v[6] || v[7] || v[8],
+            our_night_end: v[9],
+            our_win: v[10],
+            our_lose: v[11],
+        }
+    }
+}
 
 /// A watched bot character, found by its handle (OFF-5).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -54,6 +97,12 @@ pub(crate) struct World {
     pub bot_chrs: [Option<BotChr>; MAX_WATCHED],
     /// M5: the play-area clock (`None` = no manager, or no clock running: outside an expedition).
     pub clock: Option<ClockState>,
+    /// M5-5: the night flags (filled by the main loop; `None` = flag manager not live).
+    pub night: Option<NightFlags>,
+    /// M5-5: every ChrSet player (filled by the main loop from the downed rule's controller).
+    pub fighters: [Option<crate::game::combat_state::Fighter>; MAX_FIGHTERS],
+    /// M5-6: LOCAL's world position and its "on ground" byte (filled by the main loop).
+    pub local_pos: Option<([f32; 3], bool)>,
 }
 
 impl World {
@@ -88,6 +137,9 @@ impl World {
             clock: (i.play_area != 0)
                 .then(|| PlayArea::new(mem, i.play_area).clock())
                 .flatten(),
+            night: None,
+            fighters: [None; MAX_FIGHTERS],
+            local_pos: None,
         }
     }
 
@@ -109,6 +161,21 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn night_flags_merge_host_and_client_views() {
+        let mut v = [false; 12];
+        v[3] = true; // 7503 only (a client after the host ended night 1)
+        v[7] = true;
+        let f = NightFlags::from_values(v);
+        assert!(f.night1_done && f.reviving && !f.night && !f.night2_done);
+        assert_eq!(
+            NightFlags::IDS[9],
+            crate::features::night_match::FLAG_NIGHT_END
+        );
+        assert_eq!(NightFlags::IDS[10], crate::features::night_match::FLAG_WIN);
+        assert_eq!(NightFlags::IDS[11], crate::features::night_match::FLAG_LOSE);
+    }
     use crate::game::gamemem::FakeMem;
     use crate::game::layout::{
         CHRSET_CAPACITY, CHRSET_ENTRIES, CHR_HANDLE, CHR_TEAM, CHR_TYPE, WCM_CHRSETS,

@@ -128,6 +128,27 @@ fn read_sample(player: usize, base: usize) -> Option<Sample> {
 }
 
 /// Per-expedition state, driven from `TeamCtl::tick` (`team/spawns.rs`).
+/// M5-6: the player's world position (position - origin) and whether the physics module reads "on ground"; `None` = unreadable.
+pub(crate) fn world_position(player: usize, base: usize) -> Option<([f32; 3], bool)> {
+    read_sample(player, base).map(|s| (sub(s.pos, s.origin), s.ground))
+}
+
+/// M5-6: move the player to a world position (the T-028 teleport: the physics position, origin added back; VERIFIED T-028 run 4,
+/// other players see it). Returns the world position before the move.
+pub(crate) fn teleport(player: usize, base: usize, to: [f32; 3]) -> Result<[f32; 3], &'static str> {
+    let s = read_sample(player, base).ok_or("position unreadable")?;
+    let local_pos = add(to, s.origin);
+    if !plausible(local_pos) {
+        return Err("target implausible");
+    }
+    let mut bytes = [0u8; 12];
+    for (i, v) in local_pos.iter().enumerate() {
+        bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    mem::write_bytes(s.phys + POS_OFF, &bytes)?;
+    Ok(sub(s.pos, s.origin))
+}
+
 pub(crate) struct SpawnCtl {
     radius: f32,
     base: usize,

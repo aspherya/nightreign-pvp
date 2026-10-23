@@ -449,7 +449,7 @@ fn watch(
         let bot_man = botman_slot.and_then(instance_of).unwrap_or(0);
         let play_area = playarea_slot.and_then(instance_of).unwrap_or(0);
         let watched = features.bot_match.watched();
-        let world = world::World::read(
+        let mut world = world::World::read(
             &mem,
             &world::Inputs {
                 wcm_instance: wcm_inst,
@@ -463,6 +463,16 @@ fn watch(
                 play_area,
             },
         );
+        // M5-5: what the night match reads besides the read model (flags, every player's downed state, LOCAL's position).
+        if world.in_expedition() {
+            world.night = night_flags(base);
+            if let Some(c) = combat.as_ref() {
+                for (o, f) in world.fighters.iter_mut().zip(c.fighters()) {
+                    *o = Some(f);
+                }
+            }
+            world.local_pos = world.local.and_then(|p| spawn::world_position(p, base));
+        }
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
@@ -516,6 +526,12 @@ fn watch(
             let _ = reply.send(text);
         }
         features.tick(&world, &mut fctx);
+        night_acts(
+            std::mem::take(&mut fctx.night),
+            combat.as_mut(),
+            world.local,
+            base,
+        );
         fctx.flush(
             crate::features::Targets {
                 base,
@@ -601,6 +617,75 @@ fn watch(
 
 /// T-019: `heartbeat: tick N, wcm=0x..., players=N, pvpve=ON (team 29, 3 writes), slowest tick ... ms`. If these
 /// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
+/// M5-5: the night flags, all or nothing (`None` while the flag manager is not live).
+fn night_flags(base: usize) -> Option<world::NightFlags> {
+    let mut v = [false; 12];
+    for (o, id) in v.iter_mut().zip(world::NightFlags::IDS) {
+        *o = flags::get(base, id).ok()?;
+    }
+    Some(world::NightFlags::from_values(v))
+}
+
+/// M5-5 / M5-6: carry out the night match's requests (the downed rule's controller and the revive block live here).
+fn night_acts(
+    acts: Vec<crate::features::night_match::NightAct>,
+    mut combat: Option<&mut combat_state::CombatCtl>,
+    local: Option<usize>,
+    base: usize,
+) {
+    use crate::features::night_match::NightAct;
+    for a in acts {
+        let r: Result<(), &'static str> = match a {
+            NightAct::HoldClock(secs) => combat
+                .as_deref_mut()
+                .map_or(Err("no controller"), |c| c.hold_clock(secs)),
+            NightAct::GetUp => combat
+                .as_deref_mut()
+                .map_or(Err("no controller"), |c| c.request_getup()),
+            NightAct::ExemptGetup(ms) => {
+                if let Some(c) = combat.as_deref_mut() {
+                    c.exempt_getup(ms);
+                }
+                Ok(())
+            }
+            NightAct::ClockFloor(f) => {
+                if let Some(c) = combat.as_deref_mut() {
+                    c.set_clock_floor(f);
+                }
+                Ok(())
+            }
+            NightAct::Revive(m) => {
+                reviveblock::set_mode(m);
+                Ok(())
+            }
+            NightAct::Teleport(to) => match local.map(|p| spawn::teleport(p, base, to)) {
+                Some(Ok(from)) => {
+                    tracing::info!(
+                        "night_match: moved LOCAL from world ({:.1}, {:.1}, {:.1}) to ({:.1}, {:.1}, {:.1})",
+                        from[0], from[1], from[2], to[0], to[1], to[2]
+                    );
+                    Ok(())
+                }
+                Some(Err(e)) => Err(e),
+                None => Err("no local player"),
+            },
+            NightAct::GameFlag(f, on) => flags::set_match_flag(base, f, on).map(|prev| {
+                tracing::info!(
+                    "night_match: game flag {f} set {} (was {prev})",
+                    if on { "ON" } else { "off" }
+                );
+            }),
+        };
+        if let Err(e) = r {
+            // HoldClock / GetUp repeat every tick; the state they need can end between the read and the write.
+            if !matches!(a, NightAct::HoldClock(_) | NightAct::GetUp) || e != "LOCAL is not downed"
+            {
+                tracing::warn!("night_match: {a:?} failed: {e}");
+            }
+        }
+    }
+}
+
 fn heartbeat_line(
     ticks: u64,
     wcm_inst: usize,

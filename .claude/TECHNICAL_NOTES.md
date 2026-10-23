@@ -212,6 +212,10 @@ memory: `re/MEMORY_MAP.md` §16.
 | Everything after hangs off 7502 / 7507 | Flask refill (1303 / 1304), interval 7503 / 7508 (1100), interval grace (`90005580`), Day 2 = `Reset Time of Day` 20 s after 7503 (1103), Day 3 warp after 7508 (`90005910`) |
 | Night flag 7515 | `common` 1107: on while the play-area clock reads 23:59, which the engine holds once reached (MEMORY_MAP §16) |
 | No event instruction sets the clock to a chosen time | `2003[89] Reset Time of Day` always goes to the morning; its hour arguments are unused |
+| Night freeze (M5-4) | `common` 1301: local flag **9015** while night (7515) and the local player is inside the play area (and on Day 3); 1302: 9015 → SpEffect **102120** on the local player (bleed-out held at 15 s, MEMORY_MAP §6), 9015 off → 102121. Our event file empties 1302 (M5-5) `[VERIFIED: static + Nucleus run 2]` |
+| Alive flags and the wipe | 1182: each game keeps its own player's flag 7005–7007; at night it drops when the player is downed **or its team is not 1 / 2 / 20 / 29** (team 6 = out); 1180 (multiplayer) ends the expedition for all when all three are off. Our event file empties 1180 (M5-5) `[VERIFIED: static + Nucleus runs 1, 2, 4]` |
+| The morning reaches everyone from the host | A DLL write of 7502 in the host stays local, but the host's 1100 then sets **7503 / 7505 network-wide** and both games reach Day 2 `[VERIFIED: Nucleus run 2]` |
+| Endings are per game | 7000 / 7001 are plain local flags; set in two games at once, each played its own result (the 7000 game the first-win cutscene) and both were consumed within 5 s `[VERIFIED: Nucleus run 2]` |
 | Our decoder | `experiments/M5-1/emdec.py` (any NR `.emevd`; names and argument layouts from DarkScript3's `nr-common.emedf.json`) |
 
 ---

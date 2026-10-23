@@ -212,20 +212,10 @@ events in `common_func` emptied, `gamedata/emevd-nights-func.json`); each night 
 M5-5 (a night ends only when one player is left). Taking the Day 3 way out ended in a black screen (out of scope: no Day 3). Card
 removed; text in git (`git show 7fa7bdf:.claude/TASKS.md`).
 
-### M5-4 — Research: death at night, the alive count, the endings
-Owner: OPUS (static) + HUMAN (Nucleus) | Status: in progress (static done; Nucleus run 1 PARTIAL) | Feeds: M5-5, M5-6, M6-1
-**Known (memo §6, TESTING §3 Nucleus run 1, 2026-10-22):** the alive flags 7005–7007 are shared and drop when a player is
-**downed** (not when dead); the wipe check `common` 1180 ends the expedition for everyone when every standing player is down at
-night; **a bled-out player comes back by itself ~7 s later with full HP, by day and at night** (no spectator phase); win =
-banner 4000 → 15 s → local 7000, failure = banner 4010 → 7516 → 5 s → local 7001. A third down at night showed **no bleed-out
-countdown** (clock stayed 15 for 17 s; Leonardo: "the near death circle was there forever"); cause UNKNOWN.
-**Open:** (a) does 7502 set by the host's DLL reach the client (daytime test, `flag`); (b) do 7000 / 7001 give each game its own
-ending (daytime test); (c) static RE: where the game brings a bled-out player back after ~7 s, and the dead-player camera;
-(d) why the bleed-out froze. Nucleus caveat: our event files are not loaded there (no me3), so vanilla minions and the vanilla
-hawk route appear.
-Next Nucleus steps (daytime, no fighting; the agent drives `nrcon` and Leonardo watches): new expedition, both land apart;
-`-i <host> flag 7502 1` → do both games go to the morning (7503 / 7505 in the client)?; then `-i <A> flag 7000 1` and
-`-i <B> flag 7001 1` → what each screen shows.
+**M5-4 done (2026-10-23, static RE + Nucleus run 2, TESTING §3; answers in memo §6b):** the frozen bleed-out is the vanilla night
+rule (SpEffect 102120 inside the circle, `common` 1301 / 1302); the host's DLL 7502 brings every game to the morning (its 1100
+passes 7503 / 7505); 7000 / 7001 give each game its own ending; the ~7 s comeback is engine code (not needed: the build holds
+eliminated players down instead). Card removed; text in git (`git show b10b303:.claude/TASKS.md`).
 
 **M5-D decided (Leonardo, 2026-10-22; PROJECT_SCOPE §2):** at night a player at 0 HP is **knocked** for the normal 15 s
 bleed-out (Solo too); rivals finish a knocked player with hits (−3 s each, the existing T-041 rule); teammates can revive a knocked
@@ -233,21 +223,67 @@ teammate (Duo/Trio); **bleed-out over = eliminated**: no ~7 s comeback, the play
 revive them until the morning; a team is out when nobody on it stands; the night ends the moment one player (team) is left standing.
 Revival items count as a revive (the winner check waits for pending revivals 7010–7012). Day deaths stay vanilla.
 
-### M5-5 — A night ends when one player (team) is left; only the winner is healed
-Owner: OPUS → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 and M5-D)
-The DLL counts who is still in at night (its own count, not 7005–7007: they cover 3 players and drop on downed) and, when one
-player (team) is left, sets our night-end flag (`features/nights.rs`); the 180 s timer goes; the heal moves to an event that runs
-in every game and heals only a living local player (today's night-end event is host-only); the wipe check 1180 is replaced.
+### M5-5 / M5-6 / M6-1 — Nights are elimination rounds (`features/night_match.rs`)
+Owner: OPUS | Status: **built (branch `claude/great-turing-b2e494`); solo PASS + Nucleus runs 3–5 PASS (TESTING §3, 2026-10-23)**;
+open: the night-2 ending chosen by count with two players, and merge (Leonardo)
+Built: every game counts the ChrSet players (not 7005–7007); one team left standing for 1 s (no revive item pending, ≥ 2 teams at
+nightfall) = night decided. The host sets our 10007400 → our event sets 7502 network-wide (fallback without our event file: the DLL
+writes 7502). Only the winner's game sets 10007410 (per-game heal event). Knocked at night = the normal 15 s (event 1302 emptied);
+at 1 s left (or 16 s down) **eliminated**: the clock is held at 15 every tick, nobody revives (revive block mode Nobody); after the
+decision every knocked player is held too. Morning: anyone down gets up (`+0x732`, rule v1 exempt 12 s), every loser moves to its
+own morning spot (last standing position before 12:00 on day 1). Night 2: winner's game 10007411 (banner 4000 → 10 s → 7000), every
+other game 10007412 (banner 4010 → 10 s → 7001); fallback writes 7000 / 7001. Emptied: 1180 (wipe), 1302 (night freeze),
+`90005910` (Day 3). Console: `night_status`, `night_count 0|1`, `god 0|1` (test aids), `night_end` (CONSOLE §0).
+**Not built:** spectating another player (M5-7). Deviation from the card, on purpose: a 10 min fallback timer stays in the night-end
+event so a night can never hang if the count fails.
+HUMAN (next Nucleus or friend session, about 5 min): land; `flag 7502 1` in the host (straight to Day 2); `god 1` on p1;
+`clock circle`, walk in; at night p1 knocks p2 → p1's game `night 2 decided … won` and the win screen, p2's game the loss screen.
+Under Nucleus never use team 6 for both players at night (TESTING §3 run 4).
 
-### M5-6 — Eliminated players stay out until the morning (spectate), then respawn spread out
-Owner: OPUS (RE) → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 (c) and M5-D)
-Block the ~7 s comeback at night; a random living player to watch (choice later); at the morning every eliminated player respawns
-at a different safe place.
+### M5-8 — Research: control the game's death (kill now, stay dead, come back where we say)
+Owner: OPUS (static RE, own session) + HUMAN (one Nucleus trace session) | Status: todo (decided 2026-10-23) | Feeds: M5-9, M5-7
+Why: Leonardo, 2026-10-23 (PROJECT_SCOPE §2): in **Solo** a kill is a real death; at night 0 HP = dead at once unless the player
+carries a revive item; the dead stay dead and spectate until the morning; at the start of Day 2 every dead player respawns at a
+random place. Today's elimination (held down, `night_match.rs`) stays for Duo/Trio and as the fallback.
+Tools: REA (MCP, `rea`), Ghidra `Z:\Tools\ghidra_12.1.4_PUBLIC`, the unpacked game `Z:\Tools\nr-unpacked\1.03.3` (event files
+decoded with `experiments/M5-1/emdec.py`; regulation with WitchyBND, `GameSystemCommonParam` read on 2026-10-23), the cheat-table
+leads (MEMORY_MAP §11), `experiments/M5-8/nr.py` (capstone/numpy helpers: `.pdata`, disasm, xrefs). Python: memory note
+"python-disasm-env" (numpy added 2026-10-23).
+Starting points (memo §6b): per-frame downed function `exe+0x674EB0`; bleed-out death is the player script leaving near-death
+(`+0x731` per-frame event type 144); strings `CSRespawnPointMan`, `CS::CSRespawnPointManImp::_FindRespawnPoint` (refs at
+`exe+0xBA5225` / `exe+0xBA5426`, a region with no `.pdata`), `WorldChrMan_Respawn`, `RejoinMapEnterStep::STEP_Branch_DyingOrRespawn`,
+sound state `LocalPlayerState` `_02_DeathToRespawn`; team type 77 = "dead at night" (set by the engine, read by `common` 1181 /
+1182 / 1310); event instruction **`2004[4] Force Character Death`** (used on Nightlord maps); revive items = SpEffects 540155 /
+6999100 (flags 7010–7012, `common` 1180 / 1183). Seen: a bled-out player comes back ~7 s later with full HP, by day and at night
+(TESTING §3 M5-4 runs 1–2).
+Questions, in this order:
+- **R0 (enabler):** can the Nucleus instances run our game-data package (start them through me3 instead of SC's launcher, or any
+  other way)? Every two-window test today ran without our event files (vanilla minions, wipe check, night freeze).
+- **R1 kill on demand:** does `Force Character Death` on the local player (10000) in a per-game event kill a player in a session
+  cleanly (death animation, network, SC)? Or a direct engine call? How the DLL tells "carries a revive item" (SpEffects above).
+- **R2 the comeback:** which code brings a dead player back after ~7 s, and how to hold it at night and release it at the morning.
+  Static first; then a hardware-breakpoint trace in one Nucleus run (e.g. write watch on the dead LOCAL's HP / state / team, RIP +
+  return addresses; the T-041 `bar_trace` pattern). Never patch code (hard rule 3 is about SC; for the game: breakpoints/hooks only).
+- **R3 the dead state:** with the comeback held: what the dead player sees and can do, team value (77?), alive flags, does SC keep
+  the session; does the vanilla 1181 / 1310 logic interfere.
+- **R4 respawn places:** the game's own respawn points (`CSRespawnPointMan`, `map:/entryfilelist/RespawnPoint.entryfilelistbnd`,
+  `Runtime_RespawnPoint_…`): can the DLL read them to pick a random safe point; where the game itself respawns a player.
+Done when: memo `research/M5-8-death.md` answers R0–R4 with evidence tags (or UNKNOWN + how to find out), MEMORY_MAP /
+TECHNICAL_NOTES updated, and M5-9 below is rewritten with concrete hooks/offsets. HUMAN: one Nucleus session (~15 min, driven live
+by the agent with `nrcon`, one step at a time; Leonardo uses `god 1` on the attacker, never team 6 at night).
 
-### M6-1 — Night 2 ends the match: win for the last player (team), failure for the rest; no Day 3
-Owner: OPUS → SONNET/implementer → HUMAN Nucleus | Status: todo (after M5-4 (b))
-After night 2 is decided: the winner's game plays banner 4000 → 7000, every other game banner 4010 → 7001 (per-game events,
-"is my player standing"); `90005910` (the Day 3 warp) gets an empty body.
+### M5-9 — Solo nights: a kill is a real death (build, after M5-8)
+Owner: OPUS → SONNET/implementer → HUMAN | Status: todo (blocked on M5-8)
+Solo only: at night 0 HP without a revive item = death (R1), the comeback held until the morning (R2), the dead spectate (M5-7),
+at Day 2 every dead player respawns at a random point (R4). `night_match.rs` counts the dead as "not standing" (they already are:
+HP 0); elimination by holding stays for Duo/Trio. Fallback if R2 fails: kill, then on the comeback move the player away and hold
+them down (TASKS history: "option B", 2026-10-23 chat).
+
+### M5-7 — Spectate a player still fighting (camera)
+Owner: OPUS (RE) | Status: todo (after M5-5 is merged)
+An eliminated player watches a random living player until the morning (choice later). Needs the engine's follow camera: find the
+camera's target (the local PlayerIns) and whether pointing it at another PlayerIns copy is safe. Static RE first (camera classes in
+RTTI / FD4 names), then a solo dev command that swaps the target to a bot (offline mode) as the proof.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 

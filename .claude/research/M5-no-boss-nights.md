@@ -1,6 +1,6 @@
 # M5-1: Nights with no night boss (static research)
 
-Researcher: Opus | Date: 2026-10-22 | Status: done, waiting for the in-game checks in TASKS M5-2 / M5-3
+Researcher: Opus | Date: 2026-10-22 | Status: done (M5-2 / M5-3 PASS; M5-4 answered in §6b, 2026-10-23)
 Scope: game 1.03.3 (exe 1.3.3.0), the real event files `Z:\Tools\nr-unpacked\1.03.3\event\*.emevd.dcx` (all 278 decompressed with
 WitchyBND 3.0.1.0 and read with our own decoder `experiments/M5-1/emdec.py`, instruction names from DarkScript3 3.6.3
 `nr-common.emedf.json`), `regulation.bin` (WitchyBND, `PlayAreaCreateCommonParam`), and `nightreign.exe` (capstone,
@@ -160,6 +160,26 @@ night = the vanilla wipe (game over for both games).
 team value (77?) and alive flag; (2) whether the dead player comes back at the morning when the host's game sets 7502, and where;
 (3) whether 7502 set by the host's DLL reaches the client (7503 / 7505 there); (4) the endings: `flag 7000 1` in one game and
 `flag 7001 1` in the other.
+
+### 6b. M5-4 answers (2026-10-22 / 23: static RE, Nucleus run 2, the M5-5 runs; TESTING §3)
+
+| Question | Answer | Tag |
+|---|---|---|
+| Why did a knocked player's bleed-out freeze at night (run 1)? | **The vanilla night rule.** `common` 1301 turns the local flag **9015** on while it is night (7515) and the local player is **inside the play area** (`3[45]`), and on Day 3 (7510, not 7513). `common` 1302 then gives the local player **SpEffect 102120**; when 9015 goes off it gives 102121. In the per-frame downed function `exe+0x674EB0`, at `exe+0x674FCD`, `exe+0x509150(SpEffect list, 102120)` ("has SpEffect", a walk of the list at `[chr+0x190]+8`) makes the clock `GameSystemCommonParam.BossArenaNearDeathDuration` (= **15**, row offset `+0x2F4`) **every frame** instead of counting down. So at night inside the circle nobody bleeds out (vanilla: you wait for a revive or the wipe). 102121 = same category (201, priority 8) with no state: it replaces 102120 | `[VERIFIED: static (events + disassembly + regulation) + run 2: knocked 44 s inside the circle at night, no bleed-out]` |
+| Same param row | `+0x380/+0x384/+0x388` = `RequiredReviveProgress_Level1..3` (40 / 90 / 240, the bar sizes per down), `+0x38C..+0x394` the revive decay %, `+0x2CA` u16 the down-count cooldown (180 s); the row is param index `0x92` fetched by `exe+0xE76D50` | `[VERIFIED: static + values match MEMORY_MAP §6]` |
+| Where does a bled-out player come back after ~7 s? | **Not in the event scripts.** Engine code with no `.pdata` (obfuscated region): strings `CSRespawnPointMan`, `CS::CSRespawnPointManImp::_FindRespawnPoint` (referenced at `exe+0xBA5225`, `exe+0xBA5426`), `WorldChrMan_Respawn`, sound state `LocalPlayerState` = `_00_Default` / `_01_NearDeath` / `_02_DeathToRespawn`. Not followed further: the build does not need it (below) | `[VERIFIED: static, partial]`; the function: UNKNOWN |
+| Who kills the player at 0? | The state-1 branch of `exe+0x674EB0` resets the downed state only when neither `+0x731` nor `+0x732` is set; `+0x731` is the per-frame "go down / stay down" event (type 144), so the player script (hks) leaving the near-death state ends it. The hks reads the bleed-out clock (env) | `[VERIFIED: disassembly]`; the hks side `[HYPOTHESIS]` |
+| Dead-player / spectator camera | Not in the event scripts (only `Change Camera` on special maps); vanilla has no spectate phase (boss nights never bleed out, see above) | UNKNOWN (engine camera, a later card) |
+| Does 7502 set by the host's DLL reach the client? | The flag itself does not (a DLL write is local), but the host's own event script passes **7503 / 7505** to every game and the morning follows in both | `[VERIFIED: run 2]` |
+| Do 7000 / 7001 give each game its own ending? | Yes: the 7000 game played the first-win cutscene, the 7001 game did not; both flags are consumed within 5 s | `[VERIFIED: run 2]` |
+| Team value 6 at night | `common` 1182 drops a player's alive flag at night when the team is not 1 / 2 / 20 / 29: with everyone on 6, the vanilla wipe 1180 fires at once | `[VERIFIED: Nucleus run 4]` |
+
+**What M5-5 / M5-6 / M6-1 build on (2026-10-23):** "eliminated" does **not** use the game's death. When the 15 s run out
+(`ELIM_CLOCK` 1 s, or 16 s down as a backup), each game holds its own player's clock at 15 every tick (the clock write is
+VERIFIED, MEMORY_MAP §6), so the player never dies and the ~7 s comeback never starts; nobody can revive them (the T-041 block
+widened to everyone). At the morning the DLL writes `+0x732` = 1 (the game's own get-up) and moves the player to its morning spot.
+Our event file empties 1302 (so the 15 s run at night), 1180 (the wipe) and `90005910` (Day 3). Spectating is left for a camera
+card. Code: `features/night_match.rs`.
 
 ## 7. Sizes and cards
 

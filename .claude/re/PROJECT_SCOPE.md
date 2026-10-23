@@ -31,6 +31,13 @@ where they differ):**
   off; a teammate can revive a knocked teammate (Duo/Trio). When the bleed-out ends the player is **eliminated** until the morning:
   no comeback, no revive, and they **spectate** a player still fighting (a random one for now; choosing whom to watch comes later)
   (decided 2026-10-22).
+- **Solo: a kill is a real death (Leonardo, 2026-10-23; supersedes "knocked … Solo too" for Solo).** At night a player at 0 HP
+  **dies at once** unless they carry a revive item (then the item works as in vanilla). The dead stay dead until the morning and
+  **spectate**; at the start of Day 2 every dead player **respawns at a random place on the map**. No downed bodies in a Solo arena.
+  "I want the players to feel the reward of killing a player, not just hiding it." Duo/Trio keep the knock (teammates revive).
+  Needs research first: how the game kills a character, keeps them dead and brings them back (TASKS M5-8).
+- A kill feed (notifications in the bottom-right corner of the screen) is planned by Leonardo as its own system later; not part
+  of the night work.
 - A night ends **only when one player is left** (one team, once Duo/Trio exist): no timer.
 - **Only the night's winner is healed** at the end of the night. The others **respawn at the morning, spread over different
   places**.

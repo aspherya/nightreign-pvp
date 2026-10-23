@@ -138,6 +138,11 @@ pub(crate) struct Core {
     pub(super) diag_suppressed: u32,
     /// T-040 (console `revive_fail`; only the dev console ever sets it): the next n `try_rule` calls fail without reading memory.
     pub(super) forced_fails: u32,
+    /// M5-5: lowest clock the rival-hit penalty writes ([`CLOCK_FLOOR`] by day; higher at night, so the night match sees the
+    /// bleed-out end before the game kills the player).
+    pub(super) clock_floor: f32,
+    /// M5-6: rule v1 and its retries stay off until this time (our own morning get-up must not be taken for a rival's revive).
+    pub(super) exempt_until_ms: u64,
 }
 
 impl Core {
@@ -165,6 +170,8 @@ impl Core {
             diag_count: 0,
             diag_suppressed: 0,
             forced_fails: 0,
+            clock_floor: CLOCK_FLOOR,
+            exempt_until_ms: 0,
         }
     }
 
@@ -208,9 +215,14 @@ impl Core {
         if self.dev {
             lines.extend(events.iter().map(Event::line));
         }
-        lines.extend(self.pending_step(now_ms, subjects, mem));
+        let exempt = now_ms < self.exempt_until_ms;
+        if exempt {
+            self.pending = None;
+        } else {
+            lines.extend(self.pending_step(now_ms, subjects, mem));
+        }
         for ev in &events {
-            if rule_should_fire(self.policy, ev) {
+            if !exempt && rule_should_fire(self.policy, ev) {
                 lines.extend(self.apply_rule(now_ms, ev.addr, mem));
             }
         }
@@ -634,7 +646,7 @@ impl Core {
         if !(0.0..=60.0).contains(&clock) {
             return Err(format!("clock {clock} outside 0..=60"));
         }
-        let new_clock = (clock - self.hit_seconds).max(CLOCK_FLOOR);
+        let new_clock = (clock - self.hit_seconds).max(self.clock_floor);
         for (off, v) in [
             (OFF_REVIVE_BAR, bar_before),
             (OFF_BLEED_CLOCK, new_clock),

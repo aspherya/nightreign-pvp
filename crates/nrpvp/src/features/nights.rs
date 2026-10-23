@@ -1,18 +1,18 @@
 //! M5-3: nights with no boss and no minions (`research/M5-no-boss-nights.md`). The work is done by the game-data package:
 //! `gamedata/emevd-nights-func.json` gives every common event that brings a night boss or its minions an empty body, and
-//! `gamedata/emevd-nights.json` adds two events to `common.emevd` that end night 1 / night 2 after a fixed time by setting the
-//! game's own "night done" flags (7502 / 7507), so the game's morning follows as after a boss.
+//! `gamedata/emevd-nights.json` adds two events to `common.emevd` that end night 1 / night 2 by setting the game's own "night done"
+//! flags (7502 / 7507), so the game's morning follows as after a boss.
 //!
-//! This feature only ends the current night early on request: it sets our flag [`FLAG_NIGHT_END`], which those events also wait
-//! for (console `night_end` now; later the match logic, e.g. when one team is left). The events run only in the host's game.
-//! Log lines start with `nights:`.
+//! Those events wait for our flag [`FLAG_NIGHT_END`]: the night match sets it in the host's game when one team is left standing
+//! (M5-5, `night_match.rs`), the console `night_end` here; a 10 min timer in the event is the fallback so a night never hangs. The
+//! events run only in the host's game. Log lines start with `nights:`.
 
 use std::sync::{Mutex, PoisonError};
 
 use super::{Ctx, Feature};
 use crate::game::world::World;
 
-/// Our flag the night-end events wait for besides their timer (group 10007; `gamedata/emevd-nights.json`).
+/// Our flag the night-end events wait for besides their fallback timer (group 10007; `gamedata/emevd-nights.json`).
 pub(crate) const FLAG_NIGHT_END: u32 = 10_007_400;
 
 /// Whether a night can be ended now (pure; unit tested).
@@ -87,7 +87,7 @@ mod tests {
     fn gamedata_has_the_night_events() {
         let nights = include_str!("../../../../gamedata/emevd-nights.json");
         for n in [1, 2] {
-            let want = format!("\"night_end\": {n}, \"secs\": 180, \"flag\": {FLAG_NIGHT_END} }}");
+            let want = format!("\"night_end\": {n}, \"secs\": 600, \"flag\": {FLAG_NIGHT_END} }}");
             assert!(nights.contains(&want), "missing: {want}");
         }
         assert!(nights.contains("\"file\": \"event/common.emevd.dcx\""));

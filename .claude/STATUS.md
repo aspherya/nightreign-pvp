@@ -1,4 +1,4 @@
-# Status and handoff (updated 2026-10-22)
+# Status and handoff (updated 2026-10-23)
 
 Read this first when picking the project up again. **This is the only doc that says what is true now**: what works, what is built but
 untested, what comes next, the traps we already fell into, and the decisions made. Other docs own their topic (doc map in `CLAUDE.md`);
@@ -19,6 +19,7 @@ this file points to them.
 | **Solo matchmaking over real Steam (queue → match found → same Roundtable → expedition as rivals → back to idle)** | **Works with one host click** (FS-MM3, 2026-10-19, 2 PCs): the host presses Invite Members when asked; everyone else does nothing. Started from the table (UI-1) in the player zip since 2026-10-20; 2-player matches until release, 6 in the final game; 3–6 players only in automated tests |
 | Battle Royale in the stock table menu (UI-1) and status as the game's own messages (UI-2) | **Works with two players** (FS-UI2, 2026-10-21): 3 rounds, each PC host at least once: Solo → Commence → match → host's Invite Members (no Steam window) → same expedition as rivals → back to idle. The host starts the expedition the normal way; our menu code is not involved. Polish: "match found!" and "joining the host…" never show (the next state arrives within the 6 s gap) |
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal; a rival can never revive a rival** | **Works, clean (T-041, Nucleus 2026-10-22, free-for-all and 2 v 1):** the rival's hit is cancelled inside the game (hook on the bar store), so no stand-up and no gauge flicker on any screen; teammates revive normally. Fallbacks: revive-event block and the T-040 re-down. Not yet in a player zip or over real two-PC lag |
+| **Nights are elimination rounds (M5-3 + M5-5/M5-6/M6-1, Leonardo's rules M5-D)**: no boss, no minions; knocked 15 s at night, then **eliminated** (held down, no comeback, nobody revives); the night ends when one team is left; only the winner healed; losers get up at the morning at their own morning spot; night 2 = win for the last team, loss for everyone else; no Day 3 | **Built** on branch `claude/great-turing-b2e494` (PR to `main`). Solo PASS (event side: night end, heal, no Day 3, win banner) and Nucleus PASS (count end, hold, morning get-up + move, elimination), 2026-10-23, TESTING §3. Open: night 2 decided by count with two players (5 min, next session). Not built: spectating another player (TASKS M5-7) |
 
 In progress: the hawk crossing (PROJECT_PLAN §13 v1): **works solo in the dev build** (one diagonal line, cruise, dive, drop;
 HAWK-1b/3/4 PASS 2026-10-22, branch `hawk-crossing`). **HAWK-2 merged into `main` 2026-10-22** (PR #2, 8aca550): on by default in both builds (`[hawk]` in `nrpvp.toml`, no console needed), route file in the player zip. **Solo
@@ -36,7 +37,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 
 | Place | Mode | Settings |
 |---|---|---|
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (build of 2026-10-21 18:33 with T-040, uncommitted on `t-028-snapback`; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (2026-10-23: dev build of branch `claude/great-turing-b2e494` dc0ba23, nrpvp.dll 766614D17C252A01; its `nrpvp.toml` is now `main`'s dev toml plus the deploy keys; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | **Release candidate 2026-10-22:** `.claude\worktrees\offline-mode-ccabe0\dist\NightreignPvP.zip` from `main` 0145f72 (clean), nrpvp.dll DB60DAF8E06D743C, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2` | player: Solo Battle Royale (Duo/Trio "coming soon"), hawk crossing always on, PvP + downed rules, offline mode via `mode = "offline"`; **no bots** (dev only) | `team_size = 1`, `matchmaking = true`. **Not** installed by the agent; regression REG-1 (TESTING §5) open |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`): **superseded** by the 2026-10-22 release candidate | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
 | Worktree `.claude\worktrees\offline-mode-ccabe0\dist\` (dev build of `main` 0145f72, 2026-10-22; that folder's own `scripts\launch.ps1` uses it) | developer + console: offline mode + bots (REG-1 part B) | copy of `main`'s dev toml with `br_menu = true`, `mode = "br"`; copy of `dist\gamedata` (hawk line B) |
@@ -108,9 +109,11 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    "night done" (7502 / 7507) in `common.emevd`; the circle and the rest of the night run on the clock. **M5-2** console `clock`
    (jump the play-area clock through the game's own set-time mailbox, MEMORY_MAP §16): **solo PASS 2026-10-22** (TESTING §3).
    **M5-3** (no boss, no minions; nights end 180 s after 23:59 with the normal morning): **solo PASS nights 1 and 2, 2026-10-22**.
-   **M5-4** (research) in progress: Nucleus run 1 showed the alive flags drop on downed and a bled-out player comes back after ~7 s
-   even at night; open: the night-end sync, the per-game endings, the comeback's code. **M5-D** decided (knock 15 s, then eliminated +
-   spectate). Then M5-5 / M5-6 / M6-1 (TASKS). Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
+   **M5-4 done** (2026-10-23, memo §6b): the night freeze is vanilla (SpEffect 102120 inside the circle), the host's 7502 brings
+   everyone to the morning, 7000 / 7001 end each game separately. **M5-5 / M5-6 / M6-1 built** (2026-10-23, branch
+   `claude/great-turing-b2e494`, `features/night_match.rs`; solo + Nucleus PASS, §1; PR #9). Next: **M5-8** research (control
+   the game's death: kill now, stay dead, respawn at random places; Leonardo 2026-10-23), then M5-9 (Solo real death) and **M5-7**
+   (spectate camera); the 5 min night-2 check (TASKS) in the next session. Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
    **OFF-8** (downed state in an offline solo match) now blocks OFF-7.
 6. Matchmaking: how it works and its logs are in `MATCHMAKING.md`; design history in `research/S9-matchmaking-decision.md` §5c–5g.
    Next: MM-3g (trigger the game's Invite Members from the queue so no one clicks; call chain in S9 §5d), then MM-6 Duo/Squad.
@@ -155,6 +158,12 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 - **Only a lobby the game makes can be joined.** Our own `CreateLobby(Public, 6)` gets adopted by Seamless Co-op but joiners' games
   leave it at once, and a direct `JoinLobby` gives Steam membership without the game session (FS-MM2). Steam lobby membership is not
   presence: ALL PRESENT also needs the host's ChrSet to hold the players.
+- **`RegionCache::readable_len` is a `VirtualQuery` even on the direct cache.** `flags::locate` used it; 12 flag reads per tick made the
+  main loop take 0.6 s (solo) to 2.4 s (Nucleus) per pass (2026-10-23). Read flags only through the fixed `locate` (plain copies).
+- **Nucleus has the vanilla night**: minions, the wipe check (both down = game over for both) and the night freeze (a knocked player
+  inside the circle never bleeds out). Never put both players on team 6 at night there (1182 counts them out → instant wipe); use
+  console `god 1` on the knocking player instead. `clock end` on a fresh day kills everyone outside the closed circle: use
+  `clock circle` and walk in.
 - **`mm_quiet_invite` and `mm_lobby_trace` both use all four debug registers**; config turns quiet invite off when the trace is on.
 - **Sonnet agents can be cut off by usage limits mid-task.** Check `cargo build` and `git status` before trusting the tree; the task card says what was intended.
 
@@ -163,7 +172,8 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 - `main`: docs, R0, R1, CON-1/2, R5, R2-lite, R3-split, T-028 teleport, T-040/T-041 (SMOKE-1 2026-10-20, SMOKE-2 and SMOKE-3 2026-10-21). Leonardo pushes.
 - `t-028-snapback` (T-028 teleport, parked F3 team-spawn rule, T-040/T-041) is merged into `main` (3ea3168, 2026-10-21); the branch
   can be deleted (SMOKE-3 PASS: the teleport works on `main`).
-- Tests: `cargo test --workspace` → 404 pass on `main` d3d1eb8 (372 nrpvp, 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
+- Tests: `cargo test --workspace` → 484 pass on branch `claude/great-turing-b2e494` dc0ba23 (452 nrpvp, 4 nrcon, 3 launcher, 25
+  nrscan; 1 ignored). Before: 404 pass on `main` d3d1eb8 (372 nrpvp, 4 nrcon, 3 launcher, 25 nrscan; ignored: the timing-dependent `nrscan`
   self-scan `poke_add_is_followed`). R5 removed ~110 tests together with the code they tested. fmt, clippy `-D warnings` (dev and player builds) clean; the same checks
   run in GitHub Actions (`.github/workflows/ci.yml`) on every push.
 - Builds: `cargo build --release` = developer DLL (feature `dev`, default: console, RE tracers); `--no-default-features` = player DLL
@@ -192,6 +202,12 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
   before the next big features. `ARCHITECTURE.md`.
 - **The crossing line** (Leonardo, 2026-10-22): one line for every start route, diagonal "B" of the route atlas (the longer and higher;
   the "bottom to top" rule is dropped). TASKS HAWK-1b.
+- **Solo: a kill is a real death** (Leonardo, 2026-10-23; PROJECT_SCOPE §2): at night 0 HP without a revive item = dead at once;
+  the dead spectate; Day 2 respawns everyone at random places. Research first (TASKS M5-8), then M5-9. Kill feed: Leonardo's own
+  later system (bottom-right notifications), not now.
+- **Eliminated = held down, not dead** (Claude, 2026-10-23; implements M5-D; stays for Duo/Trio and as the fallback): the game's death and ~7 s comeback are engine code in
+  an obfuscated region, so an eliminated player is kept in the downed state (clock held) until the morning and then stood up with
+  the game's own get-up. Spectating someone else is a separate camera card (M5-7).
 - **Match start = hawk crossing** (Leonardo, 2026-10-21): the start hawk flies one straight line across the whole map and each player
   jumps off where they want (Fortnite style). Replaces separate team spawns. `PROJECT_PLAN.md` §13.
 - **Matchmaking direction** (Leonardo, 2026-10-21): stay on Seamless Co-op as long as it carries us, with three must-haves: no
