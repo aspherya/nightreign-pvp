@@ -6,10 +6,11 @@ use super::gamemem::GameMem;
 use super::layout::{
     BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE,
     CHRSET_CAPACITY, CHRSET_ENTRIES, CHRSET_ENTRY_SIZE, CHRSET_MAX_CAPACITY, CHR_HANDLE, CHR_ID,
-    CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, MENU_SETTINGS,
+    CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, DATA_MODULE_HP, MENU_SETTINGS,
     MENU_SETTINGS_PLAYERS, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
-    PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, WCM_CHRSETS,
-    WCM_CHRSET_COUNT,
+    PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED,
+    PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
+    WCM_CHRSETS, WCM_CHRSET_COUNT,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -56,6 +57,40 @@ impl<'m> ChrIns<'m> {
 
     pub(crate) fn team(&self) -> Option<u8> {
         self.mem.read_u8(self.addr + CHR_TEAM)
+    }
+
+    /// PlayerIns only: current HP from the character data module (MEMORY_MAP §5).
+    pub(crate) fn hp(&self) -> Option<u32> {
+        let list = self.mem.read_ptr(self.addr + PLAYER_MODULES)?;
+        let data = self.mem.read_ptr(list)?;
+        self.mem.read_u32(data + DATA_MODULE_HP)
+    }
+
+    /// PlayerIns only: the downed state byte, 0 up / 1 downed / 2 getting up (MEMORY_MAP §6).
+    pub(crate) fn downed_state(&self) -> Option<u8> {
+        self.mem.read_u8(self.addr + PLAYER_DOWNED)
+    }
+
+    /// The SpEffect ids on this character (the game's own list walk, MEMORY_MAP §17). Bounded; stops at the first unreadable node.
+    pub(crate) fn speffect_ids(&self) -> Vec<i32> {
+        let mut out = Vec::new();
+        let Some(holder) = self.mem.read_ptr(self.addr + PLAYER_SPEFFECTS) else {
+            return out;
+        };
+        let mut node = self.mem.read_ptr(holder + SPEFFECT_FIRST);
+        while let Some(n) = node.filter(|_| out.len() < SPEFFECT_MAX) {
+            match self.mem.read_u32(n + SPEFFECT_ID) {
+                Some(id) => out.push(id as i32),
+                None => break,
+            }
+            node = self.mem.read_ptr(n + SPEFFECT_NEXT);
+        }
+        out
+    }
+
+    /// True when this character holds any of `ids`.
+    pub(crate) fn holds_any_speffect(&self, ids: &[i32]) -> bool {
+        self.speffect_ids().iter().any(|i| ids.contains(i))
     }
 
     /// This game's copy of the team type (MEMORY_MAP §4). Callers gate what they write and to whom.
@@ -394,6 +429,31 @@ mod tests {
         assert_eq!(w.find_by_handle(handle, None), Some((chr, 3)));
         assert_eq!(w.find_by_handle(handle, Some(3)), Some((chr, 3)));
         assert_eq!(w.find_by_handle(0xFFFF_FFFF_10E0_0002, None), None);
+    }
+
+    #[test]
+    fn speffects_hp_and_state_are_read_through_the_character() {
+        let m = FakeMem::default();
+        let (chr, holder, n1, n2, list, data) = (
+            0x10_0000, 0x20_0000, 0x30_0000, 0x31_0000, 0x40_0000, 0x50_0000,
+        );
+        m.put_u64(chr + PLAYER_SPEFFECTS, holder as u64);
+        m.put_u64(holder + SPEFFECT_FIRST, n1 as u64);
+        m.put_u32(n1 + SPEFFECT_ID, 102_130);
+        m.put_u64(n1 + SPEFFECT_NEXT, n2 as u64);
+        m.put_u32(n2 + SPEFFECT_ID, 6_999_500);
+        m.put_u64(n2 + SPEFFECT_NEXT, 0);
+        m.put_u64(chr + PLAYER_MODULES, list as u64);
+        m.put_u64(list, data as u64);
+        m.put_u32(data + DATA_MODULE_HP, 240);
+        m.put(chr + PLAYER_DOWNED, &[1]);
+        let c = ChrIns::new(&m, chr);
+        assert_eq!(c.speffect_ids(), vec![102_130, 6_999_500]);
+        assert!(c.holds_any_speffect(&crate::game::layout::SPEFFECTS_REVIVE_ITEM));
+        assert!(!c.holds_any_speffect(&[540_155]));
+        assert_eq!((c.hp(), c.downed_state()), (Some(240), Some(1)));
+        // No holder: an empty list, not a fault.
+        assert!(ChrIns::new(&m, 0x60_0000).speffect_ids().is_empty());
     }
 
     #[test]

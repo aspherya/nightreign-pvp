@@ -14,6 +14,8 @@ night 1 (7505 off) or 2 (7505 on), that night is not done yet (7502 / 7507 off) 
 or our "flag", then sets the night-done flag network-wide (and 8020 when the special event 7700 / 7720 is on, as the boss-defeat
 handler 90065900 does), clears our flag, and ends (no restart). M5-5: no heal there any more (that event runs only in the host's game);
 it ends without setting anything when the night is already done (the DLL's fallback write got there first).
+M5-8 / M5-9: "speffect": <SpEffect id> with "flag": a per-game switch; while the flag is ON the local player holds that SpEffect,
+when it goes OFF the SpEffect is cleared (102130 = the player script's "die at once, no downed state", research/M5-8-death.md).
 M5-5 / M6-1: per-game events (Set Network Sync State Disabled first, as the game's own per-player events do), started by our flag,
 which they clear: "heal": true = Bonfire-like Recovery of the local player, then restart (the night winner); "ending": "win" | "lose"
 with "banner" (TextEffect param id: 4000 win, 4010 failure) and "secs" = banner, wait, then the local flag 7000 (win) / 7001 (failure),
@@ -105,9 +107,25 @@ def local_instrs(ev):
     ]
 
 
+def speffect_instrs(ev):
+    """M5-8 / M5-9: a per-game switch. While our flag is ON the local player (10000) holds SpEffect `speffect` (Set SpEffect 2004:8);
+    when it goes OFF the SpEffect is cleared (Clear SpEffect 2004:21); then the event restarts. The DLL owns the flag."""
+    flag, sp = ev['flag'], ev['speffect']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        (2004, 8, struct.pack('<ii', 10000, sp)),
+        flag_cond(MAIN, False, flag),
+        (2004, 21, struct.pack('<ii', 10000, sp)),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
 def build_event_instrs(ev):
     if 'night_end' in ev:
         return night_end_instrs(ev)
+    if 'speffect' in ev:
+        return speffect_instrs(ev)
     if ev.get('heal') or 'ending' in ev:
         return local_instrs(ev)
     flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')

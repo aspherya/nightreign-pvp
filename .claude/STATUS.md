@@ -37,7 +37,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 
 | Place | Mode | Settings |
 |---|---|---|
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (2026-10-23: dev build of branch `claude/great-turing-b2e494` dc0ba23, nrpvp.dll 766614D17C252A01; its `nrpvp.toml` is now `main`'s dev toml plus the deploy keys; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (2026-10-23: plain deploy (SC's launcher; the `-Me3` mode failed for window 2), dev build of branch `claude/confident-galileo-78961c` with M5-9, nrpvp.dll A2A95786B5A1DFCD; `main`'s dev toml plus the deploy keys; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
 | **Release candidate 2026-10-22:** `.claude\worktrees\offline-mode-ccabe0\dist\NightreignPvP.zip` from `main` 0145f72 (clean), nrpvp.dll DB60DAF8E06D743C, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2` | player: Solo Battle Royale (Duo/Trio "coming soon"), hawk crossing always on, PvP + downed rules, offline mode via `mode = "offline"`; **no bots** (dev only) | `team_size = 1`, `matchmaking = true`. **Not** installed by the agent; regression REG-1 (TESTING §5) open |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`): **superseded** by the 2026-10-22 release candidate | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
 | Worktree `.claude\worktrees\offline-mode-ccabe0\dist\` (dev build of `main` 0145f72, 2026-10-22; that folder's own `scripts\launch.ps1` uses it) | developer + console: offline mode + bots (REG-1 part B) | copy of `main`'s dev toml with `br_menu = true`, `mode = "br"`; copy of `dist\gamedata` (hawk line B) |
@@ -112,8 +112,13 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    **M5-4 done** (2026-10-23, memo §6b): the night freeze is vanilla (SpEffect 102120 inside the circle), the host's 7502 brings
    everyone to the morning, 7000 / 7001 end each game separately. **M5-5 / M5-6 / M6-1 built** (2026-10-23, branch
    `claude/great-turing-b2e494`, `features/night_match.rs`; solo + Nucleus PASS, §1; PR #9). Next: **M5-8** research (control
-   the game's death: kill now, stay dead, respawn at random places; Leonardo 2026-10-23), then M5-9 (Solo real death) and **M5-7**
-   (spectate camera); the 5 min night-2 check (TASKS) in the next session. Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
+   the game's death) **done 2026-10-23** (`research/M5-8-death.md`): SpEffect 102130 = die at once (our event 99100805, flag
+   10007420), a breakpoint holds a dead player dead and a later call replays the vanilla comeback (both verified solo); Nucleus can
+   **M5-9 built** (Solo real death: die-at-once at night, the death held until the morning, released through the game's own
+   comeback, then moved to a random day-1 place): solo PASS and the hold/release PASS in a two-window session (2026-10-23, TESTING
+   §3). Nucleus through me3 (`-Me3`) **fails** for window 2 (ColdLoader "appid not found"), so Nucleus stays on SC's launcher and
+   the kill + night flow in a session with our event files waits for the next friend session. Then **M5-7** (spectate camera); the
+   5 min night-2 check (TASKS). Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
    **OFF-8** (downed state in an offline solo match) now blocks OFF-7.
 6. Matchmaking: how it works and its logs are in `MATCHMAKING.md`; design history in `research/S9-matchmaking-decision.md` §5c–5g.
    Next: MM-3g (trigger the game's Invite Members from the queue so no one clicks; call chain in S9 §5d), then MM-6 Duo/Squad.
@@ -142,8 +147,9 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
 - **Nucleus `dlllist.txt` must not end with a newline.** It makes Nucleus fail with "WaitForSingleObject failed 258". The deploy script writes it correctly; never edit it by hand.
 - **Under Nucleus, keys reach a window only when it has focus** (END unlocks input). Use the console instead: `nrcon --all <cmd>` reaches every instance.
 - **Nucleus deletes its instance folders on close.** Logs go to `dist\nucleus-logs\` for that reason.
-- **Nucleus does not load our game-data package** (it starts the game through Seamless Co-op's launcher, not me3): no no-boss
-  nights, vanilla hawk route. Event-script features are tested solo with `scripts\launch.ps1`; under Nucleus use the dev console
+- **Nucleus does not load our game-data package when it starts the game through Seamless Co-op's launcher** (the plain deploy):
+  no no-boss nights, vanilla hawk route. `deploy-nucleus.ps1 -Me3` (start through our launcher / me3) works for window 1 only:
+  window 2 stops on ColdLoader "appid not found" (2026-10-23, cause UNKNOWN). Use the plain deploy. Event-script features are tested solo with `scripts\launch.ps1`; under Nucleus use the dev console
   (`flag`, `clock`) instead.
 - **Never run the scanner or any tool against the normal game.** Steam launch = vanilla with anti-cheat. Mods only through Nucleus, `nrpvp_launcher.exe`, or `scripts\launch.ps1`.
 - **Never touch the vanilla saves** (`%APPDATA%\Nightreign\<id>\NR0000.sl2*`).
@@ -207,7 +213,8 @@ Logs: the mod writes `nrpvp.log` (current session) and `logs\nrpvp_<UTC>.log` (n
   later system (bottom-right notifications), not now.
 - **Eliminated = held down, not dead** (Claude, 2026-10-23; implements M5-D; stays for Duo/Trio and as the fallback): the game's death and ~7 s comeback are engine code in
   an obfuscated region, so an eliminated player is kept in the downed state (clock held) until the morning and then stood up with
-  the game's own get-up. Spectating someone else is a separate camera card (M5-7).
+  the game's own get-up. Spectating someone else is a separate camera card (M5-7). **Solo uses the real death instead** (M5-9,
+  from M5-8: SpEffect 102130 + the held comeback). Esc while dead: not now; M5-7 must at least allow quitting (Leonardo, 2026-10-23).
 - **Match start = hawk crossing** (Leonardo, 2026-10-21): the start hawk flies one straight line across the whole map and each player
   jumps off where they want (Fortnite style). Replaces separate team spawns. `PROJECT_PLAN.md` §13.
 - **Matchmaking direction** (Leonardo, 2026-10-21): stay on Seamless Co-op as long as it carries us, with three must-haves: no

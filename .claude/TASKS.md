@@ -240,48 +240,67 @@ HUMAN (next Nucleus or friend session, about 5 min): land; `flag 7502 1` in the 
 `clock circle`, walk in; at night p1 knocks p2 → p1's game `night 2 decided … won` and the win screen, p2's game the loss screen.
 Under Nucleus never use team 6 for both players at night (TESTING §3 run 4).
 
-### M5-8 — Research: control the game's death (kill now, stay dead, come back where we say)
-Owner: OPUS (static RE, own session) + HUMAN (one Nucleus trace session) | Status: todo (decided 2026-10-23) | Feeds: M5-9, M5-7
-Why: Leonardo, 2026-10-23 (PROJECT_SCOPE §2): in **Solo** a kill is a real death; at night 0 HP = dead at once unless the player
-carries a revive item; the dead stay dead and spectate until the morning; at the start of Day 2 every dead player respawns at a
-random place. Today's elimination (held down, `night_match.rs`) stays for Duo/Trio and as the fallback.
-Tools: REA (MCP, `rea`), Ghidra `Z:\Tools\ghidra_12.1.4_PUBLIC`, the unpacked game `Z:\Tools\nr-unpacked\1.03.3` (event files
-decoded with `experiments/M5-1/emdec.py`; regulation with WitchyBND, `GameSystemCommonParam` read on 2026-10-23), the cheat-table
-leads (MEMORY_MAP §11), `experiments/M5-8/nr.py` (capstone/numpy helpers: `.pdata`, disasm, xrefs). Python: memory note
-"python-disasm-env" (numpy added 2026-10-23).
-Starting points (memo §6b): per-frame downed function `exe+0x674EB0`; bleed-out death is the player script leaving near-death
-(`+0x731` per-frame event type 144); strings `CSRespawnPointMan`, `CS::CSRespawnPointManImp::_FindRespawnPoint` (refs at
-`exe+0xBA5225` / `exe+0xBA5426`, a region with no `.pdata`), `WorldChrMan_Respawn`, `RejoinMapEnterStep::STEP_Branch_DyingOrRespawn`,
-sound state `LocalPlayerState` `_02_DeathToRespawn`; team type 77 = "dead at night" (set by the engine, read by `common` 1181 /
-1182 / 1310); event instruction **`2004[4] Force Character Death`** (used on Nightlord maps); revive items = SpEffects 540155 /
-6999100 (flags 7010–7012, `common` 1180 / 1183). Seen: a bled-out player comes back ~7 s later with full HP, by day and at night
-(TESTING §3 M5-4 runs 1–2).
-Questions, in this order:
-- **R0 (enabler):** can the Nucleus instances run our game-data package (start them through me3 instead of SC's launcher, or any
-  other way)? Every two-window test today ran without our event files (vanilla minions, wipe check, night freeze).
-- **R1 kill on demand:** does `Force Character Death` on the local player (10000) in a per-game event kill a player in a session
-  cleanly (death animation, network, SC)? Or a direct engine call? How the DLL tells "carries a revive item" (SpEffects above).
-- **R2 the comeback:** which code brings a dead player back after ~7 s, and how to hold it at night and release it at the morning.
-  Static first; then a hardware-breakpoint trace in one Nucleus run (e.g. write watch on the dead LOCAL's HP / state / team, RIP +
-  return addresses; the T-041 `bar_trace` pattern). Never patch code (hard rule 3 is about SC; for the game: breakpoints/hooks only).
-- **R3 the dead state:** with the comeback held: what the dead player sees and can do, team value (77?), alive flags, does SC keep
-  the session; does the vanilla 1181 / 1310 logic interfere.
-- **R4 respawn places:** the game's own respawn points (`CSRespawnPointMan`, `map:/entryfilelist/RespawnPoint.entryfilelistbnd`,
-  `Runtime_RespawnPoint_…`): can the DLL read them to pick a random safe point; where the game itself respawns a player.
-Done when: memo `research/M5-8-death.md` answers R0–R4 with evidence tags (or UNKNOWN + how to find out), MEMORY_MAP /
-TECHNICAL_NOTES updated, and M5-9 below is rewritten with concrete hooks/offsets. HUMAN: one Nucleus session (~15 min, driven live
-by the agent with `nrcon`, one step at a time; Leonardo uses `god 1` on the attacker, never team 6 at night).
+**M5-8 done (2026-10-23, static RE + solo runs 1–4, TESTING §3; memo `research/M5-8-death.md`, MEMORY_MAP §17, TECHNICAL_NOTES
+§4f):** SpEffect **102130** makes 0 HP a real death (the player script's own switch; our event 99100805 holds it while flag
+10007420 is ON, verified solo); the comeback is a timed callback chain on the Lua event sequencer, and a breakpoint on its start step
+`exe+0x5C4810` **holds a dead player dead** (no fade) and a later call of that step **replays the vanilla comeback** (both verified
+solo); the game respawns at the nearest `CSRespawnPointMan` point inside the circle. R0: `deploy-nucleus.ps1 -Me3` starts the
+Nucleus windows through our launcher (me3 + our event files); first launch pending (M5-9 step N0). Dev tool: `game/deathtrace.rs`
+(`death_trace`, `death_hold`, `speffects`). Card removed.
 
-### M5-9 — Solo nights: a kill is a real death (build, after M5-8)
-Owner: OPUS → SONNET/implementer → HUMAN | Status: todo (blocked on M5-8)
-Solo only: at night 0 HP without a revive item = death (R1), the comeback held until the morning (R2), the dead spectate (M5-7),
-at Day 2 every dead player respawns at a random point (R4). `night_match.rs` counts the dead as "not standing" (they already are:
-HP 0); elimination by holding stays for Duo/Trio. Fallback if R2 fails: kill, then on the comeback move the player away and hold
-them down (TASKS history: "option B", 2026-10-23 chat).
+### M5-9 — Solo nights: a kill is a real death (build)
+Owner: OPUS → SONNET/implementer → HUMAN (solo + Nucleus) | Status: **built (b59df6c + fixes d858024, e81a575); S1 solo PASS,
+Nucleus hold/release in a session PASS, N0 (Nucleus through me3) FAIL; open: the kill and the night/morning flow in a session with
+our event files (next friend session)** (TESTING §3, 2026-10-23) | Memo: `research/M5-8-death.md`
+Goal (PROJECT_SCOPE §2): in **Solo** (`team_size = 1`), at night 0 HP without a revive item = death; the dead stay dead until the
+morning after night 1, then the game respawns them and the DLL moves them to a random place; night 2's dead stay dead until the
+ending. Duo/Trio (`team_size` ≥ 2) and day deaths: unchanged (knock, M5-6 elimination hold, vanilla comeback by day).
+Build:
+1. **Die at once** (`features/night_match.rs`): while it is night (7515), the night is not decided, Solo, and LOCAL is up (state 0,
+   HP > 0) and holds **none** of SpEffects 540155 / 6999100 / 6999500 / 8970061, set our flag **10007420** ON (event 99100805 gives
+   LOCAL SpEffect 102130); otherwise OFF (also by day, after the decision, outside an expedition, Duo/Trio). Write it only when the
+   wanted value changes. LOCAL's SpEffects come through the World read model (the list walk of MEMORY_MAP §17; today's code:
+   `game/deathtrace.rs` `speffect_ids`, move it to `game/views.rs` or `world.rs`). Log `night_match: die-at-once ON/OFF (why)`.
+   Without our event file the flag does nothing and the knock + M5-6 hold still apply (natural fallback; log nothing extra).
+2. **Hold** (new `game/deathhold.rs`, **both builds**; the hold/gate code of `deathtrace.rs` moves here, `deathtrace` keeps the dev
+   logging and its `death_hold` console calls this module): execute breakpoint on `exe+0x5C4810` (check bytes
+   `48 89 5C 24 08 48`) armed only while `armed` (set by the night match) and LOCAL is dead (HP 0, state ≠ 1); in a free hwbp slot.
+   Hit while armed → keep `(rcx, rdx)`, return at once. The night match arms it from nightfall to the morning in Solo (new
+   `NightAct::DeathHold(bool)`), so a death at night is held; by day it is never armed.
+3. **Release at the morning** (`NightAct::ReleaseDeath`, in the night-1 morning step, before the get-up / move logic): if a step is
+   held, call it on the game thread through a gate breakpoint (the solo-proven mechanism: save the gate's rcx/rdx/r8/r9/rsp, RSP − 16
+   with the gate address as return address, RIP = held step; on the return into the gate put them back, RF). **Gate:**
+   `exe+0x5BCE10` (CSLuaEventProxy update, bytes `40 55 53 56 57 41`, the sequencer's own thread `[HYPOTHESIS]`); if it has not
+   fired 2 s after the release was asked, use `exe+0x675480` (bytes `48 89 5C 24 10 57`, worked in solo run 4). Log the gate's thread
+   and the thread of the last step hit; never clear the gate while its call is in flight. A held step left at an area load or the
+   match end is dropped (no call), and the module disarms.
+4. **Random place** (morning, after the release): once LOCAL is back (HP > 0, state 0) teleport (`NightAct::Teleport`) to a random
+   position from a pool this game recorded on day 1: LOCAL's world position every 5 s while on the ground (`+0x92`), state 0, HP > 0,
+   kept only when ≥ 100 m from every kept one (ring of 64). Prefer one ≥ 150 m from where LOCAL respawned; else any; else the M5-6
+   own spot. A Solo winner who never died is not moved (unchanged).
+5. Night 2: deaths are held as at night 1 and **never released** (the ending 7000 / 7001 follows the decision; check the loss banner
+   still plays for a held player).
+6. Console (dev): `night_status` shows `die-at-once on/off`, `death held` / `released`; keep `death_trace`, `speffects`;
+   CONSOLE.md rows. `night_match` unit tests for every rule above with the existing fakes (Solo vs Duo, revive item present, day vs
+   night, decided, release once, pool spacing / random pick with an injected RNG).
+7. Checks: `cargo test --workspace`; clippy dev and `--no-default-features` with `-D warnings`; `cargo fmt --check`. Commit
+   `M5-9: …`.
+Acceptance (HUMAN, Claude drives with `nrcon`):
+- **S1 solo (5 min, `scripts\launch.ps1`):** `clock night`, wait for 7515; `speffects` shows 102130 (no revive item) and
+  `night_status` "die-at-once on"; die to a monster → stays dead ("YOU DIED", camera only); `night_end` → respawn, then moved to
+  another day-1 place; `speffects` no longer shows 102130 by day.
+- **N0 Nucleus launch (handler already deployed with `-Me3`; redeploy with `-Me3` after the build):** both windows start, join,
+  logs show our package (`night_match` events, no boss at night). If not: `deploy-nucleus.ps1` (no `-Me3`) and report.
+- **N1 Nucleus kill (10 min):** p1 `god 1`; `clock circle`, both walk in; night: p1 brings p2 to 0 HP → p2 **dies at once** (death
+  animation on both screens), stays dead, night decided (p1 won); `death_trace 1` in p2's game logs team / HP / flags while dead;
+  morning → p2 respawns and is moved. Report what p1's screen shows of p2's body. Never team 6 for both at night.
+- Fallback if the hold does not work in a session (comeback still runs): let it run, then move the player away and hold them down
+  with the M5-6 clock hold until the morning ("option B"), and say so in TESTING.
 
 ### M5-7 — Spectate a player still fighting (camera)
 Owner: OPUS (RE) | Status: todo (after M5-5 is merged)
-An eliminated player watches a random living player until the morning (choice later). Needs the engine's follow camera: find the
+An eliminated (or, in Solo, dead: M5-9) player watches a random living player until the morning (choice later). Must let a dead
+player open the menu at least to quit (vanilla blocks Esc while dead; Leonardo 2026-10-23). Needs the engine's follow camera: find the
 camera's target (the local PlayerIns) and whether pointing it at another PlayerIns copy is safe. Static RE first (camera classes in
 RTTI / FD4 names), then a solo dev command that swaps the target to a bot (offline mode) as the proof.
 

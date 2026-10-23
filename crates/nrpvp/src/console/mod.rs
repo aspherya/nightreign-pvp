@@ -95,9 +95,12 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
-    Spec { name: "night_status", args: "", help: "M5-5: the night match: day / night n / morning, players, teams, how many stand, whether LOCAL is eliminated, the winner, LOCAL's spot", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "night_status", args: "", help: "M5-5 / M5-9: the night match: day / night n / morning, players, teams, how many stand, whether LOCAL is eliminated, the winner, die-at-once on/off, LOCAL's spot, death held / released", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
     Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
     Spec { name: "night_count", args: "[0|1]", help: "M5-5 test switch: 1 (default) a night ends when one team is left standing; 0 it never ends by count (two-window elimination tests; night_end still ends it); no argument shows it", run: night_count },
+    Spec { name: "death_trace", args: "[0|1]", help: "M5-8 research: while this game's player is dead, log the comeback steps (RejoinMapEnterStep breakpoints) and the player's state every second; no argument shows it", run: death_trace },
+    Spec { name: "death_hold", args: "[0|1]", help: "M5-9: 1 = a dead player stays dead (the comeback's start step is held, same module as the Solo night hold); 0 = a held step is called through the gate (exe+0x5BCE10, else exe+0x675480 after 2 s) and the game's comeback runs; no argument shows the state", run: death_hold },
+    Spec { name: "speffects", args: "", help: "M5-8 research: this game's player's SpEffect ids (revive items 540155 / 6999100 / 6999500 / 8970061, die-at-once 102130, ...)", run: |_| Ok(Act::Reply(crate::game::deathtrace::speffects_cmd())) },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
     Spec { name: "team_set", args: "<value> [target]", help: "write team_type on this game's copy of the target's players (default me)", run: team_set },
@@ -469,6 +472,25 @@ fn night_count(args: &[String]) -> Result<Act, String> {
         _ => return Err("usage: night_count [0|1]".into()),
     };
     Ok(Act::Reply(crate::features::night_match::count_cmd(on)))
+}
+
+fn switch_arg(args: &[String], usage: &str) -> Result<Option<bool>, String> {
+    match args.first().map(String::as_str) {
+        None => Ok(None),
+        Some("0") if args.len() == 1 => Ok(Some(false)),
+        Some("1") if args.len() == 1 => Ok(Some(true)),
+        _ => Err(usage.into()),
+    }
+}
+
+fn death_trace(args: &[String]) -> Result<Act, String> {
+    let on = switch_arg(args, "usage: death_trace [0|1]")?;
+    Ok(Act::Reply(crate::game::deathtrace::trace_cmd(on)))
+}
+
+fn death_hold(args: &[String]) -> Result<Act, String> {
+    let on = switch_arg(args, "usage: death_hold [0|1]")?;
+    Ok(Act::Reply(crate::game::deathtrace::hold_cmd(on)))
 }
 
 fn flag(args: &[String]) -> Result<Act, String> {

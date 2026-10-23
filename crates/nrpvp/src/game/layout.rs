@@ -77,6 +77,22 @@ pub(crate) const PHYSICS_POS: usize = 0x70;
 /// u8 inside the physics module: 1 standing (and riding the hawk), 0 in the air. T-028 runs 1-4.
 pub(crate) const PHYSICS_GROUND: usize = 0x92;
 
+// ---- SpEffects on a character (MEMORY_MAP §17; M5-8 solo run 2026-10-23, the game's own list walk exe+0x509150) ----
+/// PlayerIns -> the SpEffect holder; its first qword (+8) is the first list node.
+pub(crate) const PLAYER_SPEFFECTS: usize = 0x190;
+/// Holder -> first node pointer.
+pub(crate) const SPEFFECT_FIRST: usize = 0x8;
+/// Node -> i32 SpEffect id.
+pub(crate) const SPEFFECT_ID: usize = 0x8;
+/// Node -> next node pointer.
+pub(crate) const SPEFFECT_NEXT: usize = 0x38;
+/// The list walk stops after this many nodes.
+pub(crate) const SPEFFECT_MAX: usize = 256;
+/// SpEffects that make the player script's direct-death check pass: a revive item at work (540155 / 6999100 are the revival flags
+/// 7010-7012 of `common` 1183; MEMORY_MAP §17, research/M5-8-death.md §R1). The die-at-once SpEffect 102130 must not be given
+/// to a player holding any of them.
+pub(crate) const SPEFFECTS_REVIVE_ITEM: [i32; 4] = [540_155, 6_999_100, 6_999_500, 8_970_061];
+
 // ---- PlayerGameData (MEMORY_MAP §5) ----
 /// u32 HP mirror inside PlayerGameData.
 pub(crate) const GAMEDATA_HP: usize = 0x10;

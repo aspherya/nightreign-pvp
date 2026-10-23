@@ -696,6 +696,49 @@ The other player saw the jump; both screens agreed; both could still hit each ot
 - Not run: night 2 decided by count with two players (the winner's game 7000, the other 7001). Covered by unit tests, by run 2
   (the flags) and by the solo win banner; check it in the next Nucleus or friend session (TASKS M5-5).
 
+### 2026-10-23 — M5-8 solo death trace (Leonardo solo + Claude over nrcon; branch `claude/confident-galileo-78961c` 122e2a7 + the trace edits of runs 2–4, `scripts\launch.ps1` from the worktree, dev toml of `main` with `br_menu = false`; game 1.03.3, SC 1.1.3, me3 0.11.0; run 4 nrpvp.dll 0FF481F8DCDDC810). Logs: `experiments/M5-8/nrpvp_2026-10-23_02-*.log`: **PASS (switch, hold, release)**
+- **Switch** (run 1, 02:16): `flag 10007420 1` → `speffects` lists 102130 within 0.8 s; `flag 10007420 0` → gone. Our event 99100805
+  works. (A kill by it cannot be shown solo: solo play dies at once anyway.) LOCAL carried 6999500 the whole time.
+- **Run 1** (02:16:48): killed by a monster by day; back at 02:16:57 (~9 s), 13 m away, HP 240. The `RejoinMapEnterStep`
+  breakpoints never fired (not the death path).
+- **Runs 2–3** (write watches on the HP field and `PlayerIns+0x1F4` while dead): at +10 s `exe+0x3CD787/90` (from `exe+0x66E4E1`)
+  set `+0x1F4` bit 0x40; at +11 s the HP refill `exe+0x426B4F` (from `exe+0x3D596F`) and the respawn ~35 m away. The `+0x1F4` dword is
+  rewritten every frame by ~15 writers; the game survived the watch.
+- **Run 4** (`death_hold 1`, 02:37:17): the start step `exe+0x5C4810` was reached 4.5 s after the death and held. Leonardo: "YOU
+  DIED" showed, the camera could be turned, nothing else (no Esc menu); stayed dead 94 s. `death_hold 0` (02:38:51): the held step
+  ran (call from the `exe+0x675480` entry, thread 22468; the steps run on 22184), begin respawn +2.5 s, respawn +3.6 s at full HP,
+  90 m away. Leonardo: "respawned normally, no issues".
+- Not covered: a session (the multiplayer death, other screens, SC), the night. Next: M5-9 acceptance (TASKS), Nucleus started
+  through me3 (`deploy-nucleus.ps1 -Me3`, deployed 2026-10-23 with this branch's dev DLL, not launched yet).
+
+### 2026-10-23 — M5-9 S1 solo (Leonardo solo + Claude over nrcon; branch `claude/confident-galileo-78961c` b59df6c, nrpvp.dll 3995E56E63D18A08, `scripts\launch.ps1`, `team_size = 1`). Log: `dist\nrpvp.log` 17:29–17:30 UTC: **PASS (hold, release, gate A); two fixes after it**
+- `clock end` → night 1 begins, `M5-9 deathhold: hold ARMED`. Die-at-once stayed **off**: LOCAL carried 6999500 (a revive item on
+  the script's list), as the rule says. (The ON path is the solo run of 02:16.)
+- 17:29:37 killed by the night storm → 17:29:44 `start step HELD (thread 32152)`; `night_status` "death held"; no vanilla solo
+  game-over came in the 28 s held.
+- 17:30:12 `night_end` → morning: `releasing the held comeback` → `RELEASED … through gate exe+0x5BCE10 … on thread 32152 (last
+  start-step hit on thread 32152)`: **gate A runs on the sequencer's own thread** (the card's hypothesis); respawn at full HP.
+- 3.6 s later moved to a random day-1 place **(986, 210, -730): a hawk-ride position** (the ground byte is set on the hawk); Leonardo
+  fell from the sky (no fall damage in NR) and died to the night storm: the move came before the Day-2 clock reset, outside the
+  closed circle. Fixed: d858024 (a place counts only after 2 s under 9 m/s) and e81a575 (a morning move waits until the clock no
+  longer reads 20:00 or later; both the M5-9 random place and the M5-6 own spot). Not re-run yet.
+
+### 2026-10-23 — M5-9 N0 Nucleus through me3 (Leonardo, 2 instances, `deploy-nucleus.ps1 -Me3`, nrpvp.dll A2A95786B5A1DFCD): **FAIL (window 2)**
+- Window 1 started through our launcher every time: me3 loaded SC, nrpvp.dll and our package (`asset override … NightreignPvP\gamedata`).
+- Window 2 stopped every time on a "ColdLoader" box: "Failed to read coldloader.ini: appid not found in coldloader.ini or
+  steam_appid.txt", before me3's host attached. `steam_appid.txt` in `NightreignPvP\` and `NightreignPvP\me3\` did not help. Also:
+  me3.exe / me3-launcher.exe of a closed run stay alive and lock the instance folders (the deploy now stops them).
+- Back to the plain deploy (SC's launcher). Cause UNKNOWN (how coldloader finds its folder in a process started by me3); not
+  pursued (Leonardo: "lets just do the old way").
+
+### 2026-10-23 — M5-9 N1' Nucleus death hold in a session (Leonardo, 2 instances, plain deploy, same DLL A2A95786B5A1DFCD, host = Instance0 / p1 with `god 1`; Instance1 / p2 `death_trace 1`, `death_hold 1`; by day, no event files). Logs: `experiments/M5-8/nucleus/`: **PASS**
+- p1 knocked p2 and finished the bleed-out; p2 died (HP 0, state 0, team stayed 2). 3.7 s later `start step HELD (thread 33940)`;
+  p2 stayed dead ~55 s. Leonardo: window 2 still dead; **window 1 shows no body on the floor**.
+- `death_hold 0`: `RELEASED … through gate exe+0x5BCE10 … on thread 33940 (last start-step hit on thread 33940)`; begin respawn
+  +2.5 s, respawn +3.7 s, HP 200, ~85 m away. Leonardo: "window 2 respawned normally".
+- Not covered (needs our event files in a session: a friend session, or N0 fixed): the die-at-once kill (SpEffect 102130) in a
+  session, the night-armed hold and the morning release + random place in two windows.
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.

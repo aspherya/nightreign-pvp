@@ -16,10 +16,17 @@
 //! - **Night 2 ends the match**: the winner's game sets [`FLAG_WIN`] (banner 4000, then 7000), every other game [`FLAG_LOSE`]
 //!   (banner 4010, then 7001). Each game reads its own result (M5-4 run 2, Nucleus).
 //!
+//! - **Solo: a kill is a real death (M5-9).** With `team_size` 1, at night LOCAL gets our flag [`FLAG_DIE`] ON while it stands (state 0,
+//!   HP above 0) without a revive item: our event gives it SpEffect 102130, so 0 HP is a death, not a knock (`research/M5-8-death.md`).
+//!   [`NightAct::DeathHold`] arms `game::deathhold` from nightfall to the morning, so a dead LOCAL stays dead (the comeback's start
+//!   step is held). Night 1's morning calls the held step ([`NightAct::ReleaseDeath`]), the game respawns LOCAL, and LOCAL is moved
+//!   to a random place of a pool recorded on day 1 ([`NightCore::places`]). Night 2's dead are never released. Duo / Trio: unchanged.
+//!
 //! When our event file is not loaded (Nucleus: no me3), a flag of ours stays ON; after [`FALLBACK_MS`] this game writes the
 //! game's flag itself (7502 in the host, 7000 / 7001 in each game: `game::flags::set_match_flag`). The heal has no fallback.
 //! Not built: spectating another player (the camera, a later card). Log lines start with `night_match:`.
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Instant;
@@ -38,6 +45,8 @@ pub(crate) const FLAG_HEAL: u32 = 10_007_410;
 pub(crate) const FLAG_WIN: u32 = 10_007_411;
 /// Night 2: this game's player lost (event 99100804: banner 4010, 10 s, 7001).
 pub(crate) const FLAG_LOSE: u32 = 10_007_412;
+/// M5-9: LOCAL gets SpEffect 102130 (die at once) while this is ON (event 99100805; `research/M5-8-death.md` §R1).
+pub(crate) const FLAG_DIE: u32 = 10_007_420;
 /// The game's own flags written when our event file is missing.
 pub(crate) const NIGHT1_DONE: u32 = 7502;
 pub(crate) const GAME_CLEAR: u32 = 7000;
@@ -63,6 +72,26 @@ pub(crate) const GETUP_EXEMPT_MS: u64 = 12_000;
 pub(crate) const SPOT_BEFORE: ClockTime = ClockTime { h: 12, m: 0, s: 0 };
 /// How often the spot is refreshed.
 const SPOT_EVERY_MS: u64 = 2_000;
+/// M5-9: how long a dead LOCAL is waited for after the release (the comeback takes about 5 s; the gate fallback adds 2 s).
+pub(crate) const DEAD_WAIT_MS: u64 = 40_000;
+/// A morning move waits while the clock still reads this hour or later (the night clock holds at 23:59:59 until the Day-2 reset):
+/// S1 solo run 2026-10-23, a move before the reset put LOCAL outside the closed circle and the storm killed them.
+pub(crate) const MOVE_AFTER_HOUR: u8 = 20;
+/// The longest a morning move waits for the Day-2 clock.
+pub(crate) const MOVE_WAIT_MS: u64 = 90_000;
+/// M5-9: a day-1 position is sampled this often (while LOCAL is on the ground).
+const PLACE_EVERY_MS: u64 = 5_000;
+/// A place counts only after LOCAL moved slower than [`PLACE_MAX_SPEED`] this long: the start hawk flies at ~17 m/s with the ground
+/// byte set (MEMORY_MAP §8), so ride positions in the air must never enter the pool (S1 solo run 2026-10-23: a y 210 pick).
+const PLACE_SETTLE_MS: u64 = 2_000;
+/// Metres per second (horizontal) between two ticks; a sprint is about 7.
+const PLACE_MAX_SPEED: f32 = 9.0;
+/// M5-9: a sampled position is kept only when it is at least this far from every kept one (metres).
+pub(crate) const PLACE_MIN_APART: f32 = 100.0;
+/// M5-9: the pool keeps this many positions (the oldest goes first).
+pub(crate) const PLACE_POOL: usize = 64;
+/// M5-9: the morning prefers a place at least this far from where LOCAL respawned (metres).
+pub(crate) const PLACE_FAR_FROM_RESPAWN: f32 = 150.0;
 /// The host's session player id has this in its upper half (`0x6001FFFFFFFF`; FS-0, run 21, M5-4 runs 1-2).
 pub(crate) const HOST_ID_HI: u64 = 0x6001;
 
@@ -83,6 +112,10 @@ pub(crate) enum NightAct {
     Teleport([f32; 3]),
     /// Write one of the game's flags (`game::flags::MATCH_WRITABLE`).
     GameFlag(u32, bool),
+    /// M5-9: arm or disarm the hold of a dead LOCAL's comeback (`game::deathhold::set_armed`).
+    DeathHold(bool),
+    /// M5-9: call the held comeback step now (`game::deathhold::request_release`); nothing happens when none is held.
+    ReleaseDeath,
 }
 
 /// How a night ended.
@@ -112,6 +145,21 @@ struct Morning {
     out: bool,
     getup_asked: bool,
     moved: bool,
+    /// M5-9: LOCAL was dead (HP 0) at the morning and the release was asked.
+    released: bool,
+}
+
+/// What the morning step reads besides LOCAL.
+struct MorningIn<'a> {
+    local: Option<Fighter>,
+    spot: Option<[f32; 3]>,
+    solo: bool,
+    /// LOCAL's world position now.
+    pos: Option<[f32; 3]>,
+    places: &'a VecDeque<[f32; 3]>,
+    /// The play-area clock still reads the night (the game resets it to the Day-2 morning ~20 s after 7503; until then the circle is
+    /// closed and the storm hurts anyone outside it). No clock read = not waiting.
+    clock_night: bool,
 }
 
 /// The pure decision core (unit tested).
@@ -128,6 +176,75 @@ pub(crate) struct NightCore {
     count_off: bool,
     /// Since when each of our flags (night end, win, lose) has been ON (the fallback).
     stuck: [Option<u64>; 3],
+    /// M5-9: what the die-at-once flag was last wanted to be (`None` = not decided yet).
+    die_want: Option<bool>,
+    /// M5-9: the death hold is armed (what [`NightAct::DeathHold`] last said).
+    hold_on: bool,
+    /// M5-9: day-1 ground positions, at least [`PLACE_MIN_APART`] apart (ring of [`PLACE_POOL`]).
+    places: VecDeque<[f32; 3]>,
+    last_place_ms: Option<u64>,
+    /// The previous tick's ground position (the speed check) and since when LOCAL has been slow.
+    place_prev: Option<(u64, [f32; 3])>,
+    slow_since: Option<u64>,
+    /// M5-9: xorshift state for the random place (0 = not seeded; the feature seeds it from the clock).
+    rng: u64,
+}
+
+/// M5-9: the next value of an xorshift64 generator, below `n` (`n` > 0).
+pub(crate) fn next_below(state: &mut u64, n: usize) -> usize {
+    let mut x = if *state == 0 {
+        0x9E37_79B9_7F4A_7C15
+    } else {
+        *state
+    };
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *state = x;
+    usize::try_from(x % (n.max(1) as u64)).unwrap_or(0)
+}
+
+fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
+}
+
+/// M5-9: add `p` to the pool when it is at least [`PLACE_MIN_APART`] from every kept position; true when kept.
+pub(crate) fn keep_place(pool: &mut VecDeque<[f32; 3]>, p: [f32; 3]) -> bool {
+    if pool.iter().any(|q| dist(*q, p) < PLACE_MIN_APART) {
+        return false;
+    }
+    pool.push_back(p);
+    while pool.len() > PLACE_POOL {
+        pool.pop_front();
+    }
+    true
+}
+
+/// M5-9: a random place from the pool: one at least [`PLACE_FAR_FROM_RESPAWN`] from `from` when there is one, else any, else `None`.
+/// `pick(n)` returns an index below `n`.
+pub(crate) fn pick_place(
+    pool: &VecDeque<[f32; 3]>,
+    from: Option<[f32; 3]>,
+    mut pick: impl FnMut(usize) -> usize,
+) -> Option<[f32; 3]> {
+    let far: Vec<[f32; 3]> = from
+        .map(|f| {
+            pool.iter()
+                .copied()
+                .filter(|p| dist(*p, f) >= PLACE_FAR_FROM_RESPAWN)
+                .collect()
+        })
+        .unwrap_or_default();
+    let list: Vec<[f32; 3]> = if far.is_empty() {
+        pool.iter().copied().collect()
+    } else {
+        far
+    };
+    if list.is_empty() {
+        return None;
+    }
+    list.get(pick(list.len()) % list.len()).copied()
 }
 
 fn teams_of<'a>(fs: impl Iterator<Item = &'a Fighter>) -> Vec<u64> {
@@ -156,9 +273,16 @@ impl NightCore {
         if !world.in_expedition() {
             if self.in_expedition {
                 // Back in the Roundtable (or a load): forget the expedition, put the rules back.
+                let die_on = self.die_want == Some(true);
+                let rng = self.rng;
                 *self = NightCore::default();
+                self.rng = rng;
                 acts.push(NightAct::ClockFloor(None));
                 acts.push(NightAct::Revive(ReviveMode::Rivals));
+                acts.push(NightAct::DeathHold(false));
+                if die_on {
+                    flags.push((FLAG_DIE, false));
+                }
             }
             return (acts, lines);
         }
@@ -168,6 +292,7 @@ impl NightCore {
         };
         self.in_expedition = true;
         self.record_spot(now_ms, world, &nf, local);
+        self.record_place(now_ms, world, &nf, local);
 
         let n = if nf.day2 { 2 } else { 1 };
         let done = if n == 1 {
@@ -224,6 +349,7 @@ impl NightCore {
                 out,
                 getup_asked: false,
                 moved: false,
+                released: false,
             });
             self.night = None;
             acts.push(NightAct::ClockFloor(None));
@@ -231,11 +357,20 @@ impl NightCore {
             acts.push(NightAct::ExemptGetup(GETUP_EXEMPT_MS));
         }
         if let Some(m) = self.morning.as_mut() {
-            if Self::morning_step(m, now_ms, local, self.spot, &mut acts, &mut lines) {
+            let inp = MorningIn {
+                local,
+                spot: self.spot,
+                solo: world.solo(),
+                pos: world.local_pos.map(|p| p.0),
+                places: &self.places,
+                clock_night: world.clock.is_some_and(|c| c.time.h >= MOVE_AFTER_HOUR),
+            };
+            if Self::morning_step(m, now_ms, &inp, &mut self.rng, &mut acts, &mut lines) {
                 self.morning = None;
                 acts.push(NightAct::Revive(ReviveMode::Rivals));
             }
         }
+        self.solo_death(world, &nf, local, flags, &mut acts, &mut lines);
         self.status = self.describe(&fighters, &nf);
         (acts, lines)
     }
@@ -259,6 +394,89 @@ impl NightCore {
         }
         self.last_spot_ms = Some(now_ms);
         self.spot = Some(pos);
+    }
+
+    /// M5-9: day-1 ground positions for the morning's random place.
+    fn record_place(
+        &mut self,
+        now_ms: u64,
+        world: &World,
+        nf: &NightFlags,
+        local: Option<Fighter>,
+    ) {
+        let (Some(l), Some((pos, true))) = (local, world.local_pos) else {
+            return;
+        };
+        if nf.day2 || nf.night || nf.night1_done || l.state != 0 || l.hp == 0 {
+            self.place_prev = None;
+            self.slow_since = None;
+            return;
+        }
+        let slow = self.place_prev.is_some_and(|(t, p)| {
+            let dt = now_ms.saturating_sub(t) as f32 / 1000.0;
+            let d = ((pos[0] - p[0]).powi(2) + (pos[2] - p[2]).powi(2)).sqrt();
+            dt > 0.0 && d / dt <= PLACE_MAX_SPEED
+        });
+        self.place_prev = Some((now_ms, pos));
+        if !slow {
+            self.slow_since = None;
+            return;
+        }
+        let since = *self.slow_since.get_or_insert(now_ms);
+        if now_ms.saturating_sub(since) < PLACE_SETTLE_MS {
+            return;
+        }
+        if self
+            .last_place_ms
+            .is_some_and(|t| now_ms.saturating_sub(t) < PLACE_EVERY_MS)
+        {
+            return;
+        }
+        self.last_place_ms = Some(now_ms);
+        keep_place(&mut self.places, pos);
+    }
+
+    /// M5-9: the die-at-once flag and the hold of a dead LOCAL's comeback (Solo only).
+    fn solo_death(
+        &mut self,
+        world: &World,
+        nf: &NightFlags,
+        local: Option<Fighter>,
+        flags: &mut Vec<(u32, bool)>,
+        acts: &mut Vec<NightAct>,
+        lines: &mut Vec<String>,
+    ) {
+        let solo = world.solo();
+        let live_night = self.night.as_ref().filter(|r| r.decided.is_none());
+        let (want, why) = if !solo {
+            (false, "not Solo")
+        } else if !nf.night || live_night.is_none() {
+            (false, "not a night in play")
+        } else if world.local_revive_item {
+            (false, "LOCAL holds a revive item")
+        } else if !local.is_some_and(|l| l.state == 0 && l.hp > 0) {
+            (false, "LOCAL is down or dead")
+        } else {
+            (true, "Solo night, LOCAL up, no revive item")
+        };
+        if self.die_want != Some(want) {
+            if self.die_want.is_some() || want {
+                lines.push(format!(
+                    "night_match: die-at-once {} ({why})",
+                    if want { "ON" } else { "OFF" }
+                ));
+            }
+            self.die_want = Some(want);
+        }
+        // Written only when the wanted value differs from the flag (read back every tick).
+        if nf.our_die != want {
+            flags.push((FLAG_DIE, want));
+        }
+        let hold = solo && self.night.is_some();
+        if hold != self.hold_on {
+            self.hold_on = hold;
+            acts.push(NightAct::DeathHold(hold));
+        }
     }
 
     /// Our flag still ON after [`FALLBACK_MS`] = our event file is not loaded (Nucleus): write the game's flag instead. The night
@@ -381,13 +599,13 @@ impl NightCore {
     fn morning_step(
         m: &mut Morning,
         now_ms: u64,
-        local: Option<Fighter>,
-        spot: Option<[f32; 3]>,
+        inp: &MorningIn,
+        rng: &mut u64,
         acts: &mut Vec<NightAct>,
         lines: &mut Vec<String>,
     ) -> bool {
         let age = now_ms.saturating_sub(m.since_ms);
-        let Some(l) = local else {
+        let Some(l) = inp.local else {
             return age >= GETUP_MS;
         };
         if l.state == 1 {
@@ -402,6 +620,47 @@ impl NightCore {
             acts.push(NightAct::GetUp);
             return false;
         }
+        // M5-9: a Solo player who died at night (held dead): let the game's comeback run, then move LOCAL to a random place.
+        if inp.solo && l.hp == 0 {
+            if !m.released {
+                m.released = true;
+                lines.push(
+                    "night_match: morning: LOCAL is dead; releasing the held comeback".into(),
+                );
+                acts.push(NightAct::ReleaseDeath);
+            }
+            if age >= DEAD_WAIT_MS {
+                lines.push(
+                    "night_match: morning: LOCAL did not come back in time; giving up".into(),
+                );
+                return true;
+            }
+            return false;
+        }
+        if m.released && !m.moved {
+            if l.state != 0 {
+                return age >= DEAD_WAIT_MS;
+            }
+            if inp.clock_night {
+                return age >= MOVE_WAIT_MS;
+            }
+            m.moved = true;
+            let place = pick_place(inp.places, inp.pos, |n| next_below(rng, n)).or(inp.spot);
+            match place {
+                Some(p) => {
+                    acts.push(NightAct::Teleport(p));
+                    lines.push(format!(
+                        "night_match: morning: LOCAL is back; moved to a random day-1 place ({:.1}, {:.1}, {:.1}), {} kept",
+                        p[0], p[1], p[2], inp.places.len()
+                    ));
+                }
+                None => lines.push(
+                    "night_match: morning: LOCAL is back but no place was recorded; stays here"
+                        .into(),
+                ),
+            }
+            return true;
+        }
         if !m.out || m.moved {
             return true;
         }
@@ -409,8 +668,11 @@ impl NightCore {
             // Still getting up: wait (bounded).
             return age >= GETUP_MS + 5_000;
         }
+        if inp.clock_night {
+            return age >= MOVE_WAIT_MS;
+        }
         m.moved = true;
-        match spot {
+        match inp.spot {
             Some(p) => {
                 acts.push(NightAct::Teleport(p));
                 lines.push(format!(
@@ -454,8 +716,13 @@ impl NightCore {
             format!("day {}", if nf.day2 { 2 } else { 1 })
         };
         format!(
-            "{phase}; {} player(s), {teams} team(s), {standing} standing; spot {}",
+            "{phase}; {} player(s), {teams} team(s), {standing} standing; die-at-once {}; spot {}",
             fighters.len(),
+            if self.die_want == Some(true) {
+                "on"
+            } else {
+                "off"
+            },
             self.spot.map_or("none".into(), |p| format!(
                 "({:.0}, {:.0}, {:.0})",
                 p[0], p[1], p[2]
@@ -485,12 +752,13 @@ pub(crate) fn count_cmd(on: Option<bool>) -> String {
 pub(crate) fn status_line() -> String {
     let s = STATUS.lock().unwrap_or_else(PoisonError::into_inner);
     format!(
-        "night_match: {}",
+        "night_match: {}{}",
         if s.is_empty() {
             "not in an expedition"
         } else {
             &s
-        }
+        },
+        crate::game::deathhold::status_short().map_or(String::new(), |d| format!("; {d}"))
     )
 }
 
@@ -501,8 +769,14 @@ pub(crate) struct NightMatch {
 
 impl Default for NightMatch {
     fn default() -> Self {
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(1, |d| d.as_nanos() as u64);
         NightMatch {
-            core: NightCore::default(),
+            core: NightCore {
+                rng: seed | 1,
+                ..NightCore::default()
+            },
             started: Instant::now(),
         }
     }
@@ -953,6 +1227,346 @@ mod tests {
         assert_eq!(c.spot, Some([10.0, 20.0, 30.0]));
     }
 
+    fn solo_world(fs: &[Fighter], nf: NightFlags) -> World {
+        World {
+            team_size: 1,
+            ..world(fs, nf)
+        }
+    }
+
+    fn at(w: &World, pos: [f32; 3]) -> World {
+        World {
+            local_pos: Some((pos, true)),
+            ..*w
+        }
+    }
+
+    #[test]
+    fn solo_night_gives_the_die_at_once_flag_only_when_it_changes() {
+        let mut c = NightCore::default();
+        let me = [fighter(ME, true, 0, 240, 0.0)];
+        // By day: nothing wanted, nothing written.
+        let (acts, flags) = run(&mut c, 0, &solo_world(&me, NightFlags::default()));
+        assert!(flags.is_empty() && !acts.contains(&NightAct::DeathHold(true)));
+        // Nightfall: ON, the hold is armed.
+        let (acts, flags) = run(&mut c, 100, &solo_world(&me, night()));
+        assert_eq!(flags, vec![(FLAG_DIE, true)]);
+        assert!(acts.contains(&NightAct::DeathHold(true)));
+        // The flag reads back ON: no second write, no second arm.
+        let on = NightFlags {
+            our_die: true,
+            ..night()
+        };
+        let (acts, flags) = run(&mut c, 150, &solo_world(&me, on));
+        assert!(flags.is_empty() && !acts.contains(&NightAct::DeathHold(true)));
+        // LOCAL dead (HP 0, state 0): OFF again, the hold stays armed.
+        let dead = [fighter(ME, true, 0, 0, 0.0)];
+        let (acts, flags) = run(&mut c, 200, &solo_world(&dead, on));
+        assert_eq!(flags, vec![(FLAG_DIE, false)]);
+        assert!(!acts.contains(&NightAct::DeathHold(false)));
+    }
+
+    #[test]
+    fn the_die_at_once_flag_stays_off_in_duo_with_a_revive_item_by_day_and_after_the_decision() {
+        let me = fighter(ME, true, 0, 240, 0.0);
+        let rival = fighter(P2, false, 0, 240, 0.0);
+        // Duo / Trio (team size 2, 3) and an unfilled team size.
+        for size in [0, 2, 3] {
+            let mut c = NightCore::default();
+            let w = World {
+                team_size: size,
+                ..world(&[me], night())
+            };
+            let (acts, flags) = run(&mut c, 0, &w);
+            assert!(flags.is_empty(), "team size {size}");
+            assert!(
+                !acts.contains(&NightAct::DeathHold(true)),
+                "team size {size}"
+            );
+        }
+        // A revive item at work.
+        let mut c = NightCore::default();
+        let w = World {
+            local_revive_item: true,
+            ..solo_world(&[me], night())
+        };
+        assert!(run(&mut c, 0, &w).1.is_empty());
+        // Knocked.
+        let mut c = NightCore::default();
+        let knocked = [fighter(ME, true, 1, 0, 9.0)];
+        assert!(run(&mut c, 0, &solo_world(&knocked, night())).1.is_empty());
+        // Decided: a flag that was ON goes OFF.
+        let mut c = NightCore::default();
+        let two = [me, rival];
+        let on = NightFlags {
+            our_die: true,
+            ..night()
+        };
+        run(&mut c, 0, &solo_world(&two, on));
+        let down = [me, fighter(P2, false, 1, 0, 9.0)];
+        run(&mut c, 100, &solo_world(&down, on));
+        let (_, flags) = run(&mut c, 1_200, &solo_world(&down, on));
+        assert!(flags.contains(&(FLAG_DIE, false)), "{flags:?}");
+        assert!(flags.contains(&(FLAG_NIGHT_END, true)));
+    }
+
+    #[test]
+    fn leaving_the_expedition_clears_the_flag_and_the_hold() {
+        let mut c = NightCore::default();
+        let me = [fighter(ME, true, 0, 240, 0.0)];
+        run(&mut c, 0, &solo_world(&me, night()));
+        let mut rt = solo_world(&me, NightFlags::default());
+        rt.place = Some(Place::Roundtable);
+        let (acts, flags) = run(&mut c, 100, &rt);
+        assert!(acts.contains(&NightAct::DeathHold(false)));
+        assert_eq!(flags, vec![(FLAG_DIE, false)]);
+    }
+
+    #[test]
+    fn the_hold_is_armed_from_nightfall_to_the_morning_in_solo_only() {
+        let mut c = NightCore::default();
+        let me = [fighter(ME, true, 0, 240, 0.0)];
+        let (acts, _) = run(&mut c, 0, &solo_world(&me, night()));
+        assert!(acts.contains(&NightAct::DeathHold(true)));
+        let morning = NightFlags {
+            night1_done: true,
+            ..NightFlags::default()
+        };
+        let (acts, _) = run(&mut c, 1_000, &solo_world(&me, morning));
+        assert!(acts.contains(&NightAct::DeathHold(false)));
+        assert!(
+            !acts.contains(&NightAct::ReleaseDeath),
+            "alive: nothing to release"
+        );
+        // Night 2: armed again.
+        let n2 = NightFlags {
+            night: true,
+            day2: true,
+            ..NightFlags::default()
+        };
+        let (acts, _) = run(&mut c, 2_000, &solo_world(&me, n2));
+        assert!(acts.contains(&NightAct::DeathHold(true)));
+    }
+
+    #[test]
+    fn a_dead_solo_player_is_released_once_at_the_morning_and_moved_to_a_far_day_place() {
+        let mut c = NightCore {
+            rng: 7,
+            ..NightCore::default()
+        };
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        let day = solo_world(&up, NightFlags::default());
+        // Day 1: positions 0, 120, 240, 360 m apart are kept (each held still long enough); one 10 m from the last is not.
+        for (i, x) in [0.0, 120.0, 240.0, 360.0, 370.0].iter().enumerate() {
+            for dt in [0, 1_000, 3_500] {
+                run(&mut c, i as u64 * 6_000 + dt, &at(&day, [*x, 0.0, 0.0]));
+            }
+        }
+        assert_eq!(c.places.len(), 4);
+        run(&mut c, 30_000, &solo_world(&up, night()));
+        let dead = [fighter(ME, true, 0, 0, 0.0)];
+        let on = NightFlags {
+            our_die: true,
+            ..night()
+        };
+        run(&mut c, 31_000, &solo_world(&dead, on));
+        let morning = NightFlags {
+            night1_done: true,
+            ..NightFlags::default()
+        };
+        // First morning tick: the release, once; the player is still dead: wait.
+        let w = at(&solo_world(&dead, morning), [350.0, 0.0, 0.0]);
+        let (acts, _) = run(&mut c, 32_000, &w);
+        assert_eq!(
+            acts.iter()
+                .filter(|a| **a == NightAct::ReleaseDeath)
+                .count(),
+            1
+        );
+        assert!(acts.contains(&NightAct::DeathHold(false)));
+        let (acts, _) = run(&mut c, 33_000, &w);
+        assert!(
+            acts.is_empty(),
+            "release asked once, then waiting: {acts:?}"
+        );
+        // Respawning (state 2): still waiting.
+        let rs = at(
+            &solo_world(&[fighter(ME, true, 2, 240, 0.0)], morning),
+            [350.0, 0.0, 0.0],
+        );
+        assert!(run(&mut c, 36_000, &rs).0.is_empty());
+        // Back (state 0, HP up) at x = 350: the place is one of the pool at least 150 m away (0, 120, 240 are; 360 is not).
+        let back = at(&solo_world(&up, morning), [350.0, 0.0, 0.0]);
+        let (acts, _) = run(&mut c, 38_000, &back);
+        let Some(NightAct::Teleport(p)) = acts.iter().find(|a| matches!(a, NightAct::Teleport(_)))
+        else {
+            panic!("no teleport: {acts:?}");
+        };
+        assert!(
+            [0.0, 120.0, 240.0].contains(&p[0]),
+            "a far place, got {p:?}"
+        );
+        assert!(acts.contains(&NightAct::Revive(ReviveMode::Rivals)));
+        // Once.
+        let (acts, _) = run(&mut c, 39_000, &back);
+        assert!(!acts.iter().any(|a| matches!(a, NightAct::Teleport(_))));
+    }
+
+    #[test]
+    fn a_solo_player_who_never_died_is_not_released_or_moved() {
+        let mut c = NightCore::default();
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        run(&mut c, 0, &solo_world(&up, NightFlags::default()));
+        run(&mut c, 100, &solo_world(&up, night()));
+        let morning = NightFlags {
+            night1_done: true,
+            ..NightFlags::default()
+        };
+        let (acts, _) = run(&mut c, 1_000, &solo_world(&up, morning));
+        assert!(!acts
+            .iter()
+            .any(|a| matches!(a, NightAct::ReleaseDeath | NightAct::Teleport(_))));
+    }
+
+    #[test]
+    fn night_two_deaths_are_never_released() {
+        let mut c = NightCore::default();
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        let n2 = NightFlags {
+            night: true,
+            day2: true,
+            ..NightFlags::default()
+        };
+        run(&mut c, 0, &solo_world(&up, n2));
+        let dead = [fighter(ME, true, 0, 0, 0.0)];
+        for t in [1_000, 20_000, 60_000] {
+            let (acts, _) = run(&mut c, t, &solo_world(&dead, n2));
+            assert!(!acts.contains(&NightAct::ReleaseDeath));
+            assert!(!acts.contains(&NightAct::DeathHold(false)));
+        }
+    }
+
+    #[test]
+    fn a_comeback_that_never_happens_is_given_up_after_the_wait() {
+        let mut c = NightCore::default();
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        run(&mut c, 0, &solo_world(&up, night()));
+        let dead = [fighter(ME, true, 0, 0, 0.0)];
+        let morning = NightFlags {
+            night1_done: true,
+            ..NightFlags::default()
+        };
+        run(&mut c, 1_000, &solo_world(&dead, morning));
+        run(&mut c, 1_000 + DEAD_WAIT_MS, &solo_world(&dead, morning));
+        assert!(c.morning.is_none(), "the morning work ended");
+    }
+
+    #[test]
+    fn a_morning_move_waits_for_the_day_2_clock() {
+        let mut c = NightCore {
+            rng: 3,
+            ..NightCore::default()
+        };
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        let day = solo_world(&up, NightFlags::default());
+        for (i, x) in [0.0, 200.0].iter().enumerate() {
+            for dt in [0, 1_000, 3_500] {
+                run(&mut c, i as u64 * 6_000 + dt, &at(&day, [*x, 0.0, 0.0]));
+            }
+        }
+        run(&mut c, 20_000, &solo_world(&up, night()));
+        let dead = [fighter(ME, true, 0, 0, 0.0)];
+        run(&mut c, 21_000, &solo_world(&dead, night()));
+        let morning = NightFlags {
+            night1_done: true,
+            ..NightFlags::default()
+        };
+        let with_clock = |w: World, h: u8| World {
+            clock: Some(ClockState {
+                time: ClockTime { h, m: 59, s: 59 },
+                ..w.clock.unwrap()
+            }),
+            ..w
+        };
+        run(&mut c, 22_000, &with_clock(solo_world(&dead, morning), 23));
+        // Back, but the clock still reads the night: no move yet.
+        let (acts, _) = run(&mut c, 26_000, &with_clock(solo_world(&up, morning), 23));
+        assert!(
+            !acts.iter().any(|a| matches!(a, NightAct::Teleport(_))),
+            "{acts:?}"
+        );
+        // The Day-2 reset: now the move.
+        let (acts, _) = run(&mut c, 45_000, &with_clock(solo_world(&up, morning), 7));
+        assert!(
+            acts.iter().any(|a| matches!(a, NightAct::Teleport(_))),
+            "{acts:?}"
+        );
+    }
+
+    #[test]
+    fn hawk_ride_positions_never_enter_the_pool() {
+        let mut c = NightCore::default();
+        let up = [fighter(ME, true, 0, 240, 0.0)];
+        let day = solo_world(&up, NightFlags::default());
+        // The start hawk: 17 m/s with the ground byte set, for 20 s: nothing kept.
+        for k in 0..400u64 {
+            run(&mut c, k * 50, &at(&day, [k as f32 * 0.85, 200.0, 0.0]));
+        }
+        assert!(c.places.is_empty(), "{:?}", c.places);
+        // Landed and walking (4 m/s): kept once settled for 2 s.
+        for k in 0..60u64 {
+            run(
+                &mut c,
+                20_000 + k * 50,
+                &at(&day, [400.0 + k as f32 * 0.2, 30.0, 0.0]),
+            );
+        }
+        assert_eq!(c.places.len(), 1);
+        assert!(c.places[0][1] < 31.0);
+    }
+
+    #[test]
+    fn the_pool_keeps_places_apart_and_forgets_the_oldest() {
+        let mut pool = VecDeque::new();
+        assert!(keep_place(&mut pool, [0.0, 0.0, 0.0]));
+        assert!(!keep_place(&mut pool, [99.0, 0.0, 0.0]), "too close");
+        assert!(keep_place(&mut pool, [100.0, 0.0, 0.0]));
+        for i in 2..(PLACE_POOL as u32 + 10) {
+            keep_place(&mut pool, [i as f32 * 200.0, 0.0, 0.0]);
+        }
+        assert_eq!(pool.len(), PLACE_POOL);
+        assert!(!pool.contains(&[0.0, 0.0, 0.0]), "the oldest went first");
+    }
+
+    #[test]
+    fn the_random_place_prefers_far_ones_then_any_then_none() {
+        let pool: VecDeque<[f32; 3]> =
+            [[0.0, 0.0, 0.0], [200.0, 0.0, 0.0], [400.0, 0.0, 0.0]].into();
+        // From x = 10: 0 is near; the far ones are 200 and 400; pick(n) = n - 1 takes the last.
+        assert_eq!(
+            pick_place(&pool, Some([10.0, 0.0, 0.0]), |n| n - 1),
+            Some([400.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            pick_place(&pool, Some([10.0, 0.0, 0.0]), |_| 0),
+            Some([200.0, 0.0, 0.0])
+        );
+        // Everything near: any place.
+        let near: VecDeque<[f32; 3]> = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0]].into();
+        assert_eq!(
+            pick_place(&near, Some([50.0, 0.0, 0.0]), |_| 1),
+            Some([100.0, 0.0, 0.0])
+        );
+        // Unknown respawn position: any place. Empty pool: none.
+        assert_eq!(pick_place(&pool, None, |_| 1), Some([200.0, 0.0, 0.0]));
+        assert_eq!(pick_place(&VecDeque::new(), None, |_| 0), None);
+        // The generator stays in range and moves.
+        let mut s = 1;
+        let a = next_below(&mut s, 3);
+        let b = next_below(&mut s, 3);
+        assert!(a < 3 && b < 3 && s != 1);
+    }
+
     #[test]
     fn our_flag_ids_match_the_event_file() {
         let nights = include_str!("../../../../gamedata/emevd-nights.json");
@@ -960,6 +1574,7 @@ mod tests {
             (FLAG_HEAL, "\"heal\": true"),
             (FLAG_WIN, "\"ending\": \"win\", \"banner\": 4000"),
             (FLAG_LOSE, "\"ending\": \"lose\", \"banner\": 4010"),
+            (FLAG_DIE, "\"speffect\": 102130"),
         ] {
             assert!(
                 nights

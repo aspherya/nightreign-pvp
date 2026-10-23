@@ -11,6 +11,9 @@
 #[cfg(feature = "dev")]
 pub(crate) mod bartrace;
 pub(crate) mod combat_state;
+pub(crate) mod deathhold;
+#[cfg(feature = "dev")]
+pub(crate) mod deathtrace;
 pub(crate) mod event_flags;
 pub(crate) mod flags;
 #[cfg(feature = "dev")]
@@ -472,6 +475,7 @@ fn watch(
                 }
             }
             world.local_pos = world.local.and_then(|p| spawn::world_position(p, base));
+            world.team_size = crate::mm::effective_team_size(cfg.team_size_usize());
         }
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
@@ -578,6 +582,24 @@ fn watch(
         if let Some(c) = combat.as_ref() {
             bartrace::tick(c, base, size);
         }
+        // M5-8 (dev only): the comeback trace / hold and LOCAL's SpEffects.
+        #[cfg(feature = "dev")]
+        deathtrace::tick(
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+            base,
+            size,
+        );
+        // M5-9 (both builds): hold a dead LOCAL's comeback at night in Solo, release it at the morning.
+        deathhold::tick(
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+            base,
+        );
         // HAWK-2 (both builds): keep the env swap in place, run the hawk crossing's ride phases, log the hawk answers.
         hawk::tick(
             base,
@@ -619,7 +641,7 @@ fn watch(
 /// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
 /// M5-5: the night flags, all or nothing (`None` while the flag manager is not live).
 fn night_flags(base: usize) -> Option<world::NightFlags> {
-    let mut v = [false; 12];
+    let mut v = [false; 13];
     for (o, id) in v.iter_mut().zip(world::NightFlags::IDS) {
         *o = flags::get(base, id).ok()?;
     }
@@ -669,6 +691,18 @@ fn night_acts(
                 Some(Err(e)) => Err(e),
                 None => Err("no local player"),
             },
+            NightAct::DeathHold(on) => {
+                deathhold::set_armed(on);
+                Ok(())
+            }
+            NightAct::ReleaseDeath => {
+                if !deathhold::request_release() {
+                    tracing::info!(
+                        "night_match: no comeback step is held; the game's own comeback runs"
+                    );
+                }
+                Ok(())
+            }
             NightAct::GameFlag(f, on) => flags::set_match_flag(base, f, on).map(|prev| {
                 tracing::info!(
                     "night_match: game flag {f} set {} (was {prev})",

@@ -278,6 +278,24 @@ The expedition's day clock (07:00 → 23:59:59) that the circle and the night ru
 | Reset to morning | `+0x135..+0x13A` from/to hour and minute, `+0x13C` f32 duration, `+0x140` u8 request | Filled by `exe+0x68C1B0`, the body of event instruction `2003[89] Reset Time of Day`; its hour arguments are **unused** (the target comes from a param, default 07:00) | `[VERIFIED: static]` |
 | Circle schedule | `PlayAreaCreateCommonParam` row 0 (regulation 1.03.3) | First circle 12:30 → 16:09, final circle 20:24 → 00:00, `secondCircleRadius` 40, `initialCircleRadius` 700, rain SpEffects 99810 / 99811 | `[VERIFIED: regulation.bin read with WitchyBND 2026-10-22]` |
 
+## 17. Death, the comeback and respawn points (M5-8, game 1.03.3)
+
+Story, evidence and the plan: `research/M5-8-death.md`. Dev tool: `game/deathtrace.rs` (console `death_trace`, `death_hold`,
+`speffects`).
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| A character's SpEffects | `[[PlayerIns+0x190]+8]` = first node; id i32 at node `+8`, next at node `+0x38` | The game's own "has SpEffect" walk `exe+0x509150` | `[VERIFIED: disassembly + solo read 2026-10-23]` |
+| Add / clear a SpEffect on one character | `exe+0x609F40(chr, id)` / `exe+0x601210(chr, id)` (event `2004[8]` / `2004[21]`; bank 2004 dispatcher `exe+0x587DE0`, case table `exe+0x58AA04`, index id−1) | Not called by the mod (it uses the event); listed for a later direct call | `[VERIFIED: disassembly]` |
+| Force death | `exe+0x601410(chr, runes)` → `exe+0x3CE6D0` (`+0x1F4 |= 1`, `|= 6` without runes) | Event `2004[4]`; never used on players in vanilla | `[VERIFIED: disassembly]` |
+| `PlayerIns+0x1F4` (byte) | bit 0x40 = "respawn begun" (`exe+0x3CD780`); the dword is rewritten every frame by many writers | Low byte 0x80 alive and dead, 0xC0 from "begin respawn" on | `[VERIFIED: write watch, solo run 3]` |
+| `PlayerIns+0x738` u8, `+0x734` f32, `+0x758` bit 8 | respawn latch, remote-copy respawn timer, "respawning" | Set by `exe+0x66E4A0`; remote copies count `+0x734` down in `exe+0x675480` | `[VERIFIED: disassembly]` |
+| The local player's comeback | callbacks on the Lua event sequencer (`CS::CSLuaEventProxy`, vtable `exe+0x2C259F0`): death handler `exe+0x5C2770` → wait `exe+0x5C3510` → **start `exe+0x5C4810(ctx, seq)`** → fade `exe+0x5C3DB0` → **begin respawn `exe+0x5C3F80`** (`exe+0x66E4A0(LOCAL)`) → +1.0 s **respawn `exe+0x5C4360`** (`exe+0x66E8E0(LOCAL, pos, rot, flag)`, HP refill `exe+0x426B4F`). Steps run on one thread (solo: 22184); return address of a step `exe+0x5D3477` | Start reached 4.5 s after death; back 9–11 s after death | `[VERIFIED: solo runs 3–4, 2026-10-23]` |
+| **Hold / release** | execute breakpoint on `exe+0x5C4810` (`48 89 5C 24 08 48`): return at once = held (no fade); calling it later with the saved `(ctx, seq)` on a game thread = the vanilla comeback | Held 94 s, released through a call from the `exe+0x675480` entry (thread 22468), normal respawn | `[VERIFIED: solo run 4]`; in a session UNKNOWN (M5-9) |
+| Net handler for remote respawns | `exe+0x4F3570`: message types 0 / 1 / 2 → `exe+0x66E4A0` / `exe+0x66E8E0` / `exe+0x66E3D0` | | `[VERIFIED: disassembly]` |
+| `CSRespawnPointMan` | FD4 singleton, slot `exe+0x3C17C88` (FS-0 run 11 log) | `exe+0xBA2B80` picks the nearest point inside the play area (`exe+0xBA5100`; map at `+8`, point at node `+0x28`); result `+0x18` block, `+0x20` pos, `+0x30` rot, `+0x40` valid | `[VERIFIED: disassembly]` |
+| `CS::RejoinMapEnterStep` | vtable `exe+0x2C893E0`, step table `exe+0x39AFAC0` | The session rejoin path; not used by a solo death | `[VERIFIED: solo run 1 (no hit)]` |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).

@@ -218,6 +218,19 @@ memory: `re/MEMORY_MAP.md` §16.
 | Endings are per game | 7000 / 7001 are plain local flags; set in two games at once, each played its own result (the 7000 game the first-win cutscene) and both were consumed within 5 s `[VERIFIED: Nucleus run 2]` |
 | Our decoder | `experiments/M5-1/emdec.py` (any NR `.emevd`; names and argument layouts from DarkScript3's `nr-common.emedf.json`) |
 
+### 4f. Death in the player script and the comeback (M5-8)
+
+Full memo: `research/M5-8-death.md`; the engine addresses: `re/MEMORY_MAP.md` §17.
+
+| Finding | Detail |
+|---|---|
+| Who decides "downed" or "dead" at 0 HP | The player script (`c0000.hks`): `IsDirectDeath()` true → `W_DeathStart`, else `W_NearDeathStart`. True with **SpEffect 102130**, with no hero, on a death-zone fall, and in solo play outside a boss fight unless 8970061 `[SOURCE: community decompile]`. Solo play therefore never shows the downed state (OFF-8 context) |
+| **SpEffect 102130 = die at once** | Permanent marker (category 20, no state); also ends an existing downed state. Vanilla uses it on `m31_90`. Overrides revive items in the script, so the mod gives it only to players without 540155 / 6999100 / 6999500 / 8970061. Our per-game event 99100805 holds it while flag 10007420 is ON `[VERIFIED: solo run 2026-10-23]` |
+| The comeback is a timed callback chain, not the event scripts | The local player's death handler queues it on the Lua event sequencer (~4.5 s to its start step, ~10 s to the respawn); holding the start step keeps a dead player dead with no fade, and calling it later replays the vanilla comeback `[VERIFIED: solo run 4]` |
+| Respawn point | Nearest `CSRespawnPointMan` point inside the play area `[VERIFIED: disassembly; 13–90 m in solo runs]` |
+| Nucleus with our package (R0) | `scripts\deploy-nucleus.ps1 -Me3`: Nucleus starts `nrpvp_launcher.exe` (me3 `-e`, `--skip-steam-init true` from `NightreignPvP\me3-args.txt`) instead of SC's launcher. **Window 1 works, window 2 fails** (ColdLoader "appid not found in coldloader.ini or steam_appid.txt", before me3 attaches) `[VERIFIED: Nucleus 2026-10-23, TESTING §3]`; cause UNKNOWN; use the plain deploy |
+| A held death in a session | Held 55 s and released through the game's comeback in a two-window session; the other window shows no body while the player is held `[VERIFIED: Nucleus 2026-10-23]` |
+
 ---
 
 ## 5. Design decisions log

@@ -31,6 +31,9 @@ const GAMEDATA_DIR: &str = "gamedata";
 /// HAWK-2: the start-hawk routes inside [`GAMEDATA_DIR`] (every start route = the one crossing line).
 const ROUTES_FILE: &str = r"map\mapstudio\m60_00_00_99.msb.dcx";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+/// M5-8 R0 (developer Nucleus runs only, `scripts\deploy-nucleus.ps1 -Me3`): extra me3 arguments, one or more per line, `#` starts a
+/// comment line. Players never have this file.
+const EXTRA_ARGS_FILE: &str = "me3-args.txt";
 /// me3 keeps running while the game runs; if it exits with an error inside this window, tell the player.
 const EARLY_EXIT_WINDOW: Duration = Duration::from_secs(8);
 
@@ -78,6 +81,16 @@ fn profile_text(nrsc: &Path, nrpvp: &Path, gamedata: &Path) -> String {
         toml_path(nrpvp),
         toml_path(gamedata)
     )
+}
+
+/// The extra me3 arguments in [`EXTRA_ARGS_FILE`]'s text. Kept pure for the unit test.
+fn extra_args(text: &str) -> Vec<String> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with('#'))
+        .flat_map(str::split_whitespace)
+        .map(String::from)
+        .collect()
 }
 
 /// What is missing, in words a player can act on. `None` = ready.
@@ -152,6 +165,9 @@ fn run() -> Result<(), String> {
         .arg(game.join("nightreign.exe"))
         .arg("-p")
         .arg(&profile)
+        .args(extra_args(
+            &fs::read_to_string(mod_dir.join(EXTRA_ARGS_FILE)).unwrap_or_default(),
+        ))
         .current_dir(&game)
         .stdin(Stdio::null())
         .stdout(log)
@@ -203,6 +219,15 @@ mod tests {
         assert!(t.contains(
             "[[packages]]\nid = \"nrpvp-gamedata\"\npath = 'S:\\G\\NightreignPvP\\gamedata'\n"
         ));
+    }
+
+    #[test]
+    fn extra_args_skip_comments_and_split_words() {
+        assert!(extra_args("").is_empty());
+        assert_eq!(
+            extra_args("# Nucleus\n--skip-steam-init true\n\n  --show-logos false "),
+            ["--skip-steam-init", "true", "--show-logos", "false"]
+        );
     }
 
     #[test]

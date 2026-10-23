@@ -4,6 +4,7 @@
 //! read their own data (they move onto it when a card touches them).
 
 use super::gamemem::GameMem;
+use super::layout;
 use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea, WorldChrMan};
 
 /// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
@@ -29,16 +30,19 @@ pub(crate) struct NightFlags {
     pub our_night_end: bool,
     pub our_win: bool,
     pub our_lose: bool,
+    /// Our die-at-once flag 10007420 (M5-9): ON gives LOCAL SpEffect 102130 (event 99100805).
+    pub our_die: bool,
 }
 
 impl NightFlags {
     /// The flags to read, in [`NightFlags::from_values`] order.
-    pub(crate) const IDS: [u32; 12] = [
+    pub(crate) const IDS: [u32; 13] = [
         7515, 7505, 7502, 7503, 7507, 7508, 7010, 7011, 7012, 10_007_400, 10_007_411, 10_007_412,
+        10_007_420,
     ];
 
     /// From the values of [`NightFlags::IDS`].
-    pub(crate) fn from_values(v: [bool; 12]) -> Self {
+    pub(crate) fn from_values(v: [bool; 13]) -> Self {
         NightFlags {
             night: v[0],
             day2: v[1],
@@ -48,6 +52,7 @@ impl NightFlags {
             our_night_end: v[9],
             our_win: v[10],
             our_lose: v[11],
+            our_die: v[12],
         }
     }
 }
@@ -103,6 +108,10 @@ pub(crate) struct World {
     pub fighters: [Option<crate::game::combat_state::Fighter>; MAX_FIGHTERS],
     /// M5-6: LOCAL's world position and its "on ground" byte (filled by the main loop).
     pub local_pos: Option<([f32; 3], bool)>,
+    /// M5-9: the team size the rules use (`mm::effective_team_size`; filled by the main loop; 0 = not filled). 1 = Solo.
+    pub team_size: usize,
+    /// M5-9: LOCAL holds a revive-item SpEffect (`layout::SPEFFECTS_REVIVE_ITEM`); read only in an expedition.
+    pub local_revive_item: bool,
 }
 
 impl World {
@@ -125,10 +134,15 @@ impl World {
                 });
             }
         }
+        let place = local.and_then(|p| ChrIns::new(mem, p).place());
+        let local_revive_item = place == Some(Place::Expedition)
+            && local.is_some_and(|p| {
+                ChrIns::new(mem, p).holds_any_speffect(&layout::SPEFFECTS_REVIVE_ITEM)
+            });
         World {
             wcm_instance: i.wcm_instance,
             local,
-            place: local.and_then(|p| ChrIns::new(mem, p).place()),
+            place,
             mm_phase: i.mm_phase,
             bots: (i.bot_man != 0)
                 .then(|| BotMan::new(mem, i.bot_man).state())
@@ -140,7 +154,14 @@ impl World {
             night: None,
             fighters: [None; MAX_FIGHTERS],
             local_pos: None,
+            team_size: 0,
+            local_revive_item,
         }
+    }
+
+    /// M5-9: a Solo match (team size 1).
+    pub(crate) fn solo(&self) -> bool {
+        self.team_size == 1
     }
 
     /// True while the local player is on an expedition (not the Roundtable, not a load screen).
@@ -164,7 +185,7 @@ mod tests {
 
     #[test]
     fn night_flags_merge_host_and_client_views() {
-        let mut v = [false; 12];
+        let mut v = [false; 13];
         v[3] = true; // 7503 only (a client after the host ended night 1)
         v[7] = true;
         let f = NightFlags::from_values(v);
