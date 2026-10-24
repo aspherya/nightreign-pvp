@@ -739,6 +739,24 @@ The other player saw the jump; both screens agreed; both could still hit each ot
 - Not covered (needs our event files in a session: a friend session, or N0 fixed): the die-at-once kill (SpEffect 102130) in a
   session, the night-armed hold and the morning release + random place in two windows.
 
+### 2026-10-23 — ORCH-2 puppet players (Claude alone through nightreign-orchestrator: `nro run scenarios/puppets-smoke.toml`; branch `claude/orchestrator-puppets`, dev build, `mode = "offline"`, `offline_bots = 0`; game 1.03.3, SC 1.1.3, me3 0.11.0). Run folder: nightreign-orchestrator `runs\1792799217-puppets-smoke\`: **PASS**
+- Launch, title, Roundtable in 34 s; expedition 65 s later (keys and clicks); `god 1`; 4 puppets in player slots 1-4 in 17 s.
+- `players`: p2..p5 rivals (team 29); the game renders them (Nightfarers) next to LOCAL; they stand still.
+- At 1 HP, one sword swing: puppets down (state 1, bar 40, clock 14.97); `T-033 STATE who=REMOTE[n] ... DOWN (downs=1 ...)`,
+  `T-039 BLOCK ... state 1, bar 40`; the game shows "Near death". Bleed-out ~15 s, then `UP (downs=1, hp=0)`; the puppet stays dead.
+- No ERROR or panic; Seamless Co-op's sweep skipped for the puppets about 4 times per frame each; vanilla saves unchanged.
+
+### 2026-10-24 — M5-9 finish on one PC (Claude alone through nightreign-orchestrator `nro`, `mode = "offline"`; branch `claude/m5-9-finish-e5f717` = `main` b3c7c5e + puppets 9d38a39 + `hp0` + the hold-slot fix; game 1.03.3, SC 1.1.3, me3 0.11.0). Runs in nightreign-orchestrator `runs\` (gitignored), scenarios `scenarios
+ight*.toml` (orchestrator commit ffd31ff): **PASS (hold, release, move, count decisions, slots); one bug found and fixed; kill by 102130 and banners handed to the friend session**
+- **`hp0` (new dev command, 2026-10-24):** `console hp0: LOCAL HP 240 -> 0` through the data-module field (MEMORY_MAP §5); `god` is turned off by it. Used in every run below. Unit-tested.
+- **S1 again with the two fixes (`1792812774-session`, no puppets):** `clock end` at 03:34:47 → storm death held 03:35:01 → `night_end` 03:35:34 → `RELEASED … gate exe+0x5BCE10 … thread 27600` 0.15 s later, respawn +4 s → **the move came at 03:36:06, when the clock first read 07:00 (Day 2)**, 28 s after the respawn (fix e81a575 PASS) → screenshot: standing in a forest on the ground, HP 240, no storm death. Fix d858024 (no hawk-ride places): the pool held **one** place (the start spot (644, 32, 380)), so a "random" place could not be told apart from the spawn; a real pool needs LOCAL to walk 100 m+ on day 1 (not done; hawk-ride filtering is only covered by its unit tests).
+- **LOCAL carries SpEffect 6999500 in the offline solo expedition** (`speffects`), so the die-at-once rule stays OFF there ("a revive item is present") and `hp0` / the storm kill LOCAL the vanilla solo way; the hold catches that death. The 102130 path itself cannot be reached offline; **friend session.**
+- **(a) `night1-count` PASS (`1792813063-night1-count`):** LOCAL + 3 puppets, puppets 1-2 downed by one swing → `night 1 decided: team … last one standing (this game's player won, host)`, flags 10007410 (heal) and 10007400 ON, `night 1 is over; morning`, `night_status` day 1 with 1 standing.
+- **(b) `night1-local-dies` FIRST RUN FAIL (`1792813250-…`): `M5-9 deathhold: no free hardware slot for gate A` with puppets present.** Puppets hold three of the four debug-register slots (dev only), the held step's start breakpoint stayed armed during the release, so the gate found none; the dead player stayed dead after `night_end`. **Fixed** (`wanted()` in `deathhold.rs`: the start breakpoint is dropped as soon as the release is asked, so the hold's slot is reused by the gate; the peak is two slots, one at a time). **Re-run PASS (`1792813553-night1-local-dies`):** hp0 → `HELD` +7.5 s (3 puppets standing) → `night_end` → `disarmed slot 0 … armed slot 0 (gate A)` → `RELEASED` in 0.25 s → clock reset 03:48:49.771 and `moved to a random day-1 place` 03:48:49.771 (same tick) → alive; `no free hardware slot` count 0.
+- **(d) slots:** 0 `no free hardware slot` lines in all four passing runs with 3 puppets present (`night1-local-dies`, `night2-win`, `night2-loss`, `night1-count`). Player build: slot use is hold 1 → gate 1 (never both) plus the menu's 2 and reviveblock's; not run (no puppets there), the friend session's logs must show it.
+- **(c) night 2 by count, puppets downed with `puppet_hp n 0` (the swing only reached one puppet at night 2):** `night2-win` PASS (`1792814029-…`, `1792814470-…`): `night 2 decided: … (this game's player won, host)` 1.7 s after the puppets went down, then the game's own ending: the **Result** screen ("Day: Second Day"), `night_status` match over. `night2-loss` PASS (`1792814245-…`): puppets 1-2 downed, hp0 → LOCAL dead (held at night 2, never released) → `night 2 decided: team 0x8000000000000003 … (this game's player lost, host)` 1 s later → black → the same Result screen; the hold disarmed with `held step dropped … never called` at the end. **Closes the M5-5 night-2 item.** The win banner and the loss banner themselves were not seen in a screenshot (flag 7000 / 7001 are consumed within 5 s); the Result screen looks the same in both. **Friend session:** what the banner says.
+- Not covered on one PC: the other screen's view, SC host/client, real network, 102130 kill (§6).
+
 ## 4. Known bugs
 
 Owned by STATUS.md §1 ("Known bug") so there is one list.
@@ -784,5 +802,19 @@ Report per part: what matched, what did not. I read the logs (`dist\logs\`, `dis
 
 ## 6. Friend Session runbooks
 
-No open runbook. Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1 on 2026-10-20; FS-UI2 on 2026-10-21) were removed; their results are in §3 and their text in git
+### FS-M59 — what only two real PCs can show (M5-9 and the night flow; one page; ~45 min)
+Both PCs: the **player zip** named under "Zip" below (it has our event files, no console, `team_size = 1`); `VERSION.txt` must match on both. Play from the table (Solo, `-MatchPlayers 2`), host presses Invite Members, both land by hawk. Nothing needs a console: a night starts by itself at 23:00 of the play clock, ends when one player is left, and has no timer. Each PC keeps `NightreignPvP
+rpvp.log` (copy it after the session, before the next start) and takes the photos named below. Never EAC.
+1. **A real kill at night (the core check).** At night one player brings the other to 0 HP (or a monster / the storm does). **Expect:** the victim dies at once (death animation, "YOU DIED"), no 15 s knock; victim's log `night_match: die-at-once ON` before and `M5-9 deathhold: start step HELD` after; the night is decided (`night 1 decided: … won/lost`). If the victim carries a revive item (log `die-at-once OFF (revive item)`), it is knocked as before: say so.
+2. **What the other screen shows.** Killer: is the victim's body on the floor, standing, or gone; does the victim stay in the compass / map? Victim: YOU DIED, camera only, can the menu open (Esc)? A photo of each screen.
+3. **Morning.** After the decision the game's morning follows. **Expect** on the victim: `RELEASED … gate`, respawn at full HP, then (Day-2 clock reads 07:00) `moved to a random day-1 place`; no storm death. The winner is healed (`flag 10007410`). Killer: does the victim blink away and appear, or walk in? Note how long after the morning the victim is standing.
+4. **Night 2 by count, both endings.** Day 2: at night one player dies again → the survivor's screen shows the win ending, the dead one's the loss ending. **Photos of both screens, from the moment the night is decided until the Result screen** (a one-PC test could not tell the two banners apart).
+5. **Host dies.** Once, let the **host** be the one who dies at night while the guest stays up. Does the session stay up, does the guest get the decision and the morning, does the host's death come back? Send both logs.
+6. **Vanilla multiplayer events at night.** No minions, no boss; does anything throw a dead or held player out ("Disconnected", back to the Roundtable) or show a game-over for both? Note the time of anything odd.
+7. **Free play.** Fight normally for the rest of the time (PvP, downs, revives by day). Anything odd: time + what happened.
+**Send back, both PCs:** `NightreignPvP
+rpvp.log`, the me3 log folder (`%LOCALAPPDATA%\garyttierney\me3\data\logs\`), the photos, and a line per step: pass / what you saw. I read the logs (`grep -E "night_match|deathhold|T-033 STATE|die-at-once"`); pass criteria are the **Expect** lines, anything else is a finding for §3.
+**Zip:** `dist\NightreignPvP.zip` of 2026-10-24, `nrpvp.dll` 8623F4000642037A, `-MatchPlayers 2` (STATUS §2); both players compare `NightreignPvP\VERSION.txt`.
+
+Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1 on 2026-10-20; FS-UI2 on 2026-10-21) were removed; their results are in §3 and their text in git
 (`git show 339ee04:.claude/TESTING.md`; FS-UI2: `git show c727293:.claude/TESTING.md`).

@@ -68,6 +68,21 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
   still run. Rule source: ARCHITECTURE.md §6 "Modding rules". Owner: SONNET/implementer → HUMAN solo (normal launch must be
   unchanged). Fits after R1.
 
+## Test tooling (orchestrator; decided 2026-10-23: no Nucleus)
+
+### ORCH-2 — Puppet players: AFK players in one game, no second client
+Owner: OPUS | Status: review (built and verified live solo 2026-10-23; not merged) | Phase: tooling
+Goal: several AFK characters that the game and the mod treat as players (player list, ids, rivals, hits, downs, bleed-out), so
+two-player rules can be tested in one game.
+Context: MEMORY_MAP §18, `game/puppet.rs`, nightreign-orchestrator `docs/research/R2-net-player-creation.md`.
+Result: dev-only module; console `puppet_*`; nightreign-orchestrator `nro puppets <n>` and `scenarios/puppets-smoke.toml` PASS
+(TESTING §3, 2026-10-23). Limits: offline mode only, puppets do not act or respawn, no network (another screen's view still needs an FS).
+Next: scenarios for FS-0 run 19 (downed rule), M5-5 (night end by count), M5-9 (death hold) with puppets.
+
+### ORCH-1 — Virtual pad (XInput)
+Owner: OPUS | Status: blocked (the game scans XInput pads only on a device change it detects; no scan without a real pad) | Phase: tooling
+Result: `game/vpad.rs`, console `pad*`; the orchestrator drives keyboard and mouse from the desktop instead (`nro desk`).
+
 ## Matchmaking and in-game UI (M8)
 
 **Done 2026-10-21 (FS-UI2 PASS, TESTING §3):** **MM-4** (Solo queue, player build), **UI-1** (Battle Royale in the table menu, steps
@@ -249,9 +264,7 @@ Nucleus windows through our launcher (me3 + our event files); first launch pendi
 (`death_trace`, `death_hold`, `speffects`). Card removed.
 
 ### M5-9 — Solo nights: a kill is a real death (build)
-Owner: OPUS → SONNET/implementer → HUMAN (solo + Nucleus) | Status: **built (b59df6c + fixes d858024, e81a575); S1 solo PASS,
-Nucleus hold/release in a session PASS, N0 (Nucleus through me3) FAIL; open: the kill and the night/morning flow in a session with
-our event files (next friend session)** (TESTING §3, 2026-10-23) | Memo: `research/M5-8-death.md`
+Owner: OPUS → SONNET/implementer → HUMAN (solo + Nucleus) | Status: **built (b59df6c + fixes d858024, e81a575, hold-slot fix 2026-10-24); PASS on one PC with puppets (hold, release, move after the Day-2 clock, night 1 + 2 by count, no slot starvation) and Nucleus hold/release by day; open only for the friend session: runbook FS-M59 (TESTING §6): the 102130 kill, the other screen's view, SC host/client, night banners** (TESTING §3, 2026-10-24) | Memo: `research/M5-8-death.md`
 Goal (PROJECT_SCOPE §2): in **Solo** (`team_size = 1`), at night 0 HP without a revive item = death; the dead stay dead until the
 morning after night 1, then the game respawns them and the DLL moves them to a random place; night 2's dead stay dead until the
 ending. Duo/Trio (`team_size` ≥ 2) and day deaths: unchanged (knock, M5-6 elimination hold, vanilla comeback by day).

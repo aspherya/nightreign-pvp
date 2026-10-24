@@ -1276,3 +1276,17 @@ fn the_night_floor_keeps_the_clock_above_the_elimination_point() {
     assert!((clock - 0.9).abs() < 1e-6);
     assert!(clock <= crate::features::night_match::ELIM_CLOCK);
 }
+
+#[test]
+fn hp0_writes_zero_to_the_data_module_and_refuses_a_bad_gate() {
+    let mut f = world();
+    data_module(&mut f, 120, 240);
+    f.hp(G0, 120);
+    assert_eq!(zero_hp(&mut f, P0), Ok(120));
+    assert_eq!(f.writes, vec![(DM + DM_HP, vec![0, 0, 0, 0])]);
+    let mut f = world();
+    data_module(&mut f, 120, 240);
+    f.hp(G0, 99);
+    assert!(zero_hp(&mut f, P0).is_err());
+    assert!(f.writes.is_empty());
+}

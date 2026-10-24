@@ -317,9 +317,11 @@ pub(crate) fn wanted(
     waited_ms: u128,
     in_call: Option<usize>,
 ) -> [bool; POINTS] {
-    let busy = pending || in_call.is_some();
+    // The start breakpoint is not needed once a release is asked (the held step is already captured; a call through a gate runs
+    // the step without it). Freeing its slot keeps the peak at one slot for the hold and one for the gate: with puppets
+    // (dev: three slots) or the menu breakpoints in use there is no second free slot (2026-10-24, scenario night1-local-dies).
     [
-        (dead && armed) || busy,
+        dead && armed && !pending && in_call.is_none(),
         // Never free the gate whose call is in flight: the return into it must find the breakpoint.
         pending || in_call == Some(P_GATE_A),
         (pending && waited_ms >= GATE_B_AFTER_MS) || in_call == Some(P_GATE_B),
@@ -469,25 +471,29 @@ mod tests {
 
     #[test]
     fn a_release_arms_gate_a_then_gate_b_after_two_seconds() {
-        assert_eq!(wanted(false, false, true, 0, None), [true, true, false]);
+        assert_eq!(wanted(false, false, true, 0, None), [false, true, false]);
         assert_eq!(
             wanted(false, false, true, GATE_B_AFTER_MS - 1, None),
-            [true, true, false]
+            [false, true, false]
         );
         assert_eq!(
             wanted(false, false, true, GATE_B_AFTER_MS, None),
-            [true, true, true]
+            [false, true, true]
         );
+        // Still dead and armed with the release pending: the start slot is freed for the gate.
+        assert_eq!(wanted(true, true, true, 0, None), [false, true, false]);
     }
 
     #[test]
     fn the_gate_in_flight_is_never_freed() {
-        // Gate B made the call: it and the start step stay until the return; gate A may go.
+        // Gate B made the call: it stays until the return; gate A may go.
         let w = wanted(false, false, false, 3_000, Some(P_GATE_B));
-        assert!(w[P_START] && w[P_GATE_B] && !w[P_GATE_A]);
+        assert!(w[P_GATE_B] && !w[P_GATE_A]);
         // Gate A made the call: it stays.
         let w = wanted(false, false, false, 0, Some(P_GATE_A));
-        assert!(w[P_START] && w[P_GATE_A] && !w[P_GATE_B]);
+        assert!(w[P_GATE_A] && !w[P_GATE_B]);
+        // No start breakpoint during the call: one slot only.
+        assert!(!w[P_START]);
     }
 
     #[test]

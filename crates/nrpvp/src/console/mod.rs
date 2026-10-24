@@ -96,10 +96,26 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
     Spec { name: "night_status", args: "", help: "M5-5 / M5-9: the night match: day / night n / morning, players, teams, how many stand, whether LOCAL is eliminated, the winner, die-at-once on/off, LOCAL's spot, death held / released", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). By day it downs; at night in Solo with die-at-once on (M5-9) it is a real death", run: hp0 },
     Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
     Spec { name: "night_count", args: "[0|1]", help: "M5-5 test switch: 1 (default) a night ends when one team is left standing; 0 it never ends by count (two-window elimination tests; night_end still ends it); no argument shows it", run: night_count },
     Spec { name: "death_trace", args: "[0|1]", help: "M5-8 research: while this game's player is dead, log the comeback steps (RejoinMapEnterStep breakpoints) and the player's state every second; no argument shows it", run: death_trace },
     Spec { name: "death_hold", args: "[0|1]", help: "M5-9: 1 = a dead player stays dead (the comeback's start step is held, same module as the Solo night hold); 0 = a held step is called through the gate (exe+0x5BCE10, else exe+0x675480 after 2 s) and the game's comeback runs; no argument shows the state", run: death_hold },
+    Spec { name: "pad", args: "<item>[; <item>...]", help: "ORCH-1: virtual gamepad (pad 0, through XInputGetState): items A, A+DOWN 300 (ms), wait 500, LT/RT [ms], LS x y [ms] / RS x y [ms] (x, y in -1..1); a 120 ms release follows each press; queued after what is waiting", run: |a| if a.is_empty() { Err("usage: pad A; wait 500; DOWN".into()) } else { crate::game::vpad::queue(&a.join(" ")).map(Act::Reply) } },
+    Spec { name: "pad_connect", args: "[0|1]", help: "ORCH-1: 1 = pad 0 reports connected and the game rescans its pads (WM_DEVICECHANGE); pad does this by itself", run: |a| Ok(Act::Reply(crate::game::vpad::connect(switch_arg(a, "usage: pad_connect [0|1]")?.unwrap_or(true)))) },
+    Spec { name: "pad_clear", args: "", help: "ORCH-1: drop every queued virtual-pad item", run: |_| Ok(Act::Reply(crate::game::vpad::clear())) },
+    Spec { name: "pad_status", args: "", help: "ORCH-1: virtual pad: installed or not, XInputGetState calls and thread, items waiting", run: |_| Ok(Act::Reply(crate::game::vpad::status())) },
+    Spec { name: "puppet_arm", args: "[0|1]", help: "ORCH-2: 1 = the bot manager's next characters go into the player list as puppet players (use bots 10 after it, offline mode, in an expedition); 0 = bots stay bots; no argument shows the state", run: |a| Ok(Act::Reply(crate::game::puppet::arm_cmd(switch_arg(a, "usage: puppet_arm [0|1]")?))) },
+    Spec { name: "puppet_think", args: "[id|keep]", help: "ORCH-2: NpcThink id written into puppet requests (default -1 = none, AFK); keep = the bots' own AI", run: |a| crate::game::puppet::think_cmd(a.first().map(String::as_str)).map(Act::Reply) },
+    Spec { name: "puppet_forget", args: "", help: "ORCH-2: the bot manager forgets its 2 characters (they stay), so the next bots request makes 2 more", run: |_| Ok(Act::Reply(crate::game::puppet::forget_cmd())) },
+    Spec { name: "peek", args: "<addr|wcm+0x..|exe+0x..> [len]", help: "ORCH-2 research: hex dump of game memory as qwords (read-only; `wcm` = the live WorldChrMan, `exe` = the exe base)", run: |a| crate::game::puppet::peek_cmd(a).map(Act::Reply) },
+    Spec { name: "puppet_watch", args: "[slot1|<hex addr>|exec <exe off>|off]", help: "ORCH-2 research: hardware write watch (or execute breakpoint with exec); logs rip (rdx, rcx, return address) and exe return addresses", run: |a| crate::game::puppet::watch_cmd(a).map(Act::Reply) },
+    Spec { name: "puppet_session", args: "[keep|null|local]", help: "ORCH-2: what a new puppet's session field (+0x5D0, the one Seamless Co-op checks) becomes: null (default; SC skips it), local (LOCAL's session object) or keep", run: |a| crate::game::puppet::session_cmd(a.first().map(String::as_str)).map(Act::Reply) },
+    Spec { name: "puppet_move", args: "<slot> <dx> <dz>", help: "ORCH-2: put the puppet in player slot <slot> at LOCAL's position + (dx, dz) metres", run: |a| crate::game::puppet::move_cmd(a).map(Act::Reply) },
+    Spec { name: "puppet_hp", args: "<slot> <hp>", help: "ORCH-2: write a puppet's current HP (0 = as if killed; in a session a player at 0 is downed)", run: |a| crate::game::puppet::hp_cmd(a).map(Act::Reply) },
+    Spec { name: "puppet_near_death", args: "[0|1]", help: "ORCH-2: 1 (default) = puppets keep SpEffect 8970061, so every 0 HP is a down like in a session; 0 = only the first", run: |a| Ok(Act::Reply(crate::game::puppet::near_death_cmd(switch_arg(a, "usage: puppet_near_death [0|1]")?))) },
+    Spec { name: "puppet_max", args: "[n]", help: "ORCH-2: at most n puppets (0..5, default 5); further bot-manager creations are skipped while armed", run: |a| crate::game::puppet::max_cmd(a.first().map(String::as_str)).map(Act::Reply) },
+    Spec { name: "puppet_list", args: "", help: "ORCH-2: every entry of the game's player list (slot, address, vtable, handle, npc id, team, hp, downed state)", run: |_| Ok(Act::Reply(crate::game::puppet::list())) },
     Spec { name: "speffects", args: "", help: "M5-8 research: this game's player's SpEffect ids (revive items 540155 / 6999100 / 6999500 / 8970061, die-at-once 102130, ...)", run: |_| Ok(Act::Reply(crate::game::deathtrace::speffects_cmd())) },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
@@ -438,6 +454,20 @@ fn clock(args: &[String]) -> Result<Act, String> {
             crate::features::clock::parse(a).map(|t| Act::Main(MainReq::Clock(ClockCmd::Set(t))))
         }
     }
+}
+
+fn hp0(args: &[String]) -> Result<Act, String> {
+    use std::sync::atomic::Ordering;
+    if !args.is_empty() {
+        return Err("usage: hp0".into());
+    }
+    crate::game::combat_state::GOD.store(false, Ordering::Relaxed);
+    crate::game::combat_state::KILL.store(true, Ordering::Relaxed);
+    tracing::info!("console: hp0 requested (god off)");
+    Ok(Act::Reply(
+        "hp0: LOCAL's HP is written to 0 on the next tick (god off); the result is in the log"
+            .into(),
+    ))
 }
 
 fn god(args: &[String]) -> Result<Act, String> {

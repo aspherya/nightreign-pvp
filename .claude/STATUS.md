@@ -1,4 +1,4 @@
-# Status and handoff (updated 2026-10-23)
+# Status and handoff (updated 2026-10-24)
 
 Read this first when picking the project up again. **This is the only doc that says what is true now**: what works, what is built but
 untested, what comes next, the traps we already fell into, and the decisions made. Other docs own their topic (doc map in `CLAUDE.md`);
@@ -21,6 +21,11 @@ this file points to them.
 | **Downed rule (Leonardo's design): a rival's hit never keeps progress on the purple bar and takes 3 s off the bleed-out; a teammate's hit fills the bar as normal; a rival can never revive a rival** | **Works, clean (T-041, Nucleus 2026-10-22, free-for-all and 2 v 1):** the rival's hit is cancelled inside the game (hook on the bar store), so no stand-up and no gauge flicker on any screen; teammates revive normally. Fallbacks: revive-event block and the T-040 re-down. Not yet in a player zip or over real two-PC lag |
 | **Nights are elimination rounds (M5-3 + M5-5/M5-6/M6-1, Leonardo's rules M5-D)**: no boss, no minions; knocked 15 s at night, then **eliminated** (held down, no comeback, nobody revives); the night ends when one team is left; only the winner healed; losers get up at the morning at their own morning spot; night 2 = win for the last team, loss for everyone else; no Day 3 | **Built** on branch `claude/great-turing-b2e494` (PR to `main`). Solo PASS (event side: night end, heal, no Day 3, win banner) and Nucleus PASS (count end, hold, morning get-up + move, elimination), 2026-10-23, TESTING §3. Open: night 2 decided by count with two players (5 min, next session). Not built: spectating another player (TASKS M5-7) |
 
+**Puppet players (ORCH-2, 2026-10-23, branch `claude/orchestrator-puppets`, dev only):** up to 5 AFK characters in the game's
+player list that the game and the mod treat as players (rivals, hits, downs, bleed-out), in one game with no Nucleus; driven by the
+new repo `C:\Users\Leonardo\source\repos\nightreign-orchestrator` (`nro puppets <n>`; `nro run scenarios\puppets-smoke.toml`
+PASS, TESTING §3). MEMORY_MAP §18, TASKS ORCH-2.
+
 In progress: the hawk crossing (PROJECT_PLAN §13 v1): **works solo in the dev build** (one diagonal line, cruise, dive, drop;
 HAWK-1b/3/4 PASS 2026-10-22, branch `hawk-crossing`). **HAWK-2 merged into `main` 2026-10-22** (PR #2, 8aca550): on by default in both builds (`[hawk]` in `nrpvp.toml`, no console needed), route file in the player zip. **Solo
 smoke PASS 2026-10-22** (TESTING §3: cruise, dive, drop with no command; Leonardo: "how I wanted it"). Next: a new player zip, then an FS. Not started: keeping level on death, inventory drop, no-boss nights, final arena, sudden death, winner's choice.
@@ -38,6 +43,7 @@ Alt-F4 hits it too. A player zip from `main` (post-R5, no hudhook) is the real c
 | Place | Mode | Settings |
 |---|---|---|
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` (2026-10-23: plain deploy (SC's launcher; the `-Me3` mode failed for window 2), dev build of branch `claude/confident-galileo-78961c` with M5-9, nrpvp.dll A2A95786B5A1DFCD; `main`'s dev toml plus the deploy keys; `mm_queue`/`br_menu` off) | developer (logs to `dist\nucleus-logs\Instance<N>\`; after redeploy `dist\nrcon.exe --all` reaches every instance) | `team_size = 1` (T-040 test), PvP on |
+| **Zip for FS-M59, 2026-10-24:** `dist\NightreignPvP.zip` (built from branch `claude/m5-9-finish-e5f717` f65cec3, clean; nrpvp.dll 8623F4000642037A, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1`) = the 2026-10-22 candidate + the M5 nights (no boss, count decisions) + M5-9 Solo real death; player build, no console, no bots or puppets | player: Solo Battle Royale, nights as elimination rounds, die-at-once at night. **Not** installed by the agent. The 2026-10-22 candidate below is superseded: do not send it |
 | **Release candidate 2026-10-22:** `.claude\worktrees\offline-mode-ccabe0\dist\NightreignPvP.zip` from `main` 0145f72 (clean), nrpvp.dll DB60DAF8E06D743C, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2` | player: Solo Battle Royale (Duo/Trio "coming soon"), hawk crossing always on, PvP + downed rules, offline mode via `mode = "offline"`; **no bots** (dev only) | `team_size = 1`, `matchmaking = true`. **Not** installed by the agent; regression REG-1 (TESTING §5) open |
 | `dist\NightreignPvP.zip` (2026-10-20, nrpvp.dll 0881264E03245444, `-MatchPlayers 2`): **superseded** by the 2026-10-22 release candidate | player (no keys, no overlay; in-game menu + messages) | `team_size = 1`, `matchmaking = true`, `br_menu` on. **Not** installed in Leonardo's game folder by the agent |
 | Worktree `.claude\worktrees\offline-mode-ccabe0\dist\` (dev build of `main` 0145f72, 2026-10-22; that folder's own `scripts\launch.ps1` uses it) | developer + console: offline mode + bots (REG-1 part B) | copy of `main`'s dev toml with `br_menu = true`, `mode = "br"`; copy of `dist\gamedata` (hawk line B) |
@@ -117,7 +123,8 @@ code patched; UI-2 appends our events to the Roundtable event script and the DLL
    **M5-9 built** (Solo real death: die-at-once at night, the death held until the morning, released through the game's own
    comeback, then moved to a random day-1 place): solo PASS and the hold/release PASS in a two-window session (2026-10-23, TESTING
    §3). Nucleus through me3 (`-Me3`) **fails** for window 2 (ColdLoader "appid not found"), so Nucleus stays on SC's launcher and
-   the kill + night flow in a session with our event files waits for the next friend session. Then **M5-7** (spectate camera); the
+   the kill + night flow in a session with our event files waits for the next friend session (**runbook FS-M59, TESTING §6**).
+   **2026-10-24 (one PC, orchestrator + puppets, TESTING §3): hold, release, Day-2-clock-gated move, night 1 and night 2 by count (win and loss ending) PASS; a missing-slot bug with puppets present found and fixed (the hold's start breakpoint is dropped when the release is asked); new dev command `hp0`.** In the offline solo expedition LOCAL carries SpEffect 6999500, so die-at-once stays off there: the 102130 kill is a friend-session check. Then **M5-7** (spectate camera); the
    5 min night-2 check (TASKS). Final arena, sudden death, winner's choice later (`research/S3-match-flow.md`, `S4-mod-channel.md`).
    **OFF-8** (downed state in an offline solo match) now blocks OFF-7.
 6. Matchmaking: how it works and its logs are in `MATCHMAKING.md`; design history in `research/S9-matchmaking-decision.md` §5c–5g.

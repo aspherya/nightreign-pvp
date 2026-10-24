@@ -296,6 +296,22 @@ Story, evidence and the plan: `research/M5-8-death.md`. Dev tool: `game/deathtra
 | `CSRespawnPointMan` | FD4 singleton, slot `exe+0x3C17C88` (FS-0 run 11 log) | `exe+0xBA2B80` picks the nearest point inside the play area (`exe+0xBA5100`; map at `+8`, point at node `+0x28`); result `+0x18` block, `+0x20` pos, `+0x30` rot, `+0x40` valid | `[VERIFIED: disassembly]` |
 | `CS::RejoinMapEnterStep` | vtable `exe+0x2C893E0`, step table `exe+0x39AFAC0` | The session rejoin path; not used by a solo death | `[VERIFIED: solo run 1 (no hit)]` |
 
+## 18. Puppet players: player-list characters without a client (ORCH-2, game 1.03.3)
+
+Full story and the static reading: nightreign-orchestrator `docs/research/R2-net-player-creation.md`. Code: `game/puppet.rs`.
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| The bot manager's characters are `CS::PlayerIns` | creator `exe+0x4ABC40(set, request)` called at `exe+0x38F2B3` with `WorldChrMan+0x9AF0` (the bot set, capacity 120, set index 0x0E); builds via `exe+0x3E51F0`, PlayerIns ctor `exe+0x6667F0` | Request: `+0x40` NpcParam, `+0x44` NpcThink, `+0x48` CharaInit, `+0x58` name string | `[VERIFIED: static + live]` |
+| Into the player list | the same call with `rcx` = `WorldChrMan+0x9A40` | Next free slot (the creator scans 20 entries whatever the capacity of 6); handle `0x...10C0000N` like LOCAL; it loads by itself (entry status 3, then 4) | `[VERIFIED: live 2026-10-23]` |
+| Bot manager list | `[r15 + [rdi+0x28]]` at `exe+0x38F2EE` | The manager destroys a character in its list that it cannot find in the bot set; -1 there makes it forget | `[VERIFIED: live]` |
+| Destroy a character | `exe+0x51B2B0(WorldChrMan, chr)`: unlinks from the sets at `+0x9B48`, `+0x9A40`, `+0x9A98`, `+0x9AF0` and frees | | `[VERIFIED: static + trace]` |
+| Seamless Co-op's player-slot sweep | every frame, slots 1..5: `[chr+0x5D0]+8` must match an active SC member (`+8` key, `+0x128` bit 0), else SC calls the destroy above (return address `nrsc.dll+0x62AB4`, ...) | All 5 members inactive in solo; a null `+0x5D0` is skipped by SC but crashes the game (`exe+0x676227` calls `[chr+0x5D0]->vf[0x30]` every frame) | `[VERIFIED: live code read + traces]` |
+| `PlayerIns+0x5D0` | session object | LOCAL: `PlayerDebugSession` (vtable `exe+0x2CA49C8`); a bot-made PlayerIns: the static `PlayerNullSession` (vtable `exe+0x2CA4A60`); key `+8` = 0 for both | `[VERIFIED: live]` |
+| `PlayerIns+0x78` | player id | The creator copies LOCAL's `0x6001...`; puppets get `0x600N...` (N = slot + 1) | `[VERIFIED: live]` |
+| Solo death vs down | SpEffect **8970061** | With it, 0 HP downs (bar 40, clock 15 s) instead of killing; while it stays, the character stands up again after about 5 s (solo auto-revive); without it while downed, the bleed-out runs out and the character dies (stays dead) | `[VERIFIED: live]` |
+| Physics frame | `[[chr+0x1B8]+0x68]+0x70` | One frame for all characters (LOCAL's moving origin `LOCAL+0x80`); a non-local PlayerIns' `+0x80` is not an origin | `[VERIFIED: live]` |
+
 ## 10. Not found yet
 
 - The table that says which team is hostile to which (we only know the values in §4 from testing).

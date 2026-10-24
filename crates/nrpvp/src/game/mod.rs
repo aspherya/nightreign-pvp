@@ -28,6 +28,8 @@ pub(crate) mod menuflow;
 #[cfg(feature = "dev")]
 pub(crate) mod menutrace;
 pub(crate) mod poswrite;
+#[cfg(feature = "dev")]
+pub(crate) mod puppet;
 pub(crate) mod reviveblock;
 pub(crate) mod rtti;
 pub(crate) mod singletons;
@@ -36,6 +38,8 @@ pub(crate) mod team;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
 pub(crate) mod views;
+#[cfg(feature = "dev")]
+pub(crate) mod vpad;
 pub(crate) mod world;
 
 use std::collections::BTreeMap;

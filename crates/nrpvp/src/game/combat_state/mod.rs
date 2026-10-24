@@ -64,6 +64,19 @@ use crate::game::layout::{DATA_MODULE_HP as DM_HP_OFF, DATA_MODULE_MAX_HP as DM_
 /// Dev console `god 0|1` (off at launch; only the console sets it).
 pub(crate) static GOD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Dev console `hp0` (2026-10-24, M5-9 tests): the next tick writes 0 to LOCAL's HP, see [`zero_hp`].
+pub(crate) static KILL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Dev console `hp0`: put the character at 0 HP through the data module field the T-040 re-down and `god` write (MEMORY_MAP §5), gated
+/// like them (HP > 0 and equal to PlayerGameData's). `Ok(old hp)`. By day or in a session this downs the player; at night with
+/// SpEffect 102130 on (M5-9) it is a real death.
+pub(crate) fn zero_hp(mem: &mut dyn CombatMem, addr: usize) -> Result<u32, String> {
+    let (field, hp) = data_module_hp(mem, addr)?;
+    mem.write(field, &0u32.to_le_bytes())
+        .map_err(|e| e.to_string())?;
+    Ok(hp)
+}
+
 /// M5-5: the team key of a player: its roster team when the rosters are known, else its own session id (free-for-all).
 pub(crate) fn team_key(team_no: Option<u8>, id: u64) -> u64 {
     team_no.map_or(id, |t| (1 << 63) | u64::from(t))
@@ -312,7 +325,15 @@ impl CombatCtl {
         if !self.rtti_ready {
             return;
         }
-        if GOD.load(std::sync::atomic::Ordering::Relaxed) {
+        if KILL.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            match self.local_state() {
+                Some((addr, 0)) => match zero_hp(&mut self.mem, addr) {
+                    Ok(hp) => tracing::info!("console hp0: LOCAL HP {hp} -> 0"),
+                    Err(e) => tracing::warn!("console hp0: refused ({e})"),
+                },
+                other => tracing::warn!("console hp0: LOCAL is not up ({other:?})"),
+            }
+        } else if GOD.load(std::sync::atomic::Ordering::Relaxed) {
             self.god_refill();
         }
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
