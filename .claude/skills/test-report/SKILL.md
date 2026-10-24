@@ -12,7 +12,8 @@ him to repeat anything the logs already say.
 
 | Run type | Where |
 |---|---|
-| Nucleus (dev) | `dist\nucleus-logs\Instance<N>\nrpvp.log` (current) and `...\logs\nrpvp_<UTC>.log` (one per session). One folder per instance |
+| Orchestrator run (`nro run`, one PC) | `runs\<id>\report.json` (steps with replies), `runs\<id>\mod\nrpvp.log`, `runs\<id>\shots\*.png` (look at the screenshots) |
+| Nucleus (dev, secondary tool) | `dist\nucleus-logs\Instance<N>\nrpvp.log` (current) and `...\logs\nrpvp_<UTC>.log` (one per session). One folder per instance |
 | `scripts\launch.ps1` (dev, one PC) | `dist\nrpvp.log`, `dist\logs\` |
 | Player zip on Leonardo's PC | `<Game>\NightreignPvP\logs\` (`<Game>` = `Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game`) |
 | Friend's PC | Only what Leonardo copies in; ask for `<Game>\NightreignPvP\logs` if missing |
@@ -35,7 +36,7 @@ and is marked as such.
 
 ## 3. Write it down (one owner per fact, see CLAUDE.md)
 
-- **TESTING.md §3**: append one entry, newest last, in the existing shape:
+- **`testing-log/` (the newest file; index in TESTING.md §3)**: add one entry in the existing shape:
   `### YYYY-MM-DD — <run name> (<who>, <build/zip>, nrpvp.dll <hash16>). Logs: <path>: **PASS|PARTIAL|FAIL**` followed by short
   bullets: what was checked, the evidence, defects.
 - **Copy the logs** into `.claude/experiments/<session>/` (`host/`, `client/`, or `Instance<N>/`); they are gitignored and stay local.

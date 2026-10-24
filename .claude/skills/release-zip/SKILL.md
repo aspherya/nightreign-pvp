@@ -13,6 +13,7 @@ is written down.
 - Game, Seamless Co-op and me3 match the pins in `TECHNICAL_NOTES.md` §1. If the game updated, stop: offsets and the game-data pins
   must be re-verified first.
 - No game is running from `dist\` (the build cannot replace a DLL in use).
+- `scripts\regress.ps1` is all PASS when the change touches night flow, hold/release, downed rules or the console (one PC, needs `nro desk`; TOOLS.md).
 - `cargo test --workspace` passes. Note whether the tree is dirty: VERSION.txt records it.
 
 ## 2. Build (repo root, PowerShell)

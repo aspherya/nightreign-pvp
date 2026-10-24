@@ -1,29 +1,41 @@
 # nightreign-pvp: agent operating manual
 
-PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). Do not load the whole documentation tree by default:
-read STATUS.md, then only the doc that owns the topic you need. **Each topic has exactly one owner doc.** When a fact changes, update
-it there and nowhere else; other docs link to it instead of repeating it.
+PvPvE mod for ELDEN RING NIGHTREIGN, built on top of Seamless Co-op (SC). **Do not load the whole documentation tree.** Read this file,
+then [STATUS.md](STATUS.md) (≈6 KB, the only "now" doc), then only the doc that owns the topic you need. **Each topic has exactly one
+owner doc.** When a fact changes, update it there and nowhere else; other docs link to it instead of repeating it. The "Read when"
+column says when a doc is worth its tokens.
 
-| File | Owns |
-|---|---|
-| [STATUS.md](STATUS.md) | **Read first.** The only "now" doc: what works, what is deployed, what is next, traps, decisions |
-| [TASKS.md](TASKS.md) | Live task cards only (finished cards are removed; git keeps them) |
-| [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md) | Product intent and scope boundaries (Leonardo's spec) |
-| [PROJECT_PLAN.md](PROJECT_PLAN.md) | Feature-by-feature feasibility, milestones, parked ideas (§12) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Code structure, threads, module boundaries, coding rules, refactor plan |
-| [CONSOLE.md](CONSOLE.md) | Developer console design (commands, pipe, `nrcon`) |
-| [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we have found**, what it holds, how it behaves, how it was confirmed |
-| [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Version pins, stack, Seamless Co-op facts, non-memory engine facts, design decisions log (ADRs) |
-| [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, settings, logs, failure patterns |
-| [TESTING.md](TESTING.md) | Test environment, test cases, results log, open friend-session runbooks |
-| [../README.md](../README.md) | Build, package, install (developers and players) |
+| File | Owns | Read when |
+|---|---|---|
+| [STATUS.md](STATUS.md) | What works, what is deployed, what is next (≤ 8 KB) | **Always, first** |
+| [TASKS.md](TASKS.md) | Live task cards only (finished cards are removed; git keeps them) | You are given or pick a card |
+| [TOOLS.md](TOOLS.md) | Build, deploy, which test route tests what, logs, Nucleus (secondary) | Building, testing, deploying |
+| [TRAPS.md](TRAPS.md) | Mistakes we already made (hardware slots, Nucleus, saves, console tails…) | Touching an area, or debugging something odd |
+| [DECISIONS.md](DECISIONS.md) | Decisions with date and who decided | Before re-arguing or changing a direction |
+| [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md) | Product intent and scope boundaries (Leonardo's spec) | Designing a feature |
+| [PROJECT_PLAN.md](PROJECT_PLAN.md) | Feasibility, milestones, parked ideas (§12) | Planning a milestone |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Code structure, threads, module boundaries, coding rules, refactor plan | Writing or moving code |
+| [CONSOLE.md](CONSOLE.md) | Developer console design and command table | Adding or using a console command |
+| [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we found**, behaviour, how it was confirmed | Touching game memory |
+| [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Version pins, stack, Seamless Co-op facts, non-memory engine facts, ADRs | Version or engine questions |
+| [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, logs, failures | Matchmaking work |
+| [TESTING.md](TESTING.md) | Test environment, cases, regression set, Friend Session runbooks (§6) | Planning or judging a test |
+| [testing-log/](testing-log/) | Results log, one entry per run, newest file last (append-only) | Looking up what a past run showed |
+| [orchestrator/README.md](orchestrator/README.md), [CONTRACT.md](orchestrator/CONTRACT.md) | `nro`, scenarios, puppet players, safety checks | Running or writing scenarios |
+| [../README.md](../README.md) | Build, package, install (developers and players) | Releasing |
 
 Project skills (`.claude/skills/`): `test-report` (turn a reported test run into evidence in the right docs), `release-zip`
 (build, verify and record a player zip or Nucleus deploy) and `add-console-command` (every feature gets console access). Planned:
 "add a feature" (once the `Feature` trait exists, ARCHITECTURE §6 R3).
 
-Frozen history, read only when a card links it: `research/` (spike memos), `re/er-reference.md` (Elden Ring hints), `experiments/`
-(logs and scripts from test runs). They are not kept up to date.
+Frozen history, read only when a card links it: `research/` (spike memos, orchestrator design `ORCH-plan.md`), `re/er-reference.md`
+(Elden Ring hints), `experiments/` (logs and scripts from test runs). They are not kept up to date.
+
+**How a feature is specified (spec-driven, light):** a card in TASKS.md is the spec: goal, rules (link `re/PROJECT_SCOPE.md`), build
+steps and an **acceptance that is a scenario** (`scenarios/<name>.toml`, run with `scripts\regress.ps1`) wherever one PC can show it;
+what only two real PCs can show goes into the next Friend Session runbook (TESTING §6). Done = scenario PASS + a `testing-log/` entry +
+the card removed. Doc hygiene: STATUS stays under ~8 KB (replace, do not append), results go to `testing-log/`, new traps to
+TRAPS.md, new decisions to DECISIONS.md.
 
 ## Roles
 
@@ -57,7 +69,7 @@ Frozen history, read only when a card links it: `research/` (spike memos), `re/e
 
 - Planning docs (this file, TASKS.md, …): `.claude/`. Research write-ups: `.claude/research/`.
   Reverse-engineering notes and CE tables: `.claude/re/`.
-- Code at the repo root: `Cargo.toml`, `crates/nrpvp/`, `profiles/`, `scripts/`.
+- Code at the repo root: `Cargo.toml`, `crates/nrpvp/` (the mod), `crates/nrcon`, `crates/nrpvp-launcher`, `crates/nro*` (orchestrator), `scenarios/`, `pins/`, `tools/`, `profiles/`, `scripts/`.
 - Rust lives in `%USERPROFILE%\.cargo\bin`. If `cargo` isn't on PATH in a shell, call
   `~/.cargo/bin/cargo.exe` directly.
 
@@ -81,6 +93,7 @@ players goes into the next FS runbook (TESTING.md §6), not into the card's own 
 ./scripts/build.ps1          # cargo build --release, copies DLL to dist/
 ./scripts/launch.ps1         # me3 launch: SC + nrpvp.dll + dist/gamedata (profiles/nrpvp-sc.me3.toml)
 ./scripts/package-release.ps1  # player zip dist/NightreignPvP.zip (builds the player DLL: --no-default-features)
+./scripts/regress.ps1        # orchestrator scenarios on one PC (needs `nro desk`, TOOLS.md)
 ```
 
 ## Conventions

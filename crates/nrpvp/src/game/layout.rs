@@ -132,15 +132,6 @@ pub(crate) const BOTMAN_BOTS_BEGIN: usize = 0x28;
 pub(crate) const BOTMAN_BOTS_END: usize = 0x30;
 pub(crate) const BOTMAN_BOT_ENTRY: usize = 0x10;
 
-// ---- WorldChrMan's character sets (OFF-5; static reading of the handle lookup exe+0x518F30, game 1.03.3) ----
-/// WorldChrMan -> array of character-set pointers (`[WCM + 0x170B8 + i*8]`), indices 0..=0x84 (the lookup bounds-checks 0x84).
-/// That NPC sets share the player ChrSet layout ([`CHRSET_CAPACITY`], [`CHRSET_ENTRIES`], [`CHRSET_ENTRY_SIZE`]) is a HYPOTHESIS
-/// (MEMORY_MAP §15): the search checks the handle at [`CHR_HANDLE`] before it trusts an entry.
-pub(crate) const WCM_CHRSETS: usize = 0x170B8;
-pub(crate) const WCM_CHRSET_COUNT: usize = 0x85;
-/// A set larger than this is not plausible (sanity bound for the search).
-pub(crate) const CHRSET_MAX_CAPACITY: u32 = 0x2000;
-
 // ---- The play-area clock, WorldPlayAreaManager (MEMORY_MAP §16; M5-1 static reading, game 1.03.3) ----
 /// Singleton name in the FD4 map (slot `exe+0x3C13158` in 1.03.3; found by name, never by address).
 pub(crate) const PLAYAREA_NAME: &str = "WorldPlayAreaManager";

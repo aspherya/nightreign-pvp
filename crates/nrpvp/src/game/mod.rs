@@ -455,7 +455,6 @@ fn watch(
         // R3 / OFF-1: this tick's read model (the local player as the downed rule last resolved it) and the features' outbox.
         let bot_man = botman_slot.and_then(instance_of).unwrap_or(0);
         let play_area = playarea_slot.and_then(instance_of).unwrap_or(0);
-        let watched = features.bot_match.watched();
         let mut world = world::World::read(
             &mem,
             &world::Inputs {
@@ -466,7 +465,6 @@ fn watch(
                     .map(|(a, _)| a),
                 mm_phase: crate::mm::phase(),
                 bot_man,
-                watched: &watched,
                 play_area,
             },
         );
@@ -516,9 +514,6 @@ fn watch(
                 Command::Hawk(h) => hawk::command(h, base, size),
                 // OFF-1: features get their commands with this tick's world.
                 Command::Mode(m) => features.mode.request(m, "console", &world, &mut fctx),
-                Command::Bots(crate::features::bots::BotsCmd::Hostile(on)) => {
-                    features.bot_match.set_hostile(on)
-                }
                 Command::Clock(c) => features.clock.request(c, "console", &world, &mut fctx),
                 Command::NightEnd => features.nights.request_end("console", &world, &mut fctx),
                 Command::Flag(f, v) => crate::game::flags::console_cmd(base, f, v),
@@ -540,14 +535,7 @@ fn watch(
             world.local,
             base,
         );
-        fctx.flush(
-            crate::features::Targets {
-                base,
-                bot_man,
-                play_area,
-            },
-            &mem,
-        );
+        fctx.flush(crate::features::Targets { base, play_area }, &mem);
         team.tick();
         let team_spent = team_started.elapsed();
 

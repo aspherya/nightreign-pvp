@@ -1,11 +1,17 @@
 [workspace]
 resolver = "2"
-members = ["crates/nrpvp", "crates/nrpvp-launcher", "crates/nrscan", "crates/nrcon"]
+members = ["crates/nrpvp", "crates/nrpvp-launcher", "crates/nrcon", "crates/nro-core", "crates/nro", "crates/nro-mcp"]
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+sha2 = "0.10"
 
 [profile.release]
 opt-level = 2

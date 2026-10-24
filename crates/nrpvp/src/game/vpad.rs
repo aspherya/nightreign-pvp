@@ -1,5 +1,5 @@
 //! ORCH-1 (dev only): a virtual gamepad, so an agent can press buttons in a game whose window it cannot see or focus (the
-//! orchestrator, `nightreign-orchestrator`, runs where screen input does not reach the game).
+//! orchestrator (`crates/nro`), runs where screen input does not reach the game).
 //!
 //! The game reads pads through `XINPUT1_4.dll` ordinal 2 (`XInputGetState`), imported by ordinal (exe 1.3.3.0 import table, checked
 //! 2026-10-23). On first use this module points that one import-table slot at [`get_state`] (a data write in the IAT, no game

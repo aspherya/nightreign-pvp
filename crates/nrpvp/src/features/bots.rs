@@ -1,4 +1,5 @@
-//! OFF-4 (bot spike): start and stop the game's own NPC bots (AI Nightfarers) and log what the bot manager does. Research and the
+//! OFF-4 (bot spike): start and stop the game's own NPC bots (AI Nightfarers) and log what the bot manager does. Kept as the engine
+//! of the orchestrator's puppet players (`game/puppet.rs`, `tools/`); it is not a game feature (decided 2026-10-24). Research and the
 //! engine facts: `research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15.
 //!
 //! No game code is called from here. Our events in `event/common.emevd.dcx` (`gamedata/emevd-bots.json`, built by
@@ -7,7 +8,7 @@
 //! (through [`Ctx::flags`]) and, every tick, compares the manager's state in the [`World`] with the last one and logs a change.
 //!
 //! Offline mode only: the game itself refuses `2003[97]` when its solo gate counts more than one, and bots in a matchmade match are
-//! out of scope. Requests come from the dev console (`bots`, `bots_clear`); OFF-5 starts them by itself at the match start.
+//! out of scope. Requests come from the dev console (`bots`, `bots_clear`) and the orchestrator's puppets.
 //! Log lines start with `bots:`.
 
 use std::sync::{Mutex, PoisonError};
@@ -24,8 +25,6 @@ pub(crate) enum BotsCmd {
     Spawn(i32),
     /// Remove every bot (`2003[98]`).
     Clear,
-    /// Hostile (`true`) or friendly bots in the offline match (handled by `bot_match`, not by a flag).
-    Hostile(bool),
 }
 
 /// Tables our events know, with their flags (`gamedata/emevd-bots.json`; a unit test checks both files). 10 / 30 / 50: 2
@@ -59,7 +58,6 @@ pub(crate) fn plan(cmd: BotsCmd, mode: GameMode, world: &World) -> Result<u32, S
                 )
             }),
         BotsCmd::Clear => Ok(FLAG_CLEAR),
-        BotsCmd::Hostile(_) => Err("bots_hostile is handled by the match (bot_match)".into()),
     }
 }
 
@@ -88,30 +86,19 @@ fn describe(s: Option<&BotManState>) -> String {
 }
 
 /// Last request result and the manager's state, for the console (written by the main loop, read by the pipe thread).
-static STATUS: Mutex<(String, String, String)> =
-    Mutex::new((String::new(), String::new(), String::new()));
+static STATUS: Mutex<(String, String)> = Mutex::new((String::new(), String::new()));
 
-/// OFF-5: the match director's line for the console (main loop).
-pub(crate) fn set_match_status(line: String) {
-    STATUS.lock().unwrap_or_else(PoisonError::into_inner).2 = line;
-}
-
-/// `bots: <last request>; manager: <state>` and the OFF-5 match line (console).
+/// `bots: <last request>; manager: <state>` (console).
 pub(crate) fn status_line() -> String {
     let s = STATUS.lock().unwrap_or_else(PoisonError::into_inner);
     format!(
-        "bots: {}; manager: {}\n{}",
+        "bots: {}; manager: {}",
         if s.0.is_empty() {
             "no request yet"
         } else {
             &s.0
         },
-        if s.1.is_empty() { "not read yet" } else { &s.1 },
-        if s.2.is_empty() {
-            "bot_match: not started"
-        } else {
-            &s.2
-        }
+        if s.1.is_empty() { "not read yet" } else { &s.1 }
     )
 }
 

@@ -5,10 +5,9 @@
 
 use super::gamemem::GameMem;
 use super::layout;
-use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea, WorldChrMan};
+use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea};
 
 /// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
-pub(crate) const MAX_WATCHED: usize = 6;
 /// M5-5: players in a match (Seamless Co-op's limit).
 pub(crate) const MAX_FIGHTERS: usize = 6;
 
@@ -57,21 +56,9 @@ impl NightFlags {
     }
 }
 
-/// A watched bot character, found by its handle (OFF-5).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct BotChr {
-    pub handle: u64,
-    /// Its ChrIns and the WorldChrMan character set it was found in (the next tick's search hint).
-    pub chr: usize,
-    pub set: usize,
-    pub team: u8,
-    /// `CHR_ID` (+0x68): its NpcParam id, if that is what the field holds for NPCs (logged as evidence).
-    pub npc_id: u32,
-}
-
 /// What the main loop knows before it reads the world.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct Inputs<'a> {
+pub(crate) struct Inputs {
     /// WorldChrMan instance, 0 = none.
     pub wcm_instance: usize,
     /// The local PlayerIns as the downed rule last resolved it.
@@ -79,8 +66,6 @@ pub(crate) struct Inputs<'a> {
     pub mm_phase: u8,
     /// `CSNpcBotMan` instance, 0 = none.
     pub bot_man: usize,
-    /// Bot handles to find, each with the set it was last found in.
-    pub watched: &'a [(u64, Option<usize>)],
     /// M5: `WorldPlayAreaManager` instance, 0 = none.
     pub play_area: usize,
 }
@@ -98,8 +83,6 @@ pub(crate) struct World {
     pub mm_phase: u8,
     /// OFF-4: the NPC bot manager's state (`None` = no instance or unreadable).
     pub bots: Option<BotManState>,
-    /// OFF-5: the watched bot characters that were found, in the order asked.
-    pub bot_chrs: [Option<BotChr>; MAX_WATCHED],
     /// M5: the play-area clock (`None` = no manager, or no clock running: outside an expedition).
     pub clock: Option<ClockState>,
     /// M5-5: the night flags (filled by the main loop; `None` = flag manager not live).
@@ -118,22 +101,6 @@ impl World {
     /// Read this tick's world.
     pub(crate) fn read(mem: &dyn GameMem, i: &Inputs) -> Self {
         let local = i.local.filter(|_| i.wcm_instance != 0);
-        let mut bot_chrs = [None; MAX_WATCHED];
-        if i.wcm_instance != 0 {
-            let wcm = WorldChrMan::new(mem, i.wcm_instance);
-            for (out, &(handle, hint)) in bot_chrs.iter_mut().zip(i.watched) {
-                *out = wcm.find_by_handle(handle, hint).map(|(chr, set)| {
-                    let c = ChrIns::new(mem, chr);
-                    BotChr {
-                        handle,
-                        chr,
-                        set,
-                        team: c.team().unwrap_or(0),
-                        npc_id: c.npc_id().unwrap_or(0),
-                    }
-                });
-            }
-        }
         let place = local.and_then(|p| ChrIns::new(mem, p).place());
         let local_revive_item = place == Some(Place::Expedition)
             && local.is_some_and(|p| {
@@ -147,7 +114,6 @@ impl World {
             bots: (i.bot_man != 0)
                 .then(|| BotMan::new(mem, i.bot_man).state())
                 .flatten(),
-            bot_chrs,
             clock: (i.play_area != 0)
                 .then(|| PlayArea::new(mem, i.play_area).clock())
                 .flatten(),
@@ -167,15 +133,6 @@ impl World {
     /// True while the local player is on an expedition (not the Roundtable, not a load screen).
     pub(crate) fn in_expedition(&self) -> bool {
         self.place == Some(Place::Expedition)
-    }
-
-    /// The watched bot with this handle, if it was found this tick.
-    pub(crate) fn bot_chr(&self, handle: u64) -> Option<BotChr> {
-        self.bot_chrs
-            .iter()
-            .flatten()
-            .find(|b| b.handle == handle)
-            .copied()
     }
 }
 
@@ -198,12 +155,9 @@ mod tests {
         assert_eq!(NightFlags::IDS[11], crate::features::night_match::FLAG_LOSE);
     }
     use crate::game::gamemem::FakeMem;
-    use crate::game::layout::{
-        CHRSET_CAPACITY, CHRSET_ENTRIES, CHR_HANDLE, CHR_TEAM, CHR_TYPE, WCM_CHRSETS,
-        WCM_CHRSET_COUNT,
-    };
+    use crate::game::layout::CHR_TYPE;
 
-    fn inputs(wcm: usize, local: Option<usize>) -> Inputs<'static> {
+    fn inputs(wcm: usize, local: Option<usize>) -> Inputs {
         Inputs {
             wcm_instance: wcm,
             local,
@@ -230,33 +184,5 @@ mod tests {
         let w = World::read(&m, &inputs(0, Some(0x10_0000)));
         assert_eq!(w.local, None);
         assert!(!w.in_expedition());
-    }
-
-    #[test]
-    fn watched_bots_are_found_with_their_team() {
-        let m = FakeMem::default();
-        let (wcm, set, entries, chr) = (0x10_0000, 0x20_0000, 0x30_0000, 0x40_0000);
-        for i in 0..WCM_CHRSET_COUNT {
-            m.put_u64(wcm + WCM_CHRSETS + i * 8, 0);
-        }
-        m.put_u64(wcm + WCM_CHRSETS + 14 * 8, set as u64);
-        m.put_u32(set + CHRSET_CAPACITY, 1);
-        m.put_u64(set + CHRSET_ENTRIES, entries as u64);
-        m.put_u64(entries, chr as u64);
-        m.put_u64(entries + 8, 0);
-        m.put_u64(chr + CHR_HANDLE, 0xFFFF_FFFF_10E0_0000);
-        m.put(chr + CHR_TEAM, &[2]);
-        let watched = [(0xFFFF_FFFF_10E0_0000, None), (0xFFFF_FFFF_10E0_0001, None)];
-        let w = World::read(
-            &m,
-            &Inputs {
-                wcm_instance: wcm,
-                watched: &watched,
-                ..Inputs::default()
-            },
-        );
-        let b = w.bot_chr(0xFFFF_FFFF_10E0_0000).expect("found");
-        assert_eq!((b.chr, b.set, b.team), (chr, 14, 2));
-        assert_eq!(w.bot_chr(0xFFFF_FFFF_10E0_0001), None);
     }
 }

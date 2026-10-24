@@ -1,0 +1,51 @@
+# Decisions made (so they are not re-argued)
+
+One line per decision with date and who decided. Product intent: `re/PROJECT_SCOPE.md`; engineering decision records with evidence (ADRs): `TECHNICAL_NOTES.md`.
+
+- Stack: Rust DLL loaded through me3 next to Seamless Co-op; nothing in Seamless Co-op is modified.
+- **The table offers only Solo / Duo / Trio Battle Royale** (Leonardo, 2026-10-19): no normal expedition while the mod is installed. The
+  choice opens the stock boss menu; pressing start begins our matchmaking; the game's own "Cancel matchmaking" stops it (no Leave entry). UI-1.
+- **No ImGui for players in the final product** (Leonardo, 2026-10-19): menus and status messages must be the game's own UI. The
+  Insert panel was a stop-gap; **removed from the player build on 2026-10-20** (the overlay is a developer tool only).
+- **Every match has 6 players** (Seamless Co-op's limit; Leonardo, 2026-10-19): Solo 6 × 1, Duo 3 × 2, Squad 2 × 3. Pre-release zips use 2 for testing.
+- PvP is always on for rivals; players cannot switch it off. Launching with `nrpvp_launcher.exe` is the mode, until a menu entry exists.
+- Hostility: each game keeps itself and teammates on the normal value and marks only rivals (value 29).
+- Downed players: teammates fill the purple bar; rivals shorten the bleed-out and never move the bar. Instant death on 0 health was
+  rejected (auto-revive items would defeat it).
+- Investigation first, then building: confirm memory locations with the scanner before adding mod code.
+- Matchmaking joins through the game's own lobby (Invite Members path), never a lobby our mod creates; never EAC, never Bandai servers.
+- Leonardo only does smoke tests; Claude decides design and order, and does not build tools that are not needed for the goal.
+- **Developer control is a text console** (2026-10-20): commands over a named pipe with `nrcon`, so agents can drive a running game;
+  the ImGui panel and F-keys were deleted (R5, 2026-10-20). `CONSOLE.md`.
+- **Code structure** (2026-10-20): ports and adapters, typed memory views, feature modules, dev code behind a cargo feature; refactor
+  before the next big features. `ARCHITECTURE.md`.
+- **The crossing line** (Leonardo, 2026-10-22): one line for every start route, diagonal "B" of the route atlas (the longer and higher;
+  the "bottom to top" rule is dropped). TASKS HAWK-1b.
+- **Solo: a kill is a real death** (Leonardo, 2026-10-23; PROJECT_SCOPE §2): at night 0 HP without a revive item = dead at once;
+  the dead spectate; Day 2 respawns everyone at random places. Research first (TASKS M5-8), then M5-9. Kill feed: Leonardo's own
+  later system (bottom-right notifications), not now.
+- **Eliminated = held down, not dead** (Claude, 2026-10-23; implements M5-D; stays for Duo/Trio and as the fallback): the game's death and ~7 s comeback are engine code in
+  an obfuscated region, so an eliminated player is kept in the downed state (clock held) until the morning and then stood up with
+  the game's own get-up. Spectating someone else is a separate camera card (M5-7). **Solo uses the real death instead** (M5-9,
+  from M5-8: SpEffect 102130 + the held comeback). Esc while dead: not now; M5-7 must at least allow quitting (Leonardo, 2026-10-23).
+- **Match start = hawk crossing** (Leonardo, 2026-10-21): the start hawk flies one straight line across the whole map and each player
+  jumps off where they want (Fortnite style). Replaces separate team spawns. `PROJECT_PLAN.md` §13.
+- **Matchmaking direction** (Leonardo, 2026-10-21): stay on Seamless Co-op as long as it carries us, with three must-haves: no
+  Steam window or invite ever on a player's screen, everyone arrives ready and the match starts by itself, and the "host" stops being a
+  player-facing role. Asking SC's author is out of scope. Studying how SC works (read-only, for interop; never patched, copied or
+  redistributed, hard rule 3) is approved, to prepare our own matchmaking/session layer if SC becomes the roadblock.
+- **Nights are elimination rounds** (Leonardo, 2026-10-22; `re/PROJECT_SCOPE.md` §2): no boss, no minions; no respawn at night,
+  the dead spectate; a night ends only when one player (team) is left, no timer; only that winner is healed; the others respawn
+  spread out at the morning; night 2's winner wins the match, the rest lose; no Day 3 / Nightlord; the 40 m final circle stays.
+  At night 0 HP = knocked for the normal 15 s (Solo too; rival hits −3 s, teammates revive); bleed-out over = eliminated until
+  the morning, spectating (M5-D, 2026-10-22).
+  Research and tests come before code: Leonardo runs Nucleus multi-instance checks for it before the first UAT with his friend.
+- **Host leaving mid-match** (Leonardo, 2026-10-21): for now accept that the match ends, and end it cleanly; the real goal is **host
+  migration** (Destiny / old CoD style), worked on as far as it goes. The host is picked by the matchmaker (best connection), never by
+  luck, and has no player-facing role. **A server host (a PC running the game with no player) is rejected** for now.
+- **One owner doc per topic** (2026-10-20); the map is in `CLAUDE.md`. Finished task cards and runbooks leave the docs (git keeps them).
+- **Bots are not a game feature; Nucleus is a secondary tool; the orchestrator is in this repo** (Leonardo, 2026-10-24): the automatic offline bots (OFF-5) are gone; the game's bot manager stays as the engine of the orchestrator's puppet players. `scripts\deploy-nucleus.ps1` stays for quick two-window checks of plain rules (no event files, no `-Me3`); anything that needs our event files runs through `nro` (offline, puppets) or a friend session. `nro`, its scenarios and tools live in `crates/nro*`, `scenarios/`, `tools/`, `pins/`.
+- **Docs are small files with one owner each** (Leonardo + Claude, 2026-10-24): STATUS holds only "now" (≤ 8 KB), results go to `testing-log/`, traps to `TRAPS.md`, decisions to `DECISIONS.md`, tools to `TOOLS.md`; a card's acceptance is a scenario where it can be.
+
+- **`nrscan` deleted** (Leonardo, 2026-10-24): the external scanner/poker of Nucleus games was replaced by the in-DLL console and the orchestrator; it stays in git history (`git show cbbffa2:crates/nrscan`). `nrcon` stays (console client; reaches several games with `--all` / `-i N`).
+- **`nrscan` deleted** (Leonardo, 2026-10-24): the external scanner/poker of Nucleus games was replaced by the in-DLL console and the orchestrator; it stays in git history (`git show cbbffa2:crates/nrscan`). `nrcon` stays (console client; reaches several games with `--all` / `-i N`).

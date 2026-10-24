@@ -66,8 +66,7 @@ When the game or SC updates, re-hash, update this table, and re-run the regressi
 | `from-singleton` 3.0.1 | FD4 singleton call-site patterns (validated on NR by T-006) |
 
 As used on 2026-10-20 (initially planned `retour`, `pelite` and `fromsoftware-shared` were never needed; `hudhook` (ImGui overlay) was
-used from T-013 and removed by R5 when the console replaced the panel). `nrcon`, `nrscan` and the launcher use std (+ `windows` for
-`nrscan`).
+used from T-013 and removed by R5 when the console replaced the panel). `nrcon` and the launcher use std (`nrscan` was deleted).
 
 ### Tools
 

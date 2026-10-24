@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nightreign": {
+      "command": "C:\Users\Leonardo\source\repos\nightreign-pvp\target\release\nro-mcp.exe",
+      "args": []
+    }
+  }
+}

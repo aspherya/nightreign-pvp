@@ -1,0 +1,25 @@
+[package]
+name = "nro"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "nro"
+path = "src/main.rs"
+
+[dependencies]
+nro-core = { path = "../nro-core" }
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+sha2.workspace = true
+png = "0.17"
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Gdi", "Win32_Storage_Xps", "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock", "Win32_System_ProcessStatus", "Win32_System_Console", "Win32_UI_HiDpi", "Win32_System_Pipes", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO",
+] }

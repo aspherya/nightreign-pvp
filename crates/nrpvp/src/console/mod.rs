@@ -91,7 +91,6 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, game mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
     Spec { name: "mode", args: "[br|offline]", help: "game mode: br = Commence starts the queue, offline = Commence Solo starts a solo expedition at once; during an expedition the change waits for the Roundtable; no argument shows it", run: mode },
     Spec { name: "bots", args: "[10|30|50|10000]", help: "OFF-4 (offline mode): start the game's own NPC bots from NPCBotTableParam table 10 / 30 / 50 (2 Nightfarers, level 1) or 10000 (2 of 8, level 6); no argument shows the last request, the bot manager's state and the OFF-5 match line", run: bots },
-    Spec { name: "bots_hostile", args: "[0|1]", help: "offline bots attack you (1, default) or fight on your side (0); takes effect at once, also for the bots already there; no argument shows the bot lines", run: bots_hostile },
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
@@ -435,15 +434,6 @@ fn bots(args: &[String]) -> Result<Act, String> {
             .parse::<i32>()
             .map(|t| Act::Main(MainReq::Bots(BotsCmd::Spawn(t))))
             .map_err(|_| "table must be a number (10, 30, 50 or 10000)".into()),
-    }
-}
-
-fn bots_hostile(args: &[String]) -> Result<Act, String> {
-    match args.first().map(String::as_str) {
-        None => Ok(Act::Reply(crate::features::bots::status_line())),
-        Some("1") => Ok(Act::Main(MainReq::Bots(BotsCmd::Hostile(true)))),
-        Some("0") => Ok(Act::Main(MainReq::Bots(BotsCmd::Hostile(false)))),
-        Some(_) => Err("expected 0 or 1".into()),
     }
 }
 
@@ -906,11 +896,6 @@ mod tests {
         let r = answer(MainReq::Bots(BotsCmd::Clear), &snap(), &mut |c| ran.push(c));
         assert_eq!(ran, vec![Command::Bots(BotsCmd::Clear)]);
         assert!(r.starts_with("bots: "), "{r}");
-        assert!(execute_line("bots_hostile 2").contains("expected 0 or 1"));
-        assert!(matches!(
-            bots_hostile(&["0".into()]),
-            Ok(Act::Main(MainReq::Bots(BotsCmd::Hostile(false))))
-        ));
     }
 
     #[test]

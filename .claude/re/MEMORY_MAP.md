@@ -298,7 +298,7 @@ Story, evidence and the plan: `research/M5-8-death.md`. Dev tool: `game/deathtra
 
 ## 18. Puppet players: player-list characters without a client (ORCH-2, game 1.03.3)
 
-Full story and the static reading: nightreign-orchestrator `docs/research/R2-net-player-creation.md`. Code: `game/puppet.rs`.
+Full story and the static reading: `research/ORCH-R2-net-player-creation.md`. Code: `game/puppet.rs`.
 
 | What | Where | Behaviour | Proof |
 |---|---|---|---|

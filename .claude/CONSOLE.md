@@ -108,7 +108,7 @@ send to the main loop.
 ```
 
 **Frontend 1, first: external console over a named pipe.** The DLL opens `\\.\pipe\nrpvp-<pid>` (local user only). A small
-`nrcon.exe` (a new `nrscan` subcommand or its own binary) attaches to one or all running games:
+`nrcon.exe` attaches to one or all running games:
 
 ```
 nrcon                      # interactive, picks the only running game
@@ -146,7 +146,7 @@ with spaces. A setting ("cvar") is typed by its own name: alone it prints the va
 | `pvp 0\|1` | Pause or resume the automatic rival marking | main loop | `SetPvpve` |
 | `kill` | Local player dies (§7 Q2) | main loop | — (HP 0 = down only) |
 | `down` | Local player goes down (HP 0) | main loop | rule v1's write |
-| `bleed_clock <s>` | Set own bleed-out seconds while downed | main loop | nrscan `poke` |
+| `bleed_clock <s>` | Set own bleed-out seconds while downed | main loop | (was nrscan `poke`, deleted) |
 | `mm_queue_solo` / `mm_queue_duo` / `mm_queue_squad` / `mm_leave` / `mm_status` | Matchmaking | Steam thread | `MmQueue`, `MmLeave` |
 | `flag_get <id>` / `flag_set <id> 0\|1` | Read or set an event flag | main loop | `game::flags` |
 | `msg_show <k>` | Show matchmaking message k in game | main loop | `ui_msg` flags |
@@ -184,7 +184,7 @@ crates/nrpvp/src/console/        (behind the `dev` cargo feature, see ARCHITECTU
   parse.rs      tokenizer (quotes, `;`); pure, unit-tested
   pipe.rs       named-pipe server thread; one line in, reply lines out
   autoexec.rs   reads autoexec.cfg, queues lines on world load
-crates/nrcon/  (or `nrscan con`)  the client
+crates/nrcon/  the client
 ```
 
 The executors stay where they are. The main loop already drains a command queue each tick; the console adds a reply channel so text

@@ -6,7 +6,6 @@
 //! New behaviour comes as a new `Feature` here, not as another field on an existing controller. The older controllers (`TeamCtl`,
 //! `CombatCtl`, the hawk swap) are still ticked by `game::watch` directly; they move here when a card touches them.
 
-pub(crate) mod bot_match;
 pub(crate) mod bots;
 pub(crate) mod clock;
 pub(crate) mod mode;
@@ -31,21 +30,10 @@ pub(crate) struct Ctx {
     pub mm: Vec<crate::mm::Cmd>,
     /// OFF-4: our event flags to set or clear (group 10007 only; `crate::game::flags::set` refuses others).
     pub flags: Vec<(u32, bool)>,
-    /// OFF-5: writes on the bot manager and on bot characters (each re-checked against the live memory in [`Ctx::flush`]).
-    pub bot_writes: Vec<BotWrite>,
     /// M5: a time for the play-area clock (the game's set-time mailbox, written in [`Ctx::flush`]).
     pub clock: Option<crate::game::views::ClockTime>,
     /// M5-5 / M5-6: the night match's requests on LOCAL and the downed rule (carried out by the main loop, which owns them).
     pub night: Vec<night_match::NightAct>,
-}
-
-/// A write a bot feature asks for (OFF-5).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BotWrite {
-    /// Make the bot manager forget the bot in this slot (`BotMan::forget_slot`).
-    ForgetSlot(usize),
-    /// Write `team` on this bot character, only if its handle field still reads `handle`.
-    Team { chr: usize, handle: u64, team: u8 },
 }
 
 /// Where the main loop's bot writes go.
@@ -53,8 +41,6 @@ pub(crate) enum BotWrite {
 pub(crate) struct Targets {
     /// Exe base (event flags).
     pub base: usize,
-    /// `CSNpcBotMan` instance, 0 = none.
-    pub bot_man: usize,
     /// `WorldPlayAreaManager` instance, 0 = none.
     pub play_area: usize,
 }
@@ -76,25 +62,6 @@ impl Ctx {
                     on_off(prev)
                 ),
                 Err(e) => tracing::warn!("features: flag {flag} {} failed: {e}", on_off(on)),
-            }
-        }
-        for w in self.bot_writes.drain(..) {
-            let r = match w {
-                BotWrite::ForgetSlot(slot) if t.bot_man != 0 => {
-                    crate::game::views::BotMan::new(mem, t.bot_man).forget_slot(slot)
-                }
-                BotWrite::ForgetSlot(_) => Err("no bot manager"),
-                BotWrite::Team { chr, handle, team } => {
-                    let c = crate::game::views::ChrIns::new(mem, chr);
-                    if c.handle() == Some(handle) {
-                        c.set_team(team)
-                    } else {
-                        Err("the character is gone (handle changed)")
-                    }
-                }
-            };
-            if let Err(e) = r {
-                tracing::warn!("features: {w:?} failed: {e}");
             }
         }
         if let Some(time) = self.clock.take() {
@@ -123,7 +90,6 @@ fn on_off(on: bool) -> &'static str {
 pub(crate) struct Features {
     pub mode: mode::ModeFeature,
     pub bots: bots::BotsFeature,
-    pub bot_match: bot_match::BotMatch,
     pub clock: clock::ClockFeature,
     pub nights: nights::NightsFeature,
     pub night_match: night_match::NightMatch,
@@ -134,21 +100,16 @@ impl Features {
         Features {
             mode: mode::ModeFeature::new(cfg.game_mode(), "nrpvp.toml"),
             bots: bots::BotsFeature::default(),
-            bot_match: bot_match::BotMatch::new(
-                usize::try_from(cfg.offline_bots).unwrap_or(0),
-                cfg.pvpve_team,
-            ),
             clock: clock::ClockFeature::default(),
             nights: nights::NightsFeature,
             night_match: night_match::NightMatch::default(),
         }
     }
 
-    fn all(&mut self) -> [&mut dyn Feature; 6] {
+    fn all(&mut self) -> [&mut dyn Feature; 5] {
         [
             &mut self.mode,
             &mut self.bots,
-            &mut self.bot_match,
             &mut self.clock,
             &mut self.nights,
             &mut self.night_match,

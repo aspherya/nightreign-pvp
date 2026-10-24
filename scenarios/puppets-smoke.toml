@@ -1,0 +1,45 @@
+name = "puppets-smoke"
+about = "Launch offline, reach an expedition, make 4 AFK puppet players, check the game and the mod treat them as players, down one and watch it bleed out"
+
+# Needs the mod's ORCH-1/ORCH-2 dev build and `nro desk` running in a normal terminal.
+[config]
+mode = "offline"      # Commence Solo starts the game's own solo expedition at once; the bot manager (puppet source) needs it
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"     # the local player cannot die while the test runs
+[[step]]
+puppets = 4
+[[step]]
+expect = { console = "players", contains = ["p2", "p3", "p4", "p5", "rival"] }
+[[step]]
+expect = { console = "puppet_list", contains = ["5 filled", "near-death on"], absent = "downed 1" }
+[[step]]
+puppet_ring = 1.2
+[[step]]
+screenshot = "puppets"
+[[step]]
+puppet_front = 1.2
+[[step]]
+console = "puppet_hp 1 1"
+[[step]]
+console = "puppet_hp 2 1"
+[[step]]
+console = "puppet_hp 3 1"
+[[step]]
+console = "puppet_hp 4 1"
+[[step]]
+keys = "click 0.5 0.5; wait 1500ms"   # one swing; a 1 HP puppet in front goes down
+[[step]]
+wait = { console = "puppet_list", contains = "downed 1", timeout_s = 10 }
+[[step]]
+screenshot = "downed"
+[[step]]
+expect = { console = "log 300", contains = ["DOWN (downs=1", "T-039 BLOCK"] }
+[[step]]
+wait = { console = "log 300", contains = "UP (downs=1, hp=0", timeout_s = 30 }   # bled out after ~15 s
+[[step]]
+expect = { console = "puppet_arm", contains = "SC destroys skipped" }

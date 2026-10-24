@@ -68,20 +68,12 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
   still run. Rule source: ARCHITECTURE.md §6 "Modding rules". Owner: SONNET/implementer → HUMAN solo (normal launch must be
   unchanged). Fits after R1.
 
-## Test tooling (orchestrator; decided 2026-10-23: no Nucleus)
+## Test tooling
 
-### ORCH-2 — Puppet players: AFK players in one game, no second client
-Owner: OPUS | Status: review (built and verified live solo 2026-10-23; not merged) | Phase: tooling
-Goal: several AFK characters that the game and the mod treat as players (player list, ids, rivals, hits, downs, bleed-out), so
-two-player rules can be tested in one game.
-Context: MEMORY_MAP §18, `game/puppet.rs`, nightreign-orchestrator `docs/research/R2-net-player-creation.md`.
-Result: dev-only module; console `puppet_*`; nightreign-orchestrator `nro puppets <n>` and `scenarios/puppets-smoke.toml` PASS
-(TESTING §3, 2026-10-23). Limits: offline mode only, puppets do not act or respawn, no network (another screen's view still needs an FS).
-Next: scenarios for FS-0 run 19 (downed rule), M5-5 (night end by count), M5-9 (death hold) with puppets.
-
-### ORCH-1 — Virtual pad (XInput)
-Owner: OPUS | Status: blocked (the game scans XInput pads only on a device change it detects; no scan without a real pad) | Phase: tooling
-Result: `game/vpad.rs`, console `pad*`; the orchestrator drives keyboard and mouse from the desktop instead (`nro desk`).
+The orchestrator (`nro`, scenarios, puppet players) is in this repo and is the primary test route: `TOOLS.md`, `orchestrator/README.md`.
+ORCH-1 (virtual pad) is blocked and parked (the game scans XInput pads only on a device change; keyboard and mouse through `nro desk`
+work). Open ideas: `puppet_revive`, puppets that attack, scenarios that wait on the log file instead of the 300-line console tail.
+Every card whose acceptance can be a scenario names it (`scenarios/<name>.toml`) and is done when `scripts\regress.ps1 <name>` is PASS.
 
 ## Matchmaking and in-game UI (M8)
 
@@ -143,7 +135,7 @@ evidence tags and a go/no-go on host migration.
 ## Offline mode (decided 2026-10-22; first new feature, so it carries the open R2/R3 halves)
 
 Leonardo's decision: a separate **Offline** mode for solo play and solo testing, so `br_menu` / `matchmaking` never have to be switched
-off again. First step is a solo test mode (no queue, no second player); AI rivals ("bots") come later and start as research (OFF-3).
+off again. The solo test mode (no queue, no second player) is done; rivals for tests are the orchestrator's puppets.
 
 **OFF-1 done (2026-10-22, solo PASS, TESTING §3):** `mode = "br" | "offline"` + console `mode`; Offline lets Commence Solo run the
 game's own solo expedition. Card removed; text in git (`git show 4e0180c:.claude/TASKS.md`).
@@ -158,157 +150,28 @@ twice within a few seconds with Solo = Offline (no new UI, but hidden), or (b) a
 Royale or Offline?" when the player first walks to the table and sets `mode` through a flag the DLL reads (flag group 10007).
 (b) is the player-friendly one; it needs a yes/no dialog event (2007 family) whose answer lands in a flag: check that first.
 
-### OFF-3 — Bots: can the game run AI Nightfarers as rivals? (research)
-Owner: OPUS + SONNET/researcher | Status: done (2026-10-22, static research) → OFF-4
-Result: **GO for offline bots, NO-GO for multiplayer bots for now.** The game ships a complete, dormant NPC bot system: `CSNpcBotMan`,
-`NPCBotTableParam` (Nightfarer loadouts per hero, levels 1 / 6 / 11 / 13), a full Nightfarer battle AI (skill, ultimate, revive),
-started by event instruction `2003[97](tableId)` and cleared by `2003[98]`; no shipped event script uses them. Start refuses when a
-count (likely the party size) is above 1, so solo/offline only. Bots are allies and follow the host as shipped; rivals need a team
-flip. Memo: `research/OFF-3-bots.md`; facts in TECHNICAL_NOTES §4d and MEMORY_MAP §15; scripts in `experiments/OFF-3/`.
+**Bots are not a game feature** (Leonardo, 2026-10-24): OFF-3 (research, done), OFF-6, OFF-7 and OFF-8 are cancelled; the automatic
+offline rival bots (OFF-5) were removed from the code. The game's bot manager stays as the engine of the orchestrator's puppet players
+(`game/puppet.rs`, console `bots` / `bots_clear` / `puppet_*`); `research/OFF-3-bots.md` and MEMORY_MAP §15 / §18 keep the facts.
 
-**OFF-4 done (2026-10-22, solo PASS, TESTING §3):** our `common.emevd` events run the game's bot instructions; console `bots 10|10000`,
-`bots_clear` (dev, offline mode). The bots spawn, follow the host and fight enemies; they are allies (team 2), and **the game keeps
-at most 2 bots** (vanilla design: solo player + 2 AI teammates; MEMORY_MAP §15). Card removed; text in git (`git show 6fc31c8:.claude/TASKS.md`).
+## Match flow: nights with no boss (M5; research `research/M5-no-boss-nights.md`, `research/M5-8-death.md`)
 
-**OFF-5 done (2026-10-22, solo PASS run 2, TESTING §3):** in offline mode, 5 of the game's NPC Nightfarers join after the landing,
-hostile to you, each other and monsters (team 29), no console (`offline_bots = 5`). Past the game's 2-bot cap by "detach and re-arm"
-(`features/bot_match.rs`). Card removed; text in git (`git show 23b5bb6:.claude/TASKS.md`).
+**Done and on `main` (details in TESTING `testing-log/`; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17):** M5-1..M5-4 (no boss,
+no minions, clock console, night freeze facts), **M5-5 / M5-6 / M6-1 nights are elimination rounds** (`features/night_match.rs`: one team
+left = night decided, only the winner healed, losers held down until the morning, night 2 win/loss endings; solo, Nucleus and
+orchestrator puppets PASS incl. night 2 by count, 2026-10-24), **M5-8** research (SpEffect 102130 = die at once; the comeback can be
+held and released), **M5-9 Solo real death** (`features/night_match.rs`, `game/deathhold.rs`: die-at-once at night, held until the
+morning, released through the gate, moved to a random day-1 place after the Day-2 clock; one-PC PASS 2026-10-24).
+Rule decisions (M5-D): `DECISIONS.md`.
 
-Leonardo's use of bots (2026-10-22): **a sparring partner for testing alone**: combat, the near-death rules and the hawk; a full
-battle-royale feel comes after.
-
-### OFF-8 — Near-death state in an offline solo match
-Owner: OPUS (RE) → SONNET/implementer → HUMAN solo | Status: ready | Phase: M9 | Blocks: OFF-7
-Goal: in offline mode a player whose health reaches 0 goes into the downed state (purple bar, bleed-out) as in a multiplayer
-session, instead of dying at once.
-Context: Leonardo, REG-1 part B (2026-10-22): in a solo session the player dies at once, no downed state, so the near-death rules
-(T-039/T-041) and OFF-7 cannot be tested solo. In multiplayer, health 0 downs (STATUS §6 "Setting health to 0 does not kill").
-MEMORY_MAP §6 (downed block, bleed-out), §15 (solo gate).
-Steps: (1) static RE: find where the game chooses "downed" or "dead" at 0 health (start from the writers of the downed block in
-MEMORY_MAP §6 and the death path; look for a check of the session's player count / multiplayer state / an SpEffect); write what it
-reads into MEMORY_MAP §6. (2) Pick the smallest switch that makes the solo player go down in offline mode only (a value the check
-reads, or an event-script route if one exists, e.g. a SpEffect). (3) Dev console switch first, then on by default in offline mode.
-**Possible conflict:** the NPC bot system only starts when its solo gate count `[[exe+0x3C13258]+0xDC8]+0x14` is ≤ 1 (MEMORY_MAP §15).
-If the downed/dead choice reads the same count (or the same "party" object), raising it for the downed state would stop the bots
-from spawning; then switch it only after OFF-5's bots are kept, or find a narrower check.
-Acceptance (HUMAN solo): offline expedition, let a monster or a bot bring you to 0 health: you are downed (purple bar, bleed-out
-clock), and dying from the bleed-out ends as in a session; bots still spawn after the landing. Log line names the switch.
-
-### OFF-7 — Bots count as rivals in the near-death rules
-Owner: SONNET/implementer → HUMAN solo | Status: blocked by OFF-8 (no downed state in a solo session) | Phase: M9
-Goal: a bot's hit on the downed LOCAL player is handled like a rival player's (T-039/T-041: no progress on the purple bar, 3 s off
-the bleed-out), so the near-death rules can be tested solo against bots.
-Context: `game/combat_state/rules.rs` (`Core::step`: the attacker handle must be a rival's), `CombatCtl::rival_handles`,
-`features/bot_match.rs` (kept bots and their handles), MEMORY_MAP §6/§15.
-Steps: give the combat controller the kept bots' handles each tick (from the feature list, through the main loop) and treat them as
-rival attackers; the hardware-breakpoint bar block (T-041) uses the same attacker check. Tests with the existing fakes.
-Acceptance (HUMAN solo): offline match, get downed by the bots: the bar never fills from their hits and the bleed-out shortens; log
-lines `rule: rival hit on downed LOCAL`.
-Note: bots left as allies run the game's own rescue behaviour (`ExecRescueAction`), so an ally bot may revive a downed player: a way
-to test the teammate revive solo later (not in this card).
-
-### OFF-6 — Bots in the battle royale (sketch, after OFF-7)
-In order: spread starts (move each bot to its own drop point along the hawk line when the ride starts, the T-028 teleport on NPCs),
-roaming (our own logic script: plain-text logic may load like `c0000.hks`, TECHNICAL_NOTES §4b; or DLL steering), day levels
-(tables 10000/20000/30000 = levels 6/11/13), bot deaths counted by the match. Sizes in `research/OFF-3-bots.md`.
-
-## Match flow: nights with no boss (M5; research `research/M5-no-boss-nights.md`)
-
-**M5-1 done (2026-10-22, static research): GO.** The night boss lives in its own map and appears only through two shared events in
-`common_func.emevd`; "night done" = flags 7502 / 7507, which everything after the night waits on; the circle and the night run on
-the play-area clock. Engine facts: TECHNICAL_NOTES §4e, MEMORY_MAP §16.
-
-**M5-2 done (2026-10-22, solo PASS, TESTING §3):** console `clock [night|circle|end|hh:mm[:ss]]` jumps the play-area clock
-(the game applied `clock end` within one frame; the vanilla night followed). Card removed; text in git (`git show 6f21122:.claude/TASKS.md`).
-
-**M5-3 done (2026-10-22, solo PASS nights 1 and 2, TESTING §3):** no boss and no minions on either night (all seven boss/minion
-events in `common_func` emptied, `gamedata/emevd-nights-func.json`); each night ends 180 s after 23:59 through `common` events
-99100800/99100801 (`gamedata/emevd-nights.json`), then the game's morning; console `night_end`. The 180 s timer is a stop-gap until
-M5-5 (a night ends only when one player is left). Taking the Day 3 way out ended in a black screen (out of scope: no Day 3). Card
-removed; text in git (`git show 7fa7bdf:.claude/TASKS.md`).
-
-**M5-4 done (2026-10-23, static RE + Nucleus run 2, TESTING §3; answers in memo §6b):** the frozen bleed-out is the vanilla night
-rule (SpEffect 102120 inside the circle, `common` 1301 / 1302); the host's DLL 7502 brings every game to the morning (its 1100
-passes 7503 / 7505); 7000 / 7001 give each game its own ending; the ~7 s comeback is engine code (not needed: the build holds
-eliminated players down instead). Card removed; text in git (`git show b10b303:.claude/TASKS.md`).
-
-**M5-D decided (Leonardo, 2026-10-22; PROJECT_SCOPE §2):** at night a player at 0 HP is **knocked** for the normal 15 s
-bleed-out (Solo too); rivals finish a knocked player with hits (−3 s each, the existing T-041 rule); teammates can revive a knocked
-teammate (Duo/Trio); **bleed-out over = eliminated**: no ~7 s comeback, the player spectates someone still fighting, and nobody can
-revive them until the morning; a team is out when nobody on it stands; the night ends the moment one player (team) is left standing.
-Revival items count as a revive (the winner check waits for pending revivals 7010–7012). Day deaths stay vanilla.
-
-### M5-5 / M5-6 / M6-1 — Nights are elimination rounds (`features/night_match.rs`)
-Owner: OPUS | Status: **built (branch `claude/great-turing-b2e494`); solo PASS + Nucleus runs 3–5 PASS (TESTING §3, 2026-10-23)**;
-open: the night-2 ending chosen by count with two players, and merge (Leonardo)
-Built: every game counts the ChrSet players (not 7005–7007); one team left standing for 1 s (no revive item pending, ≥ 2 teams at
-nightfall) = night decided. The host sets our 10007400 → our event sets 7502 network-wide (fallback without our event file: the DLL
-writes 7502). Only the winner's game sets 10007410 (per-game heal event). Knocked at night = the normal 15 s (event 1302 emptied);
-at 1 s left (or 16 s down) **eliminated**: the clock is held at 15 every tick, nobody revives (revive block mode Nobody); after the
-decision every knocked player is held too. Morning: anyone down gets up (`+0x732`, rule v1 exempt 12 s), every loser moves to its
-own morning spot (last standing position before 12:00 on day 1). Night 2: winner's game 10007411 (banner 4000 → 10 s → 7000), every
-other game 10007412 (banner 4010 → 10 s → 7001); fallback writes 7000 / 7001. Emptied: 1180 (wipe), 1302 (night freeze),
-`90005910` (Day 3). Console: `night_status`, `night_count 0|1`, `god 0|1` (test aids), `night_end` (CONSOLE §0).
-**Not built:** spectating another player (M5-7). Deviation from the card, on purpose: a 10 min fallback timer stays in the night-end
-event so a night can never hang if the count fails.
-HUMAN (next Nucleus or friend session, about 5 min): land; `flag 7502 1` in the host (straight to Day 2); `god 1` on p1;
-`clock circle`, walk in; at night p1 knocks p2 → p1's game `night 2 decided … won` and the win screen, p2's game the loss screen.
-Under Nucleus never use team 6 for both players at night (TESTING §3 run 4).
-
-**M5-8 done (2026-10-23, static RE + solo runs 1–4, TESTING §3; memo `research/M5-8-death.md`, MEMORY_MAP §17, TECHNICAL_NOTES
-§4f):** SpEffect **102130** makes 0 HP a real death (the player script's own switch; our event 99100805 holds it while flag
-10007420 is ON, verified solo); the comeback is a timed callback chain on the Lua event sequencer, and a breakpoint on its start step
-`exe+0x5C4810` **holds a dead player dead** (no fade) and a later call of that step **replays the vanilla comeback** (both verified
-solo); the game respawns at the nearest `CSRespawnPointMan` point inside the circle. R0: `deploy-nucleus.ps1 -Me3` starts the
-Nucleus windows through our launcher (me3 + our event files); first launch pending (M5-9 step N0). Dev tool: `game/deathtrace.rs`
-(`death_trace`, `death_hold`, `speffects`). Card removed.
-
-### M5-9 — Solo nights: a kill is a real death (build)
-Owner: OPUS → SONNET/implementer → HUMAN (solo + Nucleus) | Status: **built (b59df6c + fixes d858024, e81a575, hold-slot fix 2026-10-24); PASS on one PC with puppets (hold, release, move after the Day-2 clock, night 1 + 2 by count, no slot starvation) and Nucleus hold/release by day; open only for the friend session: runbook FS-M59 (TESTING §6): the 102130 kill, the other screen's view, SC host/client, night banners** (TESTING §3, 2026-10-24) | Memo: `research/M5-8-death.md`
-Goal (PROJECT_SCOPE §2): in **Solo** (`team_size = 1`), at night 0 HP without a revive item = death; the dead stay dead until the
-morning after night 1, then the game respawns them and the DLL moves them to a random place; night 2's dead stay dead until the
-ending. Duo/Trio (`team_size` ≥ 2) and day deaths: unchanged (knock, M5-6 elimination hold, vanilla comeback by day).
-Build:
-1. **Die at once** (`features/night_match.rs`): while it is night (7515), the night is not decided, Solo, and LOCAL is up (state 0,
-   HP > 0) and holds **none** of SpEffects 540155 / 6999100 / 6999500 / 8970061, set our flag **10007420** ON (event 99100805 gives
-   LOCAL SpEffect 102130); otherwise OFF (also by day, after the decision, outside an expedition, Duo/Trio). Write it only when the
-   wanted value changes. LOCAL's SpEffects come through the World read model (the list walk of MEMORY_MAP §17; today's code:
-   `game/deathtrace.rs` `speffect_ids`, move it to `game/views.rs` or `world.rs`). Log `night_match: die-at-once ON/OFF (why)`.
-   Without our event file the flag does nothing and the knock + M5-6 hold still apply (natural fallback; log nothing extra).
-2. **Hold** (new `game/deathhold.rs`, **both builds**; the hold/gate code of `deathtrace.rs` moves here, `deathtrace` keeps the dev
-   logging and its `death_hold` console calls this module): execute breakpoint on `exe+0x5C4810` (check bytes
-   `48 89 5C 24 08 48`) armed only while `armed` (set by the night match) and LOCAL is dead (HP 0, state ≠ 1); in a free hwbp slot.
-   Hit while armed → keep `(rcx, rdx)`, return at once. The night match arms it from nightfall to the morning in Solo (new
-   `NightAct::DeathHold(bool)`), so a death at night is held; by day it is never armed.
-3. **Release at the morning** (`NightAct::ReleaseDeath`, in the night-1 morning step, before the get-up / move logic): if a step is
-   held, call it on the game thread through a gate breakpoint (the solo-proven mechanism: save the gate's rcx/rdx/r8/r9/rsp, RSP − 16
-   with the gate address as return address, RIP = held step; on the return into the gate put them back, RF). **Gate:**
-   `exe+0x5BCE10` (CSLuaEventProxy update, bytes `40 55 53 56 57 41`, the sequencer's own thread `[HYPOTHESIS]`); if it has not
-   fired 2 s after the release was asked, use `exe+0x675480` (bytes `48 89 5C 24 10 57`, worked in solo run 4). Log the gate's thread
-   and the thread of the last step hit; never clear the gate while its call is in flight. A held step left at an area load or the
-   match end is dropped (no call), and the module disarms.
-4. **Random place** (morning, after the release): once LOCAL is back (HP > 0, state 0) teleport (`NightAct::Teleport`) to a random
-   position from a pool this game recorded on day 1: LOCAL's world position every 5 s while on the ground (`+0x92`), state 0, HP > 0,
-   kept only when ≥ 100 m from every kept one (ring of 64). Prefer one ≥ 150 m from where LOCAL respawned; else any; else the M5-6
-   own spot. A Solo winner who never died is not moved (unchanged).
-5. Night 2: deaths are held as at night 1 and **never released** (the ending 7000 / 7001 follows the decision; check the loss banner
-   still plays for a held player).
-6. Console (dev): `night_status` shows `die-at-once on/off`, `death held` / `released`; keep `death_trace`, `speffects`;
-   CONSOLE.md rows. `night_match` unit tests for every rule above with the existing fakes (Solo vs Duo, revive item present, day vs
-   night, decided, release once, pool spacing / random pick with an injected RNG).
-7. Checks: `cargo test --workspace`; clippy dev and `--no-default-features` with `-D warnings`; `cargo fmt --check`. Commit
-   `M5-9: …`.
-Acceptance (HUMAN, Claude drives with `nrcon`):
-- **S1 solo (5 min, `scripts\launch.ps1`):** `clock night`, wait for 7515; `speffects` shows 102130 (no revive item) and
-  `night_status` "die-at-once on"; die to a monster → stays dead ("YOU DIED", camera only); `night_end` → respawn, then moved to
-  another day-1 place; `speffects` no longer shows 102130 by day.
-- **N0 Nucleus launch (handler already deployed with `-Me3`; redeploy with `-Me3` after the build):** both windows start, join,
-  logs show our package (`night_match` events, no boss at night). If not: `deploy-nucleus.ps1` (no `-Me3`) and report.
-- **N1 Nucleus kill (10 min):** p1 `god 1`; `clock circle`, both walk in; night: p1 brings p2 to 0 HP → p2 **dies at once** (death
-  animation on both screens), stays dead, night decided (p1 won); `death_trace 1` in p2's game logs team / HP / flags while dead;
-  morning → p2 respawns and is moved. Report what p1's screen shows of p2's body. Never team 6 for both at night.
-- Fallback if the hold does not work in a session (comeback still runs): let it run, then move the player away and hold them down
-  with the M5-6 clock hold until the morning ("option B"), and say so in TESTING.
+### M5-9 / M5-5 — what still waits for a friend session
+Owner: HUMAN + Claude reads the logs | Status: **FS-M59** (TESTING §6, zip of 2026-10-24, STATUS §2)
+Only two real PCs can show: the 102130 kill in a real session (offline solo LOCAL carries SpEffect 6999500, so die-at-once stays off
+there), what the other screen shows of a dead / held player, Seamless Co-op host/client behaviour when the host dies, the night-2
+win and loss banners, vanilla multiplayer events at night, a whole night with real players. After the session: `test-report` skill,
+fix what failed, then remove this card.
+Fallback if the hold does not work in a session (the comeback still runs): let it run, move the player away and hold them down with
+the M5-6 clock hold until the morning ("option B"), and say so in TESTING.
 
 ### M5-7 — Spectate a player still fighting (camera)
 Owner: OPUS (RE) | Status: todo (after M5-5 is merged)

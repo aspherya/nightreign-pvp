@@ -17,8 +17,8 @@ Patterns built for engines are not.
 
 ## 2. As built (2026-10-20, after R0, R1, R5, R2-lite, R3-split)
 
-Four crates: `nrpvp` (the mod DLL, ~27 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nrscan`
-(external scanner, dev).
+Crates: `nrpvp` (the mod DLL, ~27 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nro-core` / `nro` /
+`nro-mcp` (orchestrator, dev tooling; `orchestrator/README.md`). `nrscan` (external scanner) was deleted on 2026-10-24 (`git show cbbffa2:crates/nrscan`).
 
 ```
 DllMain ─► nrpvp-main thread (startup::run, catch_unwind)

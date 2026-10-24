@@ -4,13 +4,11 @@
 
 use super::gamemem::GameMem;
 use super::layout::{
-    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE,
-    CHRSET_CAPACITY, CHRSET_ENTRIES, CHRSET_ENTRY_SIZE, CHRSET_MAX_CAPACITY, CHR_HANDLE, CHR_ID,
-    CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, DATA_MODULE_HP, MENU_SETTINGS,
-    MENU_SETTINGS_PLAYERS, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
+    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, CHR_HANDLE,
+    CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, DATA_MODULE_HP,
+    MENU_SETTINGS, MENU_SETTINGS_PLAYERS, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
     PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED,
     PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
-    WCM_CHRSETS, WCM_CHRSET_COUNT,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -91,67 +89,6 @@ impl<'m> ChrIns<'m> {
     /// True when this character holds any of `ids`.
     pub(crate) fn holds_any_speffect(&self, ids: &[i32]) -> bool {
         self.speffect_ids().iter().any(|i| ids.contains(i))
-    }
-
-    /// This game's copy of the team type (MEMORY_MAP §4). Callers gate what they write and to whom.
-    pub(crate) fn set_team(&self, v: u8) -> Result<(), &'static str> {
-        self.mem.write_u8(self.addr + CHR_TEAM, v)
-    }
-}
-
-/// WorldChrMan: where every character lives (OFF-5 uses its character sets to find NPC bots by handle).
-pub(crate) struct WorldChrMan<'m> {
-    mem: &'m dyn GameMem,
-    addr: usize,
-}
-
-impl<'m> WorldChrMan<'m> {
-    pub(crate) fn new(mem: &'m dyn GameMem, addr: usize) -> Self {
-        WorldChrMan { mem, addr }
-    }
-
-    /// The ChrIns whose handle is `handle`, and the set it was found in. Sets are tried in this order: `hint`, the set the handle's
-    /// bits 20..27 name (the ER encoding, HYPOTHESIS for NR), then every set. An entry counts only when its handle field matches.
-    pub(crate) fn find_by_handle(
-        &self,
-        handle: u64,
-        hint: Option<usize>,
-    ) -> Option<(usize, usize)> {
-        let guess = ((handle >> 20) & 0xFF) as usize;
-        let order = hint
-            .into_iter()
-            .chain(std::iter::once(guess))
-            .chain(0..WCM_CHRSET_COUNT)
-            .filter(|&i| i < WCM_CHRSET_COUNT);
-        let mut tried = [false; WCM_CHRSET_COUNT];
-        for i in order {
-            if std::mem::replace(&mut tried[i], true) {
-                continue;
-            }
-            if let Some(chr) = self.find_in_set(i, handle) {
-                return Some((chr, i));
-            }
-        }
-        None
-    }
-
-    fn find_in_set(&self, set: usize, handle: u64) -> Option<usize> {
-        let p = self.mem.read_ptr(self.addr + WCM_CHRSETS + set * 8)?;
-        let cap = self.mem.read_u32(p + CHRSET_CAPACITY)?;
-        if cap == 0 || cap > CHRSET_MAX_CAPACITY {
-            return None;
-        }
-        let entries = self.mem.read_ptr(p + CHRSET_ENTRIES)?;
-        let mut buf = vec![0u8; cap as usize * CHRSET_ENTRY_SIZE];
-        if !self.mem.read_into(entries, &mut buf) {
-            return None;
-        }
-        (0..cap as usize).find_map(|k| {
-            let o = k * CHRSET_ENTRY_SIZE;
-            let chr = u64::from_le_bytes(buf[o..o + 8].try_into().ok()?) as usize;
-            (crate::game::mem::is_ptr(chr) && self.mem.read_u64(chr + CHR_HANDLE)? == handle)
-                .then_some(chr)
-        })
     }
 }
 
@@ -410,28 +347,6 @@ mod tests {
     }
 
     #[test]
-    fn a_character_is_found_by_handle_in_any_set_and_the_hint_comes_first() {
-        let m = FakeMem::default();
-        let wcm = 0x10_0000;
-        // Set 14 (the handle's bits 20..27) is empty; set 3 holds the bot in its 2nd entry.
-        let (set, entries, chr) = (0x20_0000, 0x30_0000, 0x40_0000);
-        for i in 0..WCM_CHRSET_COUNT {
-            m.put_u64(wcm + WCM_CHRSETS + i * 8, 0);
-        }
-        m.put_u64(wcm + WCM_CHRSETS + 3 * 8, set as u64);
-        m.put_u32(set + CHRSET_CAPACITY, 2);
-        m.put_u64(set + CHRSET_ENTRIES, entries as u64);
-        m.put(entries, &[0u8; 2 * CHRSET_ENTRY_SIZE]);
-        m.put_u64(entries + CHRSET_ENTRY_SIZE, chr as u64);
-        let handle = 0xFFFF_FFFF_10E0_0001;
-        m.put_u64(chr + CHR_HANDLE, handle);
-        let w = WorldChrMan::new(&m, wcm);
-        assert_eq!(w.find_by_handle(handle, None), Some((chr, 3)));
-        assert_eq!(w.find_by_handle(handle, Some(3)), Some((chr, 3)));
-        assert_eq!(w.find_by_handle(0xFFFF_FFFF_10E0_0002, None), None);
-    }
-
-    #[test]
     fn speffects_hp_and_state_are_read_through_the_character() {
         let m = FakeMem::default();
         let (chr, holder, n1, n2, list, data) = (
@@ -454,17 +369,6 @@ mod tests {
         assert_eq!((c.hp(), c.downed_state()), (Some(240), Some(1)));
         // No holder: an empty list, not a fault.
         assert!(ChrIns::new(&m, 0x60_0000).speffect_ids().is_empty());
-    }
-
-    #[test]
-    fn team_through_the_character() {
-        let m = FakeMem::default();
-        let chr = 0x10_0000;
-        m.put(chr + CHR_TEAM, &[2]);
-        m.put_u64(chr + CHR_HANDLE, 0xA0);
-        let c = ChrIns::new(&m, chr);
-        c.set_team(29).expect("write");
-        assert_eq!((c.team(), c.handle()), (Some(29), Some(0xA0)));
     }
 
     #[test]

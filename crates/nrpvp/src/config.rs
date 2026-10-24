@@ -136,10 +136,6 @@ ui_menu_trace = false
 # change. The developer console switches it live: mode br | mode offline.
 mode = \"br\"
 
-# OFF-5 (dev mode only for now; the player build forces 0): rival bots in an offline Solo match (0..5; 0 = none). At the landing,
-# the game's own NPC Nightfarers join and fight you.
-offline_bots = 5
-
 # UI-1 option 1 (dev mode: needs mm_queue = true; the player build ignores this line and turns it on with matchmaking = true): Battle Royale from the stock
 # expedition menu. Commence Expedition with Number of Players = one player starts the Solo queue and the game's own dialog says
 # so; Commence again stops searching; once the match is ready Commence starts the expedition as normal. Duo/Trio say \"coming
@@ -259,8 +255,6 @@ pub(crate) struct Config {
     pub br_menu: bool,
     /// OFF-1: `"br"` (default) or `"offline"` (normalised in `parse`; read it through [`Config::game_mode`]).
     pub mode: String,
-    /// OFF-5: rival bots in an offline match (0..=5).
-    pub offline_bots: u64,
     /// UI-2 spike: set the test message flags in turn (developer mode only; forced off in the player build).
     pub ui_msg_test: bool,
     /// UI-2: matchmaking status as on-screen game messages (default true; needs the queue and the game-data package).
@@ -357,7 +351,6 @@ impl Default for Config {
             ui_menu_trace: false,
             br_menu: false,
             mode: "br".to_string(),
-            offline_bots: 5,
             ui_msg_test: false,
             ui_messages: true,
             mm_sc_create: false,
@@ -493,8 +486,6 @@ fn enforce_player_mode(
         );
     }
     cfg.rival_revive = REVIVE_REDOWN.to_string();
-    // OFF-5: bots are an internal development tool for now (Leonardo, 2026-10-22): never in player mode.
-    cfg.offline_bots = 0;
 }
 
 /// What the file set explicitly (before defaults and the alias): `pvpve = false`, `pvpve_scheme = "all"`.
@@ -554,7 +545,6 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         PVPVE_INTERVAL_MS_RANGE,
     );
     clamp("team_size", &mut cfg.team_size, TEAM_SIZE_RANGE);
-    clamp("offline_bots", &mut cfg.offline_bots, (0, 5));
     clamp(
         "mm_match_players",
         &mut cfg.mm_match_players,
@@ -949,7 +939,7 @@ pub(crate) fn load(dir: &Path) -> Config {
         if cfg.dev_mode { "DEV" } else { "PLAYER" }
     );
     tracing::info!(
-        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} br_menu={} mode={} offline_bots={} log_dir={:?}",
+        "T-008: effective config: team_candidates={:?} persist_interval_ms={} watch_interval_ms={} pvpve={} pvpve_team={} pvpve_interval_ms={} pvpve_scheme={} team_size={} matchmaking={} mm_queue={} mm_match_players={} mm_max_players={} mm_min_players={} mm_fill_wait_s={} mm_join={} mm_join_auto={} mm_quiet_invite={} br_menu={} mode={} log_dir={:?}",
         cfg.team_candidates,
         cfg.persist_interval_ms,
         cfg.watch_interval_ms,
@@ -969,7 +959,6 @@ pub(crate) fn load(dir: &Path) -> Config {
         cfg.mm_quiet_invite,
         cfg.br_menu,
         cfg.mode,
-        cfg.offline_bots,
         cfg.log_dir
     );
     tracing::info!("T-008: effective config: [hawk] {:?}", cfg.hawk);
@@ -992,7 +981,6 @@ mod tests {
             mm_join_auto: "invite+link".to_string(),
             mm_quiet_invite: true,
             br_menu: true,
-            offline_bots: 0,
             ..Config::default()
         }
     }
@@ -1218,17 +1206,6 @@ mm_match_players = 9
         );
         let (cfg, _) = parse("ui_menu_trace = true\n").expect("ok");
         assert!(!cfg.ui_menu_trace);
-    }
-
-    #[test]
-    fn bots_are_dev_mode_only() {
-        let (cfg, _) = parse("mode = \"offline\"\noffline_bots = 5\n").expect("ok");
-        assert_eq!(cfg.offline_bots, 0, "player mode never has bots");
-        let (cfg, _) = parse_dev("offline_bots = 3\n").expect("ok");
-        assert_eq!(cfg.offline_bots, 3);
-        let (cfg, w) = parse_dev("offline_bots = 9\n").expect("ok");
-        assert_eq!(cfg.offline_bots, 5);
-        assert!(w.iter().any(|l| l.contains("offline_bots")), "{w:?}");
     }
 
     #[test]

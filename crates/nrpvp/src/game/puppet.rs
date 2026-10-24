@@ -2,7 +2,7 @@
 //! `CSChrSet<PlayerIns>`), so everything that asks "who are the players" (the game's per-player code, our ChrSet readers, the team
 //! and downed rules, the night match) sees them as players, in one game, with no second client.
 //!
-//! How (game 1.03.3, exe 1.3.3.0; static reading in nightreign-orchestrator `docs/research/R2-net-player-creation.md`): the game's
+//! How (game 1.03.3, exe 1.3.3.0; static reading in .claude/research/ORCH-R2-net-player-creation.md): the game's
 //! NPC bot manager (`CSNpcBotMan`, OFF-3/OFF-4) creates its Nightfarers with the generic ChrSet creator `exe+0x4ABC40(set, request)`,
 //! called at `exe+0x38F2B3` with `set = WorldChrMan+0x9AF0` (the bot set). That creator builds a full `CS::PlayerIns` (constructor
 //! `exe+0x6667F0`, the same class as every real player). While puppets are armed, an execute breakpoint on that call site swaps
