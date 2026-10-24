@@ -38,7 +38,7 @@ nro keys "click 0.5 0.5"             keys and mouse (F interact, Q back, W/A/S/D
 nro shot name / nro log 50 filter / nro stop
 ```
 
-Scenario format (`crates/nro-core/src/scenario.rs`): `[config]` keys written over the staged `nrpvp.toml`, then `[[step]]` entries:
+Scenario catalog, step vocabulary and how to add one: [SCENARIOS.md](SCENARIOS.md). Scenario format (`crates/nro-core/src/scenario.rs`): `[config]` keys written over the staged `nrpvp.toml`, then `[[step]]` entries:
 `console`, `wait = {console, contains, timeout_s}`, `expect = {console, contains, absent}`, `keys`, `navigate`, `sleep_ms`, `screenshot`,
 `puppets`, `puppet_ring`, `puppet_front`. Put `ui_flag_watch = false` in `[config]` (its event bursts flood `log 300`). Current set:
 `puppets-smoke` (puppets exist and bleed out), `night1-count` (night 1 decided by count), `night1-local-dies` (`hp0` at night: held,
