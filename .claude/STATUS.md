@@ -28,7 +28,7 @@ with `nro stop` (kill) for this reason.
 
 | Place | What |
 |---|---|
-| **Zip for FS-M59, 2026-10-24:** `dist\NightreignPvP.zip` (main checkout), `nrpvp.dll` 8623F4000642037A, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1`, built from commit f65cec3 (same code as `main` cbbffa2) | Player build: Solo Battle Royale, nights, die-at-once, no console, no bots or puppets. **Not** installed in Leonardo's game folder by an agent. Every older zip and `dist\friend-kit.zip` are superseded: do not send them |
+| **Zip for FS-M59, 2026-10-24:** `dist\NightreignPvP.zip` (main checkout), `nrpvp.dll` 64E49188380B5C54, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1`, built from `main` d1c3264 (clean, after the clean-up PR #12) | Player build: Solo Battle Royale, nights, die-at-once, no console, no bots or puppets. **Not** installed in Leonardo's game folder by an agent. Every older zip and `dist\friend-kit.zip` are superseded: do not send them |
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | Plain deploy (SC's launcher), secondary tool (TOOLS.md) |
 

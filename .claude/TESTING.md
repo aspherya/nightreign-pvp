@@ -186,7 +186,7 @@ rpvp.log` (copy it after the session, before the next start) and takes the photo
 7. **Free play.** Fight normally for the rest of the time (PvP, downs, revives by day). Anything odd: time + what happened.
 **Send back, both PCs:** `NightreignPvP
 rpvp.log`, the me3 log folder (`%LOCALAPPDATA%\garyttierney\me3\data\logs\`), the photos, and a line per step: pass / what you saw. I read the logs (`grep -E "night_match|deathhold|T-033 STATE|die-at-once"`); pass criteria are the **Expect** lines, anything else is a finding for §3.
-**Zip:** `dist\NightreignPvP.zip` of 2026-10-24, `nrpvp.dll` 8623F4000642037A, `-MatchPlayers 2` (STATUS §2); both players compare `NightreignPvP\VERSION.txt`.
+**Zip:** `dist\NightreignPvP.zip` of 2026-10-24, `nrpvp.dll` 64E49188380B5C54, `-MatchPlayers 2` (STATUS §2); both players compare `NightreignPvP\VERSION.txt`.
 
 Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1 on 2026-10-20; FS-UI2 on 2026-10-21) were removed; their results are in §3 and their text in git
 (`git show 339ee04:.claude/TESTING.md`; FS-UI2: `git show c727293:.claude/TESTING.md`).
