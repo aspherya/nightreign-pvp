@@ -11,7 +11,7 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
 - PvP is always on for rivals; players cannot switch it off. Launching with `nrpvp_launcher.exe` is the mode, until a menu entry exists.
 - Hostility: each game keeps itself and teammates on the normal value and marks only rivals (value 29).
 - Downed players: teammates fill the purple bar; rivals shorten the bleed-out and never move the bar. Instant death on 0 health was
-  rejected (auto-revive items would defeat it).
+  rejected on 2026-10-12 (auto-revive items would defeat it); **superseded for Solo nights on 2026-10-23** (a kill is a real death, die-at-once only without a revive item).
 - Investigation first, then building: confirm memory locations with the scanner before adding mod code.
 - Matchmaking joins through the game's own lobby (Invite Members path), never a lobby our mod creates; never EAC, never Bandai servers.
 - Leonardo only does smoke tests; Claude decides design and order, and does not build tools that are not needed for the goal.
@@ -47,5 +47,4 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
 - **Bots are not a game feature; Nucleus is a secondary tool; the orchestrator is in this repo** (Leonardo, 2026-10-24): the automatic offline bots (OFF-5) are gone; the game's bot manager stays as the engine of the orchestrator's puppet players. `scripts\deploy-nucleus.ps1` stays for quick two-window checks of plain rules (no event files, no `-Me3`); anything that needs our event files runs through `nro` (offline, puppets) or a friend session. `nro`, its scenarios and tools live in `crates/nro*`, `scenarios/`, `tools/`, `pins/`.
 - **Docs are small files with one owner each** (Leonardo + Claude, 2026-10-24): STATUS holds only "now" (≤ 8 KB), results go to `testing-log/`, traps to `TRAPS.md`, decisions to `DECISIONS.md`, tools to `TOOLS.md`; a card's acceptance is a scenario where it can be.
 
-- **`nrscan` deleted** (Leonardo, 2026-10-24): the external scanner/poker of Nucleus games was replaced by the in-DLL console and the orchestrator; it stays in git history (`git show cbbffa2:crates/nrscan`). `nrcon` stays (console client; reaches several games with `--all` / `-i N`).
 - **`nrscan` deleted** (Leonardo, 2026-10-24): the external scanner/poker of Nucleus games was replaced by the in-DLL console and the orchestrator; it stays in git history (`git show cbbffa2:crates/nrscan`). `nrcon` stays (console client; reaches several games with `--all` / `-i N`).

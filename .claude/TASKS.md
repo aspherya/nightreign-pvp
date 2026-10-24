@@ -174,7 +174,7 @@ Fallback if the hold does not work in a session (the comeback still runs): let i
 the M5-6 clock hold until the morning ("option B"), and say so in TESTING.
 
 ### M5-7 — Spectate a player still fighting (camera)
-Owner: OPUS (RE) | Status: todo (after M5-5 is merged)
+Owner: OPUS (RE) | Status: todo (M5-5 is merged; start the code after the FS-M59 logs are read: it shares the dead state with the hold)
 An eliminated (or, in Solo, dead: M5-9) player watches a random living player until the morning (choice later). Must let a dead
 player open the menu at least to quit (vanilla blocks Esc while dead; Leonardo 2026-10-23). Needs the engine's follow camera: find the
 camera's target (the local PlayerIns) and whether pointing it at another PlayerIns copy is safe. Static RE first (camera classes in
@@ -196,14 +196,14 @@ animation cut; Leonardo: good enough). The line is built by `scripts\build-gamed
 
 ### HAWK-2 — Hawk crossing v1 (player feature)
 Owner: OPUS → SONNET/implementer → HUMAN | Status: **solo smoke PASS 2026-10-22** (TESTING §3; Leonardo: "how I wanted it").
-Branch `claude/interesting-tharp-1c1237`, not merged. Open: merge (Leonardo), the Spectral Hawk Tree check (step 4 below, not
+Merged (PR #2). Open: merge (Leonardo), the Spectral Hawk Tree check (step 4 below, not
 done yet), and the FS with two players; then remove this card.
 Built: `game/hawk/` in both builds (`mod.rs` hook + swap + ride phases; `dev.rs` console and traces, dev build only). Settings
 `[hawk]` (`enabled`, `dive_hold`, `dive_secs`, `dive_boost`, `start_cut`; defaults = HAWK-4's accepted values, on) read at
 startup; the `hawk_*` commands are session overrides. Only LOCAL: once the main loop knows LOCAL's PlayerIns the hook acts on that
 character only (before that, the HAWK-3 rider rule). A native tree ride (Spectral Hawk Tree) ends the lock; the pass-through swap
 stays for the session (inert outside start rides). Route file: built by default (`-VanillaRoutes` to skip), required by
-`package-release.ps1` and checked by the launcher. **Not a `Feature` yet:** the trait is on the unmerged OFF-1 branch
+`package-release.ps1` and checked by the launcher. **Not a `Feature` yet:** the trait exists on `main` (OFF-1)
 (`claude/offline-mode-ccabe0`); moving it there = `configure` → constructor, `tick` → `Feature::tick` with `local` from the `World`.
 Solo smoke (Leonardo, player terms): from the worktree folder run `scripts\launch.ps1` (its `dist\nrpvp.toml` is player mode with
 `matchmaking = false`, so there is no console and Commence starts a normal solo expedition). (1) Commence Solo; the hawk takes

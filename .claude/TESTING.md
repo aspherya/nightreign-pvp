@@ -135,58 +135,38 @@ Owned by STATUS.md §1 ("Known bug") so there is one list.
 
 ## 5. Regression set
 
-Rerun after any game, SC, me3, or nrpvp update: TC-001, plus TC-003 row 3 once it passes.
-
-### REG-1 — regression of everything on `main` 0145f72 (2026-10-22; Leonardo solo, about 40 minutes)
-
-Builds (all from `main` 0145f72, clean): **player zip** `.claude\worktrees\offline-mode-ccabe0\dist\NightreignPvP.zip` (VERSION:
-nrpvp.dll DB60DAF8E06D743C, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`) and the **dev
-build** in the same `dist\` (launched by that folder's `scripts\launch.ps1`, `mode = "offline"`). Alt-F4 between parts is fine.
-
-**Part A — player zip (what players get), one PC.** Install it as usual (unzip into the game folder, replacing the old
-`NightreignPvP\`), start `nrpvp_launcher.exe`.
-1. Roundtable, Matchmaking Settings > Number of Players: the list reads **Solo / Duo / Trio**.
-2. Solo > Commence: the box **"searching for players (Solo)"**; the button reads **Stop Searching**; press it: "stopped searching".
-3. Duo > Commence: "Duo and Trio Battle Royale are coming soon".
-4. Quit. Edit `NightreignPvP\nrpvp.toml`: add a line `mode = "offline"` **above** `[hawk]`. Start again. Solo > Commence: the
-   expedition starts at once.
-5. Hawk: the ride **cruises the long line** (stick does not steer), holding the stick **dives**, the drop buttons **drop**. You land
-   without fall damage. **No bots appear** (players never get bots).
-6. Later in the expedition, ride a Spectral Hawk Tree once: it must behave like the vanilla game.
-7. Quit. Remove the `mode` line again (players get Battle Royale).
-
-**Part B — dev build, bots and combat against them.** In PowerShell: `cd C:\Users\Leonardo\source\repos\nightreign-pvp\.claude\worktrees\offline-mode-ccabe0`,
-then `.\scripts\launch.ps1`.
-1. Solo > Commence (offline: starts at once). Ride and land. **5 bots arrive at the landing** and attack you, each other and monsters.
-2. Kill at least one. Let them down you once: tell me what the purple bar and the bleed-out did (bots do not count as rivals for the
-   downed rule yet: expected vanilla behaviour; OFF-7 changes it).
-3. Die or quit to the Roundtable, start a **second** expedition: a **new set of 5** arrives at the landing.
-
-**Part C — PvP between players (optional, Nucleus, two windows).** In the same folder:
-`powershell -ExecutionPolicy Bypass -File scripts\deploy-nucleus.ps1 -TeamSize 1`, then start two instances in Nucleus as usual.
-1. In the expedition the other window's player is a rival (you can hurt each other).
-2. Down the other one: your hits never fill their purple bar and take time off their bleed-out; they bleed out.
-3. The hawk crossing in both windows (cruise, dive, drop).
-
-Report per part: what matched, what did not. I read the logs (`dist\logs\`, `dist\nucleus-logs\`).
-
----
+Rerun after any game, SC, me3 or nrpvp update and before every player zip:
+1. **Automated, one PC:** `scripts\regress.ps1` (all scenarios, catalog in `orchestrator/SCENARIOS.md`); needs `nro desk`.
+2. **Player-zip smoke, 5 minutes, Leonardo** (the zip installed as a player would; REG-1 of 2026-10-22 was retired because its bot checks no longer exist):
+   Roundtable > Matchmaking Settings > Number of Players lists **Solo / Duo / Trio**; Solo > Commence shows "searching for players (Solo)" and the button reads Stop Searching (press it: "stopped searching"); Duo > Commence says "coming soon".
+   Optional offline check (dev only, not the zip): `mode = "offline"` in `nrpvp.toml`, Solo > Commence starts the game's own solo expedition.
+3. TC-001 (Seamless Co-op alone still works).
+Past regression runs: `testing-log/`.
 
 ## 6. Friend Session runbooks
 
-### FS-M59 — what only two real PCs can show (M5-9 and the night flow; one page; ~45 min)
-Both PCs: the **player zip** named under "Zip" below (it has our event files, no console, `team_size = 1`); `VERSION.txt` must match on both. Play from the table (Solo, `-MatchPlayers 2`), host presses Invite Members, both land by hawk. Nothing needs a console: a night starts by itself at 23:00 of the play clock, ends when one player is left, and has no timer. Each PC keeps `NightreignPvP
-rpvp.log` (copy it after the session, before the next start) and takes the photos named below. Never EAC.
-1. **A real kill at night (the core check).** At night one player brings the other to 0 HP (or a monster / the storm does). **Expect:** the victim dies at once (death animation, "YOU DIED"), no 15 s knock; victim's log `night_match: die-at-once ON` before and `M5-9 deathhold: start step HELD` after; the night is decided (`night 1 decided: … won/lost`). If the victim carries a revive item (log `die-at-once OFF (revive item)`), it is knocked as before: say so.
-2. **What the other screen shows.** Killer: is the victim's body on the floor, standing, or gone; does the victim stay in the compass / map? Victim: YOU DIED, camera only, can the menu open (Esc)? A photo of each screen.
+### FS-M59 — what only two real PCs can show (M5-9 and the night flow; one page; about 70 min, two matches)
+**Zip:** `dist\NightreignPvP.zip` of 2026-10-24, built from `main` d1c3264, `nrpvp.dll` 64E49188380B5C54, `-MatchPlayers 2` (STATUS §2). It has our event files, no console, `team_size = 1`. Both PCs compare `NightreignPvP\VERSION.txt` and the Seamless Co-op version (v1.1.3); the game must be exe 1.3.3.0 (stop Steam auto-updating overnight: an update means stale offsets and no version gate yet). Never EAC.
+
+**Pre-flight, both PCs (10 min):** back up `%APPDATA%\Nightreign\<steamid>\` (`.co2` and `.sl2`); Leonardo installs the zip himself and does a 5-minute smoke run (Roundtable table menu shows Solo / Duo / Trio, Solo > Commence searches); both know where `NightreignPvP\nrpvp.log` and `NightreignPvP\logs\` are and how they will send them.
+
+**How a match runs:** play from the table (Solo, host presses Invite Members, both land by hawk). Nothing needs a console: a night starts by itself at 23:00 of the play clock, ends when one player is left, and has no timer. **Escape hatch:** a dead player cannot open Esc; if the dead player is still dead 30 s after the night was decided (no `RELEASED` in the log), Alt-F4 and say so. After every quit write down the time and any Windows "Application Error" in Event Viewer > Windows Logs > Application (Event ID 1000 / 1001; known quit crash 0xC0000374).
+
+**Match A (about 35 min).** Night 1: the **host** kills the **guest** (steps 1 to 3, do this first: if it fails, everything after is about the fallback). Night 2: the **host** dies (the guest must win) (steps 4 and 5a).
+**Match B (about 25 min).** Night 1: the **host** dies to the guest or a monster, the guest stays up (step 5b: the host's death released at the morning). Then free play (step 7) until you are done.
+1. **A real kill at night.** At night the host brings the guest to 0 HP. **Expect:** the guest dies at once (death animation, "YOU DIED"), no 15 s knock; guest's log `night_match: die-at-once ON` before and `M5-9 deathhold: start step HELD` after; `night 1 decided: … won/lost` on both. If the log says `die-at-once OFF (LOCAL holds a revive item)`, the guest was knocked as before: say so, the rest of the steps still run (knocked, eliminated, held).
+2. **What the other screen shows.** Killer: is the victim's body on the floor, standing, or gone; does the victim stay on the compass / map? Victim: YOU DIED, camera only, can the menu open (Esc)? A photo of each screen.
 3. **Morning.** After the decision the game's morning follows. **Expect** on the victim: `RELEASED … gate`, respawn at full HP, then (Day-2 clock reads 07:00) `moved to a random day-1 place`; no storm death. The winner is healed (`flag 10007410`). Killer: does the victim blink away and appear, or walk in? Note how long after the morning the victim is standing.
-4. **Night 2 by count, both endings.** Day 2: at night one player dies again → the survivor's screen shows the win ending, the dead one's the loss ending. **Photos of both screens, from the moment the night is decided until the Result screen** (a one-PC test could not tell the two banners apart).
-5. **Host dies.** Once, let the **host** be the one who dies at night while the guest stays up. Does the session stay up, does the guest get the decision and the morning, does the host's death come back? Send both logs.
+4. **Night 2 by count, both endings.** Day 2, at night the host dies: the guest's screen shows the win ending, the host's the loss ending. **Photos of both screens, from the moment the night is decided until the Result screen.**
+5. **Host dies.** (a) Night 2 of match A, (b) night 1 of match B. Does the session stay up, does the guest get the decision (and, for (b), the morning), does the host's death come back at the morning? Send both logs.
 6. **Vanilla multiplayer events at night.** No minions, no boss; does anything throw a dead or held player out ("Disconnected", back to the Roundtable) or show a game-over for both? Note the time of anything odd.
-7. **Free play.** Fight normally for the rest of the time (PvP, downs, revives by day). Anything odd: time + what happened.
-**Send back, both PCs:** `NightreignPvP
-rpvp.log`, the me3 log folder (`%LOCALAPPDATA%\garyttierney\me3\data\logs\`), the photos, and a line per step: pass / what you saw. I read the logs (`grep -E "night_match|deathhold|T-033 STATE|die-at-once"`); pass criteria are the **Expect** lines, anything else is a finding for §3.
-**Zip:** `dist\NightreignPvP.zip` of 2026-10-24, `nrpvp.dll` 64E49188380B5C54, `-MatchPlayers 2` (STATUS §2); both players compare `NightreignPvP\VERSION.txt`.
+7. **Free play.** Fight normally (PvP, downs, revives by day). Anything odd: time + what happened.
+
+**Send back, both PCs:** `NightreignPvP\nrpvp.log` (copy it right after each match, before the next start), `NightreignPvP\logs\`, the me3 log folder (`%LOCALAPPDATA%\garyttierney\me3\data\logs\`), the photos, and a line per step: pass / what you saw. Put them under `.claude\experiments\FS-M59\host\` and `...\guest\`. I read the logs (`grep -E "night_match|deathhold|T-033 STATE|die-at-once|hwbp"`); pass criteria are the **Expect** lines, anything else is a finding for the results log.
+
+**Things the logs must answer (unknown today, from the 2026-10-24 review):** (1) does a real session carry SpEffect 6999500 (is die-at-once ON)? (2) is the held function `exe+0x5C4810` hit for characters other than LOCAL (the player build has no console: count `start step HELD` lines on each PC, and look for `RELEASED`, `dropped` or `no free hardware slot` on the PC whose player did not die)? (3) are our flags 10007420 / 10007410 per game, or do the two games fight over them (repeated `features: flag 10007420 ON/OFF (was ...)` or `10007410` lines flipping back and forth in a log mean the games fight over it)? (4) what Seamless Co-op does when the host dies (steps 5a / 5b). (5) any `no free hardware slot` line (the player build has only two free debug-register slots in an expedition).
+
+**No-go trigger:** if the guest is still dead after the night was decided and the Alt-F4 recovery, stop the M5-9 steps (they cannot pass); spend the rest of the session on free play and the hawk crossing, and send the logs. The player DLL has never armed deathhold in a game (every one-PC run was the dev DLL), and Leonardo's solo smoke run cannot reach a Solo night, so match A night 1 is its first real run.
 
 Finished runbooks (FS-1, FS-MM1, FS-MM2, FS-UI1 on 2026-10-20; FS-UI2 on 2026-10-21) were removed; their results are in §3 and their text in git
 (`git show 339ee04:.claude/TESTING.md`; FS-UI2: `git show c727293:.claude/TESTING.md`).
