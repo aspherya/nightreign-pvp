@@ -39,7 +39,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 | F10 | Downed players can be revived by teammates only | Revive works in vanilla co-op; between hostile players it does not `[PROVEN]` | Should come for free once teammates are non-hostile `[LEAD]`; verify | Medium |
 | F11 | Sudden death: no respawns once the arena is fully closed; stall-breaker damage | The tide deals damage outside the circle | Detect "fully closed", block respawns, mark eliminated players, escalate damage `[UNKNOWN]` | High |
 | F12 | Win detection: last team with living players | Player state is readable (`ChrSet` entries) | A match state machine all clients agree on | Medium |
-| F13 | Winner's choice: escape with loot or fight the Nightlord | The Nightlord fight exists | A choice prompt, ending the expedition as a win without the boss, rewards `[UNKNOWN]` | High |
+| ~~F13~~ | ~~Winner's choice: escape with loot or fight the Nightlord~~ | **Dropped** (Leonardo, 2026-10-24): there is no winner's choice; the match ends when the final fight is decided | - | - |
 | F14 | Balancing rules (no kill rewards, default gear, loot stays on the ground, final-arena supply) | Mostly follow from F8–F9 | Tuning, after the mechanics exist | Low |
 | F15 | Mode selection in Roundtable Hold | SC already edits that menu | Our own menu entry or a panel toggle; all clients agreeing on the mode | Medium |
 | F16 | Install and launch for normal players | Friend kit with a script | A launcher; permission from SC's author before any public release | Medium |
@@ -74,7 +74,7 @@ de-risks the rest.
 | **M3 Death and respawn rules** | Level kept, starting items, respawn point chosen by us, protection window | F9 | Kill → respawn with the right state on both screens, repeated 10 times |
 | **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree |
 | **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights |
-| **M6 Finale** | Sudden death, eliminations, win detection, winner's choice | F11, F12, F13 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable |
+| **M6 Finale** | Sudden death, eliminations, win detection | F11, F12 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable (winner and losers see the report, then the Roundtable) |
 | **M7 Scale and spawns** | Hawk crossing (§13); validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
 | **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players |
 

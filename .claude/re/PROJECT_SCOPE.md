@@ -4,7 +4,7 @@
 
 Create a public-matchmaking PvPvE mode for Elden Ring Nightreign. Players queue for a match with random players, are assigned as teammates or rivals, explore Limveld, fight PvE enemies, gather equipment, and compete in a final PvP arena. Solo-queue players have no teammates; every other player is a rival.
 
-The match ends when one player or team wins the final arena. The winner receives the victory screen and the expedition report, then returns to Roundtable Hold.
+The match ends when one player or team wins the final arena. The winner receives the victory screen and the expedition report, then returns to Roundtable Hold. **Losers get the same expedition report and return to Roundtable Hold too** (Leonardo, 2026-10-24). There is **no winner's choice**: winning ends the match, nothing is offered.
 
 ## Engineering foundation
 

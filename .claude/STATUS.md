@@ -17,7 +17,7 @@
 | Offline mode (`mode = "offline"`): Commence Solo runs the game's own solo expedition | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro` + puppet players** (in this repo since 2026-10-24): offline launch through me3, AFK players the mod counts as rivals, keys/screenshots, scenarios | **Works**; `scripts\regress.ps1` runs `night1-count`, `night1-local-dies`, `night2-win`, `night2-loss`, `puppets-smoke` |
 
-Not built yet: spectating another player (M5-7), keep-level / inventory drop on death, final arena, sudden death, winner's choice, Duo/Trio
+Not built yet: spectating another player (M5-7), keep-level / inventory drop on death, final arena as its own stage (today night 2 is the whole final fight, decided by count, no contraction or sudden-death tie-break), Duo/Trio
 matchmaking (MM-6), host-migration work (MM-8/9, S10). `PROJECT_PLAN.md` §2 and §9.
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10; not proven to be Seamless Co-op's. The
