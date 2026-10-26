@@ -77,6 +77,33 @@ pub(crate) fn zero_hp(mem: &mut dyn CombatMem, addr: usize) -> Result<u32, Strin
     Ok(hp)
 }
 
+/// Dev console `rival_hit` (RW-1 tests): the next tick stamps a rival hit on LOCAL, as if a rival's blow had just landed.
+pub(crate) static FAKE_RIVAL_HIT: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// RW-1: who dealt the last HP-reducing hit to LOCAL, as far as this game can tell (the last-attacker handle is valid on the
+/// victim's own game only, see the module doc).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HitKind {
+    /// A player this game marks as a rival.
+    Rival,
+    /// A teammate or LOCAL itself.
+    Friendly,
+    /// An enemy character (a handle that is not a player).
+    Mob,
+    /// No attacker handle at all: the tide, a fall, poison.
+    Env,
+}
+
+/// RW-1: LOCAL's recent hits, ages in ms (the controller's own clock).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct LocalHits {
+    /// The last HP-reducing hit.
+    pub last: Option<(HitKind, u64)>,
+    /// The last hit (or downed-state hit) a rival dealt.
+    pub rival_age_ms: Option<u64>,
+}
+
 /// M5-5: the team key of a player: its roster team when the rosters are known, else its own session id (free-for-all).
 pub(crate) fn team_key(team_no: Option<u8>, id: u64) -> u64 {
     team_no.map_or(id, |t| (1 << 63) | u64::from(t))
@@ -98,13 +125,6 @@ pub(crate) struct Fighter {
     pub clock: f32,
 }
 
-impl Fighter {
-    /// Up and alive: not downed and HP above 0 (a bled-out player waiting for the respawn has HP 0).
-    pub(crate) fn standing(&self) -> bool {
-        self.state != 1 && self.hp > 0
-    }
-}
-
 /// Tracker period.
 pub(crate) const STATE_MS: u64 = 100;
 
@@ -119,6 +139,10 @@ pub(crate) struct CombatCtl {
     base: usize,
     started: std::time::Instant,
     subjects: Vec<Subject>,
+    /// RW-1: LOCAL's HP at the previous tick, its last hit and its last rival hit (ms on `started`).
+    hit_prev_hp: Option<u32>,
+    last_hit: Option<(HitKind, u64)>,
+    last_rival_ms: Option<u64>,
 }
 
 impl CombatCtl {
@@ -144,6 +168,82 @@ impl CombatCtl {
             base,
             started,
             subjects: Vec::new(),
+            hit_prev_hp: None,
+            last_hit: None,
+            last_rival_ms: None,
+        }
+    }
+
+    fn now_ms(&self) -> u64 {
+        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
+    /// RW-1: LOCAL's recent hits (read-only).
+    pub(crate) fn local_hits(&self) -> LocalHits {
+        let now = self.now_ms();
+        LocalHits {
+            last: self.last_hit.map(|(k, t)| (k, now.saturating_sub(t))),
+            rival_age_ms: self.last_rival_ms.map(|t| now.saturating_sub(t)),
+        }
+    }
+
+    /// RW-1: stamp a rival hit now (the downed rule saw one, or the console faked one).
+    fn stamp_rival(&mut self) {
+        let now = self.now_ms();
+        if self
+            .last_rival_ms
+            .is_none_or(|t| now.saturating_sub(t) >= 2_000)
+        {
+            tracing::info!("T-033 hit: a rival's hit on LOCAL is recorded (RW-1)");
+        }
+        self.last_rival_ms = Some(now);
+        self.last_hit = Some((HitKind::Rival, now));
+    }
+
+    /// RW-1: watch LOCAL's HP; a drop is a hit, classified by the last-attacker handle (read right away, while it is fresh).
+    fn watch_hits(&mut self) {
+        let Some(addr) = self.subjects.iter().find(|s| s.local).map(|s| s.addr) else {
+            self.hit_prev_hp = None;
+            return;
+        };
+        if !self.mem.is_player(addr) {
+            self.hit_prev_hp = None;
+            return;
+        }
+        let r = read_state(&self.mem, addr);
+        let (Some(hp), prev) = (r.hp, self.hit_prev_hp) else {
+            return;
+        };
+        self.hit_prev_hp = Some(hp);
+        if prev.is_none_or(|p| hp >= p) {
+            return;
+        }
+        let infos = player_infos(&self.mem, &self.subjects);
+        let kind = match classify(r.attacker_raw, &infos) {
+            Attacker {
+                kind: AttackerKind::Rival,
+                ..
+            } => HitKind::Rival,
+            Attacker {
+                kind: AttackerKind::Ally | AttackerKind::SelfHit,
+                ..
+            } => HitKind::Friendly,
+            Attacker {
+                kind: AttackerKind::Other,
+                handle: Some(_),
+                ..
+            } => HitKind::Mob,
+            Attacker {
+                kind: AttackerKind::Other,
+                handle: None,
+                ..
+            } => HitKind::Env,
+        };
+        if kind == HitKind::Rival {
+            self.stamp_rival();
+        } else {
+            let now = self.now_ms();
+            self.last_hit = Some((kind, now));
         }
     }
 
@@ -197,6 +297,7 @@ impl CombatCtl {
         if !(clock.is_finite() && (0.0..=60.0).contains(&clock)) {
             return;
         }
+        self.stamp_rival();
         let new_clock = (clock - self.core.hit_seconds * n as f32).max(self.core.clock_floor);
         let ok = self
             .mem
@@ -267,42 +368,6 @@ impl CombatCtl {
             .collect()
     }
 
-    /// M5-5: the floor of the rival-hit penalty (`None` = the day value [`CLOCK_FLOOR`]).
-    pub(crate) fn set_clock_floor(&mut self, floor: Option<f32>) {
-        let f = floor.unwrap_or(CLOCK_FLOOR);
-        if (f - self.core.clock_floor).abs() > f32::EPSILON {
-            self.core.clock_floor = f;
-            tracing::info!("rule: rival-hit clock floor now {f} s");
-        }
-    }
-
-    /// M5-6: rule v1 stays off for `ms` (our own get-up after a rival's knock is not a rival's revive).
-    pub(crate) fn exempt_getup(&mut self, ms: u64) {
-        let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        self.core.exempt_until_ms = now_ms.saturating_add(ms);
-    }
-
-    /// M5-6: hold LOCAL's bleed-out clock at `secs` (LOCAL downed only). Writing the clock is VERIFIED (MEMORY_MAP section 6).
-    pub(crate) fn hold_clock(&mut self, secs: f32) -> Result<(), &'static str> {
-        let Some((addr, 1)) = self.local_state() else {
-            return Err("LOCAL is not downed");
-        };
-        self.mem
-            .write(addr + OFF_BLEED_CLOCK, &secs.to_le_bytes())?;
-        self.mem.write(addr + OFF_PAUSE, &0f32.to_le_bytes())
-    }
-
-    /// M5-6: ask the game to stand LOCAL up: the "revive completed" byte (`PlayerIns+0x732`), which the per-frame downed function
-    /// reads on the owner's game and answers with the get-up (`exe+0x675159` -> `exe+0x66F3B0(chr, 2)`; MEMORY_MAP section 6).
-    /// LOCAL downed only; the game clears the byte every frame, so the caller repeats until the state changes.
-    pub(crate) fn request_getup(&mut self) -> Result<(), &'static str> {
-        let Some((addr, 1)) = self.local_state() else {
-            return Err("LOCAL is not downed");
-        };
-        self.mem
-            .write(addr + crate::game::reviveblock::PLAYER_REVIVE_DONE, &[1])
-    }
-
     /// Dev console `god 1` (test aid, 2026-10-23: monsters kept downing the knocking player in two-window night tests): LOCAL,
     /// while up, is put back to full HP every tick through the character data module (the field T-040 writes; MEMORY_MAP §5).
     fn god_refill(&mut self) {
@@ -337,8 +402,18 @@ impl CombatCtl {
             self.god_refill();
         }
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        let fired = self.core.fired;
         for l in self.core.step(now_ms, &self.subjects, &mut self.mem) {
             tracing::info!("{l}");
+        }
+        // RW-1: a rival-related rule write while LOCAL is downed (a hit on the bleeding player) is a rival hit too.
+        if self.core.fired != fired && self.local_state().is_some_and(|(_, s)| s == 1) {
+            self.stamp_rival();
+        }
+        self.watch_hits();
+        if FAKE_RIVAL_HIT.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            self.stamp_rival();
+            tracing::info!("console rival_hit: a rival hit on LOCAL is recorded now");
         }
     }
 }

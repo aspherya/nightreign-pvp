@@ -1,0 +1,64 @@
+name = "esc-defeated"
+about = "RW-1: a defeated, held player can open the pause menu with Esc (menugate sets the game's open request); Esc again closes it. Vanilla refuses at HP 0"
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+defeat_exit_secs = 0
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+[[step]]
+puppets = 3
+[[step]]
+puppet_ring = 12
+[[step]]
+console = "flag 10007420 1"
+[[step]]
+console = "rival_hit"
+[[step]]
+sleep_ms = 1000
+[[step]]
+console = "hp0"
+[[step]]
+wait = { console = "night_status", contains = "watching", timeout_s = 40 }
+[[step]]
+console = "puppet_list"
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "watching1"
+[[step]]
+console = "puppet_list"
+[[step]]
+wait = { console = "log 300", contains = "start step HELD", timeout_s = 40 }
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "watching2"
+[[step]]
+expect = { console = "night_status", contains = ["defeated by a rival", "watching", "death held"], absent = ["the defeat screen"] }
+[[step]]
+wait = { console = "log 300", contains = "the Esc menu is unlocked", timeout_s = 40 }
+[[step]]
+sleep_ms = 1000
+[[step]]
+keys = "ESC; wait 1500ms"
+[[step]]
+screenshot = "esc_open"
+[[step]]
+expect = { console = "log 300", contains = ["asked the game to open the pause menu"], absent = ["panic", "could not write the open request"] }
+[[step]]
+console = "peek exe+[0x3C149D8]+0x48 8"
+[[step]]
+keys = "ESC; wait 1500ms"
+[[step]]
+screenshot = "esc_closed"
+[[step]]
+console = "peek exe+[0x3C149D8]+0x48 8"

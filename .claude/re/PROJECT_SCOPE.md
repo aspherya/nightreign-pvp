@@ -24,6 +24,8 @@ Achieving this scope depends heavily on reverse engineering Elden Ring Nightreig
 
 ## 2. Expedition phases
 
+> **Changed 2026-10-24 (Leonardo, after the first real match; DECISIONS "After the first real match"):** Day 1 and Night 1 are one free phase (no tide, `day1_secs`); a player killed by a player or the tide is out for good and the match ends when one team is left, at any time; a death to an enemy is vanilla. Where the text below says nights are elimination rounds or that the dead return at the morning, this note wins.
+
 **Nights are elimination rounds (Leonardo, 2026-10-22; supersedes the Night 1 / Night 2 / sudden-death / Nightlord rules below
 where they differ):**
 - A night has **no boss and no minions**; the night is only the player fight inside the closed circle (built: M5-3).

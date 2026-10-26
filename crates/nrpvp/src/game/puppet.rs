@@ -900,10 +900,8 @@ pub(crate) fn status() -> String {
 }
 
 /// `peek <addr|wcm+off|exe+off> [len]`: hex dump (read-only, dev). `wcm` = the live WorldChrMan instance, `exe` = the exe base.
-pub(crate) fn peek_cmd(args: &[String]) -> Result<String, String> {
-    let spec = args
-        .first()
-        .ok_or("usage: peek <addr|wcm+0x..|exe+0x..> [len]")?;
+/// `wcm+0x..`, `exe+0x..`, `me+0x..` (LOCAL's PlayerIns), `[0xoff]` (dereference at the running sum + offset) or a number; parts joined by `+`.
+fn parse_addr(spec: &str) -> Result<usize, String> {
     let b = base()?;
     let num = |t: &str| -> Result<usize, String> {
         let t = t.trim();
@@ -917,6 +915,15 @@ pub(crate) fn peek_cmd(args: &[String]) -> Result<String, String> {
     for part in spec.split('+') {
         addr = addr.wrapping_add(match part.to_ascii_lowercase().as_str() {
             "wcm" => crate::game::mem::read::<usize>(b + RVA_WCM_SLOT).ok_or("no WorldChrMan")?,
+            "me" => {
+                let wcm =
+                    crate::game::mem::read::<usize>(b + RVA_WCM_SLOT).ok_or("no WorldChrMan")?;
+                let entries = crate::game::mem::read::<usize>(wcm + WCM_PLAYER_SET + 0x18)
+                    .ok_or("no player set")?;
+                crate::game::mem::read::<usize>(entries)
+                    .filter(|&p| p != 0)
+                    .ok_or("no local player")?
+            }
             "exe" => b,
             p if p.starts_with('[') && p.ends_with(']') => {
                 let inner = num(&p[1..p.len() - 1])?;
@@ -927,6 +934,53 @@ pub(crate) fn peek_cmd(args: &[String]) -> Result<String, String> {
             _ => num(part)?,
         });
     }
+    Ok(addr)
+}
+
+/// `poke <addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes, at most 16>` (research, dev): write bytes into game memory (guarded by `mem::write_bytes`).
+pub(crate) fn poke_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: poke <addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes, at most 16>";
+    let addr = parse_addr(args.first().ok_or(usage)?)?;
+    let hex: String = args[1..].join("");
+    let bytes: Vec<u8> = hex
+        .as_bytes()
+        .chunks(2)
+        .map(|c| {
+            std::str::from_utf8(c)
+                .ok()
+                .and_then(|t| u8::from_str_radix(t, 16).ok())
+                .ok_or(usage)
+        })
+        .collect::<Result<_, _>>()?;
+    let mut before = vec![0u8; bytes.len()];
+    if !crate::game::mem::copy_out(addr, &mut before) {
+        return Err(format!("{addr:#X} is not readable"));
+    }
+    crate::game::mem::write_bytes(addr, &bytes).map_err(|e| e.to_string())?;
+    let fmt = |b: &[u8]| {
+        b.iter()
+            .map(|x| format!("{x:02X}"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let line = format!("poke {addr:#X}: {} -> {}", fmt(&before), fmt(&bytes));
+    tracing::info!("research {line}");
+    Ok(line)
+}
+
+pub(crate) fn peek_cmd(args: &[String]) -> Result<String, String> {
+    let spec = args
+        .first()
+        .ok_or("usage: peek <addr|wcm+0x..|exe+0x..> [len]")?;
+    let addr = parse_addr(spec)?;
+    let num = |t: &str| -> Result<usize, String> {
+        let t = t.trim();
+        let (t, r) = t
+            .strip_prefix("0x")
+            .or(t.strip_prefix("0X"))
+            .map_or((t, 10), |x| (x, 16));
+        usize::from_str_radix(t, r).map_err(|_| format!("bad number {t:?}"))
+    };
     let len = args
         .get(1)
         .map(|l| num(l))

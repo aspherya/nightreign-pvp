@@ -12,13 +12,14 @@
 | Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu, status as the game's own messages | **Works with one host click**, 2 players (FS-MM3, FS-UI2); 6 players only in automated tests |
 | Downed rule: rival hits take 3 s off the bleed-out and never fill the bar; teammates revive; rivals cannot revive rivals (T-040/T-041) | **Works, clean** (Nucleus). Not yet over real two-PC lag |
 | Hawk crossing at the start (one line, dive, drop) | **Works solo**, on by default (HAWK-2, PR #2); not run in an FS |
-| **Nights are elimination rounds** (M5-3/5/6, M6-1): no boss, no minions, knocked 15 s then eliminated, night decided when one team is left, winner healed, losers get up at the morning, night 2 = win/loss ending | **PASS** solo, Nucleus and one-PC orchestrator runs incl. night 2 by count (2026-10-24) |
-| **Solo real death (M5-9):** at night 0 HP = dead at once (SpEffect 102130 via our event 99100805), held until the morning (breakpoint `exe+0x5C4810`), released through a gate, moved to a random day-1 place after the Day-2 clock | **PASS on one PC** (hold, release, move, no slot starvation). **Waiting for a friend session (FS-M59, TESTING §6):** the 102130 kill (offline solo carries a revive effect, so it stays off there), the other screen's view, SC host/client, banners |
+| **Match rules after the first real match (RW-1/2/4, 2026-10-24):** killed by a rival (hit log, 30 s) or the tide = **defeated for good** (body held, defeat screen after `defeat_exit_secs` = 20 s, then the Roundtable); killed by an enemy or a fall = vanilla respawn; the match ends the moment one team is left, on any day (a player is out after 30 s dead or 6 s gone); **free Day 1** (`day1_secs` = 1020: slowed clock to 11:50, no tide, no night, then the game's morning); Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-loss`). Not seen on two PCs: the hold after a bleed-out death, the other screen, real hits (FS-RW1, TESTING §6) |
+| **Spectating (RW-1 / M5-7):** a defeated player (`defeat_exit_secs = 0`, `spectate = true`) watches: the held, invisible body follows a living player once the hold hides it, mouse buttons / pad d-pad left-right switch player (not while a menu is open), F10 leaves | **Works in Nucleus (3 players, Leonardo 2026-10-25)**. Esc and pad Start open the menu for a dead player (`esc-defeated` PASS, pad confirmed on one PC; FS confirmation left, TASKS); camera smoothness open |
+| Enemy strength by team size (RW-10): `MultiPlayCorrectionParam` rewritten in memory (Solo = no co-op SpEffect, Duo / Trio = that size's) | Table found and rewritten on one PC (2 copies, 168 rows); the effect on enemy health is not measured |
+| Private match (RW-6): `private_code` in `nrpvp.toml` puts players with the same code in their own queue room (lobby tag `room`, hashed) | Unit-tested only (FakeSteam); needs two PCs |
 | Offline mode (`mode = "offline"`): Commence Solo runs the game's own solo expedition | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro` + puppet players** (in this repo since 2026-10-24): offline launch through me3, AFK players the mod counts as rivals, keys/screenshots, scenarios | **Works**; `scripts\regress.ps1` runs `night1-count`, `night1-local-dies`, `night2-win`, `night2-loss`, `puppets-smoke` |
 
-Not built yet: spectating another player (M5-7), keep-level / inventory drop on death, final arena as its own stage (today night 2 is the whole final fight, decided by count, no contraction or sudden-death tie-break), Duo/Trio
-matchmaking (MM-6), host-migration work (MM-8/9, S10). `PROJECT_PLAN.md` §2 and §9.
+Not built yet: **RW-3** defeat item drops, **RW-5** boss drops to the last hitter, **RW-8** runes shared only inside a team, **RW-9** no remote map / compass position and nametags only on the target (all four need a second real client to observe, TASKS), final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10; not proven to be Seamless Co-op's. The
 first quit on a post-R5 build did not crash (SMOKE-2), Alt-F4 on the older zip did. A player zip from `main` is the real check. Runs end
@@ -28,18 +29,18 @@ with `nro stop` (kill) for this reason.
 
 | Place | What |
 |---|---|
-| **Zip for FS-M59, 2026-10-24:** `dist\NightreignPvP.zip` (main checkout), `nrpvp.dll` 64E49188380B5C54, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1`, built from `main` d1c3264 (clean, after the clean-up PR #12) | Player build: Solo Battle Royale, nights, die-at-once, no console, no bots or puppets. **Not** installed in Leonardo's game folder by an agent. Every older zip and `dist\friend-kit.zip` are superseded: do not send them |
+| **Zip for FS-RW1, 2026-10-24:** `dist\NightreignPvP.zip` (main checkout, built from branch `rw-rules` commit 841d18b, clean), `nrpvp.dll` F8645865520E09CF, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1` | Player build with the RW rules (defeat for good, free Day 1, scaling, private code). **Not** installed in Leonardo's game folder by an agent. Every older zip (the FS-M59 one, 1BA13128659811B7, too) and `dist\friend-kit.zip` are superseded: do not send them |
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | Plain deploy (SC's launcher), secondary tool (TOOLS.md) |
 
 ## 3. Next, in order
 
-1. **Friend session FS-M59** with the 2026-10-24 zip (TESTING §6). Afterwards Claude reads both PCs' logs (`test-report` skill) and fixes what failed.
-2. **M5-7** spectate camera for the dead/held player (it must also allow quitting: Esc is blocked while dead). TASKS.
-3. Matchmaking: MM-3g + MM-7 (no Invite click, auto-start), MM-8, MM-9, S10; then MM-6 (Duo/Trio). TASKS, MATCHMAKING.md.
-4. Death rules: keep level, starting items, respawn protection; inventory drop (`research/S5-death-respawn.md`, `S2-inventory-drops.md`).
-5. The open R2/R3 halves of the refactor (typed views + one `GameMem` trait, `Feature` trait) go in with the next feature (ARCHITECTURE §6).
-6. Orchestrator follow-ups: `puppet_revive`, scenarios that wait on state instead of the log tail, `scripts\regress.ps1` before every zip (TASKS "Test tooling").
+1. **Friend session FS-RW1** (TESTING §6) with the zip of §2: first run of the new rules on two PCs, plus the observations RW-3/5/8/9 need (their logs and photos decide the RE). Then Claude reads both logs (`test-report` skill).
+2. **RW-3, RW-5, RW-8, RW-9** (TASKS): each starts from FS-RW1's observations; `memscan` and `peek` are the research tools.
+3. Spectate polish: a way to switch the watched player, a hint on screen for F10.
+4. Matchmaking: MM-3g + MM-7 (no Invite click, auto-start), MM-8, MM-9, S10; then MM-6 (Duo/Trio). Faster win at the end: a defeated player's game could publish "out" as Steam lobby member data instead of the 30 s dead timer.
+5. Death rules still open: keep level, starting items, respawn protection (`research/S5-death-respawn.md`).
+6. The open R2/R3 halves of the refactor go in with the next feature (ARCHITECTURE §6).
 
 ## 4. Repository state
 

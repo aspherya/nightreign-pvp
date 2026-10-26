@@ -36,6 +36,12 @@ const GPR_NAMES: [&str; 16] = [
 static ENABLED: AtomicBool = AtomicBool::new(false);
 /// The VEH records only while this is set; it swallows our write traps either way (a trap with no handler would be fatal).
 static RECORD: AtomicBool = AtomicBool::new(false);
+/// Console `rune_watch 1` (RW-8 research): watch the rune counter of LOCAL's `PlayerGameData` instead of the downed flags.
+static RUNES: AtomicBool = AtomicBool::new(false);
+/// Console `trace_write <addr>`: watch this address (4-byte write watch) instead of the downed flags; 0 = none.
+static TARGET: AtomicUsize = AtomicUsize::new(0);
+/// Offset of the rune count in `PlayerGameData`: two equal copies (+0x6C and +0x110) changed together in a Nucleus match (2026-10-25).
+const RUNE_OFF: usize = 0x6C;
 /// Last address watched (never reset to 0 once set, so late traps after a disarm are still recognised as ours).
 static ADDR: AtomicUsize = AtomicUsize::new(0);
 /// Records written by the VEH so far (also the ring head).
@@ -70,6 +76,28 @@ pub(crate) fn enabled() -> bool {
 /// Records the VEH has captured so far.
 pub(crate) fn hits() -> u64 {
     u64::from(HEAD.load(Ordering::Relaxed))
+}
+
+/// Console `trace_write <addr>` (research): trace the writers of one 4-byte aligned address (`0` stops).
+pub(crate) fn set_target(addr: usize) -> Result<(), &'static str> {
+    if addr != 0 && !addr.is_multiple_of(4) {
+        return Err("the address must be 4-byte aligned");
+    }
+    TARGET.store(addr, Ordering::Relaxed);
+    if addr != 0 {
+        set_enabled(true);
+    }
+    tracing::info!("research trace_write: {addr:#X}");
+    Ok(())
+}
+
+/// Console `rune_watch 0|1`: trace the writers of LOCAL's rune count (turns the bar trace on).
+pub(crate) fn set_runes(on: bool) {
+    RUNES.store(on, Ordering::Relaxed);
+    if on {
+        set_enabled(true);
+    }
+    tracing::info!("RW-8 rune_watch: {}", if on { "ON" } else { "OFF" });
 }
 
 /// Console `bar_trace 0|1`. The VEH is registered once, on the first enable.
@@ -323,7 +351,15 @@ fn disarm(st: &mut State, base: usize, size: usize) {
 /// Main loop, right after the combat tick: arm / disarm the watch from LOCAL's state, then log what the VEH captured.
 pub(crate) fn tick(combat: &CombatCtl, base: usize, size: usize) {
     let mut st = STATE.lock().unwrap_or_else(PoisonError::into_inner);
-    let want = if enabled() {
+    let want = if enabled() && TARGET.load(Ordering::Relaxed) != 0 {
+        Some(TARGET.load(Ordering::Relaxed))
+    } else if enabled() && RUNES.load(Ordering::Relaxed) {
+        combat
+            .local_state()
+            .and_then(|(a, _)| crate::game::mem::read::<usize>(a + layout::PLAYER_GAMEDATA))
+            .filter(|g| crate::game::mem::is_ptr(*g))
+            .map(|g| g + RUNE_OFF)
+    } else if enabled() {
         combat
             .local_state()
             .filter(|(_, s)| *s == 1 || *s == 2)

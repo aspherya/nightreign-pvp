@@ -21,6 +21,8 @@ const HELP: &str = "nro - launch and drive an offline nightreign-pvp developer g
   nro puppets <n>                        n AFK puppet players (1..5) in the running session (offline mode, in a world)
   nro puppet_ring [radius]               put the puppets on a circle around the player (default 1.3 m)
   nro puppet_front [dist]                put the puppets side by side in front of the player (default 1.2 m)
+  nro win <pid|exe name> shot <png>       research: screenshot of any program's biggest window (needs `nro desk`); with several, give the pid
+  nro win <pid|exe name> keys \"<seq>\"     research: keys and `click fx fy` (fractions of the client area) into that window
   nro desk                               serve keys/screenshots for other nro processes (run it in a normal terminal)";
 
 fn main() {
@@ -95,6 +97,7 @@ fn dispatch(a: &[String]) -> ops::R {
         Some("puppet_ring") => {
             ops::puppet_ring(a.get(1).and_then(|n| n.parse().ok()).unwrap_or(1.3))
         }
+        Some("win") => ops::window(&a[1..]),
         Some("desk") => nro::desk::serve().map(|_| serde_json::json!("done")),
         Some("watch") => session::watch(std::path::Path::new(a.get(1).ok_or("watch <run dir>")?))
             .map(|_| serde_json::json!("done")),

@@ -1,0 +1,35 @@
+name = "defeat-mob"
+about = "RW-2: LOCAL dies to something that is not a player (no rival hit): nothing is held, the game's own comeback respawns it, it is not defeated"
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+[[step]]
+puppets = 3
+[[step]]
+puppet_ring = 6
+[[step]]
+console = "flag 10007420 1"
+[[step]]
+console = "hp0"
+[[step]]
+wait = { console = "log 300", contains = "died to an enemy", timeout_s = 40 }
+[[step]]
+sleep_ms = 25000
+[[step]]
+screenshot = "after"
+[[step]]
+console = "night_status"
+[[step]]
+expect = { console = "night_status", contains = ["LOCAL in", "mob deaths 1"], absent = ["defeated"] }
+[[step]]
+expect = { console = "log 300", contains = ["died to an enemy"], absent = ["defeated by", "start step HELD", "panic", "no free hardware slot"] }

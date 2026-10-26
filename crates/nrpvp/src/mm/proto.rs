@@ -9,12 +9,14 @@ use super::Mode;
 use crate::steam::queue::SearchFilters;
 
 /// Protocol version tag (`proto=1`).
-pub(crate) const PROTO: u32 = 1;
+pub(crate) const PROTO: u32 = 2;
 pub(crate) const K_MODE: &str = "mode";
 pub(crate) const K_PROTO: &str = "proto";
 pub(crate) const K_GAME: &str = "game";
 pub(crate) const K_SC: &str = "sc";
 pub(crate) const K_NEED: &str = "need";
+/// RW-6: `public`, or `p-<hash of the private match code>`: only players with the same room meet.
+pub(crate) const K_ROOM: &str = "room";
 pub(crate) const K_STATE: &str = "state";
 pub(crate) const K_HOST: &str = "host";
 pub(crate) const K_ROSTER: &str = "roster";
@@ -34,6 +36,22 @@ pub(crate) struct Tags {
     pub game: String,
     pub sc: String,
     pub need: u32,
+    /// RW-6: [`room_tag`] of the private code (`public` when none).
+    pub room: String,
+}
+
+/// RW-6: the room tag for a private match code: `public` for none, else `p-` and a 64-bit FNV-1a hash of the (normalised) code in
+/// hex, so the code itself never appears in the lobby data.
+pub(crate) fn room_tag(code: &str) -> String {
+    if code.is_empty() {
+        return "public".to_string();
+    }
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in code.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("p-{h:016x}")
 }
 
 /// Data the owner writes on a new queue lobby (the tag `nrpvp=1` first).
@@ -45,6 +63,7 @@ pub(crate) fn tag_pairs(t: &Tags) -> Vec<(String, String)> {
         (K_GAME.to_string(), t.game.clone()),
         (K_SC.to_string(), t.sc.clone()),
         (K_NEED.to_string(), t.need.to_string()),
+        (K_ROOM.to_string(), t.room.clone()),
     ]
 }
 
@@ -188,6 +207,7 @@ mod tests {
             game: "1.3.3.0".into(),
             sc: "1.1.3".into(),
             need: 2,
+            room: "public".into(),
         }
     }
 
@@ -195,10 +215,14 @@ mod tests {
     fn tags_cover_the_required_keys_and_filters_match_them() {
         let t = tag_pairs(&tags());
         let keys: Vec<&str> = t.iter().map(|p| p.0.as_str()).collect();
-        assert_eq!(keys, vec!["nrpvp", "mode", "proto", "game", "sc", "need"]);
+        assert_eq!(
+            keys,
+            vec!["nrpvp", "mode", "proto", "game", "sc", "need", "room"]
+        );
         assert_eq!(t[0].1, "1");
         assert_eq!(t[1].1, "solo");
-        assert_eq!(t[2].1, "1");
+        assert_eq!(t[2].1, "2");
+        assert_eq!(t[6].1, "public");
         let f = search_filters(&tags(), 1);
         assert_eq!(f.strings, t);
         assert_eq!(f.slots, 1);
@@ -297,5 +321,15 @@ mod tests {
         ] {
             assert_eq!(parse_q(bad), None, "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_private_code_makes_its_own_room_and_never_shows_in_the_lobby() {
+        assert_eq!(room_tag(""), "public");
+        let a = room_tag("night-owls");
+        assert!(a.starts_with("p-") && a.len() == 18 && !a.contains("night"));
+        assert_eq!(a, room_tag("night-owls"));
+        assert_ne!(a, room_tag("night-owl"));
+        assert_ne!(a, "public");
     }
 }

@@ -25,6 +25,7 @@ pub(crate) fn run() {
                 crate::mm::enable();
                 crate::mm::worker::Setup {
                     need: u32::try_from(cfg.mm_max_players).unwrap_or(6),
+                    room: cfg.private_code.clone(),
                     min: u32::try_from(cfg.mm_min_players).unwrap_or(2),
                     fill_wait: std::time::Duration::from_secs(cfg.mm_fill_wait_s),
                     // Player words in the player build; the detailed lines in developer mode.

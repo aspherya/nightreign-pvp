@@ -997,6 +997,7 @@ mod tests {
     fn machine(join: bool, auto: JoinAuto) -> Machine {
         Machine::new(MachineCfg {
             need: 2,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly: false,
@@ -1105,6 +1106,7 @@ mod tests {
     fn quiet_machine() -> Machine {
         Machine::new(MachineCfg {
             need: 2,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly: false,
@@ -1140,6 +1142,7 @@ mod tests {
         // mm_join off: no.
         let mut nojoin = Machine::new(MachineCfg {
             need: 2,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly: false,
@@ -1816,6 +1819,7 @@ mod host_create_tests {
     fn machine(host_create: bool) -> Machine {
         Machine::new(MachineCfg {
             need: 2,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly: false,
@@ -2180,6 +2184,7 @@ mod multi_tests {
     fn machine(friendly: bool) -> Machine {
         Machine::new(MachineCfg {
             need: 6,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly,

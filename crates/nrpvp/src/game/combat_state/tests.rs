@@ -1267,14 +1267,14 @@ fn our_morning_get_up_is_not_taken_for_a_rival_revive_while_exempt() {
 #[test]
 fn the_night_floor_keeps_the_clock_above_the_elimination_point() {
     let (mut f, mut c, t) = downed_world(true);
-    c.clock_floor = crate::features::night_match::NIGHT_CLOCK_FLOOR;
+    c.clock_floor = 0.9;
     setf(&mut f, P0 + OFF_BLEED_CLOCK, 2.0);
     c.step(t + 50, &subjects(), &mut f);
     hit(&mut f, 70.0, H1);
     c.step(t + 100, &subjects(), &mut f);
     let clock = getf(&f, P0 + OFF_BLEED_CLOCK);
     assert!((clock - 0.9).abs() < 1e-6);
-    assert!(clock <= crate::features::night_match::ELIM_CLOCK);
+    assert!(clock <= 1.0);
 }
 
 #[test]

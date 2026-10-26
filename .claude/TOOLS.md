@@ -15,15 +15,24 @@ Owner doc for build, deploy, test tooling and logs. What the mod does is in STAT
 
 | Tool | Command | Note |
 |---|---|---|
-| Build the dev mod | `powershell -NoProfile -File scripts\build.ps1` | `dist\nrpvp.dll`; fails to copy while a game uses it |
+| Build the dev mod | `powershell -NoProfile -File scripts\build.ps1` | `dist\nrpvp.dll`; fails to copy while a game uses it, and at the `nro.exe` link while `nro desk` runs: then use `scripts\build-mod.ps1` (nrpvp.dll + nrcon.exe only) |
 | Build game data | `powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1` | `dist\gamedata` + `dist\gamedata-player` (needs the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`, Python) |
 | Build the orchestrator | `cargo build --release -p nro -p nro-mcp` | `target\release\nro.exe`, `nro-mcp.exe` (`.mcp.json` registers the MCP server `nightreign`) |
-| Orchestrator desk | `target\release\nro.exe desk` in a normal terminal (an agent can start it in the Terminal panel) | needed for keys and screenshots |
+| Orchestrator desk | `target\release\nro.exe desk` in a normal terminal (an agent can start it in the Terminal panel) | needed for keys and screenshots; the PC must be awake, unlocked and (while a scenario runs) untouched: `scripts\keep-display-on.ps1`, `scripts\idle-seconds.ps1`, TRAPS |
 | Run scenarios | `powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 [name ...]` | all `scenarios\*.toml` by default, one PASS/FAIL line each; reports in `runs\<id>\report.json` (gitignored) |
 | By hand | `nro launch --world`, `nro navigate expedition`, `nro cmd "<console line>"`, `nro puppets 3`, `nro shot name`, `nro log 50 filter`, `nro stop` | `nro` with no argument lists them; default mod build = `dist\` of this checkout |
 | Console of any dev game | `dist\nrcon.exe list / status / players / log 30 / -i N <cmd> / --all <cmd>` | commands: CONSOLE.md §0 |
 | Player zip | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 [-MatchPlayers N] [-TeamSize N]` | `release-zip` skill; builds the player DLL itself |
 | Tests | `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo clippy -p nrpvp --no-default-features --all-targets -- -D warnings`, `cargo fmt --all --check` | the same checks run in GitHub Actions |
+
+## Ghidra / REA (static analysis of nightreign.exe)
+
+Ghidra 12.1.4 is at `Z:\Tools\ghidra_12.1.4_PUBLIC`, driven by the `rea` MCP server (registered in `~/.claude.json`, env
+`GHIDRA_INSTALL_DIR`, `JAVA_HOME`, `REA_GHIDRA_STARTUP_TIMEOUT_MS=7200000`; backup `~/.claude.json.bak-rea`). Open the exe with
+`open_binary` (`provider_id: "ghidra"`) on `...\Game\nightreign.exe` (1.03.3, sha256 `9545e873...8b3a`). The first analysis of the
+118 MB exe is slow (the default 330 s deadline was too short); after it, `close_binary` with a `snapshot_path` and reopen from that
+snapshot. Ghidra output is `[HYPOTHESIS]` until a scenario or a live read confirms it. Rules: read `nrsc.dll` only, never modify it
+(CLAUDE.md rule 3). Snapshot location: see STATUS.
 
 ## Nucleus (secondary tool)
 

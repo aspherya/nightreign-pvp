@@ -24,9 +24,12 @@ pub(crate) mod hawk;
 pub(crate) mod image;
 pub(crate) mod layout;
 pub(crate) mod mem;
+pub(crate) mod memscan;
 pub(crate) mod menuflow;
+pub(crate) mod menugate;
 #[cfg(feature = "dev")]
 pub(crate) mod menutrace;
+pub(crate) mod multiplay;
 pub(crate) mod poswrite;
 #[cfg(feature = "dev")]
 pub(crate) mod puppet;
@@ -477,6 +480,26 @@ fn watch(
                 }
             }
             world.local_pos = world.local.and_then(|p| spawn::world_position(p, base));
+            if let Some(c) = combat.as_ref() {
+                world.local_hits = c.local_hits();
+            }
+            world.leave_pressed = leave_key_edge();
+            // The edges are read every tick (their state stays current) but dropped while a menu is open.
+            let (sn, sp) = spectate_switch_edges();
+            let in_menu = menugate::menu_open(base);
+            (world.spec_next, world.spec_prev) = (sn && !in_menu, sp && !in_menu);
+            world.death_held = deathhold::held();
+            if let Some(local) = world.local {
+                for (o, f) in world.positions.iter_mut().zip(world.fighters.iter()) {
+                    *o = f.and_then(|f| {
+                        if f.local {
+                            spawn::world_position(f.addr, base).map(|p| p.0)
+                        } else {
+                            spawn::world_position_of(f.addr, local, base)
+                        }
+                    });
+                }
+            }
             world.team_size = crate::mm::effective_team_size(cfg.team_size_usize());
         }
         let mut fctx = Ctx::default();
@@ -528,12 +551,14 @@ fn watch(
             });
             let _ = reply.send(text);
         }
+        // RW-10: enemy scaling follows the team size (the scan starts on the first pass).
+        multiplay::tick(crate::mm::effective_team_size(cfg.team_size_usize()));
         features.tick(&world, &mut fctx);
         night_acts(
             std::mem::take(&mut fctx.night),
-            combat.as_mut(),
             world.local,
             base,
+            play_area,
         );
         fctx.flush(crate::features::Targets { base, play_area }, &mem);
         team.tick();
@@ -592,6 +617,14 @@ fn watch(
                 .map(|(a, _)| a),
             base,
         );
+        // RW-1 (both builds): the Esc menu of a defeated player (the breakpoint is armed only while the night match asks for it).
+        menugate::tick(
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+            base,
+        );
         // HAWK-2 (both builds): keep the env swap in place, run the hawk crossing's ride phases, log the hawk answers.
         hawk::tick(
             base,
@@ -640,38 +673,55 @@ fn night_flags(base: usize) -> Option<world::NightFlags> {
     Some(world::NightFlags::from_values(v))
 }
 
-/// M5-5 / M5-6: carry out the night match's requests (the downed rule's controller and the revive block live here).
+/// RW-1: the spectator's switch inputs went down since the last call: next = left mouse button or the pad's d-pad right, previous = right
+/// mouse button or the d-pad left (edges, so holding a button switches once). The pad is read from the game's own input
+/// (`menugate::pad_spectate_edges`): XInput shows no pad inside the game.
+fn spectate_switch_edges() -> (bool, bool) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    static WAS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+    // SAFETY: GetAsyncKeyState only reads the keyboard / mouse state.
+    let (next, prev) = unsafe {
+        (
+            GetAsyncKeyState(i32::from(VK_LBUTTON.0)) < 0,
+            GetAsyncKeyState(i32::from(VK_RBUTTON.0)) < 0,
+        )
+    };
+    let edge = |i: usize, down: bool| down && !WAS[i].swap(down, Ordering::Relaxed);
+    let n = edge(0, next);
+    let p = edge(1, prev);
+    if !next {
+        WAS[0].store(false, Ordering::Relaxed);
+    }
+    if !prev {
+        WAS[1].store(false, Ordering::Relaxed);
+    }
+    let (pn, pp) = menugate::pad_spectate_edges();
+    (n || pn, p || pp)
+}
+
+/// RW-1: the leave key (F10) went down since the last call (an edge, so holding it asks once).
+fn leave_key_edge() -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F10};
+    static WAS_DOWN: AtomicBool = AtomicBool::new(false);
+    // SAFETY: GetAsyncKeyState only reads the keyboard state.
+    let down = unsafe { GetAsyncKeyState(i32::from(VK_F10.0)) } < 0;
+    let edge = down && !WAS_DOWN.load(Ordering::Relaxed);
+    WAS_DOWN.store(down, Ordering::Relaxed);
+    edge
+}
+
+/// Carry out the match rules' requests (the hold of a defeated player, a move, the game's flags, the clock's speed).
 fn night_acts(
     acts: Vec<crate::features::night_match::NightAct>,
-    mut combat: Option<&mut combat_state::CombatCtl>,
     local: Option<usize>,
     base: usize,
+    play_area: usize,
 ) {
     use crate::features::night_match::NightAct;
     for a in acts {
         let r: Result<(), &'static str> = match a {
-            NightAct::HoldClock(secs) => combat
-                .as_deref_mut()
-                .map_or(Err("no controller"), |c| c.hold_clock(secs)),
-            NightAct::GetUp => combat
-                .as_deref_mut()
-                .map_or(Err("no controller"), |c| c.request_getup()),
-            NightAct::ExemptGetup(ms) => {
-                if let Some(c) = combat.as_deref_mut() {
-                    c.exempt_getup(ms);
-                }
-                Ok(())
-            }
-            NightAct::ClockFloor(f) => {
-                if let Some(c) = combat.as_deref_mut() {
-                    c.set_clock_floor(f);
-                }
-                Ok(())
-            }
-            NightAct::Revive(m) => {
-                reviveblock::set_mode(m);
-                Ok(())
-            }
             NightAct::Teleport(to) => match local.map(|p| spawn::teleport(p, base, to)) {
                 Some(Ok(from)) => {
                     tracing::info!(
@@ -683,17 +733,25 @@ fn night_acts(
                 Some(Err(e)) => Err(e),
                 None => Err("no local player"),
             },
+            NightAct::Follow(to) => match local.map(|p| spawn::teleport(p, base, to)) {
+                Some(Ok(_)) => Ok(()),
+                Some(Err(e)) => Err(e),
+                None => Err("no local player"),
+            },
+            NightAct::MenuGate(on) => {
+                menugate::set_active(on);
+                Ok(())
+            }
             NightAct::DeathHold(on) => {
                 deathhold::set_armed(on);
                 Ok(())
             }
-            NightAct::ReleaseDeath => {
-                if !deathhold::request_release() {
-                    tracing::info!(
-                        "night_match: no comeback step is held; the game's own comeback runs"
-                    );
+            NightAct::ClockSpeed(speed) => {
+                if play_area == 0 {
+                    Err("no play-area manager")
+                } else {
+                    views::PlayArea::new(&gamemem::RealMem, play_area).set_speed(speed)
                 }
-                Ok(())
             }
             NightAct::GameFlag(f, on) => flags::set_match_flag(base, f, on).map(|prev| {
                 tracing::info!(
@@ -703,8 +761,11 @@ fn night_acts(
             }),
         };
         if let Err(e) = r {
-            // HoldClock / GetUp repeat every tick; the state they need can end between the read and the write.
-            if !matches!(a, NightAct::HoldClock(_) | NightAct::GetUp) || e != "LOCAL is not downed"
+            // A failing spectator move repeats 10 times a second: say it once.
+            static FOLLOW_WARNED: std::sync::atomic::AtomicBool =
+                std::sync::atomic::AtomicBool::new(false);
+            if !matches!(a, NightAct::Follow(_))
+                || !FOLLOW_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed)
             {
                 tracing::warn!("night_match: {a:?} failed: {e}");
             }

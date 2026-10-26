@@ -76,6 +76,13 @@ IMPORTANT
   If Windows shows a blue "Windows protected your PC" box: click "More info", then "Run anyway".
 
 
+IN A MATCH
+----------
+* If another player or the night tide defeats you, you stay down and watch: the camera follows a player
+  who is still in the match. Press F10 to leave to the Roundtable at any time (the match ends for you).
+* If an enemy or a fall kills you, you respawn as usual.
+
+
 IF SOMETHING GOES WRONG
 -----------------------
 * A message says the launcher must be in the game folder:

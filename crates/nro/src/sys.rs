@@ -215,6 +215,14 @@ pub fn vk(name: &str) -> Option<u16> {
         "F2" => 0x71,
         "F3" => 0x72,
         "F4" => 0x73,
+        "F5" => 0x74,
+        "F6" => 0x75,
+        "F7" => 0x76,
+        "F8" => 0x77,
+        "F9" => 0x78,
+        "F10" => 0x79,
+        "F11" => 0x7A,
+        "F12" => 0x7B,
         s if s.len() == 1 && s.as_bytes()[0].is_ascii_alphanumeric() => s.as_bytes()[0] as u16,
         _ => return None,
     })
@@ -269,6 +277,60 @@ pub fn click(hwnd: HWND, fx: f32, fy: f32) {
     }
 }
 
+/// Press the left button at one point of the window's client area (fractions 0..1), move to another in small steps, release.
+pub fn drag(hwnd: HWND, from: (f32, f32), to: (f32, f32)) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEINPUT,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
+    let button = |flag| {
+        let inp = INPUT {
+            r#type: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: 0,
+                    dy: 0,
+                    mouseData: 0,
+                    dwFlags: flag,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+        // SAFETY: SendInput with one mouse INPUT built here.
+        unsafe { SendInput(1, &inp, std::mem::size_of::<INPUT>() as i32) };
+    };
+    let at = |fx: f32, fy: f32| -> (i32, i32) {
+        // SAFETY: window geometry reads on a live handle.
+        unsafe {
+            let mut r: RECT = std::mem::zeroed();
+            GetClientRect(hwnd, &mut r);
+            let mut p = POINT {
+                x: ((r.right - r.left) as f32 * fx) as i32,
+                y: ((r.bottom - r.top) as f32 * fy) as i32,
+            };
+            ClientToScreen(hwnd, &mut p);
+            (p.x, p.y)
+        }
+    };
+    let (x0, y0) = at(from.0, from.1);
+    let (x1, y1) = at(to.0, to.1);
+    // SAFETY: cursor moves only.
+    unsafe { SetCursorPos(x0, y0) };
+    std::thread::sleep(Duration::from_millis(150));
+    button(MOUSEEVENTF_LEFTDOWN);
+    std::thread::sleep(Duration::from_millis(150));
+    for i in 1..=20 {
+        let x = x0 + (x1 - x0) * i / 20;
+        let y = y0 + (y1 - y0) * i / 20;
+        // SAFETY: cursor moves only.
+        unsafe { SetCursorPos(x, y) };
+        std::thread::sleep(Duration::from_millis(30));
+    }
+    std::thread::sleep(Duration::from_millis(150));
+    button(MOUSEEVENTF_LEFTUP);
+}
+
 /// Like [`keys`]; with a window, `click fx fy` items click inside it.
 pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
     for part in seq.split(';').map(str::trim).filter(|p| !p.is_empty()) {
@@ -285,6 +347,16 @@ pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
                 .and_then(|v| v.parse().ok())
                 .ok_or("click fx fy (fractions 0..1)")?;
             click(h, fx, fy);
+            std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+        if head.eq_ignore_ascii_case("drag") {
+            let h = hwnd.ok_or("drag needs a window")?;
+            let v: Vec<f32> = it.filter_map(|x| x.parse().ok()).collect();
+            if v.len() != 4 {
+                return Err("drag fx1 fy1 fx2 fy2 (fractions 0..1)".into());
+            }
+            drag(h, (v[0], v[1]), (v[2], v[3]));
             std::thread::sleep(Duration::from_millis(250));
             continue;
         }

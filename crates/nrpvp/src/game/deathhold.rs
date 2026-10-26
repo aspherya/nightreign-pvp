@@ -341,6 +341,11 @@ pub(crate) fn tick(local: Option<usize>, base: usize) {
         let chr = ChrIns::new(&mem, c);
         is_dead(chr.hp(), chr.downed_state())
     });
+    // A new hold belongs to the LOCAL of this tick (a stale `held_for` of an earlier hold would drop it at once: Nucleus run 2026-10-25,
+    // "LOCAL is another character now" right after the hold).
+    if HELD.load(Ordering::Relaxed) != st.seen_held {
+        st.held_for = local;
+    }
     // A held step belongs to one character in one area: drop it when LOCAL changes or is gone for a while.
     match local {
         Some(c) => {

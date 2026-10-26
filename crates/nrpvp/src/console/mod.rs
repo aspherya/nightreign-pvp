@@ -94,10 +94,18 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
-    Spec { name: "night_status", args: "", help: "M5-5 / M5-9: the night match: day / night n / morning, players, teams, how many stand, whether LOCAL is eliminated, the winner, die-at-once on/off, LOCAL's spot, death held / released", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
-    Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). By day it downs; at night in Solo with die-at-once on (M5-9) it is a real death", run: hp0 },
+    Spec { name: "night_status", args: "", help: "the match rules: free day 1 / day 2 / night, players, teams seen, how many are out, whether LOCAL is defeated, the winner, mob deaths, places recorded, death held", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). In a session it downs the player; with `flag 10007420 1` (die at once) it is a real death even offline", run: hp0 },
+    Spec { name: "spectate", args: "[0|1]", help: "RW-1: 1 = a defeated player's held body follows a living player (the mod's spectator), 0 = it stays where it fell (shows what the game itself does for a dead player); no argument shows it", run: spectate },
+    Spec { name: "trace_write", args: "<addr>|0", help: "research: log which instruction writes the 4-byte aligned address (hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace` lines; 0 stops. Heap addresses change every launch", run: trace_write },
+    Spec { name: "rune_watch", args: "[0|1]", help: "RW-8 research: 1 = log which instruction writes LOCAL's rune count (PlayerGameData+0x6C; hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace`; 0 = off", run: rune_watch },
+    Spec { name: "padpoll", args: "", help: "RW-1 research: every virtual input bit of the game's own pad that is set now (hold a button, call it)", run: |_| Ok(Act::Reply(crate::game::menugate::describe())) },
+    Spec { name: "menugate", args: "[0|1]", help: "RW-1 research: 1 = the Esc key asks the game to open the pause menu even while LOCAL is dead (sets CSMenuMan ctrl+0x179); 0 = left to the game (the night match does this by itself for a defeated player)", run: |a| { let on = match a.first().map(String::as_str) { Some("0") => false, Some("1") | None => true, Some(_) => return Err("expected 0 or 1".into()) }; crate::game::menugate::set_active(on); Ok(Act::Reply(format!("menugate {}", u8::from(on)))) } },
+    Spec { name: "poke", args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
+    Spec { name: "memscan", args: "[utf16|ascii|hex] <text|hex bytes>", help: "research (RW-6): scan the whole process for a string (UTF-16 by default) or bytes on a background thread (about a minute) and log every hit with 64 bytes around it as `memscan:`; no argument shows the last result. Used to find where the game keeps a text the menu shows", run: memscan },
+    Spec { name: "rival_hit", args: "", help: "RW-1 test aid: record a rival's hit on this game's player now (the player build's hit log does it for real hits); a death within 30 s after it is a defeat for good, a death without it is a normal one", run: rival_hit },
     Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
-    Spec { name: "night_count", args: "[0|1]", help: "M5-5 test switch: 1 (default) a night ends when one team is left standing; 0 it never ends by count (two-window elimination tests; night_end still ends it); no argument shows it", run: night_count },
+    Spec { name: "night_count", args: "[0|1]", help: "test switch: 1 (default) the match ends when one team is left standing; 0 it never ends by count; no argument shows it", run: night_count },
     Spec { name: "death_trace", args: "[0|1]", help: "M5-8 research: while this game's player is dead, log the comeback steps (RejoinMapEnterStep breakpoints) and the player's state every second; no argument shows it", run: death_trace },
     Spec { name: "death_hold", args: "[0|1]", help: "M5-9: 1 = a dead player stays dead (the comeback's start step is held, same module as the Solo night hold); 0 = a held step is called through the gate (exe+0x5BCE10, else exe+0x675480 after 2 s) and the game's comeback runs; no argument shows the state", run: death_hold },
     Spec { name: "pad", args: "<item>[; <item>...]", help: "ORCH-1: virtual gamepad (pad 0, through XInputGetState): items A, A+DOWN 300 (ms), wait 500, LT/RT [ms], LS x y [ms] / RS x y [ms] (x, y in -1..1); a 120 ms release follows each press; queued after what is waiting", run: |a| if a.is_empty() { Err("usage: pad A; wait 500; DOWN".into()) } else { crate::game::vpad::queue(&a.join(" ")).map(Act::Reply) } },
@@ -340,6 +348,41 @@ fn revive_block(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::ReviveBlock(on)))
 }
 
+fn spectate(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        None => None,
+        Some("0") => Some(false),
+        Some("1") => Some(true),
+        Some(_) => return Err("expected 0 or 1".into()),
+    };
+    Ok(Act::Reply(crate::features::night_match::spectate_cmd(on)))
+}
+
+fn trace_write(args: &[String]) -> Result<Act, String> {
+    let a = args.first().ok_or("usage: trace_write <0xaddr>|0")?;
+    let v = a
+        .strip_prefix("0x")
+        .map_or_else(|| a.parse::<usize>(), |h| usize::from_str_radix(h, 16))
+        .map_err(|_| "usage: trace_write <0xaddr>|0")?;
+    crate::game::bartrace::set_target(v)?;
+    Ok(Act::Reply(format!(
+        "trace_write {v:#X}: armed (slot 3); the writers are logged as `T-041 bar_trace` lines"
+    )))
+}
+
+fn rune_watch(args: &[String]) -> Result<Act, String> {
+    let on = match args.first().map(String::as_str) {
+        Some("0") => false,
+        Some("1") | None => true,
+        Some(_) => return Err("expected 0 or 1".into()),
+    };
+    crate::game::bartrace::set_runes(on);
+    Ok(Act::Reply(format!(
+        "rune_watch {}: the writers of LOCAL's rune count are logged as `T-041 bar_trace` lines",
+        if on { "ON" } else { "OFF" }
+    )))
+}
+
 fn bar_trace(args: &[String]) -> Result<Act, String> {
     let on = match args.first().map(String::as_str) {
         None => None,
@@ -444,6 +487,48 @@ fn clock(args: &[String]) -> Result<Act, String> {
             crate::features::clock::parse(a).map(|t| Act::Main(MainReq::Clock(ClockCmd::Set(t))))
         }
     }
+}
+
+fn memscan(args: &[String]) -> Result<Act, String> {
+    if args.is_empty() {
+        return Ok(Act::Reply(crate::game::memscan::last_result()));
+    }
+    let (kind, rest) = match args[0].as_str() {
+        k @ ("utf16" | "ascii" | "hex") => (k, &args[1..]),
+        _ => ("utf16", args),
+    };
+    if rest.is_empty() {
+        return Err("usage: memscan [utf16|ascii|hex] <text|hex bytes>".into());
+    }
+    let needle: Vec<u8> = match kind {
+        "hex" => rest
+            .join("")
+            .as_bytes()
+            .chunks(2)
+            .map(|c| {
+                std::str::from_utf8(c)
+                    .ok()
+                    .and_then(|t| u8::from_str_radix(t, 16).ok())
+                    .ok_or("hex bytes: pairs of hex digits")
+            })
+            .collect::<Result<_, _>>()?,
+        "ascii" => rest.join(" ").into_bytes(),
+        _ => crate::game::memscan::utf16_bytes(&rest.join(" ")),
+    };
+    if needle.len() < 6 {
+        return Err("the pattern must be at least 6 bytes".into());
+    }
+    crate::game::memscan::start_console_scan(needle).map(Act::Reply)
+}
+
+fn rival_hit(args: &[String]) -> Result<Act, String> {
+    if !args.is_empty() {
+        return Err("usage: rival_hit".into());
+    }
+    crate::game::combat_state::FAKE_RIVAL_HIT.store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(Act::Reply(
+        "rival_hit: a rival hit on LOCAL is recorded on the next tick".into(),
+    ))
 }
 
 fn hp0(args: &[String]) -> Result<Act, String> {

@@ -10,7 +10,7 @@ Run (one PC, Steam running, `nro desk` started in a normal terminal, dev build i
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\regress.ps1                           # every scenario, one PASS/FAIL line each
-powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 night1-count night2-win   # some of them
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 day1-free match-win   # some of them
 target\release\nro.exe run scenarios\night1-count.toml                                 # one, full JSON report (runs\<id>\report.json)
 ```
 
@@ -26,15 +26,16 @@ All use `mode = "offline"`, `mm_queue = false` (set in `[config]`) and a dev DLL
 | Scenario | Proves | Setup and key steps | Time |
 |---|---|---|---|
 | `puppets-smoke` | Puppet players exist and behave as players: listed as rivals p2..p5 (`players`, `puppet_list`), a puppet at 1 HP goes **down** after one swing, the mod logs `DOWN` / `T-039 BLOCK`, it bleeds out (`UP (downs=1, hp=0`), Seamless Co-op's destroy sweep is skipped | `god 1`, 4 puppets, `puppet_ring`, screenshot, `puppet_front`, `puppet_hp n 1`, one `click`, wait on `puppet_list` / `log` | 2.5 min |
-| `night1-count` | **Night 1 is decided by count** (M5-5): with LOCAL + 3 puppets, when the puppets are down the night ends (`night 1 decided … last one standing … won`), the winner heal flag fires, `night 1 is over; morning` follows | `god 1`, 3 puppets in front, `clock end`, wait `night_status` = night 1, `puppet_hp 1..3 0`, wait on `log` | 3 min |
-| `night1-local-dies` | **Solo real death hold and release** (M5-9) with puppets present (hardware-slot budget): `hp0` at night → `start step HELD` while 3 puppets stand → `night_end` → `RELEASED` through the gate → the morning move happens only after the clock reads 07:00 → alive, `night_status` = day 2 / death released; no `no free hardware slot` | `god 1`, 3 puppets in a ring, `clock end`, `hp0`, `night_end`, waits on `log`, `expect clock` = 07: | 3.5 min |
-| `night2-win` | **Night 2 decided by count, LOCAL last** (M5-5 night-2 item): night 1 via `night_end`, Day 2, `clock end`, puppets 1..3 to 0 HP → `night 2 decided … (this game's player won, host)` → the game's ending (Result screen), `night_status` = match over | as `night1-count`, then `night_end`, wait Day 2 and the 07: clock, `clock end`, screenshots of the ending | 3.5 min |
-| `night2-loss` | **Night 2 loss with LOCAL dead and held**: puppets 1-2 down, `hp0` on LOCAL, puppet 3 is the last → `night 2 decided … lost`, `start step HELD` (never released), the Result screen | as `night2-win` but `hp0` instead of downing puppet 3 | 3.5 min |
-| `night2-win-end` | As `night2-win`, then the **end flow**: Result → Reward → `F` (Next) ×4 → back at the Roundtable (`status` team_type 1); screenshots `end1..4`, `roundtable` | `night2-win` steps + `keys = "F; wait 3s"` and screenshots, `wait status` = `team_type 1` | 5 min |
-| `night2-loss-end` | As `night2-loss` (LOCAL dead and held), then the same end flow; the loser reaches the same Roundtable (reward is smaller) | `night2-loss` steps + the end-flow steps | 5 min |
+| `day1-free` | **Free Day 1** (RW-4): the clock runs slowed (`day1_secs = 120` here: 07:00 to 11:50 in 120 s), no night and no tide; the host then sets 7502, the game's morning brings Day 2 at 07:00 and the speed comes back after the reset | `[config] day1_secs = 120`, waits on `night_status` = free day 1, log `Day 1 is over`, `clock` 07:, `night_status` = day 2 | 4 min |
+| `defeat-mob` | **A non-player death is vanilla** (RW-2): `flag 10007420 1` (die at once, so offline's revive effect does not catch it) + `hp0` with no rival hit → `died to an enemy`, nothing held, the game's own respawn, `LOCAL in`, `mob deaths 1`, never `defeated` | 3 puppets in a ring, `flag 10007420 1`, `hp0`, waits | 3.5 min |
+| `defeat-rival` | **A rival's kill is a defeat for good** (RW-1): `rival_hit` then `hp0` → `defeated by a rival`, `start step HELD`, `death held`, after `defeat_exit_secs` (15 here) the defeat screen (`FLAG_LOSE`), then Result, Reward, Next presses and the Roundtable | as above plus the end flow of `match-win-end` | 5.5 min |
+| `spectate` | **A defeated player watches** (RW-1 / M5-7): after `rival_hit` + `hp0` the held body is moved next to the nearest living puppet every 100 ms (`night_status` = `watching 0x…`), the follow camera shows that puppet from behind (screenshot `watching2`), F10 asks for the defeat screen and the run leaves the expedition | 3 puppets in a ring, `flag 10007420 1`, `rival_hit`, `hp0`, waits on `night_status`, `keys = "F10"` | 3.5 min |
+| `esc-defeated` | **A defeated, held player can open the Esc menu** (RW-1): as `spectate`, then Esc opens the menu (`CSMenuMan+0x48` = 0x11, screenshot `esc_open`), Esc again closes it | `rival_hit`, `hp0`, wait `the Esc menu is unlocked`, `keys = "ESC"`, `peek` | 3.5 min |
+| `match-win` | **The match ends when one team is left, on Day 1** (RW-1): LOCAL + 3 puppets, the puppets at 0 HP for 30 s → `match decided … won` (no night needed), the game's ending | 3 puppets in front, `puppet_hp 1..3 0`, wait on `log` | 3.5 min |
+| `match-win-end` | As `match-win`, then the end flow: Result → Reward → Next ×4 → back at the Roundtable | `match-win` steps + `keys = "F; wait 3s"` and screenshots, `wait status` = `team_type 1` | 5.5 min |
+| `match-loss` | **LOCAL defeated while two puppets are also out**: the last puppet wins → `match decided … lost`, `start step HELD`, no second defeat screen | `puppet_hp 1 0`, `puppet_hp 2 0`, `flag 10007420 1`, `rival_hit`, `hp0` | 4 min |
 
-Not covered by any scenario (needs two real PCs, see TESTING §6): the 102130 kill itself (offline solo LOCAL carries SpEffect 6999500, so
-die-at-once stays off), what the other screen shows, Seamless Co-op host/client, banners of both screens, real latency.
+Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kill with real hits (the scenarios fake it with `rival_hit`; offline solo LOCAL carries SpEffect 6999500, so a death needs `flag 10007420 1`), what the other screen shows, Seamless Co-op host/client, banners of both screens, real latency.
 
 ## Step vocabulary (`crates/nro-core/src/scenario.rs`)
 

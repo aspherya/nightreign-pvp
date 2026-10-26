@@ -176,6 +176,23 @@ rival_revive = \"redown\"
 # takes this many seconds (0.5..15) off the bleed-out clock. Hits by allies / yourself / the environment are left alone.
 rival_hit_seconds = 3.0
 
+# RW-4 free first day (both modes): Day 1 and Night 1 run this many real seconds (120..=3600) with no Night's Tide and no night;
+# the host then starts Day 2, where the tide and the night behave as in vanilla. 0 = the vanilla Day 1 with its tide and night.
+day1_secs = 1020
+
+# RW-1 defeat: a player killed by another player or by the tide stays dead for the rest of the match. This many seconds (0..=600)
+# after the defeat the game shows the defeat screen and returns the player to the Roundtable (to search for another match).
+# 0 = stay and watch until the match ends; press F10 to leave at any time.
+defeat_exit_secs = 0
+
+# RW-1 spectating: a defeated player's camera follows a player who is still in the match (the invisible dead body is moved to
+# the watched player every tick). false = the dead body stays where it fell.
+spectate = true
+
+# RW-6 private match (both modes): players who set the same code (up to 32 letters, digits, - and _) meet each other in a private
+# match, outside the public matchmaking. Empty = the public queue. Case does not matter.
+private_code = \"\"
+
 # F3 separate team spawns (both modes, off unless set): when the hawk drops you at the start of an expedition, the mod moves your
 # own character spawn_radius metres (20..1000) from the drop point, each team in its own direction, 40 m higher; you then land
 # as usual. Teams come from the player ids, so every game agrees. Log lines start with \"T-028 SPAWN\".
@@ -270,6 +287,14 @@ pub(crate) struct Config {
     pub rival_revive: String,
     /// T-039: seconds a rival hit takes off a downed LOCAL player's bleed-out clock (clamped to 0.5..=15.0 in `parse`).
     pub rival_hit_seconds: f32,
+    /// RW-4: real seconds of the free Day 1 (0 = off; 120..=3600 otherwise, clamped in `parse`).
+    pub day1_secs: u32,
+    /// RW-1: seconds from a defeat to the defeat screen (0 = never; clamped to 0..=600 in `parse`).
+    pub defeat_exit_secs: u32,
+    /// RW-1: a defeated player's camera follows a living player.
+    pub spectate: bool,
+    /// RW-6: the private match code ("" = the public queue; normalised in `parse`).
+    pub private_code: String,
     /// F3: move the LOCAL player to its team's own point at the hawk drop.
     pub team_spawns: bool,
     /// F3: metres from the drop point (clamped to `spawn::RADIUS_RANGE` in `parse`).
@@ -358,12 +383,41 @@ impl Default for Config {
             pos_candidates: crate::game::poswrite::default_candidates(),
             rival_revive: REVIVE_REDOWN.to_string(),
             rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
+            day1_secs: DEFAULT_DAY1_SECS,
+            defeat_exit_secs: DEFAULT_DEFEAT_EXIT_SECS,
+            spectate: true,
+            private_code: String::new(),
             team_spawns: false,
             spawn_radius: crate::game::spawn::DEFAULT_RADIUS,
             log_dir: String::new(),
             hawk: HawkConfig::default(),
         }
     }
+}
+
+/// RW-4: the free Day 1 lasts this long by default (the vanilla day is about 14 minutes, then the night).
+pub(crate) const DEFAULT_DAY1_SECS: u32 = 1020;
+pub(crate) const DAY1_SECS_RANGE: (u32, u32) = (120, 3600);
+/// RW-1: default seconds between a defeat and the defeat screen.
+pub(crate) const DEFAULT_DEFEAT_EXIT_SECS: u32 = 0;
+pub(crate) const DEFEAT_EXIT_MAX: u32 = 600;
+/// RW-6: longest private match code.
+pub(crate) const PRIVATE_CODE_MAX: usize = 32;
+
+/// RW-6: a private match code as it is compared: trimmed and lower case; letters, digits, `-` and `_` only, 32 at most. Empty is
+/// allowed (the public queue).
+pub(crate) fn normalize_private_code(raw: &str) -> Result<String, String> {
+    let t = raw.trim().to_ascii_lowercase();
+    if t.len() > PRIVATE_CODE_MAX {
+        return Err(format!("is longer than {PRIVATE_CODE_MAX} characters"));
+    }
+    if !t
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err("may only hold letters, digits, - and _".to_string());
+    }
+    Ok(t)
 }
 
 /// T-026: which players the PvPvE mode rewrites.
@@ -716,6 +770,31 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
                 "rival_hit_seconds = {v} is outside {lo}..={hi}; using {}",
                 cfg.rival_hit_seconds
             ));
+        }
+    }
+    // RW-4: day1_secs (0 = off).
+    if cfg.day1_secs != 0 && !(DAY1_SECS_RANGE.0..=DAY1_SECS_RANGE.1).contains(&cfg.day1_secs) {
+        let v = cfg.day1_secs;
+        cfg.day1_secs = v.clamp(DAY1_SECS_RANGE.0, DAY1_SECS_RANGE.1);
+        warnings.push(format!(
+            "day1_secs = {v} is outside {}..={} (or 0); using {}",
+            DAY1_SECS_RANGE.0, DAY1_SECS_RANGE.1, cfg.day1_secs
+        ));
+    }
+    // RW-1: defeat_exit_secs.
+    if cfg.defeat_exit_secs > DEFEAT_EXIT_MAX {
+        warnings.push(format!(
+            "defeat_exit_secs = {} is above {DEFEAT_EXIT_MAX}; using {DEFEAT_EXIT_MAX}",
+            cfg.defeat_exit_secs
+        ));
+        cfg.defeat_exit_secs = DEFEAT_EXIT_MAX;
+    }
+    // RW-6: private_code.
+    match normalize_private_code(&cfg.private_code) {
+        Ok(code) => cfg.private_code = code,
+        Err(e) => {
+            warnings.push(format!("private_code {e}; using the public queue"));
+            cfg.private_code = String::new();
         }
     }
     // F3: spawn_radius.

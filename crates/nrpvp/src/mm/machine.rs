@@ -180,6 +180,8 @@ struct Orphan {
 pub(crate) struct MachineCfg {
     /// Queue lobby size (`mm_max_players`, 2..=6): the lobby is created with this many slots and is full at this many players.
     pub need: u32,
+    /// RW-6: the private match code, normalised ("" = the public queue).
+    pub room: String,
     /// MM-4: the smallest match (`mm_min_players`): once the lobby has a 2nd member and `fill_wait` has passed, it starts with this many or more.
     pub min: u32,
     /// MM-4: `mm_fill_wait_s`.
@@ -427,6 +429,7 @@ impl Machine {
             game: self.cfg.game.clone(),
             sc: self.cfg.sc.clone(),
             need: self.cfg.need,
+            room: proto::room_tag(&self.cfg.room),
         }
     }
 
@@ -985,6 +988,7 @@ impl Machine {
             (proto::K_GAME, tags.game.clone()),
             (proto::K_SC, tags.sc.clone()),
             (proto::K_NEED, tags.need.to_string()),
+            (proto::K_ROOM, tags.room.clone()),
         ];
         for (k, v) in expect {
             let got = api.lobby_data(id, k);
@@ -1388,6 +1392,7 @@ mod tests {
     fn cfg() -> MachineCfg {
         MachineCfg {
             need: 2,
+            room: String::new(),
             min: 2,
             fill_wait: Duration::from_secs(90),
             friendly: false,
@@ -1404,10 +1409,11 @@ mod tests {
         vec![
             ("nrpvp", "1"),
             ("mode", "solo"),
-            ("proto", "1"),
+            ("proto", "2"),
             ("game", "1.3.3.0"),
             ("sc", "1.1.3"),
             ("need", "2"),
+            ("room", "public"),
         ]
     }
 
@@ -1477,10 +1483,11 @@ mod tests {
             &[
                 ("nrpvp", "1"),
                 ("mode", "duo"),
-                ("proto", "1"),
+                ("proto", "2"),
                 ("game", "1.3.3.0"),
                 ("sc", "1.1.3"),
                 ("need", "2"),
+                ("room", "public"),
             ],
         ); // wrong mode
         s.add_lobby(
@@ -1514,6 +1521,64 @@ mod tests {
             .any(|w| matches!(w, Write::Join(700) | Write::Join(900))));
         // The SC-tagged lobby got no write of any kind.
         assert!(s.writes_to(700).is_empty());
+    }
+
+    #[test]
+    fn a_private_code_only_meets_the_same_code_and_never_the_public_queue() {
+        fn tagged(room: &str) -> Vec<(&str, &str)> {
+            let mut d: Vec<(&str, &str)> = tag_data();
+            d.retain(|p| p.0 != "room");
+            d.push(("room", room));
+            d
+        }
+        let private = proto::room_tag("night-owls");
+        // A public lobby and a lobby of another code exist; ours has a code: neither is joined, ours is created.
+        let mut s = FakeSteam::new(ME);
+        s.add_lobby(600, OTHER, 2, &[OTHER], &tagged("public"));
+        s.add_lobby(
+            500,
+            OTHER,
+            2,
+            &[OTHER],
+            &tagged(&proto::room_tag("other-code")),
+        );
+        s.auto_search = Some(vec![600, 500]);
+        let mut m = Machine::new(MachineCfg {
+            room: "night-owls".into(),
+            ..cfg()
+        });
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Solo, solo(ME), t);
+        run(&mut m, &mut s, &mut t, |m| {
+            matches!(m.state, State::InQueue(_))
+        });
+        assert!(
+            s.writes.iter().any(|w| matches!(w, Write::Create(_))),
+            "{:?}",
+            s.writes
+        );
+        assert!(!s.writes.iter().any(|w| matches!(w, Write::Join(_))));
+        // The new lobby carries our room tag; a public player ignores it the same way.
+        let id = match &m.state {
+            State::InQueue(q) => q.lobby.id(),
+            _ => unreachable!(),
+        };
+        m.tick(&mut s, t + Duration::from_secs(1));
+        assert_eq!(s.lobby_data(id, "room"), private);
+        // The same code finds the lobby with the same room.
+        let mut s2 = FakeSteam::new(ME);
+        s2.add_lobby(600, OTHER, 2, &[OTHER], &tagged(&private));
+        s2.auto_search = Some(vec![600]);
+        let mut m2 = Machine::new(MachineCfg {
+            room: "night-owls".into(),
+            ..cfg()
+        });
+        let mut t2 = Instant::now();
+        m2.queue(&mut s2, Mode::Solo, solo(ME), t2);
+        run(&mut m2, &mut s2, &mut t2, |m| {
+            matches!(m.state, State::InQueue(_))
+        });
+        assert!(s2.writes.contains(&Write::Join(600)), "{:?}", s2.writes);
     }
 
     #[test]

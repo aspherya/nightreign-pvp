@@ -108,6 +108,31 @@ pub fn keys(seq: &str) -> R {
     run::step(&st, &s).map(|_| json!("ok"))
 }
 
+/// `nro win <pid|exe name> shot <png>` / `keys "<seq>"`: the desk's two desktop ops on any program's window (Nucleus Co-op, a second game
+/// window). The target is a pid or an exe name; with several matches the first is used (give the pid to pick one).
+pub fn window(a: &[String]) -> R {
+    let target = a
+        .first()
+        .ok_or("nro win <pid|exe name> shot <png> | keys \"<seq>\"")?;
+    let pid = match target.parse::<u32>() {
+        Ok(p) => p,
+        Err(_) => {
+            let want = target.to_ascii_lowercase();
+            crate::sys::processes()
+                .into_iter()
+                .find(|p| p.name.to_ascii_lowercase().starts_with(&want))
+                .map(|p| p.pid)
+                .ok_or_else(|| format!("no process named {target}"))?
+        }
+    };
+    let req = match a.get(1).map(String::as_str) {
+        Some("shot") => json!({"op": "shot", "pid": pid, "path": a.get(2).ok_or("shot <png>")?}),
+        Some("keys") => json!({"op": "keys", "pid": pid, "seq": a[2..].join(" ")}),
+        _ => return Err("nro win <pid|exe name> shot <png> | keys \"<seq>\"".into()),
+    };
+    crate::desk::request(req)
+}
+
 pub fn navigate(to: &str) -> R {
     let st = cur()?;
     run::step(&st, &nro_core::scenario::Step::Navigate(to.into())).map(|(_, d)| json!(d))

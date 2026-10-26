@@ -95,6 +95,17 @@ pub(crate) struct World {
     pub team_size: usize,
     /// M5-9: LOCAL holds a revive-item SpEffect (`layout::SPEFFECTS_REVIVE_ITEM`); read only in an expedition.
     pub local_revive_item: bool,
+    /// RW-1: LOCAL's recent hits and who dealt them (filled by the main loop from the combat controller).
+    pub local_hits: crate::game::combat_state::LocalHits,
+    /// RW-1: the comeback's start step is held (`game::deathhold::held`): the dead body is hidden from the others from then on.
+    pub death_held: bool,
+    /// RW-1: the spectator asked for the next / previous player this tick (mouse buttons or the pad's shoulder buttons; edges).
+    pub spec_next: bool,
+    pub spec_prev: bool,
+    /// RW-1: the leave key (F10) went down since the last tick (edge; filled by the main loop).
+    pub leave_pressed: bool,
+    /// RW-7: each fighter's world position, same order as [`World::fighters`] (filled by the main loop).
+    pub positions: [Option<[f32; 3]>; MAX_FIGHTERS],
 }
 
 impl World {
@@ -122,12 +133,13 @@ impl World {
             local_pos: None,
             team_size: 0,
             local_revive_item,
+            local_hits: crate::game::combat_state::LocalHits::default(),
+            leave_pressed: false,
+            spec_next: false,
+            spec_prev: false,
+            death_held: false,
+            positions: [None; MAX_FIGHTERS],
         }
-    }
-
-    /// M5-9: a Solo match (team size 1).
-    pub(crate) fn solo(&self) -> bool {
-        self.team_size == 1
     }
 
     /// True while the local player is on an expedition (not the Roundtable, not a load screen).
@@ -147,10 +159,7 @@ mod tests {
         v[7] = true;
         let f = NightFlags::from_values(v);
         assert!(f.night1_done && f.reviving && !f.night && !f.night2_done);
-        assert_eq!(
-            NightFlags::IDS[9],
-            crate::features::night_match::FLAG_NIGHT_END
-        );
+        assert_eq!(NightFlags::IDS[9], crate::features::nights::FLAG_NIGHT_END);
         assert_eq!(NightFlags::IDS[10], crate::features::night_match::FLAG_WIN);
         assert_eq!(NightFlags::IDS[11], crate::features::night_match::FLAG_LOSE);
     }

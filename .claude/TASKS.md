@@ -156,7 +156,7 @@ offline rival bots (OFF-5) were removed from the code. The game's bot manager st
 
 ## Match flow: nights with no boss (M5; research `research/M5-no-boss-nights.md`, `research/M5-8-death.md`)
 
-**Done and on `main` (details in TESTING `testing-log/`; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17):** M5-1..M5-4 (no boss,
+**Built earlier (the rounds were replaced 2026-10-24, see RW below; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17):** M5-1..M5-4 (no boss,
 no minions, clock console, night freeze facts), **M5-5 / M5-6 / M6-1 nights are elimination rounds** (`features/night_match.rs`: one team
 left = night decided, only the winner healed, losers held down until the morning, night 2 win/loss endings; solo, Nucleus and
 orchestrator puppets PASS incl. night 2 by count, 2026-10-24), **M5-8** research (SpEffect 102130 = die at once; the comeback can be
@@ -164,18 +164,14 @@ held and released), **M5-9 Solo real death** (`features/night_match.rs`, `game/d
 morning, released through the gate, moved to a random day-1 place after the Day-2 clock; one-PC PASS 2026-10-24).
 Rule decisions (M5-D): `DECISIONS.md`.
 
-### M5-9 / M5-5 — what still waits for a friend session
-Owner: HUMAN + Claude reads the logs | Status: **FS-M59** (TESTING §6, zip of 2026-10-24, STATUS §2)
-Only two real PCs can show: the 102130 kill in a real session (offline solo LOCAL carries SpEffect 6999500, so die-at-once stays off
-there), what the other screen shows of a dead / held player, Seamless Co-op host/client behaviour when the host dies, the night-2
-win and loss banners, vanilla multiplayer events at night, a whole night with real players. After the session: `test-report` skill,
-fix what failed, then remove this card.
-Fallback if the hold does not work in a session (the comeback still runs): let it run, move the player away and hold them down with
-the M5-6 clock hold until the morning ("option B"), and say so in TESTING.
+### M5-9 / M5-5 — superseded
+The elimination rounds (night = a round, losers held until the morning, die-at-once in Solo nights) were replaced on 2026-10-24 by the RW
+rules (DECISIONS "After the first real match"; section "Rework after the first real match" below). The hold (`game/deathhold.rs`) stays: it
+keeps a defeated player dead. What FS-M59 left open (the hold in a real session, the other screen) is in the FS-RW1 runbook (TESTING §6).
 
 ### M5-7 — Spectate a player still fighting (camera)
-Owner: OPUS (RE) | Status: todo (M5-5 is merged; start the code after the FS-M59 logs are read: it shares the dead state with the hold)
-An eliminated (or, in Solo, dead: M5-9) player watches a random living player until the morning (choice later). Must let a dead
+Owner: OPUS (RE) | Status: todo (a defeated player (RW-1) is held dead and gets the defeat screen after `defeat_exit_secs`; with this camera they could watch instead)
+A defeated player watches a living player until the match ends or they choose to leave. Must let a dead
 player open the menu at least to quit (vanilla blocks Esc while dead; Leonardo 2026-10-23). Needs the engine's follow camera: find the
 camera's target (the local PlayerIns) and whether pointing it at another PlayerIns copy is safe. Static RE first (camera classes in
 RTTI / FD4 names), then a solo dev command that swaps the target to a bot (offline mode) as the proof.
@@ -218,3 +214,20 @@ in Battle Royale and offline mode, only LOCAL changed, swap removed when the exp
 game-data package (lift the `map\` refusal for that one file). The first new feature, so the open halves of R2/R3 (typed views,
 `Feature` trait; ARCHITECTURE §6) are built with it.
 HUMAN: one solo smoke; then the next FS: both players cruise, dive and drop where they want; each sees the other land.
+
+## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)
+
+Built and tested on one PC 2026-10-24 (scenarios `day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`;
+testing-log): **RW-1** defeat for good + early win, **RW-2** a non-player death is vanilla, **RW-4** free Day 1 (the code is in
+`features/night_match.rs`, header comment). Built, unit-tested, not yet seen on two PCs: **RW-6** private match, **RW-7** respawn far, **RW-10**
+enemy scaling. Their two-PC checks are in the FS-RW1 runbook (TESTING §6); the cards come off when FS-RW1 passes. Open, each waiting for
+what a second real client shows (research tools: console `memscan`, `peek`; findings so far below):
+
+- **RW-3 — Defeat drops** (items through a red phantom, runes on the ground). Route and unknowns: `research/S2-inventory-drops.md` §7. Nothing built.
+- **RW-5 — Boss drops only for the last hitter.** Nothing built. Param hint: `disableMultiDropShare` exists on goods / protector / weapon rows (`Paramdex NR`), the sharing itself is engine code UNKNOWN.
+- **RW-8 — Runes only inside the own team.** Nothing built. Bandai's own guide: kill runes "are split equally among teammates regardless of who killed"; the split is engine code (UNKNOWN). Method: hardware write-watch on LOCAL's rune count (offset UNKNOWN: find it by diffing the HUD number) with a second player killing.
+- **RW-9 — No remote map / compass position, nametags only on the target.** Nothing built. Puppets are not network players: they show no nametag, marker or party frame (screenshot 2026-10-24), so this needs a real second client (FS-RW1 step 7 takes the photos).
+- **Spectating (M5-7)**: built in v1 without camera RE (see STATUS): the held dead body, which other players do not see (Nucleus 2026-10-23), is moved next to a living player and the follow camera goes with it. F10 leaves. Not seen on two PCs.
+- **RW-6 follow-up:** the game's own Matchmaking Settings has a "Multiplayer Password" field; the text lives in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (input history, found with `memscan`) and in a second structure; which one the menu reads at Commence is UNKNOWN. Reading it would replace `private_code` in the toml (no config editing for players).
+- **Spectator camera smoothness (next):** the moved body makes the camera jump about 20 times a second. Idea: find what writes `ChrExFollowCam+0xA0..` (the followed position, newest entry; console `trace_write <addr>`) and feed it another player's position or target directly, leaving the body where it died. Fallback: keep the moved body (committed, 2026-10-25).
+- **ESC / pad while defeated (works on one PC, 2026-10-25; scenario `esc-defeated` PASS, pad confirmed by Leonardo).** `game/menugate.rs`: Esc or pad Start opens the game's menu for a defeated, held player (sets the open request, MEMORY_MAP §19); pad d-pad right / left switch the watched player (mouse buttons too; all off while a menu is open). The pad is read from the game's own input bits (XInput is blind inside the game). Quit through the menu while dead works (one PC, Leonardo). Left: a Nucleus / FS confirmation, other pad layouts (bits measured on a Steam Input Xbox pad). Remove this card after that.

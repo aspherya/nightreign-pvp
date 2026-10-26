@@ -269,6 +269,15 @@ impl<'m> PlayArea<'m> {
         })
     }
 
+    /// RW-4: the clock's speed (game seconds per real second, `PLAYAREA_SPEED`); the game's update multiplies the frame time by it.
+    pub(crate) fn set_speed(&self, speed: f32) -> Result<(), &'static str> {
+        if !(speed.is_finite() && (0.0..=1000.0).contains(&speed)) {
+            return Err("speed out of range");
+        }
+        self.mem
+            .write_bytes(self.addr + PLAYAREA_SPEED, &speed.to_le_bytes())
+    }
+
     /// Ask the game to set its clock to `t` on its next update (its own setter, and in a session its own sync, do the rest).
     /// Refused while the mailbox holds another request. Second and minute go first and the hour last: the game ignores the
     /// triple while the hour still reads -1, so it never sees a half-written time.

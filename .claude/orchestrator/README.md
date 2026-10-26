@@ -41,5 +41,4 @@ nro shot name / nro log 50 filter / nro stop
 Scenario catalog, step vocabulary and how to add one: [SCENARIOS.md](SCENARIOS.md). Scenario format (`crates/nro-core/src/scenario.rs`): `[config]` keys written over the staged `nrpvp.toml`, then `[[step]]` entries:
 `console`, `wait = {console, contains, timeout_s}`, `expect = {console, contains, absent}`, `keys`, `navigate`, `sleep_ms`, `screenshot`,
 `puppets`, `puppet_ring`, `puppet_front`. Put `ui_flag_watch = false` in `[config]` (its event bursts flood `log 300`). Current set:
-`puppets-smoke` (puppets exist and bleed out), `night1-count` (night 1 decided by count), `night1-local-dies` (`hp0` at night: held,
-released, moved after the Day-2 clock, alive), `night2-win`, `night2-loss` (night 2 by count; the loss case has LOCAL dead and held).
+`puppets-smoke`, `day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss` (catalog and what each proves: SCENARIOS.md).

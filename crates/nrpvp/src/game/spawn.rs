@@ -133,6 +133,15 @@ pub(crate) fn world_position(player: usize, base: usize) -> Option<([f32; 3], bo
     read_sample(player, base).map(|s| (sub(s.pos, s.origin), s.ground))
 }
 
+/// RW-1 / RW-7: another player's world position: its physics position minus LOCAL's origin (a remote character's own `+0x80` is not an
+/// origin, puppet runs 2026-10-24; every player shares the world frame LOCAL's origin defines).
+pub(crate) fn world_position_of(other: usize, local: usize, base: usize) -> Option<[f32; 3]> {
+    let (phys, _) = physics_module(&RealMem, other, base).ok()?;
+    let pos = decode(&mem::read::<[u8; 12]>(phys + POS_OFF)?);
+    let origin = decode(&mem::read::<[u8; 12]>(local + ORIGIN_OFF)?);
+    (plausible(pos) && plausible(origin)).then(|| sub(pos, origin))
+}
+
 /// M5-6: move the player to a world position (the T-028 teleport: the physics position, origin added back; VERIFIED T-028 run 4,
 /// other players see it). Returns the world position before the move.
 pub(crate) fn teleport(player: usize, base: usize, to: [f32; 3]) -> Result<[f32; 3], &'static str> {

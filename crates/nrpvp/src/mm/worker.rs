@@ -42,6 +42,8 @@ const GUARD_CACHE: Duration = Duration::from_secs(5);
 pub(crate) struct Setup {
     /// Queue lobby size (`mm_max_players`).
     pub need: u32,
+    /// RW-6: `private_code` (normalised; "" = the public queue).
+    pub room: String,
     /// MM-4: `mm_min_players`, `mm_fill_wait_s`.
     pub min: u32,
     pub fill_wait: Duration,
@@ -118,6 +120,7 @@ impl Worker {
         );
         let machine = Machine::new(MachineCfg {
             need: s.need,
+            room: s.room.clone(),
             min: s.min,
             fill_wait: s.fill_wait,
             friendly: s.friendly,

@@ -32,7 +32,7 @@ pub(crate) struct Ctx {
     pub flags: Vec<(u32, bool)>,
     /// M5: a time for the play-area clock (the game's set-time mailbox, written in [`Ctx::flush`]).
     pub clock: Option<crate::game::views::ClockTime>,
-    /// M5-5 / M5-6: the night match's requests on LOCAL and the downed rule (carried out by the main loop, which owns them).
+    /// The match rules' requests on LOCAL, the clock and the game's flags (carried out by the main loop, which owns them).
     pub night: Vec<night_match::NightAct>,
 }
 
@@ -102,7 +102,7 @@ impl Features {
             bots: bots::BotsFeature::default(),
             clock: clock::ClockFeature::default(),
             nights: nights::NightsFeature,
-            night_match: night_match::NightMatch::default(),
+            night_match: night_match::NightMatch::new(cfg),
         }
     }
 

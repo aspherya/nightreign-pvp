@@ -1,0 +1,54 @@
+name = "spectate"
+about = "RW-1: a defeated player's invisible body is moved to the nearest living player every tick so the follow camera shows them; F10 leaves (the defeat screen). One PC: puppets are the watched players"
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+defeat_exit_secs = 0
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+[[step]]
+puppets = 3
+[[step]]
+puppet_ring = 12
+[[step]]
+console = "flag 10007420 1"
+[[step]]
+console = "rival_hit"
+[[step]]
+sleep_ms = 1000
+[[step]]
+console = "hp0"
+[[step]]
+wait = { console = "night_status", contains = "watching", timeout_s = 40 }
+[[step]]
+console = "puppet_list"
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "watching1"
+[[step]]
+console = "puppet_list"
+[[step]]
+wait = { console = "log 300", contains = "start step HELD", timeout_s = 40 }
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "watching2"
+[[step]]
+expect = { console = "night_status", contains = ["defeated by a rival", "watching", "death held"], absent = ["the defeat screen"] }
+[[step]]
+keys = "F10"
+[[step]]
+wait = { console = "log 300", contains = "the leave key was pressed", timeout_s = 20 }
+[[step]]
+wait = { console = "log 300", contains = "out of the expedition", timeout_s = 60 }
+[[step]]
+expect = { console = "log 300", contains = ["spectating player", "the leave key was pressed"], absent = ["panic", "no free hardware slot"] }

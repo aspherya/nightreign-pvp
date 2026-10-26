@@ -45,7 +45,8 @@ static ENABLED: AtomicBool = AtomicBool::new(true);
 /// [`ReviveMode`] as a byte (the VEH reads it).
 static MODE: AtomicU8 = AtomicU8::new(0);
 
-/// M5-6: who may revive LOCAL.
+/// M5-6: who may revive LOCAL. Only `Rivals` is used since the match rules changed (RW-1); the other modes stay for a spectator rule.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum ReviveMode {
     /// T-041: everyone but a rival (the normal rule).
@@ -58,6 +59,7 @@ pub(crate) enum ReviveMode {
 }
 
 /// M5-6 (main loop): set who may revive LOCAL; logs a change.
+#[allow(dead_code)]
 pub(crate) fn set_mode(m: ReviveMode) {
     let v = match m {
         ReviveMode::Rivals => 0,

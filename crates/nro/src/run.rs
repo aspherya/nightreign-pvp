@@ -57,16 +57,32 @@ pub fn to_expedition(st: &State, timeout: Duration) -> Result<String, String> {
         if !s.contains("team_type 1") {
             return Err(format!("not in the Roundtable: {s}"));
         }
-        keys("W 5000ms; wait 1s; F; wait 2s; F; wait 2s; F; wait 3s")?;
+        // The Number of Players setting is a ring of three values that the game keeps between runs (and a friend session or a
+        // player can leave it on Duo or Trio): "Matchmaking failed" otherwise. Attempt 1 takes it as it is, each later attempt
+        // dismisses the dialog and steps the ring once, so all three values are tried (Matchmaking Settings tab = F2, Target = F1).
         let t = Instant::now();
-        loop {
-            if t.elapsed() > timeout {
-                return Err("the expedition did not start".into());
+        let mut started = false;
+        for attempt in 0..3 {
+            let step = if attempt == 0 {
+                "W 5000ms; wait 1s; F; wait 2s; F2; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
+            } else {
+                "ENTER; wait 1s; F; wait 2s; F2; wait 1s; RIGHT; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
+            };
+            keys(step)?;
+            let try_until = Instant::now() + Duration::from_secs(25);
+            while Instant::now() < try_until {
+                if session::cmd(st, "status").is_ok_and(|s| s.contains("team_type 2")) {
+                    started = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(500));
             }
-            if session::cmd(st, "status").is_ok_and(|s| s.contains("team_type 2")) {
+            if started || t.elapsed() > timeout {
                 break;
             }
-            std::thread::sleep(Duration::from_millis(500));
+        }
+        if !started {
+            return Err("the expedition did not start".into());
         }
         std::thread::sleep(Duration::from_secs(6));
         keys("ALT; wait 10s")?;

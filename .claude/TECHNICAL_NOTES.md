@@ -76,7 +76,7 @@ used from T-013 and removed by R5 when the console replaced the panel). `nrcon` 
 | Seamless Co-op (NR) | Networking foundation: lobby, Steam P2P, up to 6 players | installed |
 | rustup (stable, msvc) | Build | **to install** (HUMAN) |
 | Cheat Engine | Live memory inspection, finding offsets, quick write experiments | installed |
-| Ghidra (or IDA Free) | Static analysis of `nightreign.exe` | to install when needed |
+| Ghidra 12.1.4 + REA MCP | Static analysis of `nightreign.exe` (decompiler, xrefs, call graph) | installed, see TOOLS.md "Ghidra / REA" |
 | ReClass.NET | Interactive struct mapping | optional |
 | Smithbox | Param, EMEVD and map viewing (NR support must be checked per release) | to install when needed |
 | WitchyBND | Unpack BND/DCX archives | to install when needed |
@@ -229,6 +229,16 @@ Full memo: `research/M5-8-death.md`; the engine addresses: `re/MEMORY_MAP.md` §
 | Respawn point | Nearest `CSRespawnPointMan` point inside the play area `[VERIFIED: disassembly; 13–90 m in solo runs]` |
 | Nucleus with our package (R0) | `scripts\deploy-nucleus.ps1 -Me3`: Nucleus starts `nrpvp_launcher.exe` (me3 `-e`, `--skip-steam-init true` from `NightreignPvP\me3-args.txt`) instead of SC's launcher. **Window 1 works, window 2 fails** (ColdLoader "appid not found in coldloader.ini or steam_appid.txt", before me3 attaches) `[VERIFIED: Nucleus 2026-10-23, TESTING §3]`; cause UNKNOWN; use the plain deploy |
 | A held death in a session | Held 55 s and released through the game's comeback in a two-window session; the other window shows no body while the player is held `[VERIFIED: Nucleus 2026-10-23]` |
+
+### 4g. Enemy scaling, the menu's password fields, rune and drop sharing (RW, 2026-10-24)
+
+| Finding | Detail |
+|---|---|
+| Enemy strength by session size is a param | `MultiPlayCorrectionParam` (regulation 1.03.3, 85 rows): per row `client1SpEffectId` (two players), `client2SpEffectId` (three), `client3SpEffectId` (always -1) and an override byte `[VERIFIED: regulation unpack with WitchyBND + Paramdex NR def, 2026-10-24]`. Which row an enemy uses, and how the game maps the session size to a client slot (4 to 6 players, SC), is UNKNOWN. The mod rewrites the table in memory by team size (`game/multiplay.rs`, MEMORY_MAP §19) `[HYPOTHESIS until enemy health is measured]` |
+| The reward params are not the sharing | `MultiSoulBonusRateParam` (rune multipliers by summon role), `MultiHPEstusFlaskBonusParam`; `disableMultiDropShare` on goods / protector / weapon rows. Kill runes are "split equally among teammates regardless of who killed" (Bandai's guide); the split itself is engine code UNKNOWN (RW-8) |
+| The Matchmaking Settings menu already has a password | "Multiplayer Password" (match with players using the same password), "No. of Password Players", five "Group Password" fields (screenshot 2026-10-24). A typed text is kept in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (the save data's input history, which is why it survives restarts) and in a second structure `[VERIFIED: console memscan after typing a unique text]`; the field the Commence check reads is UNKNOWN |
+| Number of Players is a ring of three values | Solo Mission / (middle) / Up to 6 players, wraps in both directions, kept between launches `[VERIFIED: screenshots 2026-10-24]` |
+| Puppets are not network players | No nametag, map marker or party frame for a puppet 10 m away (screenshot 2026-10-24): HUD behaviour of other players needs a real second client |
 
 ---
 
