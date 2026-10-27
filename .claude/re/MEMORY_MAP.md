@@ -436,13 +436,23 @@ The name tag site lets LOCAL's lock-on target through (`PlayerIns+0x768`, handle
 are not in the rival list, so Duo / Trio keep their own team (not run yet). The `exe+0x3D2F30` (`chr+0x1F6` bit 6) test in the tag
 producer only picks a bone position (`exe+0x3D0130`), it is not a visibility gate (corrects the static row above).
 
-**Map markers (player-placed pins), static reading 2026-10-27, exe 1.3.3.0.** Separate from the player-position list above, and
-**not filtered by RW-9** (no hook or write touches it, `[VERIFIED: code grep]`). Classes (RTTI): `CS::WorldMapUserPinDataList`
-(vtable `exe+0x2C3B6B8`), item `CS::WorldMapUserPinData` (vtable `exe+0x2C4A3E8`, 0x180 bytes, ctors `exe+0x90A6B0` and
-`exe+0x90AC50`; the second stores its int argument at `+0x24`, `+0x20` is an id that the add loop near `exe+0x90C800` matches before
-allocating a new item), saved menu data `CS::CSMenuMarkersSaveData` (vtable `exe+0x2C43358`) `[VERIFIED: static]`. The compass
-producer `exe+0x7D8210` copies **`vm+0xF0`** (vm = `WorldMapViewModel`) with the list copy `exe+0x7D6C80` and hands it to
-`exe+0x7DC640` → `CSFeMan+0x1270`/`+0x1290` (compass marker marks) `[VERIFIED: static]`. That `vm+0xF0` is the user-pin list and that
-the map screen draws from it: `[HYPOTHESIS]`. Unknown: which field names the player who placed a pin (`+0x24` is a candidate), how a
-pin reaches other clients (net code is obfuscated), and what draws the beam in the 3D world. Next: `peek` `vm+0xF0..+0x110` and the
-items on two instances while each places one marker.
+**Map markers (player-placed pins), exe 1.3.3.0, read on two emulated instances 2026-10-27 (runs `1793107743-mk-observe-i1/-i2`).**
+A player places a pin with the map open (M) and the **middle mouse button** (prompt "Pin"; on another player's pin it reads "Piggyback
+pin"); **one pin per player**, a new one replaces the old. **Without a filter a rival sees it everywhere** `[VERIFIED: screenshots
+o2_after_pin, o2_map, o1_pre3]`: on the map (an arrow in the placer's colour, tooltip "Player's pin" / "<name>'s pin"), on the compass
+(a coloured line) and in the 3D world (a "V" diamond marker on screen). How it is held:
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| Marker manager | `[exe+0x3C17BE0]`; record list `+0x10` = head of a ring (node `+0` next, `+0x10` record) | **Record**: `+0` u32 key = byte type (0 = pin), byte slot (toggles on each new pin), **u16 owner at `+2` = the placer's map id** (`[PlayerIns+0x5A0]+8`: p1 = 1, p2 = 2, the id `exe+0x5197E0` takes); `+4..` position. The rival's pin arrives here (the game's marker sharing) | `[VERIFIED: peek on both, map ids read with peek me+0x5A0+[0]+8]` |
+| View model user-pin list | `vm+0xF0` (`CS::WorldMapUserPinDataList`, vtable `exe+0x2C3B6B8`), pointer vector `vm+0x100`/`+0x108` | Items `CS::WorldMapUserPinData` (vtable `exe+0x2C4A3E8`, 0x180 bytes): `+0x8` local item id, `+0x10` map x/y, `+0x20` u32 = the record key (so `+0x22` = owner), `+0x24` sort key (rises with every new pin). Own and rival pins alike; the **map screen and the compass** draw from it (compass: `exe+0x7D8210` copies it with `exe+0x7D6C80` → `exe+0x7DC640` → `CSFeMan+0x1270`) | `[VERIFIED: peek + screenshots]` |
+| Pin sync (records → list) | `exe+0x911ACB..0x911B4B` (in `exe+0x911A..`): for each record not yet in the list (`exe+0x90C600` find by key), `exe+0x9040E0(vm+0x1F8, &out, &record+4, ..)` (call at **`exe+0x911B13`**, `E8 C8 25 FF FF`) and, if true, `exe+0x90C7D0` adds the item (allocates it, ctor `exe+0x90A6B0`) | A moved pin = item destroyed + rebuilt in place (write watch on the item's `+0x10`: rip `exe+0x90A716`, the ctor). Runs only when the records change (the hook saw 3 calls in a run), and an item already in the list is not re-checked | `[VERIFIED: static + write watch]` |
+| 3D world marker | producer `exe+0x7D9560` (FE step): walks the record list and collects each record with `exe+0x7D7030(&list, record)` (call at **`exe+0x7D9908`**, `E8 23 D7 FF FF`), then makes FE entries (`CSFeMan+0xFE50` count, getter `exe+0x7C4A30`) for new keys; drops an entry when its record is gone (`exe+0xB9FCF0` lookup) | Reads the manager directly, not `vm+0xF0`: hiding the list item alone leaves the 3D marker (seen: poking item `+0xC` = 0 hid nothing) | `[VERIFIED: static; effect: mi-rw9-markers]` |
+
+**Marker filter (`game/hudfilter.rs`, both builds).** The two calls above are repointed like the HUD sites (bytes checked, trampoline):
+for a record whose owner is a rival's map id (`[PlayerIns+0x5A0]+8` of every RIVAL, never LOCAL's) the map site answers false (not
+added) and the 3D site skips the record. Own and teammates' pins stay. Limits: a rival pin already on the list or already a 3D entry
+when the filter turns on stays until its owner moves it (the filter is on from the start of the match); a "piggyback" pin on a hidden
+pin is not tested; pings other than pins: none found. **Still shown to the rival:** the toast "Ally is showing location" with
+the icon of the landmark nearest the pin (bottom right, a few seconds), not the pin's position; its producer is UNKNOWN (candidates: the
+message-id code in `exe+0x7C67E0` that reads the marker manager). Seen working: `mi-rw9-markers` (testing-log 2026-10-27).

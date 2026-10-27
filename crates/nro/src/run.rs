@@ -404,7 +404,7 @@ pub fn step(st: &State, s: &Step) -> Result<(bool, String), String> {
                     return Err("the game exited".into());
                 }
                 if let Ok(r) = session::cmd(st, &w.console) {
-                    if w.contains.all_in(&r) {
+                    if w.contains.all_in(&r) && w.absent.none_in(&r) {
                         return Ok((true, r));
                     }
                     last = r;

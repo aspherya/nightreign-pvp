@@ -15,8 +15,17 @@
 //! hold the expected call is left alone). Teammates are not rivals, so Duo / Trio keep their own team on the map, compass and bars;
 //! enemies' HP bars from lock-on or hits are a different producer and stay vanilla (DECISIONS 2026-10-26). Log lines start with
 //! `hudfilter:`.
+//!
+//! **Map markers (pins a player places, MEMORY_MAP §20 "Map markers").** Every player's pins are records in the marker manager
+//! (`[exe+0x3C17BE0]`, list at `+0x10`, node `+0x10` = record); record `+0` is the key, its u16 at `+2` the placer's map id
+//! (`[PlayerIns+0x5A0]+8`). Two per-frame loops copy the records out, and both are hooked the same way (rival's record → skipped):
+//!
+//! | Site | Call | Shows | Our answer for a rival's record |
+//! |---|---|---|---|
+//! | `exe+0x911B13` | `exe+0x9040E0(.., .., &record+4, ..)` in the view model's pin sync (false → the pin is not added) | the pin on the map and the compass | false |
+//! | `exe+0x7D9908` | `exe+0x7D7030(&list, record)` in the 3D marker producer `exe+0x7D9560` | the marker in the world | not called |
 
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 /// `PlayerIns` -> the lock-on target's handle (u64, -1 = none). `[VERIFIED: static, MEMORY_MAP §20; live: see §20 "Rival filter"]`
 pub(crate) const PLAYER_LOCK_TARGET: usize = 0x768;
@@ -27,10 +36,23 @@ const CHR_HANDLE: usize = super::layout::CHR_HANDLE;
 const SITE_MAP: (usize, usize) = (0xC3_C04D, 0x51_97E0);
 const SITE_PARTY: (usize, usize) = (0x7D_AAA4, 0x51_8F30);
 const SITE_TAG: (usize, usize) = (0x7D_A1F9, 0x51_8F30);
+/// Map markers: the view model's pin sync (map + compass) and the 3D marker producer. `[VERIFIED: static + live peek / write watch,
+/// two instances 2026-10-27, MEMORY_MAP §20 "Map markers"]`
+const SITE_PIN_MAP: (usize, usize) = (0x91_1B13, 0x90_40E0);
+const SITE_PIN_WORLD: (usize, usize) = (0x7D_9908, 0x7D_7030);
+/// `PlayerIns+0x5A0` -> player data; its u32 at `+8` is the map id a marker record names at `+2`.
+const PLAYER_DATA: usize = 0x5A0;
+const DATA_MAP_ID: usize = 0x8;
+/// Marker record: the placer's map id (u16) at `+2`. The map site gets `record + 4`.
+const RECORD_OWNER: usize = 0x2;
+const MAP_ARG_OFFSET: usize = 0x4;
 
 const MAX_RIVALS: usize = 8;
 static RIVALS: [AtomicU64; MAX_RIVALS] = [const { AtomicU64::new(0) }; MAX_RIVALS];
 static RIVAL_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// The rivals' map ids (0 = none), for their markers.
+static RIVAL_IDS: [AtomicU16; MAX_RIVALS] = [const { AtomicU16::new(0) }; MAX_RIVALS];
+static RIVAL_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
 static TARGET: AtomicU64 = AtomicU64::new(u64::MAX);
 /// The filter acts (a match runs, or the console forces it).
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -53,6 +75,10 @@ struct Counters {
 static MAP: Counters = Counters::new();
 static PARTY: Counters = Counters::new();
 static TAG: Counters = Counters::new();
+static PIN_MAP: Counters = Counters::new();
+static PIN_WORLD: Counters = Counters::new();
+static ORIG_PIN_MAP: AtomicUsize = AtomicUsize::new(0);
+static ORIG_PIN_WORLD: AtomicUsize = AtomicUsize::new(0);
 static INSTALL_TRIED: AtomicBool = AtomicBool::new(false);
 
 impl Counters {
@@ -192,6 +218,66 @@ unsafe extern "system" fn hook_tag(man: usize, handle: *const u64) -> usize {
     judge(&TAG, chr, true)
 }
 
+/// Is a marker placed by `owner` (map id) a rival's? Pure, tested.
+fn rival_marker(active: bool, owner: u16, rival_ids: &[u16]) -> bool {
+    active && owner != 0 && rival_ids.contains(&owner)
+}
+
+/// The answer for the marker record whose owner u16 is at `owner_at`: hide it (counted per site)?
+fn judge_marker(c: &Counters, owner_at: usize) -> bool {
+    c.calls.fetch_add(1, Ordering::Relaxed);
+    if !ACTIVE.load(Ordering::Relaxed) {
+        return false;
+    }
+    let n = RIVAL_ID_COUNT.load(Ordering::Acquire).min(MAX_RIVALS);
+    if n == 0 {
+        return false;
+    }
+    let Some(owner) = super::mem::read::<u16>(owner_at) else {
+        return false;
+    };
+    let mut ids = [0u16; MAX_RIVALS];
+    for (i, slot) in ids.iter_mut().enumerate().take(n) {
+        *slot = RIVAL_IDS[i].load(Ordering::Relaxed);
+    }
+    let hide = rival_marker(true, owner, &ids[..n]);
+    if hide {
+        c.hidden.fetch_add(1, Ordering::Relaxed);
+        c.last_hidden.store(now_ms(), Ordering::Relaxed);
+    }
+    hide
+}
+
+type PinMap = unsafe extern "system" fn(usize, usize, usize, usize) -> usize;
+type PinWorld = unsafe extern "system" fn(usize, usize) -> usize;
+
+/// View model pin sync (map + compass; game thread, every frame): `rec4` = record + 4. False (al = 0) = "do not add this pin".
+unsafe extern "system" fn hook_pin_map(
+    this: usize,
+    out: usize,
+    rec4: usize,
+    extra: usize,
+) -> usize {
+    if rec4 >= MAP_ARG_OFFSET && judge_marker(&PIN_MAP, rec4 - MAP_ARG_OFFSET + RECORD_OWNER) {
+        return 0;
+    }
+    // SAFETY: ORIG_PIN_MAP holds the game's function `exe+0x9040E0` (set before the site was patched); same arguments.
+    let orig: PinMap =
+        unsafe { std::mem::transmute::<usize, PinMap>(ORIG_PIN_MAP.load(Ordering::Relaxed)) };
+    unsafe { orig(this, out, rec4, extra) }
+}
+
+/// 3D marker producer (game thread, every frame): `record` is collected into the marker list unless it is a rival's.
+unsafe extern "system" fn hook_pin_world(list: usize, record: usize) -> usize {
+    if record != 0 && judge_marker(&PIN_WORLD, record + RECORD_OWNER) {
+        return 0;
+    }
+    // SAFETY: ORIG_PIN_WORLD holds the game's function `exe+0x7D7030`; same arguments.
+    let orig: PinWorld =
+        unsafe { std::mem::transmute::<usize, PinWorld>(ORIG_PIN_WORLD.load(Ordering::Relaxed)) };
+    unsafe { orig(list, record) }
+}
+
 /// The rel32 a `call` at `site` needs to reach `dest` (None when farther than ±2 GB). Pure, tested.
 fn rel32(site: usize, dest: usize) -> Option<i32> {
     i32::try_from(dest as i64 - (site as i64 + 5)).ok()
@@ -276,13 +362,15 @@ fn install(base: usize) {
     }
     ORIG_BY_ID.store(base + SITE_MAP.1, Ordering::Relaxed);
     ORIG_BY_HANDLE.store(base + SITE_PARTY.1, Ordering::Relaxed);
+    ORIG_PIN_MAP.store(base + SITE_PIN_MAP.1, Ordering::Relaxed);
+    ORIG_PIN_WORLD.store(base + SITE_PIN_WORLD.1, Ordering::Relaxed);
     let Some(page) = alloc_near(base) else {
         tracing::warn!(
             "hudfilter: no page near the exe for the trampolines; rivals stay on the HUD"
         );
         return;
     };
-    let hooks: [(&Counters, &str, (usize, usize), usize); 3] = [
+    let hooks: [(&Counters, &str, (usize, usize), usize); 5] = [
         (&MAP, "map / compass", SITE_MAP, hook_map as ById as usize),
         (
             &PARTY,
@@ -291,11 +379,23 @@ fn install(base: usize) {
             hook_party as ByHandle as usize,
         ),
         (&TAG, "name tag", SITE_TAG, hook_tag as ByHandle as usize),
+        (
+            &PIN_MAP,
+            "markers on map",
+            SITE_PIN_MAP,
+            hook_pin_map as PinMap as usize,
+        ),
+        (
+            &PIN_WORLD,
+            "markers in 3D",
+            SITE_PIN_WORLD,
+            hook_pin_world as PinWorld as usize,
+        ),
     ];
     for (i, (c, name, (site, callee), hook)) in hooks.into_iter().enumerate() {
         let tramp = page + i * 16;
         let code = trampoline(hook);
-        // SAFETY: `page` is our own fresh RWX page of 0x1000 bytes; 3 × 16 bytes fit.
+        // SAFETY: `page` is our own fresh RWX page of 0x1000 bytes; 5 × 16 bytes fit.
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), tramp as *mut u8, code.len()) };
         match patch(base + site, base + callee, tramp) {
             Ok(()) => {
@@ -310,14 +410,27 @@ fn install(base: usize) {
 }
 
 /// Main loop, every tick (both builds). `in_match`: the mod's PvP mode runs in an expedition; `rivals`: the rival players' handles;
-/// `local`: LOCAL's PlayerIns.
-pub(crate) fn tick(base: usize, in_match: bool, rivals: &[u64], local: Option<usize>) {
+/// `local`: LOCAL's PlayerIns; `rival_chrs`: the rivals' PlayerIns (their map ids name their map markers).
+pub(crate) fn tick(
+    base: usize,
+    in_match: bool,
+    rivals: &[u64],
+    rival_chrs: &[usize],
+    local: Option<usize>,
+) {
     install(base);
+    BASE.store(base, Ordering::Relaxed);
     let n = rivals.len().min(MAX_RIVALS);
     for (slot, &h) in RIVALS.iter().zip(rivals) {
         slot.store(h, Ordering::Relaxed);
     }
     RIVAL_COUNT.store(n, Ordering::Release);
+    let local_id = local.and_then(map_id);
+    let ids = marker_ids(rival_chrs.iter().map(|&c| map_id(c)), local_id);
+    for (slot, &id) in RIVAL_IDS.iter().zip(&ids) {
+        slot.store(id, Ordering::Relaxed);
+    }
+    RIVAL_ID_COUNT.store(ids.len(), Ordering::Release);
     let target = local
         .and_then(|l| super::mem::read::<u64>(l + PLAYER_LOCK_TARGET))
         .unwrap_or(u64::MAX);
@@ -325,10 +438,34 @@ pub(crate) fn tick(base: usize, in_match: bool, rivals: &[u64], local: Option<us
     let want = wanted(in_match);
     if ACTIVE.swap(want, Ordering::Relaxed) != want {
         tracing::info!(
-            "hudfilter: rivals {} the map, compass, party bars and name tags ({n} rival(s))",
+            "hudfilter: rivals and their map markers {} the map, compass, 3D world, party bars and name tags ({n} rival(s), map ids {ids:?})",
             if want { "hidden from" } else { "back on" }
         );
     }
+}
+
+/// A player's map id (`[PlayerIns+0x5A0]+8`, the u16 a marker record names), if it reads as one.
+fn map_id(chr: usize) -> Option<u16> {
+    let data = super::mem::read::<usize>(chr + PLAYER_DATA).filter(|d| *d != 0)?;
+    let id = super::mem::read::<u32>(data + DATA_MAP_ID)?;
+    u16::try_from(id).ok()
+}
+
+/// The rivals' marker owner ids: readable, non-zero, never LOCAL's own (its markers always stay), no repeats, at most
+/// [`MAX_RIVALS`]. Pure, tested.
+fn marker_ids(ids: impl Iterator<Item = Option<u16>>, local: Option<u16>) -> Vec<u16> {
+    let mut out = Vec::new();
+    for id in ids.flatten() {
+        if id != 0
+            && id != u16::MAX
+            && Some(id) != local
+            && !out.contains(&id)
+            && out.len() < MAX_RIVALS
+        {
+            out.push(id);
+        }
+    }
+    out
 }
 
 /// Console `rivalhud` with no argument.
@@ -339,8 +476,12 @@ pub(crate) fn describe() -> String {
         .map(|h| format!("{:#X}", h.load(Ordering::Relaxed)))
         .collect();
     let target = TARGET.load(Ordering::Relaxed);
+    let ids: Vec<String> = RIVAL_IDS[..RIVAL_ID_COUNT.load(Ordering::Relaxed).min(MAX_RIVALS)]
+        .iter()
+        .map(|i| i.load(Ordering::Relaxed).to_string())
+        .collect();
     format!(
-        "rivalhud: {} ({}); rivals [{}]; lock-on target {}; {}; {}; {}",
+        "rivalhud: {} ({}); rivals [{}]; rival map ids [{}]; lock-on target {}; {}; {}; {}; {}; {}",
         if ACTIVE.load(Ordering::Relaxed) {
             "hiding rivals"
         } else {
@@ -349,6 +490,7 @@ pub(crate) fn describe() -> String {
         ["automatic (in a match)", "forced on", "forced off"]
             [usize::from(OVERRIDE.load(Ordering::Relaxed)).min(2)],
         rivals.join(", "),
+        ids.join(", "),
         if target == u64::MAX || target == 0 {
             "none".to_string()
         } else {
@@ -357,6 +499,64 @@ pub(crate) fn describe() -> String {
         MAP.line("map / compass"),
         PARTY.line("party bar"),
         TAG.line("name tag"),
+        PIN_MAP.line("markers on map"),
+        PIN_WORLD.line("markers in 3D"),
+    ) + &markers_line()
+}
+
+/// The marker manager (`[exe+0x3C17BE0]`): its record list (a ring of nodes, `+0x10` = head; node `+0` next, `+0x10` record).
+const RVA_MARKER_MAN: usize = 0x3C1_7BE0;
+const MAN_RECORDS: usize = 0x10;
+const NODE_RECORD: usize = 0x10;
+/// The view model's user-pin list (`CS::WorldMapUserPinDataList` at `vm+0xF0`, its pointer vector at `+0x100`/`+0x108`); item
+/// (`CS::WorldMapUserPinData`) `+0x22` = the placer's map id.
+const VM_PINS_BEGIN: usize = 0x100;
+const VM_PINS_END: usize = 0x108;
+const PIN_OWNER: usize = 0x22;
+static BASE: AtomicUsize = AtomicUsize::new(0);
+
+/// `; markers: records [owners], map list [owners]` (read-only; what arrived vs what the map and compass show), for `rivalhud`.
+fn markers_line() -> String {
+    use super::mem::read;
+    let base = BASE.load(Ordering::Relaxed);
+    if base == 0 {
+        return String::new();
+    }
+    let mut records = Vec::new();
+    if let Some(head) = read::<usize>(base + RVA_MARKER_MAN)
+        .filter(|m| *m != 0)
+        .and_then(|m| read::<usize>(m + MAN_RECORDS))
+        .filter(|h| *h != 0)
+    {
+        let mut node = read::<usize>(head).unwrap_or(head);
+        while node != head && node != 0 && records.len() < 32 {
+            if let Some(owner) = read::<usize>(node + NODE_RECORD)
+                .filter(|r| *r != 0)
+                .and_then(|r| read::<u16>(r + RECORD_OWNER))
+            {
+                records.push(owner.to_string());
+            }
+            node = read::<usize>(node).unwrap_or(0);
+        }
+    }
+    let mut shown = Vec::new();
+    if let Some(vm) = super::maphide::view_model(base) {
+        let begin = read::<usize>(vm + VM_PINS_BEGIN).unwrap_or(0);
+        let end = read::<usize>(vm + VM_PINS_END).unwrap_or(0);
+        let n = end.wrapping_sub(begin) / 8;
+        for i in 0..n.min(32) {
+            if let Some(owner) = read::<usize>(begin + 8 * i)
+                .filter(|it| *it != 0)
+                .and_then(|it| read::<u16>(it + PIN_OWNER))
+            {
+                shown.push(owner.to_string());
+            }
+        }
+    }
+    format!(
+        "; markers: records [{}], map list [{}]",
+        records.join(", "),
+        shown.join(", ")
     )
 }
 
@@ -377,10 +577,48 @@ mod tests {
             Some(0xFFD3_E487u32 as i32)
         );
         assert_eq!(rel32(SITE_TAG.0, SITE_TAG.1), Some(0xFFD3_ED32u32 as i32));
+        // Map markers: E8 C8 25 FF FF and E8 23 D7 FF FF in the file.
+        assert_eq!(SITE_PIN_MAP, (0x911B13, 0x9040E0));
+        assert_eq!(SITE_PIN_WORLD, (0x7D9908, 0x7D7030));
+        assert_eq!(
+            rel32(SITE_PIN_MAP.0, SITE_PIN_MAP.1),
+            Some(0xFFFF_25C8u32 as i32)
+        );
+        assert_eq!(
+            rel32(SITE_PIN_WORLD.0, SITE_PIN_WORLD.1),
+            Some(0xFFFF_D723u32 as i32)
+        );
+        assert_eq!(
+            (PLAYER_DATA, DATA_MAP_ID, RECORD_OWNER, MAP_ARG_OFFSET),
+            (0x5A0, 8, 2, 4)
+        );
         // Each displacement (site+1 .. site+5) stays inside one 64-byte cache line.
-        for (s, _) in [SITE_MAP, SITE_PARTY, SITE_TAG] {
+        for (s, _) in [SITE_MAP, SITE_PARTY, SITE_TAG, SITE_PIN_MAP, SITE_PIN_WORLD] {
             assert_eq!((s + 1) / 64, (s + 4) / 64);
         }
+    }
+
+    #[test]
+    fn rival_markers_are_hidden_own_and_teammate_markers_are_not() {
+        // Seen live: p1's marker record names map id 1, p2's names 2 (MEMORY_MAP §20 "Map markers").
+        let ids = marker_ids([Some(2), Some(3)].into_iter(), Some(1));
+        assert!(rival_marker(true, 2, &ids) && rival_marker(true, 3, &ids));
+        assert!(!rival_marker(true, 1, &ids), "LOCAL's own marker stays");
+        assert!(!rival_marker(true, 4, &ids), "a teammate's marker stays");
+        assert!(!rival_marker(false, 2, &ids), "off outside a match");
+        assert!(!rival_marker(true, 0, &ids));
+    }
+
+    #[test]
+    fn marker_ids_skip_local_unreadable_and_repeats() {
+        assert_eq!(
+            marker_ids(
+                [Some(1), None, Some(2), Some(2), Some(0), Some(0xFFFF)].into_iter(),
+                Some(1)
+            ),
+            vec![2]
+        );
+        assert_eq!(marker_ids((1..20).map(Some), None).len(), MAX_RIVALS);
     }
 
     #[test]

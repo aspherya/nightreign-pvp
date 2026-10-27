@@ -319,6 +319,19 @@ impl CombatCtl {
         }
     }
 
+    /// RW-9 markers: the `PlayerIns` addresses of the players this game marks as RIVAL (their map id names their map markers).
+    pub(crate) fn rival_addrs(&self) -> Vec<usize> {
+        if !self.rtti_ready {
+            return Vec::new();
+        }
+        self.subjects
+            .iter()
+            .filter(|s| !s.local && s.relation == Some(crate::overlay::shared::Relation::Rival))
+            .filter(|s| self.mem.is_player(s.addr))
+            .map(|s| s.addr)
+            .collect()
+    }
+
     /// T-041: the character handles (`ChrIns` handle field) of the players this game marks as RIVAL, read-only.
     pub(crate) fn rival_handles(&self) -> Vec<u64> {
         if !self.rtti_ready {

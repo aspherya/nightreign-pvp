@@ -550,8 +550,21 @@ pub fn keys(seq: &str) -> Result<(), String> {
 /// Mouse click at a point given as fractions (0..1) of the window's client area.
 pub fn click(hwnd: HWND, fx: f32, fy: f32) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
-        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEINPUT,
+        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
     };
+    click_with(hwnd, fx, fy, [MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP]);
+}
+
+/// Middle-button (wheel) click at a point given as fractions of the client area (the map's "Pin" button, RW-9 markers).
+pub fn mclick(hwnd: HWND, fx: f32, fy: f32) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
+        MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+    };
+    click_with(hwnd, fx, fy, [MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP]);
+}
+
+fn click_with(hwnd: HWND, fx: f32, fy: f32, flags: [u32; 2]) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::MOUSEINPUT;
     use windows_sys::Win32::UI::WindowsAndMessaging::SetCursorPos;
     // SAFETY: window geometry reads and SendInput with mouse INPUTs built here.
     unsafe {
@@ -564,7 +577,7 @@ pub fn click(hwnd: HWND, fx: f32, fy: f32) {
         ClientToScreen(hwnd, &mut p);
         SetCursorPos(p.x, p.y);
         std::thread::sleep(Duration::from_millis(60));
-        for f in [MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP] {
+        for f in flags {
             let inp = INPUT {
                 r#type: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE,
                 Anonymous: INPUT_0 {
@@ -651,7 +664,7 @@ pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
                 ));
             }
         }
-        if head.eq_ignore_ascii_case("click") {
+        if head.eq_ignore_ascii_case("click") || head.eq_ignore_ascii_case("mclick") {
             let h = hwnd.ok_or("click needs the game window")?;
             let fx: f32 = it
                 .next()
@@ -661,7 +674,11 @@ pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
                 .next()
                 .and_then(|v| v.parse().ok())
                 .ok_or("click fx fy (fractions 0..1)")?;
-            click(h, fx, fy);
+            if head.eq_ignore_ascii_case("mclick") {
+                mclick(h, fx, fy);
+            } else {
+                click(h, fx, fy);
+            }
             std::thread::sleep(Duration::from_millis(250));
             continue;
         }
@@ -758,7 +775,7 @@ pub fn screenshot(hwnd: HWND, out: &Path) -> Result<(u32, u32), String> {
         DeleteObject(bmp);
         DeleteDC(mem);
         ReleaseDC(std::ptr::null_mut(), screen);
-        // BGRA → RGB, and halve very wide captures so a picture stays readable and small.
+        // BGRA â†’ RGB, and halve very wide captures so a picture stays readable and small.
         let step = if w > 1920 { 2 } else { 1 };
         let (ow, oh) = ((w / step) as u32, (h / step) as u32);
         let mut rgb = Vec::with_capacity((ow * oh * 3) as usize);

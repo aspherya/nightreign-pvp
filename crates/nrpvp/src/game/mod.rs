@@ -632,7 +632,8 @@ fn watch(
         );
         // RW-9 (both builds): rivals are not on the map, the compass, the party bars or (unless locked on) the name tags while a
         // match runs (the mod's PvP mode on, in an expedition); teammates stay. `maphide` (Solo: the whole map / compass list
-        // emptied) is the fallback for when the map site could not be hooked.
+        // emptied) is the fallback for when the map site could not be hooked. Map markers (pins) a rival places are kept off the
+        // map, the compass and the 3D world too.
         let in_match =
             world.in_expedition() && team.pvpve_state() == crate::overlay::shared::PvpveState::On;
         hudfilter::tick(
@@ -642,6 +643,7 @@ fn watch(
                 .as_ref()
                 .map(|c| c.rival_handles())
                 .unwrap_or_default(),
+            &combat.as_ref().map(|c| c.rival_addrs()).unwrap_or_default(),
             combat
                 .as_ref()
                 .and_then(|c| c.local_state())

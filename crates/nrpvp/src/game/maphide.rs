@@ -71,7 +71,7 @@ fn decide(want: bool, begin: usize, end: usize, saved: Option<usize>) -> Step {
 }
 
 /// The live view model, if the menu manager has one with the expected vtable.
-fn view_model(base: usize) -> Option<usize> {
+pub(crate) fn view_model(base: usize) -> Option<usize> {
     let man = mem::read::<usize>(base + RVA_MENU_MAN).filter(|m| *m != 0)?;
     let ctrl = mem::read::<usize>(man + MAN_CTRL).filter(|c| *c != 0)?;
     let vm = mem::read::<usize>(ctrl + CTRL_MAP_VM).filter(|v| *v != 0)?;

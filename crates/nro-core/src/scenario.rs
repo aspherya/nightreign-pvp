@@ -86,6 +86,9 @@ pub struct Wait {
     pub console: String,
     #[serde(default)]
     pub contains: Contains,
+    /// None of these may be in the reply that ends the wait (it keeps waiting while one is).
+    #[serde(default)]
+    pub absent: Contains,
     #[serde(default = "default_timeout")]
     pub timeout_s: u64,
     #[serde(default = "default_every")]
@@ -307,6 +310,10 @@ navigate = "invite_members"
         if let Step::Wait(w) = &s.steps[1].step {
             assert_eq!(w.timeout_s, 90);
             assert!(w.contains.all_in("World loaded, 2 player(s), team_type 1"));
+            assert!(
+                w.absent.none_in("anything"),
+                "no absent list = nothing forbidden"
+            );
         } else {
             panic!()
         }
