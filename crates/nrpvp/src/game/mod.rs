@@ -21,14 +21,17 @@ pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod gamemem;
 pub(crate) mod hawk;
+pub(crate) mod hudfilter;
 pub(crate) mod image;
 pub(crate) mod layout;
+pub(crate) mod maphide;
 pub(crate) mod mem;
 pub(crate) mod memscan;
 pub(crate) mod menuflow;
 pub(crate) mod menugate;
 #[cfg(feature = "dev")]
 pub(crate) mod menutrace;
+pub(crate) mod multi_instance;
 pub(crate) mod multiplay;
 pub(crate) mod poswrite;
 #[cfg(feature = "dev")]
@@ -38,6 +41,8 @@ pub(crate) mod rtti;
 pub(crate) mod singletons;
 pub(crate) mod spawn;
 pub(crate) mod team;
+#[cfg(feature = "dev")]
+pub(crate) mod teleport;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
 pub(crate) mod views;
@@ -624,6 +629,29 @@ fn watch(
                 .and_then(|c| c.local_state())
                 .map(|(a, _)| a),
             base,
+        );
+        // RW-9 (both builds): rivals are not on the map, the compass, the party bars or (unless locked on) the name tags while a
+        // match runs (the mod's PvP mode on, in an expedition); teammates stay. `maphide` (Solo: the whole map / compass list
+        // emptied) is the fallback for when the map site could not be hooked.
+        let in_match =
+            world.in_expedition() && team.pvpve_state() == crate::overlay::shared::PvpveState::On;
+        hudfilter::tick(
+            base,
+            in_match,
+            &combat
+                .as_ref()
+                .map(|c| c.rival_handles())
+                .unwrap_or_default(),
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+        );
+        maphide::tick(
+            base,
+            in_match
+                && !hudfilter::map_hooked()
+                && crate::mm::effective_team_size(cfg.team_size_usize()) == 1,
         );
         // HAWK-2 (both builds): keep the env swap in place, run the hawk crossing's ride phases, log the hawk answers.
         hawk::tick(

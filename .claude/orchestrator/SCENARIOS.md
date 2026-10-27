@@ -20,7 +20,7 @@ Each run launches its own game (about 2.5-4 min), so run only what the change to
 
 ## Catalog
 
-All use `mode = "offline"`, `mm_queue = false` (set in `[config]`) and a dev DLL; all start with `navigate = "title_to_world"` and
+Single-game scenarios: all use `mode = "offline"`, `mm_queue = false` (set in `[config]`) and a dev DLL; all start with `navigate = "title_to_world"` and
 `navigate = "expedition"` (the offline Solo expedition, off the hawk). Puppets = the AFK players of `game/puppet.rs`.
 
 | Scenario | Proves | Setup and key steps | Time |
@@ -31,9 +31,20 @@ All use `mode = "offline"`, `mm_queue = false` (set in `[config]`) and a dev DLL
 | `defeat-rival` | **A rival's kill is a defeat for good** (RW-1): `rival_hit` then `hp0` → `defeated by a rival`, `start step HELD`, `death held`, after `defeat_exit_secs` (15 here) the defeat screen (`FLAG_LOSE`), then Result, Reward, Next presses and the Roundtable | as above plus the end flow of `match-win-end` | 5.5 min |
 | `spectate` | **A defeated player watches** (RW-1 / M5-7): after `rival_hit` + `hp0` the held body is moved next to the nearest living puppet every 100 ms (`night_status` = `watching 0x…`), the follow camera shows that puppet from behind (screenshot `watching2`), F10 asks for the defeat screen and the run leaves the expedition | 3 puppets in a ring, `flag 10007420 1`, `rival_hit`, `hp0`, waits on `night_status`, `keys = "F10"` | 3.5 min |
 | `esc-defeated` | **A defeated, held player can open the Esc menu** (RW-1): as `spectate`, then Esc opens the menu (`CSMenuMan+0x48` = 0x11, screenshot `esc_open`), Esc again closes it | `rival_hit`, `hp0`, wait `the Esc menu is unlocked`, `keys = "ESC"`, `peek` | 3.5 min |
+| `maphide` | **No other player on the map / compass in a Solo match** (RW-9): `pvpve = true`, with 3 puppets the automatic mode empties the other-players list (`maphide` = `0 item(s), hidden by us`), `maphide 0` gives the 2 items back, `maphide auto` empties it again; the vanilla `exe+0x1FE4C0` bytes are checked; screenshots `compass_free` / `compass_hidden` (a puppet is not a network player, so no pin shows by itself: forcing one is by hand, MEMORY_MAP §20) | `peek`, `wait` on `maphide`, `maphide 0` / `auto`, screenshots | 3 min |
 | `match-win` | **The match ends when one team is left, on Day 1** (RW-1): LOCAL + 3 puppets, the puppets at 0 HP for 30 s → `match decided … won` (no night needed), the game's ending | 3 puppets in front, `puppet_hp 1..3 0`, wait on `log` | 3.5 min |
 | `match-win-end` | As `match-win`, then the end flow: Result → Reward → Next ×4 → back at the Roundtable | `match-win` steps + `keys = "F; wait 3s"` and screenshots, `wait status` = `team_type 1` | 5.5 min |
 | `match-loss` | **LOCAL defeated while two puppets are also out**: the last puppet wins → `match decided … lost`, `start step HELD`, no second defeat screen | `puppet_hp 1 0`, `puppet_hp 2 0`, `flag 10007420 1`, `rival_hit`, `hp0` | 4 min |
+
+**Multi-instance (`mi-*`, MULTI-INSTANCE.md):** two emulated-Steam games on one PC (`[[instance]]` tables). Different setup: **Steam closed**,
+`nro desk` running, ~7 GB free RAM per game, run by name only (`regress.ps1` skips `mi-*` unless named), and `nro` must run from a normal
+shell, not an agent's sandboxed Bash (it cannot open the game process, so the P-module check fails).
+
+| Scenario | Proves | Setup and key steps | Time |
+|---|---|---|---|
+| `mi-join` | **Seamless Co-op host/client on one PC**: instance 2 joins instance 1's SC lobby over the gbe_fork emulator with no client keys; both consoles `world loaded, 2 player(s)`, `team_type 1`, `players` = me + rival; the host's lobby probe lists both Steam ids | `[[instance]]` 1 host, 2 client; `title_to_world` on both; `navigate = "invite_members"` on 1 (tp to the table, F, F2, DOWN, F; checks the menu word and `LobbyCreated_t`); waits on both `status`, the host's `log 300` | 6 min |
+| `mi-queue` | **Our own Solo matchmaking on one PC**: both instances `mm_queue_solo`, they meet in our queue lobby over gbe_fork, MATCH READY, the host's Invite Members, the joiner joins by the mod's invite, ALL PRESENT on both, both commence, same expedition, rivals marked 29, `mm_status` IN EXPEDITION | `[[instance]]` 1 host, 2 client; config `mm_queue`/`mm_join`/`mm_quiet_invite` on, `mm_match_players = 2`, `mm_host_create = false` (emulated only: preflight P7 and nro's identity gate); `navigate = "invite_members"` on 1, `navigate = "commence"` on both | 6 min |
+| `mi-rw9-rivals` | **RW-9 with two real instances**: `mi-queue`'s flow to one expedition as rivals, then `rivalhud` shows the three hooks active, `hawk_drop` on both, `tp_player 1 0 -4` puts player 2 in front of player 1; every site `hiding a rival now` on both; `rivalhud 0` brings party bar / name tag / compass back (screenshots `p*_hidden`, `p*_shown`); lock-on (`Q`) on player 2 shows only the target's name tag (`p2_locked_on`) | `[[instance]]` × 2, `mm_queue_solo`, `navigate` invite_members / commence, `rivalhud`, `hawk_drop`, `tp_player`, `keys = "Q"` | ~8 min |
 
 Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kill with real hits (the scenarios fake it with `rival_hit`; offline solo LOCAL carries SpEffect 6999500, so a death needs `flag 10007420 1`), what the other screen shows, Seamless Co-op host/client, banners of both screens, real latency.
 
@@ -47,7 +58,9 @@ Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kil
 | `wait = { console, contains, timeout_s, every_ms }` | repeat a console line until the reply contains the text (all needles, case-insensitive); timeout = ABORT |
 | `expect = { console, contains, absent }` | one console line whose reply must match; a miss = FAIL, the run continues |
 | `keys = "ENTER; E*3; click 0.5 0.5; wait 1500ms"` | keys and mouse for the game window (needs `nro desk`) |
-| `navigate = "title_to_world"` or `"expedition"` | built-in macros |
+| `navigate = "title_to_world"`, `"expedition"` or `"invite_members"` | built-in macros (`invite_members`: Roundtable host → Invite Members pressed, position-independent) |
+| `[[instance]]` `n`, `role`, `[instance.config]` | emulated instances 1..3, launched in file order; instance config goes over `[config]` |
+| `instance = N` (in any step) | the instance the step acts on (default: the first `[[instance]]`); report lines start with `[iN]` |
 | `puppets = n`, `puppet_ring = r`, `puppet_front = d` | make 1..5 puppets; place them around / in front of LOCAL (metres) |
 | `screenshot = "name"` | `runs\<id>\shots\name.png` (open it with the Read tool and look) |
 | `sleep_ms = n` | pause |

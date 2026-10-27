@@ -312,6 +312,11 @@ fn sc_range() -> Option<(usize, usize)> {
     }
 }
 
+/// The exe base (also for `teleport.rs`).
+pub(crate) fn exe_base() -> Result<usize, String> {
+    base()
+}
+
 fn base() -> Result<usize, String> {
     let b = BASE.load(Ordering::Relaxed);
     if b != 0 {
@@ -857,7 +862,7 @@ pub(crate) fn list() -> String {
             "player"
         };
         out.push(format!(
-            "  slot {i}: 0x{chr:X} {kind} vtable exe+0x{vt:X} handle {:#X} id {:#X} npc {} team {} hp {} downed {} pos {} near-death {} (entry tail {tail:#018X})",
+            "  slot {i}: 0x{chr:X} {kind} vtable exe+0x{vt:X} handle {:#X} id {:#X} npc {} team {} hp {} downed {} pos {} near-death {} map id {} (entry tail {tail:#018X})",
             c.handle().unwrap_or(0),
             crate::game::mem::read::<u64>(chr + CHR_PLAYER_ID).unwrap_or(0),
             c.npc_id().map_or("?".into(), |v| v.to_string()),
@@ -866,6 +871,11 @@ pub(crate) fn list() -> String {
             c.downed_state().map_or("?".into(), |v| v.to_string()),
             world_pos(chr, local0).map_or("?".into(), |p| format!("({:.1}, {:.1}, {:.1})", p[0], p[1], p[2])),
             if c.holds_any_speffect(&[8_970_061]) { "on" } else { "off" },
+            // RW-9: the id the map code matches against the remote slots of GameDataMan ([[chr+0x5A0]+8]).
+            crate::game::mem::read::<usize>(chr + 0x5A0)
+                .filter(|p| *p != 0)
+                .and_then(|p| crate::game::mem::read::<u64>(p + 8))
+                .map_or("?".into(), |v| format!("{v:#X}")),
         ));
     }
     out.push(format!("{n} filled"));

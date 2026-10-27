@@ -9,7 +9,7 @@
 |---|---|
 | PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 3` not run |
 | One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled me3 + game data), player build with no overlay | **Works on two PCs** (FS-UI2, 2026-10-21) |
-| Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu, status as the game's own messages | **Works with one host click**, 2 players (FS-MM3, FS-UI2); 6 players only in automated tests |
+| Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu, status as the game's own messages | **Works with one host click**, 2 players (FS-MM3, FS-UI2); 6 players only in automated tests. **On one PC** between two emulated-Steam instances: queue → same expedition as rivals, `mi-queue` PASS 3/3 (2026-10-27, orchestrator/MULTI-INSTANCE §20) |
 | Downed rule: rival hits take 3 s off the bleed-out and never fill the bar; teammates revive; rivals cannot revive rivals (T-040/T-041) | **Works, clean** (Nucleus). Not yet over real two-PC lag |
 | Hawk crossing at the start (one line, dive, drop) | **Works solo**, on by default (HAWK-2, PR #2); not run in an FS |
 | **Match rules after the first real match (RW-1/2/4, 2026-10-24):** killed by a rival (hit log, 30 s) or the tide = **defeated for good** (body held, defeat screen after `defeat_exit_secs` = 20 s, then the Roundtable); killed by an enemy or a fall = vanilla respawn; the match ends the moment one team is left, on any day (a player is out after 30 s dead or 6 s gone); **free Day 1** (`day1_secs` = 1020: slowed clock to 11:50, no tide, no night, then the game's morning); Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-loss`). Not seen on two PCs: the hold after a bleed-out death, the other screen, real hits (FS-RW1, TESTING §6) |
@@ -19,7 +19,7 @@
 | Offline mode (`mode = "offline"`): Commence Solo runs the game's own solo expedition | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro` + puppet players** (in this repo since 2026-10-24): offline launch through me3, AFK players the mod counts as rivals, keys/screenshots, scenarios | **Works**; `scripts\regress.ps1` runs `night1-count`, `night1-local-dies`, `night2-win`, `night2-loss`, `puppets-smoke` |
 
-Not built yet: **RW-3** defeat item drops, **RW-5** boss drops to the last hitter, **RW-8** runes shared only inside a team, **RW-9** no remote map / compass position and nametags only on the target (all four need a second real client to observe, TASKS), final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
+Not built yet: **RW-3** defeat item drops, **RW-5** boss drops to the last hitter, **RW-8** runes shared only inside a team, **RW-9** (Solo part built 2026-10-26: no other player on the compass, map screen unconfirmed; nametags and Duo / Trio open, TASKS), the other three need a second real client to observe, final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10; not proven to be Seamless Co-op's. The
 first quit on a post-R5 build did not crash (SMOKE-2), Alt-F4 on the older zip did. A player zip from `main` is the real check. Runs end

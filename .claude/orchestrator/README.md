@@ -15,6 +15,7 @@ profile, scenario model), `crates/nro` (CLI + desk), `crates/nro-mcp` (MCP serve
   After launch me3's attach config must say `start_online: false` and list exactly the staged modules, a watchdog kills the game if EAC
   appears, logs every remote TCP endpoint and checks the vanilla saves at the end. This keeps the official servers and EAC out; it cannot
   promise there is no ban risk. Never go online with a modded game (CLAUDE.md hard rule 2).
+- **Several real instances on one PC (Nucleus replacement): plan only**, [MULTI-INSTANCE.md](MULTI-INSTANCE.md).
 - The contract with the mod (what `nro` reads from it): [CONTRACT.md](CONTRACT.md). Design history: `../research/ORCH-plan.md`.
 
 ## Setup (once)

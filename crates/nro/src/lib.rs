@@ -3,6 +3,7 @@
 
 pub mod console;
 pub mod desk;
+pub mod emu;
 pub mod net;
 pub mod ops;
 pub mod run;

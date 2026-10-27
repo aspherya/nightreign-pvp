@@ -15,7 +15,8 @@ const HELP: &str = "nro - launch and drive an offline nightreign-pvp developer g
   nro navigate title_to_world
   nro shot [name]                        screenshot of the game window into the run folder
   nro log [n] [filter]                   tail of the run's nrpvp.log
-  nro stop                               kill the session's game and me3
+  nro stop [--all]                       kill the session's game and me3 (--all: every emulated instance)
+  nro launch --emulated N                emulated-Steam instance N (1..3), Steam closed; any command takes --i N
   nro run <scenario.toml> [--mod-dist DIR]  full scenario: stage, launch, steps, report.json
   nro scenarios                          list scenarios/*.toml
   nro puppets <n>                        n AFK puppet players (1..5) in the running session (offline mode, in a world)
@@ -27,7 +28,14 @@ const HELP: &str = "nro - launch and drive an offline nightreign-pvp developer g
 
 fn main() {
     nro::sys::dpi_aware();
-    let a: Vec<String> = std::env::args().skip(1).collect();
+    let mut a: Vec<String> = std::env::args().skip(1).collect();
+    // `--i N`: act on emulated instance N (default: the one staged last).
+    if let Some(p) = a.iter().position(|x| x == "--i") {
+        if let Some(n) = a.get(p + 1).cloned() {
+            std::env::set_var("NRO_I", n);
+            a.drain(p..=p + 1);
+        }
+    }
     let r = dispatch(&a);
     match r {
         Ok(v) => println!("{}", serde_json::to_string_pretty(&v).unwrap()),
@@ -69,11 +77,15 @@ fn dispatch(a: &[String]) -> ops::R {
     match a.first().map(String::as_str) {
         None | Some("help" | "-h" | "--help") => Ok(serde_json::json!(HELP)),
         Some("env") => ops::env(),
-        Some("preflight") => ops::preflight(flag(a, "--mod-dist")),
+        Some("preflight") => ops::preflight(
+            flag(a, "--mod-dist"),
+            flag(a, "--emulated").and_then(|n| n.parse().ok()),
+        ),
         Some("launch") => ops::launch(
             flag(a, "--mod-dist"),
             sets(a)?,
             a.iter().any(|x| x == "--world"),
+            flag(a, "--emulated").and_then(|n| n.parse().ok()),
         ),
         Some("status") => ops::status(),
         Some("cmd") => ops::console(&rest()),
@@ -84,6 +96,7 @@ fn dispatch(a: &[String]) -> ops::R {
             a.get(1).and_then(|n| n.parse().ok()).unwrap_or(40),
             a.get(2).map(String::as_str),
         ),
+        Some("stop") if a.iter().any(|x| x == "--all") => ops::stop_all(),
         Some("stop") => ops::stop(),
         Some("run") => ops::run_scenario(
             a.get(1).ok_or("nro run <scenario.toml>")?,

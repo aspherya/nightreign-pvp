@@ -69,6 +69,141 @@ pub fn image_path(pid: u32) -> Option<String> {
     }
 }
 
+/// Full paths of the modules loaded in `pid` (empty when the process cannot be opened).
+pub fn modules(pid: u32) -> Vec<String> {
+    use windows_sys::Win32::System::ProcessStatus::{
+        EnumProcessModulesEx, GetModuleFileNameExW, LIST_MODULES_ALL,
+    };
+    use windows_sys::Win32::System::Threading::PROCESS_VM_READ;
+    // SAFETY: plain Win32 calls with owned buffers; the handle is closed before returning.
+    unsafe {
+        let h = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | 0x0400 | PROCESS_VM_READ,
+            0,
+            pid,
+        );
+        if h.is_null() {
+            return Vec::new();
+        }
+        let mut mods = vec![std::ptr::null_mut(); 2048];
+        let mut need = 0u32;
+        let mut out = Vec::new();
+        if EnumProcessModulesEx(
+            h,
+            mods.as_mut_ptr(),
+            (mods.len() * std::mem::size_of::<*mut core::ffi::c_void>()) as u32,
+            &mut need,
+            LIST_MODULES_ALL,
+        ) != 0
+        {
+            let n = (need as usize / std::mem::size_of::<*mut core::ffi::c_void>()).min(mods.len());
+            for m in &mods[..n] {
+                let mut buf = [0u16; 1024];
+                let len = GetModuleFileNameExW(h, *m, buf.as_mut_ptr(), buf.len() as u32);
+                if len > 0 {
+                    out.push(String::from_utf16_lossy(&buf[..len as usize]));
+                }
+            }
+        }
+        CloseHandle(h);
+        out
+    }
+}
+
+/// Diagnostic: the stack words of thread `tid` that point into a module (a poor man's backtrace), first 14.
+fn stack_scan(pid: u32, tid: u32) -> Vec<String> {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        GetThreadContext, ReadProcessMemory, CONTEXT,
+    };
+    use windows_sys::Win32::System::Threading::{OpenThread, THREAD_GET_CONTEXT};
+    let mut out = Vec::new();
+    // SAFETY: handles opened and closed here; CONTEXT is aligned by its own definition; reads go through ReadProcessMemory.
+    unsafe {
+        let ht = OpenThread(THREAD_GET_CONTEXT, 0, tid);
+        let hp = OpenProcess(0x0010 | PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if ht.is_null() || hp.is_null() {
+            return vec!["cannot open thread or process".into()];
+        }
+        let mut ctx: CONTEXT = std::mem::zeroed();
+        ctx.ContextFlags = 0x0010_0001; // CONTEXT_CONTROL
+        if GetThreadContext(ht, &mut ctx) != 0 {
+            let mut buf = [0u8; 0x800];
+            let mut got = 0usize;
+            if ReadProcessMemory(
+                hp,
+                ctx.Rsp as *const _,
+                buf.as_mut_ptr().cast(),
+                buf.len(),
+                &mut got,
+            ) != 0
+            {
+                for w in buf[..got].as_chunks::<8>().0 {
+                    let v = usize::from_le_bytes(*w);
+                    if v > 0x7FF0_0000_0000 || (0x1_4000_0000..0x1_8000_0000).contains(&v) {
+                        let m = module_of(pid, v);
+                        if !m.starts_with("no module") && !out.contains(&m) {
+                            out.push(m);
+                            if out.len() >= 14 {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        CloseHandle(ht);
+        CloseHandle(hp);
+    }
+    out
+}
+
+/// `module+offset` for an address in `pid` (diagnostic).
+pub fn module_of(pid: u32, addr: usize) -> String {
+    use windows_sys::Win32::System::ProcessStatus::{
+        EnumProcessModulesEx, GetModuleFileNameExW, GetModuleInformation, LIST_MODULES_ALL,
+        MODULEINFO,
+    };
+    // SAFETY: plain Win32 calls with owned buffers; the handle is closed before returning.
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | 0x0400 | 0x0010, 0, pid);
+        if h.is_null() {
+            return "?".into();
+        }
+        let mut mods = vec![std::ptr::null_mut(); 2048];
+        let mut need = 0u32;
+        let mut out = format!("no module holds 0x{addr:X}");
+        if EnumProcessModulesEx(
+            h,
+            mods.as_mut_ptr(),
+            (mods.len() * 8) as u32,
+            &mut need,
+            LIST_MODULES_ALL,
+        ) != 0
+        {
+            for m in &mods[..(need as usize / 8).min(mods.len())] {
+                let mut mi: MODULEINFO = std::mem::zeroed();
+                if GetModuleInformation(h, *m, &mut mi, std::mem::size_of::<MODULEINFO>() as u32)
+                    != 0
+                {
+                    let base = mi.lpBaseOfDll as usize;
+                    if addr >= base && addr < base + mi.SizeOfImage as usize {
+                        let mut buf = [0u16; 1024];
+                        let n = GetModuleFileNameExW(h, *m, buf.as_mut_ptr(), 1024);
+                        out = format!(
+                            "{}+0x{:X}",
+                            String::from_utf16_lossy(&buf[..n as usize]),
+                            addr - base
+                        );
+                        break;
+                    }
+                }
+            }
+        }
+        CloseHandle(h);
+        out
+    }
+}
+
 pub fn processes() -> Vec<Process> {
     let mut out = Vec::new();
     // SAFETY: toolhelp snapshot walk; dwSize is set as the API requires; the snapshot handle is closed.
@@ -104,6 +239,107 @@ pub fn kill(pid: u32) -> bool {
         let ok = TerminateProcess(h, 1) != 0;
         CloseHandle(h);
         ok
+    }
+}
+
+/// A handle (as usize, 0 = none) that outlives the process, to read its exit code afterwards.
+pub fn open_for_exit(pid: u32) -> usize {
+    // SAFETY: plain OpenProcess; the caller passes the value to `exit_code`, which closes it.
+    unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | 0x0010_0000, 0, pid) as usize }
+}
+
+/// The exit code of the process behind `h` (from `open_for_exit`), `None` while it still runs; closes the handle when it returns Some.
+pub fn exit_code(h: usize) -> Option<u32> {
+    use windows_sys::Win32::System::Threading::GetExitCodeProcess;
+    if h == 0 {
+        return None;
+    }
+    let mut code = 0u32;
+    // SAFETY: `h` came from OpenProcess above.
+    let ok = unsafe { GetExitCodeProcess(h as _, &mut code) };
+    if ok != 0 && code != 259 {
+        // SAFETY: closing our own handle.
+        unsafe { CloseHandle(h as _) };
+        return Some(code);
+    }
+    None
+}
+
+/// Diagnostic (NRO_DEBUG_ATTACH=1): attach as a debugger to `pid`, return a text about the first access violation (address, module+offset,
+/// access type) or why none was seen. Blocks until the process exits or `max_ms` pass.
+pub fn first_crash(pid: u32, max_ms: u32) -> String {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        ContinueDebugEvent, DebugActiveProcess, DebugSetProcessKillOnExit, WaitForDebugEvent,
+        DEBUG_EVENT,
+    };
+    // SAFETY: standard debug loop on a process we just attached to; the event struct is zero-initialised and owned here.
+    unsafe {
+        if DebugActiveProcess(pid) == 0 {
+            return format!(
+                "DebugActiveProcess failed, error {}",
+                windows_sys::Win32::Foundation::GetLastError()
+            );
+        }
+        DebugSetProcessKillOnExit(0);
+        let t0 = std::time::Instant::now();
+        let mut seen = Vec::new();
+        let mut avs: Vec<String> = Vec::new();
+        loop {
+            let mut ev: DEBUG_EVENT = std::mem::zeroed();
+            if WaitForDebugEvent(&mut ev, 200) == 0 {
+                if t0.elapsed().as_millis() as u32 > max_ms {
+                    return format!("no unhandled AV in {max_ms} ms; first-chance AVs: {avs:?}; events: {seen:?}");
+                }
+                continue;
+            }
+            let mut cont = 0x8001_0001u32; // DBG_EXCEPTION_NOT_HANDLED
+            match ev.dwDebugEventCode {
+                1 => {
+                    let e = ev.u.Exception;
+                    let code = e.ExceptionRecord.ExceptionCode as u32;
+                    if code == 0xC000_0005 {
+                        let addr = e.ExceptionRecord.ExceptionAddress as usize;
+                        let info = e.ExceptionRecord.ExceptionInformation;
+                        let what = if e.ExceptionRecord.NumberParameters >= 2 {
+                            format!(
+                                "{} of 0x{:X}",
+                                ["read", "write", "?", "?", "?", "?", "?", "?", "execute"]
+                                    [(info[0] as usize).min(8)],
+                                info[1]
+                            )
+                        } else {
+                            String::new()
+                        };
+                        let line = format!(
+                            "AV at 0x{addr:X} = {} ({what}), first chance {}",
+                            module_of(pid, addr),
+                            e.dwFirstChance
+                        );
+                        if e.dwFirstChance == 0 {
+                            let stack = stack_scan(pid, ev.dwThreadId);
+                            return format!(
+                                "UNHANDLED {line}; stack: {stack:?}; earlier AVs: {avs:?}"
+                            );
+                        }
+                        if avs.len() < 12 {
+                            avs.push(line);
+                        }
+                    }
+                    seen.push(format!("0x{code:X}"));
+                    if code == 0x8000_0003 || code == 0x4000_001F || code == 0x4000_001E {
+                        cont = 0x0001_0002; // DBG_CONTINUE for breakpoints
+                    }
+                }
+                5 => {
+                    return format!(
+                        "process exited, code 0x{:X}; events before: {seen:?}",
+                        ev.u.ExitProcess.dwExitCode
+                    )
+                }
+                _ => cont = 0x0001_0002,
+            }
+            ContinueDebugEvent(ev.dwProcessId, ev.dwThreadId, cont as i32);
+        }
     }
 }
 
@@ -145,18 +381,89 @@ pub fn main_window(pid: u32) -> Option<HWND> {
     (!f.best.is_null()).then_some(f.best)
 }
 
+/// The window in front: `true` when it is `hwnd`.
+pub fn is_foreground(hwnd: HWND) -> bool {
+    // SAFETY: no arguments; returns a handle value only.
+    unsafe { GetForegroundWindow() == hwnd }
+}
+
+/// Visible windows of other processes that lie above `hwnd` in the z-order and overlap its rectangle (the user's PC: a window over
+/// the game would get our key presses and spoil screenshots). Ignored: cloaked windows (other virtual desktops, hidden UWP frames),
+/// click-through layered overlays (`WS_EX_TRANSPARENT`), and windows smaller than 8 px. Returns "pid exe: title" per window.
+pub fn occluders(hwnd: HWND) -> Vec<String> {
+    use windows_sys::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextW, GWL_EXSTYLE, GW_HWNDPREV,
+        WS_EX_TRANSPARENT,
+    };
+    let mut out = Vec::new();
+    // SAFETY: read-only window queries on handles from the z-order walk; buffers are sized here.
+    unsafe {
+        let mut me: RECT = std::mem::zeroed();
+        if GetWindowRect(hwnd, &mut me) == 0 {
+            return out;
+        }
+        let mut own = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut own);
+        let mut w = GetWindow(hwnd, GW_HWNDPREV);
+        let mut n = 0;
+        while !w.is_null() && n < 2000 {
+            n += 1;
+            let mut pid = 0u32;
+            GetWindowThreadProcessId(w, &mut pid);
+            let mut cloaked = 0u32;
+            DwmGetWindowAttribute(
+                w,
+                DWMWA_CLOAKED as u32,
+                (&mut cloaked as *mut u32).cast(),
+                4,
+            );
+            let ex = GetWindowLongW(w, GWL_EXSTYLE) as u32;
+            let mut r: RECT = std::mem::zeroed();
+            GetWindowRect(w, &mut r);
+            let overlap = r.left < me.right
+                && r.right > me.left
+                && r.top < me.bottom
+                && r.bottom > me.top
+                && r.right - r.left >= 8
+                && r.bottom - r.top >= 8;
+            if pid != own
+                && IsWindowVisible(w) != 0
+                && cloaked == 0
+                && ex & WS_EX_TRANSPARENT == 0
+                && overlap
+            {
+                let mut t = [0u16; 128];
+                let len = GetWindowTextW(w, t.as_mut_ptr(), t.len() as i32).max(0) as usize;
+                let exe = image_path(pid)
+                    .and_then(|p| p.rsplit('\\').next().map(String::from))
+                    .unwrap_or_default();
+                out.push(format!(
+                    "{pid} {exe}: {}",
+                    String::from_utf16_lossy(&t[..len])
+                ));
+            }
+            w = GetWindow(w, GW_HWNDPREV);
+        }
+    }
+    out
+}
+
 pub fn focus(hwnd: HWND) -> bool {
     // SAFETY: window calls on a live handle. An ALT tap first lifts the foreground lock Windows puts on background processes.
     unsafe {
-        if GetForegroundWindow() == hwnd {
-            return true;
+        // Several tries: with two game windows the second SetForegroundWindow is often refused the first time.
+        for _ in 0..6 {
+            if GetForegroundWindow() == hwnd {
+                return true;
+            }
+            ShowWindow(hwnd, SW_RESTORE);
+            key_event(0x12, false); // VK_MENU
+            key_event(0x12, true);
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+            std::thread::sleep(Duration::from_millis(250));
         }
-        ShowWindow(hwnd, SW_RESTORE);
-        key_event(0x12, false); // VK_MENU
-        key_event(0x12, true);
-        BringWindowToTop(hwnd);
-        SetForegroundWindow(hwnd);
-        std::thread::sleep(Duration::from_millis(150));
         GetForegroundWindow() == hwnd
     }
 }
@@ -336,6 +643,14 @@ pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
     for part in seq.split(';').map(str::trim).filter(|p| !p.is_empty()) {
         let mut it = part.split_whitespace();
         let head = it.next().unwrap_or("");
+        // Every key or click goes only to the game window: stop the moment another window is in front (the user's PC).
+        if let Some(h) = hwnd {
+            if !head.eq_ignore_ascii_case("wait") && !is_foreground(h) {
+                return Err(format!(
+                    "stopped before {part:?}: the game window is no longer in front"
+                ));
+            }
+        }
         if head.eq_ignore_ascii_case("click") {
             let h = hwnd.ok_or("click needs the game window")?;
             let fx: f32 = it

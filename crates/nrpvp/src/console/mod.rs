@@ -95,12 +95,15 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
     Spec { name: "night_status", args: "", help: "the match rules: free day 1 / day 2 / night, players, teams seen, how many are out, whether LOCAL is defeated, the winner, mob deaths, places recorded, death held", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "mutex", args: "", help: "multi-instance (orchestrator): close this game's handle to the engine's single-instance mutex now (what `allow_multi_instance = true` does at load) so another game instance can start; the reply lists the named mutexes seen", run: |_| Ok(Act::Reply(crate::game::multi_instance::command())) },
     Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). In a session it downs the player; with `flag 10007420 1` (die at once) it is a real death even offline", run: hp0 },
     Spec { name: "spectate", args: "[0|1]", help: "RW-1: 1 = a defeated player's held body follows a living player (the mod's spectator), 0 = it stays where it fell (shows what the game itself does for a dead player); no argument shows it", run: spectate },
     Spec { name: "trace_write", args: "<addr>|0", help: "research: log which instruction writes the 4-byte aligned address (hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace` lines; 0 stops. Heap addresses change every launch", run: trace_write },
     Spec { name: "rune_watch", args: "[0|1]", help: "RW-8 research: 1 = log which instruction writes LOCAL's rune count (PlayerGameData+0x6C; hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace`; 0 = off", run: rune_watch },
     Spec { name: "padpoll", args: "", help: "RW-1 research: every virtual input bit of the game's own pad that is set now (hold a button, call it)", run: |_| Ok(Act::Reply(crate::game::menugate::describe())) },
     Spec { name: "menugate", args: "[0|1]", help: "RW-1 research: 1 = the Esc key asks the game to open the pause menu even while LOCAL is dead (sets CSMenuMan ctrl+0x179); 0 = left to the game (the night match does this by itself for a defeated player)", run: |a| { let on = match a.first().map(String::as_str) { Some("0") => false, Some("1") | None => true, Some(_) => return Err("expected 0 or 1".into()) }; crate::game::menugate::set_active(on); Ok(Act::Reply(format!("menugate {}", u8::from(on)))) } },
+    Spec { name: "maphide", args: "[0|1|auto]", help: "RW-9: 1 = empty the map / compass list of other players now, 0 = show them, auto (default) = hidden while a Solo match runs (PvP on, team size 1) and the rivalhud map hook is missing; no argument shows the state", run: maphide },
+    Spec { name: "rivalhud", args: "[0|1|auto]", help: "RW-9: rivals off the map, compass, party bars and name tags (the tag comes back on the lock-on target); 1 = force on, 0 = force off, auto (default) = while a match runs; no argument shows the state and the per-site counters", run: rivalhud },
     Spec { name: "poke", args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
     Spec { name: "memscan", args: "[utf16|ascii|hex] <text|hex bytes>", help: "research (RW-6): scan the whole process for a string (UTF-16 by default) or bytes on a background thread (about a minute) and log every hit with 64 bytes around it as `memscan:`; no argument shows the last result. Used to find where the game keeps a text the menu shows", run: memscan },
     Spec { name: "rival_hit", args: "", help: "RW-1 test aid: record a rival's hit on this game's player now (the player build's hit log does it for real hits); a death within 30 s after it is a defeat for good, a death without it is a normal one", run: rival_hit },
@@ -122,6 +125,9 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "puppet_hp", args: "<slot> <hp>", help: "ORCH-2: write a puppet's current HP (0 = as if killed; in a session a player at 0 is downed)", run: |a| crate::game::puppet::hp_cmd(a).map(Act::Reply) },
     Spec { name: "puppet_near_death", args: "[0|1]", help: "ORCH-2: 1 (default) = puppets keep SpEffect 8970061, so every 0 HP is a down like in a session; 0 = only the first", run: |a| Ok(Act::Reply(crate::game::puppet::near_death_cmd(switch_arg(a, "usage: puppet_near_death [0|1]")?))) },
     Spec { name: "puppet_max", args: "[n]", help: "ORCH-2: at most n puppets (0..5, default 5); further bot-manager creations are skipped while armed", run: |a| crate::game::puppet::max_cmd(a.first().map(String::as_str)).map(Act::Reply) },
+    Spec { name: "pos", args: "", help: "orchestrator: this game's player position in world metres (physics module minus origin), the physics position, and the orientation candidate at Physics+0x50 (read only)", run: |_| crate::game::teleport::pos_cmd().map(Act::Reply) },
+    Spec { name: "tp", args: "<x> <y> <z> [yaw]", help: "orchestrator: put this game's player at that world position (metres, as `pos` prints it; at most 100 m per call), with a yaw also facing that heading (degrees). nro uses it to stand the host at the Roundtable table", run: |a| crate::game::teleport::tp_cmd(a).map(Act::Reply) },
+    Spec { name: "tp_player", args: "<slot 1..5> [dx dz]", help: "RW-9 test aid: put this game's player next to the player in that player-list slot (default 3 m along x, at most 50 m offset), any distance; two instances can then see each other", run: |a| crate::game::teleport::tp_player_cmd(a).map(Act::Reply) },
     Spec { name: "puppet_list", args: "", help: "ORCH-2: every entry of the game's player list (slot, address, vtable, handle, npc id, team, hp, downed state)", run: |_| Ok(Act::Reply(crate::game::puppet::list())) },
     Spec { name: "speffects", args: "", help: "M5-8 research: this game's player's SpEffect ids (revive items 540155 / 6999100 / 6999500 / 8970061, die-at-once 102130, ...)", run: |_| Ok(Act::Reply(crate::game::deathtrace::speffects_cmd())) },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
@@ -586,6 +592,28 @@ fn switch_arg(args: &[String], usage: &str) -> Result<Option<bool>, String> {
         Some("1") if args.len() == 1 => Ok(Some(true)),
         _ => Err(usage.into()),
     }
+}
+
+/// RW-9: `rivalhud [0|1|auto]`.
+fn rivalhud(args: &[String]) -> Result<Act, String> {
+    use crate::game::hudfilter;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("auto") if args.len() == 1 => hudfilter::set_override(None),
+        Some(_) => hudfilter::set_override(switch_arg(args, "usage: rivalhud [0|1|auto]")?),
+    }
+    Ok(Act::Reply(hudfilter::describe()))
+}
+
+/// RW-9: `maphide [0|1|auto]`.
+fn maphide(args: &[String]) -> Result<Act, String> {
+    use crate::game::maphide;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("auto") if args.len() == 1 => maphide::set_override(None),
+        Some(_) => maphide::set_override(switch_arg(args, "usage: maphide [0|1|auto]")?),
+    }
+    Ok(Act::Reply(maphide::describe()))
 }
 
 fn death_trace(args: &[String]) -> Result<Act, String> {

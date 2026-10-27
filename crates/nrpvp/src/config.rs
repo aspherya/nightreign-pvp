@@ -70,6 +70,10 @@ auto_team_all = 0
 # never calls Steam setters. The player build forces this off.
 mm_probe = false
 
+# Several game instances on one PC (orchestrator, dev mode only): the game closes its own single-instance mutex (SekiroMutex) so
+# the next instance can start. Also the console command `mutex`.
+allow_multi_instance = false
+
 # MM-2 public matchmaking queue (dev mode only; the player build forces it off). false = nothing of it runs. true = a queue lobby
 # worker on the Steam thread, driven from the console (mm_queue_solo, mm_leave, mm_status) and from the table menu (br_menu).
 # Needs Seamless Co-op (nrsc.dll) loaded and no EasyAntiCheat module; otherwise queuing is refused and the reason is shown.
@@ -239,6 +243,8 @@ pub(crate) struct Config {
     pub auto_team_all: u32,
     /// MM-1: Steam access probe on (developer mode only; forced off in the player build).
     pub mm_probe: bool,
+    /// Dev mode only: close the engine's single-instance mutex in this process (game/multi_instance.rs).
+    pub allow_multi_instance: bool,
     /// MM-2: public matchmaking queue on (developer mode only; forced off in the player build).
     pub mm_queue: bool,
     /// MM-2: players per match, clamped to 2..=6 in `parse`.
@@ -360,6 +366,7 @@ impl Default for Config {
             team_size: DEFAULT_TEAM_SIZE,
             auto_team_all: 0,
             mm_probe: false,
+            allow_multi_instance: false,
             mm_queue: false,
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
             mm_max_players: DEFAULT_MM_MAX_PLAYERS,
@@ -518,6 +525,7 @@ fn enforce_player_mode(
     cfg.mm_join_auto = "invite+link".to_string();
     // MM-1: the Steam probe's logging is a developer tool (the callbacks it registers stay when the queue needs them).
     cfg.mm_probe = false;
+    cfg.allow_multi_instance = false;
     // MM-3e: the host-side lobby creation failed in FS-MM2 and is a developer tool.
     cfg.mm_host_create = false;
     // MM-3c: and the lobby tracer.

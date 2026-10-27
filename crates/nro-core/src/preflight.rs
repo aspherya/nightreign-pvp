@@ -33,6 +33,15 @@ pub struct Facts {
     pub profile_files: Vec<(String, bool)>,
     /// The real vanilla saves (`NR0000.sl2*`) were hashed for the before/after check.
     pub vanilla_saves_hashed: bool,
+    /// Set for an emulated-Steam instance (docs: orchestrator/MULTI-INSTANCE.md §3.4); `None` = the normal real-Steam launch.
+    pub emulated: Option<Emulated>,
+}
+
+/// What the policy needs to know about an instance that runs on the Steam emulator (gbe_fork) instead of the real Steam.
+#[derive(Debug, Clone, Default)]
+pub struct Emulated {
+    /// The staged `steam_settings\configs.main.ini` text (`None` = missing).
+    pub main_ini: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -98,14 +107,25 @@ pub fn evaluate(pins: &Pins, f: &Facts) -> Report {
     ));
 
     // P3 me3 arguments.
-    let bad: Vec<&String> = f
-        .me3_args
-        .iter()
-        .filter(|a| {
-            let a = lower(a);
-            a.starts_with("--online") || a.starts_with("--skip-steam-init") || a == "--suspend"
-        })
-        .collect();
+    // An emulated instance needs `--skip-steam-init true` (no Steam client to initialise) and `--no-boot-boost true` (several games must not share
+    // me3's decrypted-archive cache); nothing else changes.
+    let emu = f.emulated.is_some();
+    let mut bad: Vec<&String> = Vec::new();
+    let mut i = 0;
+    while i < f.me3_args.len() {
+        let a = lower(&f.me3_args[i]);
+        if emu
+            && (a == "--skip-steam-init" || a == "--no-boot-boost")
+            && f.me3_args.get(i + 1).map(|v| lower(v)) == Some("true".into())
+        {
+            i += 2;
+            continue;
+        }
+        if a.starts_with("--online") || a.starts_with("--skip-steam-init") || a == "--suspend" {
+            bad.push(&f.me3_args[i]);
+        }
+        i += 1;
+    }
     checks.push(check(
         "P3 me3 arguments",
         bad.is_empty(),
@@ -153,6 +173,15 @@ pub fn evaluate(pins: &Pins, f: &Facts) -> Report {
     let mut blocking = Vec::new();
     for p in &f.processes {
         let n = lower(&p.name);
+        // Another emulated instance of ours (its exe lives under nro-instances) does not block the next one.
+        let ours = f.emulated.is_some()
+            && n == "nightreign.exe"
+            && p.path
+                .as_deref()
+                .is_some_and(|x| lower(x).contains(r"\nro-instances\"));
+        if ours {
+            continue;
+        }
         if n == "nightreign.exe" || n == "start_protected_game.exe" || n.contains("easyanticheat") {
             blocking.push(format!("{} (pid {})", p.name, p.pid));
         } else if n == "me3.exe" || n == "me3-launcher.exe" {
@@ -171,18 +200,48 @@ pub fn evaluate(pins: &Pins, f: &Facts) -> Report {
         "close the game first; if EasyAntiCheat or start_protected_game.exe is running, the normal game was started: quit it",
     ));
 
-    // P6 Steam.
+    // P6 Steam. Real launch: Steam must run. Emulated launch: flipped, a real Steam next to a failed emulator load would put the
+    // real account in the game.
     let steam = f.processes.iter().any(|p| lower(&p.name) == "steam.exe");
-    checks.push(check(
-        "P6 Steam",
-        steam,
-        if steam {
-            "steam.exe is running"
-        } else {
-            "steam.exe is not running"
-        },
-        "start Steam and sign in (the game needs it; nro never starts the game through Steam)",
-    ));
+    if emu {
+        checks.push(check(
+            "P6 Steam",
+            !steam,
+            if steam {
+                "steam.exe is running"
+            } else {
+                "steam.exe is not running (emulated instance)"
+            },
+            "close Steam completely: an emulated instance must never run next to the real client",
+        ));
+        let lan = f
+            .emulated
+            .as_ref()
+            .and_then(|e| e.main_ini.as_deref())
+            .map(|t| {
+                t.lines()
+                    .filter_map(|l| l.split_once('='))
+                    .any(|(k, v)| k.trim() == "disable_lan_only" && v.trim() == "0")
+            })
+            .unwrap_or(false);
+        checks.push(check(
+            "P6b emulator LAN-only",
+            lan,
+            if lan { "disable_lan_only = 0" } else { "disable_lan_only is not 0 (or the ini is missing)" },
+            "stage steam_settings/configs.main.ini with disable_lan_only=0 (the emulator then refuses non-LAN peers)",
+        ));
+    } else {
+        checks.push(check(
+            "P6 Steam",
+            steam,
+            if steam {
+                "steam.exe is running"
+            } else {
+                "steam.exe is not running"
+            },
+            "start Steam and sign in (the game needs it; nro never starts the game through Steam)",
+        ));
+    }
 
     // P7 mod config.
     match &f.mod_toml {
@@ -201,17 +260,37 @@ pub fn evaluate(pins: &Pins, f: &Facts) -> Report {
                     // `matchmaking` is the player-build switch; the developer build ignores it (mod config.rs).
                     let queue = t.get("mm_queue").and_then(|v| v.as_bool()) == Some(true);
                     let br = t.get("br_menu").and_then(|v| v.as_bool()) == Some(true);
-                    (
-                        dev && !queue && !br,
-                        format!("dev_mode = {dev}, public queue = {queue}, br_menu = {br}"),
-                    )
+                    // The joiner's `steam://joinlobby` link (mm_join_auto "link" / "invite+link") goes to the shell, which starts the
+                    // REAL Steam client when it is closed: never in an emulated run.
+                    let link = t
+                        .get("mm_join_auto")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| lower(s).contains("link"));
+                    if emu {
+                        // Emulated (MULTI-INSTANCE §20): the queue's lobby calls go to gbe_fork, LAN-only (P6b), Steam closed (P6),
+                        // the emulator module proven in the game (P-module) and the emulated id checked in the mod log before
+                        // queuing (nro, `queue_identity`): they cannot reach Steam's servers.
+                        (
+                            dev && !link,
+                            format!("dev_mode = {dev}, queue = {queue}, br_menu = {br} (emulated: allowed), joiner link = {link}"),
+                        )
+                    } else {
+                        (
+                            dev && !queue && !br,
+                            format!("dev_mode = {dev}, public queue = {queue}, br_menu = {br}"),
+                        )
+                    }
                 }
             };
             checks.push(check(
                 "P7 nrpvp.toml",
                 ok,
                 detail,
-                "the run config needs dev_mode = true (console) and the public Steam queue off (mm_queue, br_menu)",
+                if emu {
+                    "an emulated run needs dev_mode = true and mm_join_auto without \"link\" (the shell would start the real Steam)"
+                } else {
+                    "the run config needs dev_mode = true (console) and the public Steam queue off (mm_queue, br_menu)"
+                },
             ));
         }
     }
@@ -232,6 +311,37 @@ pub fn evaluate(pins: &Pins, f: &Facts) -> Report {
         ok: checks.iter().all(|c| c.ok),
         checks,
         warnings,
+    }
+}
+
+/// The mod's own Steam id as its queue worker (or lobby probe) logged it at Steam init: the LAST
+/// `mm_queue: worker started: own Steam id <N>` / `mm_probe: own Steam ID = <N>` line.
+pub fn own_steam_id(log: &str) -> Option<u64> {
+    log.lines()
+        .rev()
+        .find_map(|l| {
+            let rest = l
+                .split_once("mm_queue: worker started: own Steam id ")
+                .or_else(|| l.split_once("mm_probe: own Steam ID = "))?
+                .1;
+            Some(
+                rest.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>(),
+            )
+        })
+        .and_then(|d| d.parse().ok())
+}
+
+/// Runtime check before an emulated instance queues (MULTI-INSTANCE §20): the game must run as the emulated account `want`. Any
+/// other id (the real account through the real Steam client) or no id at all refuses.
+pub fn queue_identity(log: &str, want: u64) -> Result<u64, String> {
+    match own_steam_id(log) {
+        Some(id) if id == want && want != 0 => Ok(id),
+        Some(id) => Err(format!(
+            "the mod logged own Steam id {id}, not the emulated {want}: the game is not on the emulator"
+        )),
+        None => Err("the mod has not logged its own Steam id yet (mm_queue worker / mm_probe)".into()),
     }
 }
 
@@ -269,6 +379,7 @@ mod tests {
             mod_toml: Some("dev_mode = true\nmm_queue = false\nbr_menu = false\n".into()),
             profile_files: vec![("a".into(), true)],
             vanilla_saves_hashed: true,
+            emulated: None,
         };
         (pins, f)
     }
@@ -355,6 +466,115 @@ mod tests {
         assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"]);
         f.mod_toml = None;
         assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"]);
+    }
+
+    fn emulated() -> (Pins, Facts) {
+        let (p, mut f) = good();
+        f.processes.clear();
+        f.me3_args = vec!["--skip-steam-init".into(), "true".into()];
+        f.emulated = Some(Emulated {
+            main_ini: Some(
+                "[main::connectivity]
+disable_lan_only=0
+"
+                .into(),
+            ),
+        });
+        (p, f)
+    }
+
+    #[test]
+    fn emulated_instance_passes_without_steam() {
+        let (p, f) = emulated();
+        let r = evaluate(&p, &f);
+        assert!(r.ok, "{:?}", r.checks);
+    }
+
+    #[test]
+    fn emulated_refuses_steam_running_or_lan_unlocked_or_other_args() {
+        let (p, mut f) = emulated();
+        f.processes.push(Process {
+            pid: 1,
+            name: "steam.exe".into(),
+            path: None,
+        });
+        assert_eq!(failed(&evaluate(&p, &f)), ["P6 Steam"]);
+        f.processes.clear();
+        f.emulated.as_mut().unwrap().main_ini = Some(
+            "disable_lan_only=1
+"
+            .into(),
+        );
+        assert_eq!(failed(&evaluate(&p, &f)), ["P6b emulator LAN-only"]);
+        f.emulated.as_mut().unwrap().main_ini = None;
+        assert_eq!(failed(&evaluate(&p, &f)), ["P6b emulator LAN-only"]);
+        let (p, mut f) = emulated();
+        f.me3_args.push("--online".into());
+        assert_eq!(failed(&evaluate(&p, &f)), ["P3 me3 arguments"]);
+        f.me3_args = vec!["--skip-steam-init".into(), "false".into()];
+        assert_eq!(failed(&evaluate(&p, &f)), ["P3 me3 arguments"]);
+    }
+
+    #[test]
+    fn emulated_allows_a_running_instance_of_ours_but_not_the_real_game() {
+        let (p, mut f) = emulated();
+        f.processes.push(Process {
+            pid: 5,
+            name: "nightreign.exe".into(),
+            path: Some(r"Z:\nro-instances\r\i1\game\nightreign.exe".into()),
+        });
+        assert!(evaluate(&p, &f).ok);
+        f.processes.push(Process {
+            pid: 6,
+            name: "nightreign.exe".into(),
+            path: Some(r"Z:\SteamLibrary\steamapps\common\X\Game\nightreign.exe".into()),
+        });
+        assert_eq!(failed(&evaluate(&p, &f)), ["P5 processes"]);
+    }
+
+    #[test]
+    fn emulated_allows_the_queue_but_never_the_joiner_link() {
+        let (p, mut f) = emulated();
+        f.mod_toml = Some(
+            "dev_mode = true\nmm_queue = true\nbr_menu = true\nmm_join = true\nmm_join_auto = \"invite\"\n".into(),
+        );
+        assert!(evaluate(&p, &f).ok);
+        for a in ["invite+link", "link", "Invite+Link"] {
+            f.mod_toml = Some(format!(
+                "dev_mode = true\nmm_queue = true\nmm_join_auto = \"{a}\"\n"
+            ));
+            assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"], "{a}");
+        }
+        f.mod_toml = Some("dev_mode = false\nmm_queue = true\n".into());
+        assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"]);
+        // The same queue config on a real-Steam launch is refused.
+        let (p, mut f) = good();
+        f.mod_toml = Some("dev_mode = true\nmm_queue = true\nmm_join_auto = \"invite\"\n".into());
+        assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"]);
+        f.mod_toml = Some("dev_mode = true\nbr_menu = true\n".into());
+        assert_eq!(failed(&evaluate(&p, &f)), ["P7 nrpvp.toml"]);
+    }
+
+    #[test]
+    fn queue_identity_needs_the_emulated_id() {
+        let log = "x\n[INFO] mm_queue: worker started: own Steam id 76561199023125438 (0x1100001...), lobby size (mm_max_players)=2\n";
+        assert_eq!(own_steam_id(log), Some(76561199023125438));
+        assert!(queue_identity(log, 76561199023125438).is_ok());
+        assert!(queue_identity(log, 76561199023125439).is_err());
+        assert!(queue_identity("nothing yet\n", 76561199023125438).is_err());
+        let probe = "mm_probe: own Steam ID = 76561199023125439 (0x1)\n";
+        assert_eq!(own_steam_id(probe), Some(76561199023125439));
+        // The last line wins (a relaunch appends to nrpvp.log).
+        let two = format!("{log}{probe}");
+        assert!(queue_identity(&two, 76561199023125438).is_err());
+        assert!(queue_identity("mm_queue: worker started: own Steam id 0 (0x0)\n", 0).is_err());
+    }
+
+    #[test]
+    fn real_launch_still_refuses_skip_steam_init() {
+        let (p, mut f) = good();
+        f.me3_args = vec!["--skip-steam-init".into(), "true".into()];
+        assert_eq!(failed(&evaluate(&p, &f)), ["P3 me3 arguments"]);
     }
 
     #[test]

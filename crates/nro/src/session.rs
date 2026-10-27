@@ -44,6 +44,9 @@ pub struct State {
     pub started_unix: u64,
     /// Vanilla save files and their hashes before launch.
     pub vanilla_saves: BTreeMap<String, String>,
+    /// Set for an emulated-Steam instance (emu.rs).
+    #[serde(default)]
+    pub emu: Option<crate::emu::EmuInfo>,
 }
 
 pub fn home() -> PathBuf {
@@ -66,7 +69,9 @@ fn strip_unc(p: PathBuf) -> PathBuf {
 }
 
 pub fn pins() -> Result<Pins, String> {
-    let file = home().join("pins").join("nightreign.toml");
+    // NRO_PINS_FILE: another pins file in pins\ (a newer me3 under test), by file name.
+    let name = std::env::var("NRO_PINS_FILE").unwrap_or_else(|_| "nightreign.toml".into());
+    let file = home().join("pins").join(name);
     match fs::read_to_string(&file) {
         Ok(t) => Pins::parse(&t),
         Err(_) => Pins::parse(nro_core::pins::EMBEDDED),
@@ -93,9 +98,40 @@ impl State {
             serde_json::to_string_pretty(self).unwrap(),
         )
         .map_err(|e| e.to_string())?;
-        fs::write(runs_dir().join("current.txt"), &self.dir).map_err(|e| e.to_string())
+        // The default target of `nro cmd` etc. is the run that was staged last (several instances save their own state later).
+        if self.phase == "staged" {
+            fs::write(runs_dir().join("current.txt"), &self.dir).map_err(|e| e.to_string())?;
+            if let Some(e) = &self.emu {
+                let mut g = Self::group();
+                g.insert(e.n.to_string(), self.dir.clone());
+                fs::write(
+                    runs_dir().join("instances.json"),
+                    serde_json::to_string_pretty(&g).unwrap(),
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
+    }
+    /// Instance number → run folder of the emulated instances (`runs\instances.json`).
+    pub fn group() -> BTreeMap<String, String> {
+        fs::read_to_string(runs_dir().join("instances.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
+    }
+    /// The state of instance `n` (`--i N`).
+    pub fn instance(n: u32) -> Result<Self, String> {
+        let d = Self::group()
+            .get(&n.to_string())
+            .cloned()
+            .ok_or_else(|| format!("no instance {n} (nro launch --emulated {n})"))?;
+        Self::load(Path::new(&d))
     }
     pub fn current() -> Result<Self, String> {
+        if let Some(n) = std::env::var("NRO_I").ok().and_then(|v| v.parse().ok()) {
+            return Self::instance(n);
+        }
         let dir = fs::read_to_string(runs_dir().join("current.txt"))
             .map_err(|_| "no session yet (nro launch)".to_string())?;
         Self::load(Path::new(dir.trim()))
@@ -103,9 +139,16 @@ impl State {
     pub fn dir(&self) -> PathBuf {
         PathBuf::from(&self.dir)
     }
-    /// The game process, if it is still running.
+    /// The game process, if it is still running. The image must still be `nightreign.exe`: Windows reuses pids, and a stale
+    /// session's pid can belong to another program by now (seen 2026-10-27: a powershell.exe), which `stop` would otherwise kill.
     pub fn live_pid(&self) -> Option<u32> {
-        self.game_pid.filter(|&p| sys::alive(p))
+        self.game_pid.filter(|&p| {
+            sys::image_path(p).is_some_and(|i| {
+                i.rsplit('\\')
+                    .next()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("nightreign.exe"))
+            })
+        })
     }
     pub fn log(&self, file: &str, line: &str) {
         if let Ok(mut f) = fs::OpenOptions::new()
@@ -156,15 +199,45 @@ pub struct Stage {
     pub config: BTreeMap<String, toml::Value>,
     /// Load the game-data package (default true when the dist has one).
     pub no_gamedata: bool,
+    /// Emulated-Steam instance number (1..=3); `None` = the normal real-Steam launch.
+    pub emulated: Option<u32>,
 }
 
-/// The keys every orchestrated run forces (preflight P7 checks the result).
-fn forced_config() -> BTreeMap<String, toml::Value> {
+/// The keys every orchestrated run forces (preflight P7 checks the result). A real-Steam run: the public queue off. An emulated
+/// run may turn the queue on (its lobbies stay on the LAN-only emulator, MULTI-INSTANCE §20), but the joiner never opens a
+/// `steam://` link (the shell would start the real Steam client).
+fn forced_config(emulated: bool) -> BTreeMap<String, toml::Value> {
     let mut c = BTreeMap::new();
     c.insert("dev_mode".into(), toml::Value::Boolean(true));
-    c.insert("mm_queue".into(), toml::Value::Boolean(false));
-    c.insert("br_menu".into(), toml::Value::Boolean(false));
+    if emulated {
+        c.insert("mm_join_auto".into(), toml::Value::String("invite".into()));
+    } else {
+        c.insert("mm_queue".into(), toml::Value::Boolean(false));
+        c.insert("br_menu".into(), toml::Value::Boolean(false));
+    }
     c
+}
+
+/// The staged config turns the queue on (`mm_queue`), so the launch waits for the emulated id in the mod log.
+pub fn queue_on(st: &State) -> bool {
+    fs::read_to_string(st.dir().join("mod").join("nrpvp.toml"))
+        .ok()
+        .and_then(|t| toml::from_str::<toml::Table>(&t).ok())
+        .and_then(|t| t.get("mm_queue").and_then(|v| v.as_bool()))
+        == Some(true)
+}
+
+/// Runtime identity check of an emulated instance (MULTI-INSTANCE §20): the mod log's own Steam id is the instance's emulated id.
+pub fn check_identity(st: &State) -> Result<u64, String> {
+    let e = st.emu.as_ref().ok_or("not an emulated instance")?;
+    let log = fs::read_to_string(st.dir().join("mod").join("nrpvp.log")).unwrap_or_default();
+    preflight::queue_identity(&log, e.steamid)
+}
+
+/// Console lines that start or join a matchmaking queue.
+fn is_queue_line(line: &str) -> bool {
+    let w = line.split_whitespace().next().unwrap_or("");
+    w.starts_with("mm_queue") || w == "mm_join"
 }
 
 pub fn stage(pins: &Pins, opt: &Stage) -> Result<State, String> {
@@ -194,7 +267,11 @@ pub fn stage(pins: &Pins, opt: &Stage) -> Result<State, String> {
     }
     let base = fs::read_to_string(dist.join("nrpvp.toml")).unwrap_or_default();
     let mut cfg = opt.config.clone();
-    cfg.extend(forced_config());
+    cfg.extend(forced_config(opt.emulated.is_some()));
+    if opt.emulated.is_some() {
+        // The mod closes the engine mutex and dearxan's shared section so the next instance can start (game/multi_instance.rs).
+        cfg.insert("allow_multi_instance".into(), toml::Value::Boolean(true));
+    }
     fs::write(
         m.join("nrpvp.toml"),
         nro_core::scenario::apply_config(&base, &cfg),
@@ -205,7 +282,14 @@ pub fn stage(pins: &Pins, opt: &Stage) -> Result<State, String> {
     if with_gd {
         copy_dir(&gd, &m.join("gamedata"))?;
     }
-    let nrsc = PathBuf::from(&pins.game_dir)
+    let emu = match opt.emulated {
+        Some(n) => Some(crate::emu::stage_instance(pins, n)?),
+        None => None,
+    };
+    let nrsc = emu
+        .as_ref()
+        .map(|e| PathBuf::from(&e.game_dir))
+        .unwrap_or_else(|| PathBuf::from(&pins.game_dir))
         .join("SeamlessCoop")
         .join("nrsc.dll");
     let gdp = m.join("gamedata").display().to_string();
@@ -219,6 +303,7 @@ pub fn stage(pins: &Pins, opt: &Stage) -> Result<State, String> {
         id,
         dir: dir.display().to_string(),
         phase: "staged".into(),
+        emu,
         started_unix: now_unix(),
         ..Default::default()
     };
@@ -244,25 +329,40 @@ pub fn vanilla_saves() -> Option<BTreeMap<String, String>> {
 }
 
 /// The me3 command line nro uses (P1: the only one).
-fn me3_args(pins: &Pins, dir: &Path) -> Vec<String> {
-    vec![
+fn me3_args(pins: &Pins, st: &State) -> Vec<String> {
+    let mut v = vec![
         "launch".into(),
         "-g".into(),
         "nightreign".into(),
         "-e".into(),
-        PathBuf::from(&pins.game_dir)
-            .join("nightreign.exe")
-            .display()
-            .to_string(),
+        game_exe(pins, st).display().to_string(),
         "-p".into(),
-        dir.join("profile.me3.toml").display().to_string(),
-    ]
+        st.dir().join("profile.me3.toml").display().to_string(),
+    ];
+    if st.emu.is_some() {
+        // No Steam client to initialise (preflight P3 allows exactly this for an emulated instance).
+        v.extend([
+            "--skip-steam-init".into(),
+            "true".into(),
+            "--no-boot-boost".into(),
+            "true".into(),
+        ]);
+    }
+    v
+}
+
+/// The `nightreign.exe` this run starts (the instance's own hard-linked copy when emulated).
+fn game_exe(pins: &Pins, st: &State) -> PathBuf {
+    st.emu
+        .as_ref()
+        .map(|e| e.exe())
+        .unwrap_or_else(|| PathBuf::from(&pins.game_dir).join("nightreign.exe"))
 }
 
 pub fn facts(pins: &Pins, st: &State) -> Facts {
     let dir = st.dir();
     let profile = fs::read_to_string(dir.join("profile.me3.toml")).unwrap_or_default();
-    let all = me3_args(pins, &dir);
+    let all = me3_args(pins, st);
     let me3 = PathBuf::from(&pins.me3_dir).join("me3.exe");
     let me3_version = Command::new(&me3)
         .arg("--version")
@@ -302,6 +402,14 @@ pub fn facts(pins: &Pins, st: &State) -> Facts {
         me3_args: all[7..].to_vec(),
         mod_toml: fs::read_to_string(dir.join("mod").join("nrpvp.toml")).ok(),
         vanilla_saves_hashed: vanilla_saves().is_some(),
+        emulated: st.emu.as_ref().map(|e| nro_core::preflight::Emulated {
+            main_ini: fs::read_to_string(
+                PathBuf::from(&e.game_dir)
+                    .join("steam_settings")
+                    .join("configs.main.ini"),
+            )
+            .ok(),
+        }),
     }
 }
 
@@ -328,6 +436,42 @@ fn no_std_inherit() {
     }
 }
 
+/// The pid in me3's `attaching to process pid=N` line (colour codes and all).
+/// The pid in me3's "attaching to process pid=N" line. me3 colours its log even into a file (`pid\x1b[0m\x1b[2m=\x1b[0m9632`): the
+/// escape codes are stripped first, else the "0" of "\x1b[0m" was read as the pid (2026-10-27: game_pid 0, every launch killed).
+fn attach_pid(log: &str) -> Option<u32> {
+    let mut plain = String::with_capacity(log.len());
+    let mut chars = log.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // CSI: ESC [ params final-byte (0x40..=0x7E); OSC (ESC ]) ends at BEL.
+            match chars.next() {
+                Some('[') => {
+                    for d in chars.by_ref() {
+                        if ('\x40'..='\x7e').contains(&d) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    for d in chars.by_ref() {
+                        if d == '\x07' {
+                            break;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        } else {
+            plain.push(c);
+        }
+    }
+    let rest = &plain[plain.find("attaching to process")?..];
+    let rest = &rest[rest.find("pid=")? + 4..];
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    digits.parse().ok().filter(|&p| p != 0)
+}
+
 pub fn launch(pins: &Pins, st: &mut State) -> Result<Report, String> {
     no_std_inherit();
     let r = preflight(pins, st);
@@ -347,13 +491,19 @@ pub fn launch(pins: &Pins, st: &mut State) -> Result<Report, String> {
     let dir = st.dir();
     let log = fs::File::create(dir.join("me3.log")).map_err(|e| e.to_string())?;
     let log2 = log.try_clone().map_err(|e| e.to_string())?;
-    let child = Command::new(PathBuf::from(&pins.me3_dir).join("me3.exe"))
-        .args(me3_args(pins, &dir))
+    // Emulated instance: point Steam's ActiveProcess key at the emulator for the start, put it back once the game has loaded it.
+    if let Some(e) = st.emu.as_mut() {
+        crate::emu::redirect(e, std::process::id())?;
+        st.save()?;
+    }
+    let mut cmd = Command::new(PathBuf::from(&pins.me3_dir).join("me3.exe"));
+    cmd.args(me3_args(pins, st))
         .current_dir(&pins.game_dir)
         .stdin(Stdio::null())
         .stdout(log)
         .stderr(log2)
-        .creation_flags(CREATE_NO_WINDOW)
+        .creation_flags(CREATE_NO_WINDOW);
+    let child = cmd
         .spawn()
         .map_err(|e| format!("could not start me3: {e}"))?;
     st.me3_pid = Some(child.id());
@@ -361,8 +511,7 @@ pub fn launch(pins: &Pins, st: &mut State) -> Result<Report, String> {
     st.save()?;
 
     // The game process: the nightreign.exe that was not there at preflight (P5 guaranteed none was).
-    let exe = PathBuf::from(&pins.game_dir)
-        .join("nightreign.exe")
+    let exe = game_exe(pins, st)
         .display()
         .to_string()
         .to_ascii_lowercase();
@@ -374,16 +523,134 @@ pub fn launch(pins: &Pins, st: &mut State) -> Result<Report, String> {
         }) {
             break p.pid;
         }
+        // me3 names the pid it attaches to; a game that dies right after the attach is never seen by the process poll.
+        if let Some(p) = fs::read_to_string(dir.join("me3.log"))
+            .ok()
+            .and_then(|t| attach_pid(&t))
+        {
+            break p;
+        }
         if t0.elapsed() > Duration::from_secs(90) {
             st.phase = "aborted".into();
             st.note = "the game process did not appear within 90 s (see me3.log)".into();
             st.save()?;
             return Err(st.note.clone());
         }
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(Duration::from_millis(5));
     };
+    let exit_handle = sys::open_for_exit(pid);
+    if st.emu.is_some() && std::env::var_os("NRO_DEBUG_ATTACH").is_some() {
+        // Diagnostic (S2): what does the second instance crash on?
+        let r = sys::first_crash(pid, 20_000);
+        st.log("watch.log", &format!("debug attach: {r}"));
+    }
     st.game_pid = Some(pid);
     st.save()?;
+    if st.emu.is_some() {
+        // P-module: wait for the instance's own steamclient64.dll in the game, then give the registry back. Else kill (fail closed).
+        let t2 = Instant::now();
+        let mut exit_seen = None;
+        let ok = loop {
+            let mods = sys::modules(pid);
+            if st
+                .emu
+                .as_ref()
+                .is_some_and(|e| crate::emu::module_ok(&mods, &e.game_dir))
+            {
+                break true;
+            }
+            // Gone = the exit code is there. Not `!alive`: right after me3's attach, opening the process by pid can fail for a moment
+            // while it runs (seen 2026-10-27: "alive=false, 0 modules" with the game up), which killed a good launch.
+            exit_seen = if exit_handle != 0 {
+                sys::exit_code(exit_handle)
+            } else {
+                (!sys::alive(pid)).then_some(0)
+            };
+            if t2.elapsed() > Duration::from_secs(60) || exit_seen.is_some() {
+                break false;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        };
+        if let Some(e) = st.emu.as_mut() {
+            let _ = crate::emu::restore(e);
+        }
+        if !ok {
+            let mods = sys::modules(pid);
+            st.log(
+                "watch.log",
+                &format!(
+                    "P-module failed: alive={}, {} modules, steamclient modules {:?}",
+                    sys::alive(pid),
+                    mods.len(),
+                    mods.iter()
+                        .filter(|m| m.to_ascii_lowercase().contains("steamclient"))
+                        .collect::<Vec<_>>()
+                ),
+            );
+            if let Some(c) = exit_seen {
+                st.log(
+                    "watch.log",
+                    &format!("the game exited by itself with code 0x{c:X}"),
+                );
+            }
+            sys::kill(pid);
+            st.phase = "aborted".into();
+            st.note = "P-module: the instance's steamclient64.dll was not loaded in the game; the game was killed".into();
+            st.save()?;
+            return Err(st.note.clone());
+        }
+        st.log(
+            "watch.log",
+            "P-module ok: emulator loaded from the instance folder, ActiveProcess restored",
+        );
+        st.save()?;
+        // The next instance must not start before this one's mod has released the shared names (mutex, dearxan section).
+        let t3 = Instant::now();
+        let modlog = dir.join("mod").join("nrpvp.log");
+        loop {
+            if fs::read_to_string(&modlog)
+                .is_ok_and(|t| t.contains("multi_instance: ready for another instance"))
+            {
+                st.log("watch.log", "multi_instance: ready for another instance");
+                break;
+            }
+            if t3.elapsed() > Duration::from_secs(120) || !sys::alive(pid) {
+                st.log("watch.log", "multi_instance: no ready line within 120 s");
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        // Queue on: the mod's queue worker must log the emulated Steam id (fail closed: any other id, or none, kills the game).
+        if queue_on(st) {
+            let t4 = Instant::now();
+            let verdict = loop {
+                match check_identity(st) {
+                    Ok(id) => break Ok(id),
+                    Err(e) if e.contains("not the emulated") => break Err(e),
+                    Err(e) if t4.elapsed() > Duration::from_secs(180) || !sys::alive(pid) => {
+                        break Err(e)
+                    }
+                    Err(_) => std::thread::sleep(Duration::from_millis(500)),
+                }
+            };
+            match verdict {
+                Ok(id) => st.log(
+                    "watch.log",
+                    &format!(
+                        "identity ok: the mod's queue worker runs as the emulated Steam id {id}"
+                    ),
+                ),
+                Err(e) => {
+                    sys::kill(pid);
+                    st.phase = "aborted".into();
+                    st.note = format!("identity check: {e}; the game was killed");
+                    st.log("watch.log", &st.note);
+                    st.save()?;
+                    return Err(st.note.clone());
+                }
+            }
+        }
+    }
 
     // L1: me3's attach config.
     let expected =
@@ -469,6 +736,19 @@ pub fn wait_console(st: &State, timeout: Duration) -> Result<(), String> {
 /// Send a console line, recording it in console.log.
 pub fn cmd(st: &State, line: &str) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
+    if is_queue_line(line) {
+        // Only an emulated instance whose mod runs as the emulated id may queue; a real-Steam session never does.
+        let why = match &st.emu {
+            None => Err(
+                "a real-Steam session never queues (nro refuses mm_queue_* / mm_join)".to_string(),
+            ),
+            Some(_) => check_identity(st).map(|_| ()),
+        };
+        if let Err(e) = why {
+            st.log("console.log", &format!("> {line}\n!! refused by nro: {e}"));
+            return Err(format!("refused by nro: {e}"));
+        }
+    }
     let r = console::ask(pid, line, Duration::from_secs(10));
     match &r {
         Ok(t) => st.log("console.log", &format!("> {line}\n{t}")),
@@ -477,12 +757,39 @@ pub fn cmd(st: &State, line: &str) -> Result<String, String> {
     r
 }
 
+/// A crashed `nro` may have left Steam's ActiveProcess key pointing at an emulator: put the saved values back.
+pub fn recover_registry() {
+    if let Ok(mut s) = State::current() {
+        if let Some(e) = s.emu.as_mut().filter(|e| !e.reg_backup.is_empty()) {
+            let _ = crate::emu::restore(e);
+            let _ = s.save();
+        }
+    }
+}
+
 pub fn stop(st: &mut State) -> String {
     let mut msg = Vec::new();
+    if let Some(e) = st.emu.as_mut() {
+        let _ = crate::emu::restore(e);
+    }
     if let Some(p) = st.live_pid() {
         msg.push(format!("game pid {p} killed: {}", sys::kill(p)));
+        // Wait until the process is really gone: a killed instance still holds dearxan's shared section and the engine mutex until
+        // it has torn down, and the next launch right after crashes in me3's host (seen 2026-10-27 after `stop --all`).
+        let t = Instant::now();
+        while sys::alive(p) && t.elapsed() < Duration::from_secs(30) {
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        std::thread::sleep(Duration::from_secs(2));
     }
-    if let Some(p) = st.me3_pid.filter(|&p| sys::alive(p)) {
+    // Same pid-reuse guard as `live_pid`: only a process that is still me3.
+    if let Some(p) = st.me3_pid.filter(|&p| {
+        sys::image_path(p).is_some_and(|i| {
+            i.rsplit('\\')
+                .next()
+                .is_some_and(|n| n.to_ascii_lowercase().starts_with("me3"))
+        })
+    }) {
         msg.push(format!("me3 pid {p} killed: {}", sys::kill(p)));
     }
     st.phase = "ended".into();
@@ -497,10 +804,15 @@ pub fn watch(dir: &Path) -> Result<(), String> {
     let pid = st.game_pid.ok_or("no game pid")?;
     let mut seen = std::collections::BTreeSet::new();
     st.log("watch.log", &format!("watchdog on game pid {pid}"));
+    let emu = st.emu.is_some();
     while sys::alive(pid) {
         for p in sys::processes() {
             let n = p.name.to_ascii_lowercase();
-            if n.contains("easyanticheat") || n == "start_protected_game.exe" {
+            // An emulated instance must never run next to the real Steam client (P6 at launch; here for the whole run).
+            if n.contains("easyanticheat")
+                || n == "start_protected_game.exe"
+                || (emu && n == "steam.exe")
+            {
                 sys::kill(pid);
                 st.phase = "aborted".into();
                 st.note = format!(
@@ -532,4 +844,44 @@ pub fn watch(dir: &Path) -> Result<(), String> {
         st.note = format!("{} | vanilla saves CHANGED", st.note);
     }
     st.save()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attach_pid_reads_coloured_me3_log() {
+        let coloured = "\x1b[32m INFO\x1b[0m \x1b[1mrun\x1b[0m\x1b[2m:\x1b[0m\x1b[1mattach\x1b[0m\x1b[2m:\x1b[0m \x1b[2mme3_launcher::game\x1b[0m\x1b[2m:\x1b[0m attaching to process \x1b[3mpid\x1b[0m\x1b[2m=\x1b[0m9632\n";
+        assert_eq!(attach_pid(coloured), Some(9632));
+        assert_eq!(
+            attach_pid(" INFO run:attach: me3_launcher::game: attaching to process pid=1234\n"),
+            Some(1234)
+        );
+        assert_eq!(attach_pid("Launcher started\n"), None);
+        assert_eq!(attach_pid("attaching to process pid=0\n"), None);
+    }
+
+    #[test]
+    fn forced_config_keeps_real_steam_off_the_queue() {
+        let real = forced_config(false);
+        assert_eq!(real.get("mm_queue"), Some(&toml::Value::Boolean(false)));
+        assert_eq!(real.get("br_menu"), Some(&toml::Value::Boolean(false)));
+        let emu = forced_config(true);
+        assert!(!emu.contains_key("mm_queue"));
+        assert_eq!(
+            emu.get("mm_join_auto").and_then(|v| v.as_str()),
+            Some("invite")
+        );
+    }
+
+    #[test]
+    fn queue_lines() {
+        assert!(is_queue_line("mm_queue_solo"));
+        assert!(is_queue_line(" mm_queue_duo"));
+        assert!(is_queue_line("mm_join invite"));
+        assert!(!is_queue_line("mm_status"));
+        assert!(!is_queue_line("mm_leave"));
+        assert!(!is_queue_line("log 300"));
+    }
 }

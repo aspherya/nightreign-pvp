@@ -96,6 +96,11 @@ pub(crate) fn run() {
             if cfg.dev_mode && cfg.ui_flag_watch {
                 game::flagwatch::spawn(m.base);
             }
+            // Several instances on one PC: close the engine's single-instance mutex (dev builds, dev mode, opt-in).
+            #[cfg(feature = "dev")]
+            if cfg.dev_mode && cfg.allow_multi_instance {
+                game::multi_instance::spawn();
+            }
             // CON-2: the developer console (named pipe for nrcon.exe). Dev builds, dev mode only.
             #[cfg(feature = "dev")]
             if cfg.dev_mode {

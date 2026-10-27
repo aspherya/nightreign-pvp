@@ -157,6 +157,8 @@ Facts from the exe on disk:
 | Owner (the character) | `+0x08` in that object | Confirmed, run 1 |
 | The character's module list | `[PlayerIns+0x1B8]`: a block of 57 pointers, no class | `[HYPOTHESIS]` Seen in the run 7 dump. Elden Ring has it at `+0x190`; in Nightreign `+0x190` is `CS::SpecialEffect`, which is why the T-028 probe found nothing |
 | Which entry of the list is the physics module | `+0x68` (same as Elden Ring) | Confirmed, run 1 |
+| Heading (unit quaternion x, y, z, w; a rotation about y) | `+0x50` in the physics module (Elden Ring's layout) | `[VERIFIED: live, Roundtable, emulated instance 1, 2026-10-27]`: facing the table read (0, -0.997, 0, 0.077), facing away (0, 0.095, 0, 0.995); writing (0, sin(yaw/2), 0, cos(yaw/2)) with the position (console `tp x y z yaw`) turns the player, it stays, and the table's facing-dependent prompt shows (`mi-join`, MULTI-INSTANCE §19). `yaw` as the console prints it = 2·atan2(y, w) |
+| Roundtable table prompt "F: Commence expedition" | world (0.8, 10.66, 69.5) with yaw -170 (spawn spot (0.00, 10.66, 67.00) faces it, 2.5 m short); the prompt needs the heading too (at the spot facing away: no prompt) | `[VERIFIED: screenshots w2/w4/w5, 2026-10-27, game 1.03.3]` |
 
 Older candidates (FS-0 run 6: numbers that move smoothly with the player). Reading only; none was written yet.
 
@@ -328,7 +330,7 @@ Full story and the static reading: `research/ORCH-R2-net-player-creation.md`. Co
 | `MultiPlayCorrectionParam` rows in memory | Found by scanning the process for row 7700's data (`78 1E 00 00 DC 1E 00 00 FF FF FF FF`) and checking all 85 rows (32 bytes each, SpEffect ids at +4, +8, +12, override byte at +16): **2 copies** per launch (heap, addresses change), found in about 40-60 s | The mod writes 12 bytes per row (`game/multiplay.rs`); 168 rows rewritten on a Solo run; the game reads the SpEffect when it spawns an enemy `[HYPOTHESIS]` | `[VERIFIED: one-PC runs 2026-10-24: copies found and rewritten]`; effect on enemies not measured |
 | Typed menu text | A `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object: vtable at +0, the UTF-16 text inline at +8 (vtable `exe+0x2C43548`, RTTI `.?AV?$CSMenuSimpleSaveDataChunk@$03UMENU_INPUT_HISTORY@CS@@@CS@@`); 8 more copies of the text exist (menu structures, strings) | The field's own storage is not identified | `[VERIFIED: console memscan, peek, 2026-10-24]` |
 | Menu life state (RW-1 research, 2026-10-25) | `CSMenuMan` (FD4 singleton, slot `exe+0x3C149D8`) `+0x43` | Written every frame by the menu update `exe+0x7B5C50` (`mov [rbx+0x43], r14b` at `exe+0x7B5F6F`) from `exe+0x825C40(&holder, &float)`: 0 / 1 / 2 downed-style variants, **3 when `[[chr+0x1B8]]+0x140` (HP) is at or below 0** (or `exe+0x3D45A0(chr)`), **4 normal**. The change to 3 runs the "YOU DIED" banner code. `game/menugate.rs` makes the function answer 4 for LOCAL (hwbp on its first bytes `48 89 5C 24 08 57`). **Not the Esc gate** (menu still shut) | `[VERIFIED: Nucleus 3-player run, trace_write + peek + disassembly]` |
-| Menu stack counters | `CSMenuMan+0xC0` / `+0xE8` (0xE in game, 0x11 with the pause menu open), `+0x48` (dword, 0 / 0x11 open) | Decremented by the close path (`exe+0x7B7357`, `exe+0x70B4D28`); the opener's write path was not caught | `[VERIFIED: snapshot diff of a living player, menu closed vs open]` |
+| Menu stack counters | `CSMenuMan+0xC0` / `+0xE8` (0xE in game, 0x11 with the pause menu open), `+0x48` (dword, 0 / 0x11 open; **0x200004 with the Roundtable expedition menu open**, any tab, `[VERIFIED: console pos, 2026-10-27]`) | Decremented by the close path (`exe+0x7B7357`, `exe+0x70B4D28`); the opener's write path was not caught | `[VERIFIED: snapshot diff of a living player, menu closed vs open]` |
 
 **Esc menu gate (static reading, 2026-10-25, exe 1.3.3.0; Python + capstone on the file, no Ghidra).** Semantics marked `[HYPOTHESIS]`
 are names we gave; everything else is what the instructions do `[VERIFIED: static disassembly]`. Not yet confirmed in the running game.
@@ -367,3 +369,80 @@ HID/DirectInput instead is `[HYPOTHESIS]`).
 | **Menu button, after the poll** | **`exe+0xF70515`** (`0F B6 D8` = `movzx ebx, al`, right after `call exe+0x27EC820` in the menu predicate) | Reached once per input-block run, on the game thread, before any HP / menu check: **`AL` = menu action triggered this frame (swap applied), `RBX` = `&CSInGamePad` (so `[RBX+0x10]` = CSPad)**. `exe+0xF7051C` is reached only when `AL ≠ 0` | `[VERIFIED: static; bytes read from the file]`; per frame `[HYPOTHESIS]` |
 
 | **Pad bits as measured (one-PC run 2026-10-25, Steam Input virtual Xbox pad)** | `FD4PadManager` (slot `exe+0x4707D48`) `+0x18` = the same object as `[CSPad+0x10]`; words = `[[[mgr+0x18]+8]+0x50]`, count `[...+0x48]` (0x80) | **Inside the game process XInput returns 1167 (no pad) on all 4 slots**; the game's own bit array shows the buttons: Start = bits {273, 417}; d-pad right = {353, 396, 209, 278, 252}; d-pad left = {393, 206, 279, 249, 350} (each button = a group, one bit per device mapping; down when any is set). Idle baseline had ~75 other bits set, so compare against a baseline. Read from the main loop (50 ms); no hardware slot (the four are shared and full when puppets run). The map walks of the static report (`[pad+0x38]` bindings) were not needed | `[VERIFIED: console padpoll while holding each button; Leonardo: Start, d-pad switch and menu work]` |
+
+## 20. Player markers, compass and name tags (RW-9 static reading, 2026-10-26, exe 1.3.3.0)
+
+Python + capstone on the file (no Ghidra), scripts in the session scratchpad `rw9/`. Every row is `[VERIFIED: static disassembly]`
+unless tagged; **nothing here was read in the running game yet**. Names in quotes are ours; class names are RTTI; ER layouts from
+fromsoftware-rs (`crates/eldenring/src/cs/fe_man.rs`, `party_member_info.rs`, `game_data_man.rs`, `team_relation.rs`)
+`[SOURCE: https://github.com/vswarte/fromsoftware-rs]` are hints only.
+
+**Where the data flows.** Producers run once per frame in the in-game FE step `exe+0xC3BB30` (calls `exe+0x7DA8B0`, `exe+0x7D9F80`,
+`exe+0x7DBA10`, `exe+0x7D8210`, ... and the map loop at `exe+0xC3BF58`..`exe+0xC3C070`) and write source arrays inside `CSFeMan`;
+the `CSFeMan` update (`exe+0x7C5710` → `exe+0x7C8F20`, from the menu update `exe+0x7B5DD4`) copies them into the "view values" at
+`CSFeMan+0x80`; the front-end view update `exe+0x99DA30` hands each value block to its Scaleform view part. Every source and value
+byte below is rewritten every frame, so a 50 ms write from our thread races the game.
+
+| What | Where | Behaviour | Proof |
+|---|---|---|---|
+| `CSFeMan` (`CS::CSFeManImp`, vtable `exe+0x2C3B3C0`) | FD4 slot `exe+0x3C14A70` | update `exe+0x7C5710(feman, dt, ..)`; `+0xFF49` != 0 skips the whole per-frame tag/HUD refresh `exe+0x7C8F20` | slot `[VERIFIED: singleton log TC-004]`; rest static |
+| View values | `CSFeMan+0x80` (the front-end view keeps a pointer to it at `+0x60` `[HYPOTHESIS: same block]`) | `+0x1468` enemy tags 8 × 0xA8; `+0x19A8` 3 × 0xA8 (boss bars `[HYPOTHESIS]`); **`+0x1BA0` "party bars" 7 × 0x178** (gfx `RemotePCTag0..5`: name + HP); **`+0x25E8` "overhead name tags" 7 × 0xB8** (gfx `RemotePCTag%d_Overhead`: name, screen position); `+0x1138` compass block. First byte of each entry = shown | layout from the destructor `exe+0x7C1960` and the view update `exe+0x99DA30` |
+| Front-end view parts | view `+0x126B0 + i*0x350` "EnemyTag%d", `+0x14B20 + i*0x698` "RemotePCTag%d", `+0x17980 + i*0x520` "RemotePCTag%d_Overhead" (init loop `exe+0x99CE00`, names at `exe+0x2C57970..0x2C579A8`); PlayerHUD at view `+0x280`, its compass ("PlayerHUD/PersonalCompass") at PlayerHUD `+0x7F28`, update `exe+0x9AEB10(part, dt, values+0x1138)` | | static |
+| `PartyMemberInfo` (ER layout holds) | `[[exe+0x3C13258]+0xDC8]` (getter `exe+0x6AF500`; the global is `GameMan` `[HYPOTHESIS: ER]`); `+0x14` i32 in-world player count, entries `+0x28 + i*0x30`, entry `+0` = character handle (`exe+0xAED2A0(info, &out, i)`) | Source of the party bars and the overhead tags: every member whose handle resolves (`exe+0x518F30`) and is not LOCAL (`exe+0x3D4180` = "is `WorldChrMan+0x174E8`") | static; same object as §15's solo gate |
+| Party bar producer | `exe+0x7DA8B0`: for i < 7, source entry `CSFeMan+0xCF28 + i*0x98` (getter `exe+0x7C4A80`): `+0` shown, `+8` name, `+0x30`, `+0x38`, `+0x3C` role (`vf 0x178`), `+0x40..0x4C` HP values, `+0x50` handle, `+0x5A` team. Consumer `exe+0x7CECA0` copies when `+0` or `+0x90` is set | **No team, distance or SpEffect filter**: every loaded player but LOCAL gets one. Everything off when `exe+0x6028D0()` returns -27 (it returns `GameMan+0xDBC` if non-zero, else `[[CSEventMan+0x48]+0x18]`; meaning UNKNOWN) | static |
+| Overhead tag producer | `exe+0x7D9F80`: source `CSFeMan+0xD350 + i*0x60` (getter `exe+0x7C4AB0`): `+0` screen pos, `+0x10` depth, `+0x14` angle, **`+0x18` shown**, `+0x19` on screen, `+0x28` name, `+0x50` handle | Shown only if: projected (`exe+0x7D0F50`); off-screen arrow only within `MenuCommonParam+0x108` (param index 0x94, NR field `unknown_11` `[SOURCE: soulsmods/Paramdex NR/Defs/MenuCommonParam.xml]`); target's chr type (`+0x70`) not flagged byte 7 in the chr-type table `exe+0x398C920` (8 bytes per type, 24 types); `vf 0x580` != 6; LOCAL's team != 21; `chr+0x1F6` bit 6 set (`exe+0x3D2F30`, set once by `exe+0x3C74F0`); not `exe+0x3D3230` (`+0x1F4` bit 0x40 or a module bit). **No team-relation check** | static |
+| **Overhead tag hidden by SpEffect 446** | consumer `exe+0x7CEFC0`, at `exe+0x7CF332`: `exe+0x509150([chr+0x190], 446)` true → values entry `+0` = 0 | A character carrying SpEffect 446 never shows its overhead name tag. 446 also removes it from a LOCAL-only target list in `exe+0x45BD10` (`exe+0x3D2100(chr, 446)`). What 446 is in the regulation: UNKNOWN | static |
+| Lock-on target of LOCAL | **`PlayerIns+0x768`** (u64 handle, -1 = none) | Written by the lock-on update `exe+0x757D20` (`exe+0x7592D4` clears, `exe+0x759345` stores) on LOCAL only | static |
+| **Lock-on shows an enemy HP tag, also for players** | `exe+0x7593B5`: `CSFeMan` method `exe+0x7C56F0` → `exe+0x7DD520` (enemy tag table `CSFeMan+0xCA60`, 8 × 0x70, handle at `+0`) | Skipped only when the target has `exe+0x3D3230` or is a player in the downed state (`+0x710` == 1, `exe+0x66D700`). No team or SpEffect check. Two more ways an enemy tag opens: a hit (`exe+0x43D177` → `exe+0x7C56D0`) and an HP drop of a remote player in `GameDataMan` slot 0/1 that is hostile to LOCAL (`exe+0x7C5836`..`exe+0x7C58F9`) | static |
+| Team relation table (§10 "not found yet") | **`exe+0x399A120`**: 81 × 81 pointers, `[a*0x51 + b]` (`exe+0x52C990(chrA, chrB)` = "hostile", vf0 of the entry with {oppose 1, friendly 0, self 0}); objects `CSTeamTypeNeutral/Friend/Enemy` and `CSTemaTypeRival` (sic) | On disk: (2,29), (29,2), (1,29), (29,29) = Rival; (2,2), (2,1) = Friend; (2,6), (6,2), (2,7) = Enemy; (2,30) = Neutral | `[VERIFIED: static, pointers read from the file's .data]`; whether the game rewrites it: UNKNOWN |
+| Map view model | `CS::WorldMapViewModel` (0x278 bytes, vtable `exe+0x2C4A548`, ctor `exe+0x90DC80`) at **`[[CSMenuMan+0xA0]+0x240]`** (made by `exe+0x84D840`) | `+0x80` vector with LOCAL's pin; **`+0xA0` other players' pins**: `WorldMapPinDataList<WorldMapPlayerData*>` (vtable `exe+0x2C4A4D8`), count = (`+0xB8` − `+0xB0`) / 8 (`exe+0x911D50`), **2 items** made by the ctor | static |
+| `CS::WorldMapPlayerData` (0xB0 bytes, vtable `exe+0x2C4A308`) | item `+0xC` shown, `+0x10` map x/y, `+0x18` angle, `+0xA8` byte (downed) | Rewritten every frame by `exe+0x90EE00(vm, i, chr, ...)`: `chr` null → hidden; shown when HP > 0 and not `exe+0x3D45A0`, or downed. Returns at once while `CSMenuMan+0x7A8` != 0 | static |
+| Who gets a map pin | loop `exe+0xC3BFF4`: i < `exe+0x1FE4C0()` (**returns the constant 2**); slot = `[[exe+0x3C078D0]+0x10] + i*0x8A0` (`exe+0x1FE530`, i ≤ 1; the global is `GameDataMan` and the slots its remote `PlayerGameData` list `[HYPOTHESIS: ER layout]`); chr = the player-list member whose `[chr+0x5A0]+8` equals slot `+8` (`exe+0x5197E0`) | **Vanilla draws at most 2 other players**, those in remote slots 0/1. Whether Seamless Co-op raises the 2: UNKNOWN (read `exe+0x1FE4C0` live: vanilla bytes `B8 02 00 00 00 C3`). No team check | static |
+| Compass player marks | producer `exe+0x7D8210`: walks the **same** `vm+0xA0` list, items with `+0xC` != 0 → vector `CSFeMan+0x1250` (entries 0x98, icon from item `+0xA8`) = compass block `+0x98`; gfx `CompassNetPlayer` | Compass and map share one source: an item hidden or removed from the list leaves both | static; that the world-map screen draws from the same list `[HYPOTHESIS]` |
+| "Rescue" marker | `exe+0x7DBA10`: party members with SpEffect 508 (flags, `exe+0x509180`) within `MenuCommonParam+0xA8` (`compassFriendGuestInnerDistance`) → `CSFeMan+0xCA20`/`+0xCA30` | Points at a party member needing help; also no team filter | static |
+
+**Read in the running game, one PC (offline, 3 puppets, 2026-10-26, run folder `1793037200-session`).** The view model is where §20 says:
+`[[CSMenuMan+0xA0]+0x240]` has vtable `exe+0x2C4A548`; the other-players list object (vtable `exe+0x2C4A4D8`) sits at `vm+0xA0`, its begin / end
+pointers at `vm+0xB0` / `vm+0xB8` hold **2 items** (`[VERIFIED: peek]`); `exe+0x1FE4C0` reads `B8 02 00 00 00 C3` (the 2 stays, Seamless Co-op does
+not raise it, `[VERIFIED: peek]`). Puppets are not in `GameDataMan`'s remote slots, so no pin shows by itself; writing the puppet's `[chr+0x5A0]+8`
+(0x2727) into remote slot 0 (`[[GameDataMan+0x10]]+8`, `GameDataMan` = `[exe+0x3C078D0]`, `poke`, heap addresses change every launch)
+made item 0 shown (`+0xC` = 1, x/y floats) and a **green mark appeared on the compass** (screenshot `pin_on`). **Setting the end pointer to
+the begin pointer (`vm+0xB8 := [vm+0xB0]`, an 8-byte write, no breakpoint) removed the compass mark** (`pin_hidden`), the game did not write the end
+pointer back during 60+ s and nothing crashed; writing the old end back restored the 2 items `[VERIFIED: peek + screenshots]`. The mod does this in
+`game/maphide.rs` (console `maphide`, scenario `maphide`). **Not shown: the map screen.** The in-game map is a small panel (key M) at 800x450 in which a
+puppet 15 m away is under a pixel, so `map_shown` / `map_hidden` do not decide it; whether the map draws from the same list stays `[HYPOTHESIS]` until a
+second client is a pin on the map (FS-RW1 step 7). Overhead nametags and party bars are not touched by this (see "Overhead tag hidden by SpEffect 446"
+and the party bar producer above): to check later, SpEffect row 446 and a photo in the friend session.
+
+**Seen with two real instances (2026-10-27, `nro --emulated`, Solo queue, both rivals in one expedition; runs `1793064664-rw9-explore-i1/-i2`).**
+Without any filter each player sees the other's **party bar** top left (portrait, name, HP), the **name over the head** and, when the
+other is off screen, a name **arrow at the screen edge** pointing at them (`e1_now`, `e2_now`); with `maphide 0` a **compass mark**
+(`e1_drop`, `e2_drop`) and a **world-map pin** 400 m away (`e1_map2_free`). `maphide` (list emptied) removed the compass mark and the
+map pin on both (`e*_ground_hidden`, `e1_map2_hidden`): the map screen does draw from the `vm+0xA0` list `[VERIFIED: screenshots]`.
+The open map is not redrawn while open (reopen to see a change). The rival is in remote slot 0 (slot id 2 / 1 = the rival's `map id`).
+
+**Rival filter (`game/hudfilter.rs`, both builds, `[VERIFIED: static + two instances 2026-10-27]`).** Three per-frame producers look a
+character up and write "not shown" when the lookup returns null; the mod repoints each `call rel32` (only the 4 displacement bytes,
+one store inside one cache line; the bytes are checked first) to a trampoline (`mov rax, imm64; jmp rax`, own page within 2 GB of the
+exe) that calls the game's function and returns null for a rival's character (handle `ChrIns+8` in the combat tracker's rival list):
+
+| Site | Call there | What it feeds |
+|---|---|---|
+| `exe+0xC3C04D` | `E8 8E D7 8D FF` = `exe+0x5197E0(WorldChrMan, map id)` in the pin loop (then `exe+0x90EE00` hides a null) | map pin + compass mark |
+| `exe+0x7DAAA4` | `E8 87 E4 D3 FF` = `exe+0x518F30(WorldChrMan, &handle)` in the party bar producer `exe+0x7DA8B0` (null → `+0` shown := 0 at `exe+0x7DABF7`) | party bar |
+| `exe+0x7DA1F9` | `E8 32 ED D3 FF` = same function in the overhead tag producer `exe+0x7D9F80` (null → `+0x18` := 0 at `exe+0x7DA79E`) | name over the head and its edge arrow |
+
+The name tag site lets LOCAL's lock-on target through (`PlayerIns+0x768`, handle; lock-on read live in `mi-rw9-rivals`). Teammates
+are not in the rival list, so Duo / Trio keep their own team (not run yet). The `exe+0x3D2F30` (`chr+0x1F6` bit 6) test in the tag
+producer only picks a bone position (`exe+0x3D0130`), it is not a visibility gate (corrects the static row above).
+
+**Map markers (player-placed pins), static reading 2026-10-27, exe 1.3.3.0.** Separate from the player-position list above, and
+**not filtered by RW-9** (no hook or write touches it, `[VERIFIED: code grep]`). Classes (RTTI): `CS::WorldMapUserPinDataList`
+(vtable `exe+0x2C3B6B8`), item `CS::WorldMapUserPinData` (vtable `exe+0x2C4A3E8`, 0x180 bytes, ctors `exe+0x90A6B0` and
+`exe+0x90AC50`; the second stores its int argument at `+0x24`, `+0x20` is an id that the add loop near `exe+0x90C800` matches before
+allocating a new item), saved menu data `CS::CSMenuMarkersSaveData` (vtable `exe+0x2C43358`) `[VERIFIED: static]`. The compass
+producer `exe+0x7D8210` copies **`vm+0xF0`** (vm = `WorldMapViewModel`) with the list copy `exe+0x7D6C80` and hands it to
+`exe+0x7DC640` → `CSFeMan+0x1270`/`+0x1290` (compass marker marks) `[VERIFIED: static]`. That `vm+0xF0` is the user-pin list and that
+the map screen draws from it: `[HYPOTHESIS]`. Unknown: which field names the player who placed a pin (`+0x24` is a candidate), how a
+pin reaches other clients (net code is obfuscated), and what draws the beam in the 3D world. Next: `peek` `vm+0xF0..+0x110` and the
+items on two instances while each places one marker.

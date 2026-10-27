@@ -61,7 +61,7 @@ fn call(name: &str, a: &Map<String, Value>) -> Result<Value, String> {
     let text = |v: Value| json!([{"type": "text", "text": if let Value::String(s) = &v { s.clone() } else { serde_json::to_string_pretty(&v).unwrap() }}]);
     let r = match name {
         "env" => ops::env(),
-        "preflight" => ops::preflight(s(a, "mod_dist")),
+        "preflight" => ops::preflight(s(a, "mod_dist"), None),
         "launch" => {
             let mut set = BTreeMap::new();
             if let Some(Value::Object(m)) = a.get("set") {
@@ -75,6 +75,7 @@ fn call(name: &str, a: &Map<String, Value>) -> Result<Value, String> {
                 s(a, "mod_dist"),
                 set,
                 a.get("world").and_then(|v| v.as_bool()).unwrap_or(false),
+                None,
             )
         }
         "status" => ops::status(),

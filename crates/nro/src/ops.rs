@@ -41,19 +41,24 @@ fn stage_opts(
     name: &str,
     mod_dist: Option<String>,
     config: BTreeMap<String, toml::Value>,
+    emulated: Option<u32>,
 ) -> Stage {
     Stage {
         name: name.into(),
         mod_dist: mod_dist.map(PathBuf::from),
         config,
         no_gamedata: false,
+        emulated,
     }
 }
 
 /// Stage a run folder and evaluate preflight without launching.
-pub fn preflight(mod_dist: Option<String>) -> R {
+pub fn preflight(mod_dist: Option<String>, emulated: Option<u32>) -> R {
     let pins = session::pins()?;
-    let st = session::stage(&pins, &stage_opts("preflight", mod_dist, BTreeMap::new()))?;
+    let st = session::stage(
+        &pins,
+        &stage_opts("preflight", mod_dist, BTreeMap::new(), emulated),
+    )?;
     let r = session::preflight(&pins, &st);
     Ok(json!({"run": st.dir, "report": r}))
 }
@@ -62,8 +67,14 @@ pub fn launch(
     mod_dist: Option<String>,
     config: BTreeMap<String, toml::Value>,
     to_world: bool,
+    emulated: Option<u32>,
 ) -> R {
-    if let Ok(s) = State::current() {
+    session::recover_registry();
+    let prev = match emulated {
+        Some(n) => State::instance(n),
+        None => State::current(),
+    };
+    if let Ok(s) = prev {
         if s.live_pid().is_some() {
             return Err(format!(
                 "a session is already running (game pid {:?}); nro stop first",
@@ -72,7 +83,7 @@ pub fn launch(
         }
     }
     let pins = session::pins()?;
-    let mut st = session::stage(&pins, &stage_opts("session", mod_dist, config))?;
+    let mut st = session::stage(&pins, &stage_opts("session", mod_dist, config, emulated))?;
     let r = session::launch(&pins, &mut st)?;
     if !r.ok {
         return Ok(json!({"launched": false, "run": st.dir, "refused": st.note, "report": r}));
@@ -153,6 +164,16 @@ pub fn log_tail(n: usize, filter: Option<&str>) -> R {
         .filter(|l| filter.is_none_or(|f| l.contains(f)))
         .collect();
     Ok(json!(lines[lines.len().saturating_sub(n)..].join("\n")))
+}
+
+pub fn stop_all() -> R {
+    let mut out = BTreeMap::new();
+    for (n, d) in State::group() {
+        if let Ok(mut s) = State::load(std::path::Path::new(&d)) {
+            out.insert(n, session::stop(&mut s));
+        }
+    }
+    Ok(json!(out))
 }
 
 pub fn stop() -> R {

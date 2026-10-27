@@ -127,6 +127,15 @@ A healthy joiner shows: `the host published sc_lobby` → `method (a) link` → 
 | Steam invite window opened anyway | quiet invite not armed (not host, not MATCH READY, or `mm_lobby_trace` on) | Check `mm_quiet_invite:` lines |
 | Old SC lobby still around after Leave | Leaving the queue never leaves the game's own lobby (by design: it belongs to the game) | Return to the title or restart before re-queueing if anything looks stuck |
 
+## 8b. On one PC (emulated Steam, 2026-10-27)
+
+The whole Solo flow runs between two gbe_fork instances on one PC (`scenarios/mi-queue.toml`, PASS 3/3, orchestrator/MULTI-INSTANCE
+§20): the emulator's LAN lobbies support our search filters, Invisible lobbies, lobby/member data, `InviteUserToLobby` (auto-accepted).
+Queue to MATCH READY 1-2 s, Invite Members to ALL PRESENT ~3 s. Step 9 there: after the host's Commence the party panel showed
+`Preparing 1/2`; the expedition loaded once the joiner had commenced too (`Matchmaking complete 2/2`). Whether the host alone starts it
+after a wait is UNKNOWN (not waited for). The joiner's link (`mm_join_auto` with `link`) is refused there: it would
+start the real Steam client.
+
 ## 9. Not done yet
 
 - **MM-3g**: the host still presses Invite Members. Goal: the mod triggers that game action itself (call chain in `re/MEMORY_MAP.md` §12).

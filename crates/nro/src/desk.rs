@@ -21,6 +21,8 @@ use windows_sys::Win32::System::Pipes::{
 use crate::sys;
 
 pub const PIPE: &str = r"\\.\pipe\nro-desk";
+/// How often a key request looks again (30 s apart) for a covered game window before it gives up.
+const COVER_TRIES: u32 = 5;
 
 pub fn available() -> bool {
     std::fs::read_dir(r"\\.\pipe\")
@@ -60,8 +62,28 @@ pub fn local(req: &Value) -> Result<Value, String> {
     let h = sys::main_window(pid).ok_or("no game window")?;
     match req.get("op").and_then(|v| v.as_str()) {
         Some("keys") => {
-            if !sys::focus(h) {
-                return Err("could not bring the game window to the front".into());
+            // The PC is the user's: keys only when the game window is in front and nothing of another program covers it. Else wait
+            // 30 s and look again, 5 times, then give up (the user may be working in that window).
+            let mut tries = 0;
+            loop {
+                let focused = sys::focus(h);
+                let cover = sys::occluders(h);
+                if focused && cover.is_empty() {
+                    break;
+                }
+                tries += 1;
+                if tries > COVER_TRIES {
+                    return Err(format!(
+                        "no keys sent: the game window is {} after {COVER_TRIES} tries 30 s apart ({})",
+                        if focused { "covered" } else { "not in front" },
+                        cover.join(" | ")
+                    ));
+                }
+                eprintln!(
+                    "nro desk: game window covered or not in front ({}); waiting 30 s",
+                    cover.join(" | ")
+                );
+                std::thread::sleep(Duration::from_secs(30));
             }
             sys::keys_in(
                 Some(h),
@@ -77,7 +99,15 @@ pub fn local(req: &Value) -> Result<Value, String> {
                     "{p}: the picture is black; this process cannot read the screen (start `nro desk` in a normal terminal)"
                 ));
             }
-            Ok(json!(format!("{p} ({w}x{hh})")))
+            let cover = sys::occluders(h);
+            if cover.is_empty() {
+                Ok(json!(format!("{p} ({w}x{hh})")))
+            } else {
+                Ok(json!(format!(
+                    "{p} ({w}x{hh}) COVERED by: {}",
+                    cover.join(" | ")
+                )))
+            }
         }
         other => Err(format!("unknown desk op {other:?}")),
     }

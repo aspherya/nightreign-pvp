@@ -75,6 +75,13 @@ ORCH-1 (virtual pad) is blocked and parked (the game scans XInput pads only on a
 work). Open ideas: `puppet_revive`, puppets that attack, scenarios that wait on the log file instead of the 300-line console tail.
 Every card whose acceptance can be a scenario names it (`scenarios/<name>.toml`) and is done when `scripts\regress.ps1 <name>` is PASS.
 
+### NRO-MI — `nro` launches 2-3 real instances (Nucleus replacement)
+Owner: OPUS (plan) → SONNET/implementer | Status: todo, waits for Leonardo's go (spike S0 first) | Depends on: RW-9 merged
+Goal: Claude drives and sees every player's view (host/client, Duo/Trio) with no human and no Nucleus.
+Context: full design, spikes S0-S4, risks: [orchestrator/MULTI-INSTANCE.md](orchestrator/MULTI-INSTANCE.md).
+Acceptance: `scenarios/mi-join.toml` then `mi-duo-sc.toml` PASS (both consoles `players` = 2) + a `testing-log/` entry.
+Out of scope: real Steam lobbies, real lag, shipping an emulator.
+
 ## Matchmaking and in-game UI (M8)
 
 **Done 2026-10-21 (FS-UI2 PASS, TESTING §3):** **MM-4** (Solo queue, player build), **UI-1** (Battle Royale in the table menu, steps
@@ -226,7 +233,7 @@ what a second real client shows (research tools: console `memscan`, `peek`; find
 - **RW-3 — Defeat drops** (items through a red phantom, runes on the ground). Route and unknowns: `research/S2-inventory-drops.md` §7. Nothing built.
 - **RW-5 — Boss drops only for the last hitter.** Nothing built. Param hint: `disableMultiDropShare` exists on goods / protector / weapon rows (`Paramdex NR`), the sharing itself is engine code UNKNOWN.
 - **RW-8 — Runes only inside the own team.** Nothing built. Bandai's own guide: kill runes "are split equally among teammates regardless of who killed"; the split is engine code (UNKNOWN). Method: hardware write-watch on LOCAL's rune count (offset UNKNOWN: find it by diffing the HUD number) with a second player killing.
-- **RW-9 — No remote map / compass position, nametags only on the target.** Nothing built. Puppets are not network players: they show no nametag, marker or party frame (screenshot 2026-10-24), so this needs a real second client (FS-RW1 step 7 takes the photos).
+- **RW-9 — No remote map / compass position, nametags only on the target.** **Built for Solo, Duo and Trio, seen with two real instances on one PC (2026-10-27, branch `test/rw9-multi`):** `game/hudfilter.rs` hooks three HUD lookups (MEMORY_MAP §20 "Rival filter") so a rival is on no map pin, compass mark, party bar or name tag (incl. the edge arrow); LOCAL's lock-on target keeps its name tag; teammates are not rivals and stay. `maphide` (Solo, whole list) is only the fallback. Console `rivalhud`, test aid `tp_player`. Life bars from lock-on / hits stay vanilla (DECISIONS). Seen: with the filter on, no party bar / name tag / edge arrow on both screens (run `1793065578`, `h1_hawk`, `h2_hawk`); compass and map pin gone with `maphide` (run `1793064664`). **Acceptance:** `scenarios/mi-rw9-rivals.toml` PASS twice (not run yet: Steam was running), incl. the lock-on step (`PlayerIns+0x768` not yet read live). **Left after that:** Duo / Trio teammate case (needs `team_size = 2` over the queue or a 4-instance PC), FS photo on two PCs. Remove the card when the scenario passes and a teammate run shows the teammate still marked.
 - **Spectating (M5-7)**: built in v1 without camera RE (see STATUS): the held dead body, which other players do not see (Nucleus 2026-10-23), is moved next to a living player and the follow camera goes with it. F10 leaves. Not seen on two PCs.
 - **RW-6 follow-up:** the game's own Matchmaking Settings has a "Multiplayer Password" field; the text lives in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (input history, found with `memscan`) and in a second structure; which one the menu reads at Commence is UNKNOWN. Reading it would replace `private_code` in the toml (no config editing for players).
 - **Spectator camera smoothness (next):** the moved body makes the camera jump about 20 times a second. Idea: find what writes `ChrExFollowCam+0xA0..` (the followed position, newest entry; console `trace_write <addr>`) and feed it another player's position or target directly, leaving the body where it died. Fallback: keep the moved body (committed, 2026-10-25).

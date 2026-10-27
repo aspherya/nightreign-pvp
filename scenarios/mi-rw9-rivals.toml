@@ -1,0 +1,229 @@
+name = "mi-rw9-rivals"
+about = "RW-9 on one PC: two emulated instances queue Solo, reach the same expedition as rivals and, from each own screen, the rival is on no map pin, compass mark, party bar or name tag (rivalhud hooks); forcing the filter off brings them all back (contrast screenshots); a lock-on brings back the name tag of the target only"
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
+# instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
+# Run: nro run scenarios\mi-rw9-rivals.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_match_ready"
+
+# The host opens its Seamless Co-op lobby the player's way (Matchmaking Settings > Invite Members); the quiet invite swallows the
+# invite window, the host's mod invites the roster, gbe auto-accepts on the joiner.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "joiner"
+
+# The expedition: every party member readies at the table (the party list counts n/2), the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+# RW-9: the three hooks are in and the filter is on by itself in the match (both builds; MEMORY_MAP §20 "Rival filter").
+[[step]]
+instance = 1
+wait = { console = "rivalhud", contains = ["hiding rivals", "rivals [0x", "map / compass hooked", "party bar hooked", "name tag hooked"], timeout_s = 30 }
+
+[[step]]
+instance = 2
+wait = { console = "rivalhud", contains = ["hiding rivals", "rivals [0x", "map / compass hooked", "party bar hooked", "name tag hooked"], timeout_s = 30 }
+
+# The Solo fallback stays idle while the map site is hooked (one mechanism at a time).
+[[step]]
+instance = 1
+expect = { console = "maphide", contains = ["2 item(s), left to the game"] }
+
+[[step]]
+instance = 2
+expect = { console = "maphide", contains = ["2 item(s), left to the game"] }
+
+# Off the start hawks (the ride needs a few seconds to begin), land, then player 2 stands 4 m in front of player 1, facing it.
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 16000
+
+[[step]]
+instance = 2
+console = "tp_player 1 0 -4"
+
+[[step]]
+instance = 2
+sleep_ms = 3000
+
+# Both are in each other's view now: every site hides the rival right now, on both games.
+[[step]]
+instance = 1
+wait = { console = "rivalhud", contains = ["map / compass hooked, hiding a rival now", "party bar hooked, hiding a rival now", "name tag hooked, hiding a rival now"], timeout_s = 20 }
+
+[[step]]
+instance = 2
+wait = { console = "rivalhud", contains = ["map / compass hooked, hiding a rival now", "party bar hooked, hiding a rival now", "name tag hooked, hiding a rival now"], timeout_s = 20 }
+
+[[step]]
+instance = 1
+screenshot = "p1_hidden"
+
+[[step]]
+instance = 2
+screenshot = "p2_hidden"
+
+# Contrast: the filter forced off brings the party bar, the name tag and the compass mark back (screenshots *_shown).
+[[step]]
+instance = 1
+console = "rivalhud 0"
+
+[[step]]
+instance = 2
+console = "rivalhud 0"
+
+[[step]]
+instance = 2
+sleep_ms = 1500
+
+[[step]]
+instance = 1
+expect = { console = "rivalhud", contains = ["showing everyone", "no rival hidden in the last second"] }
+
+[[step]]
+instance = 2
+expect = { console = "rivalhud", contains = ["showing everyone", "no rival hidden in the last second"] }
+
+[[step]]
+instance = 1
+screenshot = "p1_shown"
+
+[[step]]
+instance = 2
+screenshot = "p2_shown"
+
+[[step]]
+instance = 1
+console = "rivalhud auto"
+
+[[step]]
+instance = 2
+console = "rivalhud auto"
+
+[[step]]
+instance = 2
+wait = { console = "rivalhud", contains = ["hiding rivals", "name tag hooked, hiding a rival now"], timeout_s = 10 }
+
+# Lock-on (Q) by player 2 on player 1: the name tag of the target comes back, its party bar and map / compass mark stay hidden.
+[[step]]
+instance = 1
+expect = { console = "rivalhud", contains = ["map / compass hooked", "party bar hooked", "name tag hooked"], absent = ["NOT hooked", "not hooked"] }
+
+[[step]]
+instance = 2
+expect = { console = "rivalhud", contains = ["map / compass hooked", "party bar hooked", "name tag hooked"], absent = ["NOT hooked", "not hooked"] }

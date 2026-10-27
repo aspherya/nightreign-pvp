@@ -85,6 +85,14 @@ pub(crate) fn menu_open(base: usize) -> bool {
         .is_some_and(|b| b != 0)
 }
 
+/// The raw `CSMenuMan+0x48` word (0 = no menu of the game open), for the orchestrator's `pos` line.
+#[cfg(feature = "dev")]
+pub(crate) fn menu_word(base: usize) -> Option<u32> {
+    mem::read::<usize>(base + RVA_MENU_MAN)
+        .filter(|m| *m != 0)
+        .and_then(|m| mem::read::<u32>(m + MAN_BUSY))
+}
+
 // ---- reading the game's input (MEMORY_MAP §19, "The game's own input") ----
 
 /// The frame's virtual-input words: `[[[mgr+0x18]+8]+0x50]`, count at `+0x48`. `[mgr+0x18]` is the same object as `[CSPad+0x10]`, which a
