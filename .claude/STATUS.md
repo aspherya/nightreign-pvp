@@ -35,12 +35,14 @@ with `nro stop` (kill) for this reason.
 
 ## 3. Next, in order
 
-1. **Friend session FS-RW1** (TESTING §6) with the zip of §2: first run of the new rules on two PCs, plus the observations RW-3/5/8/9 need (their logs and photos decide the RE). Then Claude reads both logs (`test-report` skill).
-2. **RW-3, RW-5, RW-8, RW-9** (TASKS): each starts from FS-RW1's observations; `memscan` and `peek` are the research tools.
-3. Spectate polish: a way to switch the watched player, a hint on screen for F10.
-4. Matchmaking: MM-3g + MM-7 (no Invite click, auto-start), MM-8, MM-9, S10; then MM-6 (Duo/Trio). Faster win at the end: a defeated player's game could publish "out" as Steam lobby member data instead of the 30 s dead timer.
-5. Death rules still open: keep level, starting items, respawn protection (`research/S5-death-respawn.md`).
-6. The open R2/R3 halves of the refactor go in with the next feature (ARCHITECTURE §6).
+The list Leonardo gave on 2026-10-24 (fixes F1-F4, design changes D1-D7) is tracked in [TASKS.md](TASKS.md) ("Leonardo's list"), with state and test route per item.
+
+1. **F2 / RW-8: runes shared only inside the own team** (not built; started in its own session 2026-10-27). Then **D2 / RW-3** (defeat drops) and **D4 / RW-5** (boss drops to the last hitter): both need RE.
+2. **Two-instance checks** (orchestrator `mi-*` scenarios, one PC, no friend needed): respawn far (F1), enemy scaling measured (F4), the other screen of a defeat and spectating (D1), private match (D7), Duo/Trio teammates for RW-9.
+3. **RW-9 leftovers:** the pin toast "Ally is showing location" and the killfeed idea built on the same mechanism ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
+4. **Friend session FS-RW1** (TESTING §6) with a fresh zip: the real two-PC check of everything above (lag, the other screen, real Steam). Zip of §2 is older than the RW-9 work: rebuild first.
+5. Matchmaking: MM-3g + MM-7 (no Invite click, auto-start), MM-8, MM-9, S10; then MM-6 (Duo/Trio).
+6. Death rules still open: keep level, starting items, respawn protection (`research/S5-death-respawn.md`). Spectator camera smoothness.
 
 ## 4. Repository state
 

@@ -222,6 +222,27 @@ game-data package (lift the `map\` refusal for that one file). The first new fea
 `Feature` trait; ARCHITECTURE §6) are built with it.
 HUMAN: one solo smoke; then the next FS: both players cruise, dive and drop where they want; each sees the other land.
 
+## Leonardo's list (2026-10-24, tracked here; update the state column when something changes)
+
+Test routes: **1 PC** = automated scenario (`nro`, one game), **2 inst** = two real emulated-Steam instances on one PC (`nro`, `mi-*` scenarios,
+[orchestrator/MULTI-INSTANCE.md](orchestrator/MULTI-INSTANCE.md)), **FS** = Friend Session on two PCs (TESTING §6).
+
+| # | Item | Card | State (2026-10-27) | Still to test |
+|---|---|---|---|---|
+| F1 | Respawn far from all players | RW-7 | Built, unit-tested | Two instances: where each one starts and respawns after a mob death (2 inst), then FS |
+| F2 | Runes shared only inside the own team (solo: himself) | RW-8 | **Not built** (engine split code UNKNOWN) | Needs the rune-count offset and the share path; test with 2 inst (a second player kills, watch both rune counts) |
+| F3 | No remote location (map, compass), name tags only on the target | RW-9 | **Built and seen with 2 inst**: map, compass, party bar, name tag, edge arrow, placed map pins and their 3D marker hidden for rivals (PRs #21, #22) | Pin toast "Ally is showing location" still leaks the area ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)); lock-on name tag; Duo/Trio teammates; FS photo |
+| F4 | Enemy difficulty by team size (Solo / Duo / Trio values) | RW-10 | Table found and rewritten on one PC (2 copies, 168 rows); effect not measured | Measure enemy HP / damage in Solo vs 2-player sessions (2 inst, console `peek`), then FS |
+| D1 | Defeat / loss when killed by a player or the tide, then spectate or quit to the Roundtable | RW-1, M5-7 | **Done on 1 PC** (`defeat-rival`, `match-loss`, `spectate`, `esc-defeated`); spectate seen in Nucleus | 2 inst: the other screen (held body, defeat screen, spectate), real hits; spectator camera smoothness |
+| D2 | Defeated players drop items (red phantom) and runes on the ground | RW-3 | **Not built** (route: `research/S2-inventory-drops.md` §7) | RE first, then 2 inst |
+| D3 | Death by mob / boss respawns normally with items | RW-2 | **Done on 1 PC** (`defeat-mob`) | none beyond FS |
+| D4 | Boss dormant powers / weapons only to the last hitter's team | RW-5 | **Not built** (`disableMultiDropShare` param hint) | RE first, then 2 inst with a boss |
+| D5 | Day 1 / night 1 free of the tide, tide starts on Day 2 | RW-4 | **Done on 1 PC** (`day1-free`) | FS (real clock over the network) |
+| D6 | Match ends when one team is left, even on Day 1 | RW-1 | **Done on 1 PC** (`match-win`, `match-win-end`, `match-loss`) | 2 inst with real defeats; FS |
+| D7 | Private match by password, outside matchmaking | RW-6 | Unit-tested only (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
+
+Next in this list: **F2 / RW-8 (runes)**, then D2 / RW-3 and D4 / RW-5 (both need RE), then the 2-instance checks of F1, F4, D1, D7.
+
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)
 
 Built and tested on one PC 2026-10-24 (scenarios `day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`;
