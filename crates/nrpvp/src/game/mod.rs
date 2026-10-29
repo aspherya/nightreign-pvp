@@ -38,6 +38,7 @@ pub(crate) mod poswrite;
 pub(crate) mod puppet;
 pub(crate) mod reviveblock;
 pub(crate) mod rtti;
+pub(crate) mod runeshare;
 pub(crate) mod singletons;
 pub(crate) mod spawn;
 pub(crate) mod team;
@@ -644,6 +645,20 @@ fn watch(
                 .map(|c| c.rival_handles())
                 .unwrap_or_default(),
             &combat.as_ref().map(|c| c.rival_addrs()).unwrap_or_default(),
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+        );
+        // RW-8 (both builds): a rival's kill credits no runes to LOCAL; teammates' and LOCAL's own kills stay vanilla.
+        runeshare::tick(
+            base,
+            in_match,
+            crate::mm::effective_team_size(cfg.team_size_usize()) == 1,
+            &combat
+                .as_ref()
+                .map(|c| c.rival_handles())
+                .unwrap_or_default(),
             combat
                 .as_ref()
                 .and_then(|c| c.local_state())

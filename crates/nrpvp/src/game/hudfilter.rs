@@ -279,19 +279,19 @@ unsafe extern "system" fn hook_pin_world(list: usize, record: usize) -> usize {
 }
 
 /// The rel32 a `call` at `site` needs to reach `dest` (None when farther than ±2 GB). Pure, tested.
-fn rel32(site: usize, dest: usize) -> Option<i32> {
+pub(crate) fn rel32(site: usize, dest: usize) -> Option<i32> {
     i32::try_from(dest as i64 - (site as i64 + 5)).ok()
 }
 
 /// `mov rax, imm64; jmp rax`.
-fn trampoline(dest: usize) -> [u8; 12] {
+pub(crate) fn trampoline(dest: usize) -> [u8; 12] {
     let mut t = [0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0];
     t[2..10].copy_from_slice(&(dest as u64).to_le_bytes());
     t
 }
 
 /// One RWX page within ±2 GB below or above the exe (64 KiB steps).
-fn alloc_near(base: usize) -> Option<usize> {
+pub(crate) fn alloc_near(base: usize) -> Option<usize> {
     use windows::Win32::System::Memory::{
         VirtualAlloc, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READWRITE,
     };
@@ -316,7 +316,7 @@ fn alloc_near(base: usize) -> Option<usize> {
 }
 
 /// Point the `call` at `site` to `tramp` if it still calls `callee`.
-fn patch(site: usize, callee: usize, tramp: usize) -> Result<(), String> {
+pub(crate) fn patch(site: usize, callee: usize, tramp: usize) -> Result<(), String> {
     use windows::Win32::System::Diagnostics::Debug::FlushInstructionCache;
     use windows::Win32::System::Memory::{
         VirtualProtect, PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS,

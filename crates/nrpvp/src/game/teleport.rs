@@ -268,6 +268,228 @@ pub(crate) fn tp_player_cmd(args: &[String]) -> Result<String, String> {
     ))
 }
 
+/// RW-8 test aid: enemies come from the character sets `WorldChrMan` holds (inline or by pointer), recognised by vtable
+/// (`CS::ChrSet`, `CS::OpenFieldChrSet`; set `+0x10` capacity, `+0x18` entries of 16 bytes, entry `+0` = character), and an
+/// enemy by the `CS::EnemyIns` vtable. RVAs from the RTTI of exe 1.3.3.0 (MEMORY_MAP §21). Read only, except `mob_go`'s HP write.
+const VT_CHRSET: usize = 0x2C1_5D70;
+const VT_OPENFIELD_CHRSET: usize = 0x2C1_9B48;
+const VT_ENEMY: usize = 0x2C1_8120;
+/// How far into `WorldChrMan` the sets are searched (bytes).
+const WCM_SCAN: usize = 0x2_0000;
+const MAX_SET_CAPACITY: u32 = 4096;
+/// `mobs` / `mob_go` skip enemies with more HP (big ones survived a swing at HP 1 in run 5, 2026-10-27).
+const MOB_MAX_HP: u32 = 1000;
+
+/// One living enemy: address, handle, npc id, HP, physics position.
+struct Mob {
+    chr: usize,
+    handle: u64,
+    npc: u32,
+    hp: u32,
+    pos: [f32; 3],
+}
+
+fn hp_field(chr: usize) -> Option<usize> {
+    // The character data module is module 0 (`[[chr+0x1B8]+0]`, puppet_hp's read; MEMORY_MAP §5).
+    let m = mem::read::<usize>(chr + PLAYER_MODULES)?;
+    let data = mem::read::<usize>(m).filter(|d| *d != 0)?;
+    Some(data + super::layout::DATA_MODULE_HP)
+}
+
+fn mobs_alive() -> Result<Vec<Mob>, String> {
+    let b = crate::game::puppet::exe_base()?;
+    let wcm = mem::read::<usize>(b + RVA_WCM_SLOT)
+        .filter(|&w| w != 0)
+        .ok_or("no world")?;
+    let is_set_vt = |v: usize| v == b + VT_CHRSET || v == b + VT_OPENFIELD_CHRSET;
+    let mut sets = Vec::new();
+    for off in (0..WCM_SCAN).step_by(8) {
+        let Some(v) = mem::read::<usize>(wcm + off) else {
+            break;
+        };
+        let set = if is_set_vt(v) {
+            wcm + off
+        } else if mem::is_ptr(v) && mem::read::<usize>(v).is_some_and(is_set_vt) {
+            v
+        } else {
+            continue;
+        };
+        if !sets.contains(&set) {
+            sets.push(set);
+        }
+    }
+    let mut out = Vec::new();
+    for set in sets {
+        let cap = mem::read::<u32>(set + super::layout::CHRSET_CAPACITY).unwrap_or(0);
+        let Some(ents) = mem::read::<usize>(set + CHRSET_ENTRIES).filter(|e| mem::is_ptr(*e))
+        else {
+            continue;
+        };
+        for i in 0..cap.min(MAX_SET_CAPACITY) as usize {
+            let Some(chr) =
+                mem::read::<usize>(ents + i * super::layout::CHRSET_ENTRY_SIZE).filter(|c| *c != 0)
+            else {
+                continue;
+            };
+            if mem::read::<usize>(chr) != Some(b + VT_ENEMY)
+                || out.iter().any(|m: &Mob| m.chr == chr)
+            {
+                continue;
+            }
+            let hp = hp_field(chr).and_then(mem::read::<u32>).unwrap_or(0);
+            let pos = mem::read::<usize>(chr + PLAYER_MODULES)
+                .and_then(|m| mem::read::<usize>(m + MODULES_PHYSICS))
+                .filter(|p| mem::read::<usize>(*p) == Some(b + PHYSICS_VTABLE_RVA))
+                .and_then(|p| read3(p + PHYSICS_POS));
+            let handle = mem::read::<u64>(chr + super::layout::CHR_HANDLE).unwrap_or(0);
+            // Handles 0xFFFFFFFF_xxxxxxxx are the session's own characters (players, the hawks: seen 2026-10-27, npc 100000 at
+            // the player's feet); map enemies carry a map-based handle (e.g. 0x3C2C2500_11000013).
+            if let (true, true, Some(pos)) =
+                (hp > 0 && hp <= MOB_MAX_HP, handle >> 32 != 0xFFFF_FFFF, pos)
+            {
+                out.push(Mob {
+                    chr,
+                    handle,
+                    npc: mem::read::<u32>(chr + super::layout::CHR_ID).unwrap_or(0),
+                    hp,
+                    pos,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
+}
+
+/// `mobs`: the nearest living enemies (handle, npc id, HP, distance).
+pub(crate) fn mobs_cmd() -> Result<String, String> {
+    let (_, phys) = local()?;
+    let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
+    let mut list = mobs_alive()?;
+    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    let lines: Vec<String> = list
+        .iter()
+        .take(8)
+        .map(|m| {
+            format!(
+                "{:#X} npc {} hp {} {:.0} m",
+                m.handle,
+                m.npc,
+                m.hp,
+                dist(m.pos, me)
+            )
+        })
+        .collect();
+    Ok(format!(
+        "mobs: {} alive; nearest: {}",
+        list.len(),
+        lines.join("; ")
+    ))
+}
+
+/// `mob_go [hp] [skip]`: put LOCAL 1.5 m from the nearest living enemy (the `skip`-th nearest, default 0), facing it; with `hp`, write
+/// that enemy's HP on this game first (e.g. 1, so one hit kills; only the enemy's owner game makes it stick).
+pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: mob_go [hp] [skip]";
+    let hp: Option<u32> = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?;
+    let skip: usize = args
+        .get(1)
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    let (_, phys) = local()?;
+    let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
+    let mut list = mobs_alive()?;
+    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    let m = list.get(skip).ok_or("no living enemy loaded")?;
+    let d = dist(m.pos, me);
+    if d > 300.0 {
+        return Err(format!("the nearest enemy is {d:.0} m away (at most 300)"));
+    }
+    if let (Some(hp), Some(f)) = (hp, hp_field(m.chr)) {
+        mem::write_bytes(f, &hp.to_le_bytes()).map_err(|e| e.to_string())?;
+    }
+    // Stand 1.5 m from it on the line towards where LOCAL is now, facing it.
+    let (dx, dz) = (me[0] - m.pos[0], me[2] - m.pos[2]);
+    let len = (dx * dx + dz * dz).sqrt().max(0.01);
+    let (ux, uz) = (dx / len, dz / len);
+    let np = [m.pos[0] + ux * 1.5, m.pos[1] + 0.5, m.pos[2] + uz * 1.5];
+    let mut bytes = Vec::with_capacity(12);
+    for v in np {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    mem::write_bytes(phys + PHYSICS_POS, &bytes).map_err(|e| e.to_string())?;
+    let q = read_quat(phys);
+    let yaw = (-ux).atan2(-uz).to_degrees();
+    if yaw_deg(q).is_some() {
+        let mut qb = Vec::with_capacity(16);
+        for v in quat_of_yaw(yaw) {
+            qb.extend_from_slice(&v.to_le_bytes());
+        }
+        mem::write_bytes(phys + PHYSICS_ORIENT, &qb).map_err(|e| e.to_string())?;
+    }
+    tracing::info!(
+        "teleport: LOCAL next to enemy {:#X} (npc {}, hp {} -> {:?}), {d:.0} m, yaw {yaw:.0}",
+        m.handle,
+        m.npc,
+        m.hp,
+        hp
+    );
+    Ok(format!(
+        "mob_go: next to enemy {:#X} npc {} (hp {}{}), was {d:.0} m away, facing it",
+        m.handle,
+        m.npc,
+        m.hp,
+        hp.map_or(String::new(), |h| format!(" -> {h}"))
+    ))
+}
+
+/// `mob_kill [skip]`: RW-8 test aid. Writes LOCAL's handle into the nearest living enemy's attacker fields (`+0x198` /
+/// `+0x1A0`, the fields a real hit by LOCAL fills; MEMORY_MAP §21) and sets its HP to 0, so this game's death credit runs
+/// exactly as after a real LOCAL kill. The enemy's owner game applies the death; another game sees no attacker (the filter's
+/// `Unknown` case). Dev only.
+pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: mob_kill [skip]";
+    let skip: usize = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    let (chr, phys) = local()?;
+    let handle = mem::read::<u64>(chr + super::layout::CHR_HANDLE)
+        .filter(|h| *h != 0 && *h != u64::MAX)
+        .ok_or("LOCAL's handle unreadable")?;
+    let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
+    let mut list = mobs_alive()?;
+    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    let m = list.get(skip).ok_or("no living enemy loaded")?;
+    let f = hp_field(m.chr).ok_or("enemy HP field unreadable")?;
+    for off in [
+        super::layout::PLAYER_LAST_ATTACKER,
+        super::layout::PLAYER_CUR_ATTACKER,
+    ] {
+        mem::write_bytes(m.chr + off, &handle.to_le_bytes()).map_err(|e| e.to_string())?;
+    }
+    mem::write_bytes(f, &0u32.to_le_bytes()).map_err(|e| e.to_string())?;
+    let d = dist(m.pos, me);
+    tracing::info!(
+        "teleport: mob_kill enemy {:#X} (npc {}), {d:.0} m: hp {} -> 0, attacker -> LOCAL 0x{handle:X}",
+        m.handle,
+        m.npc,
+        m.hp
+    );
+    Ok(format!(
+        "mob_kill: enemy {:#X} npc {} at {d:.0} m: hp {} -> 0, last attacker -> LOCAL 0x{handle:X}",
+        m.handle, m.npc, m.hp
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

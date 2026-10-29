@@ -597,6 +597,26 @@ fn click_with(hwnd: HWND, fx: f32, fy: f32, flags: [u32; 2]) {
     }
 }
 
+/// Relative mouse movement in counts (mouse-look): games that read raw mouse input (Elden Ring's camera) see it.
+pub fn mouse_move(dx: i32, dy: i32) {
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::{MOUSEEVENTF_MOVE, MOUSEINPUT};
+    let inp = INPUT {
+        r#type: windows_sys::Win32::UI::Input::KeyboardAndMouse::INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx,
+                dy,
+                mouseData: 0,
+                dwFlags: MOUSEEVENTF_MOVE,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    // SAFETY: SendInput with one relative mouse INPUT built here.
+    unsafe { SendInput(1, &inp, std::mem::size_of::<INPUT>() as i32) };
+}
+
 /// Press the left button at one point of the window's client area (fractions 0..1), move to another in small steps, release.
 pub fn drag(hwnd: HWND, from: (f32, f32), to: (f32, f32)) {
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
@@ -690,6 +710,19 @@ pub fn keys_in(hwnd: Option<HWND>, seq: &str) -> Result<(), String> {
             }
             drag(h, (v[0], v[1]), (v[2], v[3]));
             std::thread::sleep(Duration::from_millis(250));
+            continue;
+        }
+        if head.eq_ignore_ascii_case("mousemove") {
+            let dx: i32 = it
+                .next()
+                .and_then(|v| v.parse().ok())
+                .ok_or("mousemove dx dy (counts)")?;
+            let dy: i32 = it
+                .next()
+                .and_then(|v| v.parse().ok())
+                .ok_or("mousemove dx dy (counts)")?;
+            mouse_move(dx, dy);
+            std::thread::sleep(Duration::from_millis(50));
             continue;
         }
         let arg = it.next();

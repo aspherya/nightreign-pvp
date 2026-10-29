@@ -104,7 +104,12 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "menugate", args: "[0|1]", help: "RW-1 research: 1 = the Esc key asks the game to open the pause menu even while LOCAL is dead (sets CSMenuMan ctrl+0x179); 0 = left to the game (the night match does this by itself for a defeated player)", run: |a| { let on = match a.first().map(String::as_str) { Some("0") => false, Some("1") | None => true, Some(_) => return Err("expected 0 or 1".into()) }; crate::game::menugate::set_active(on); Ok(Act::Reply(format!("menugate {}", u8::from(on)))) } },
     Spec { name: "maphide", args: "[0|1|auto]", help: "RW-9: 1 = empty the map / compass list of other players now, 0 = show them, auto (default) = hidden while a Solo match runs (PvP on, team size 1) and the rivalhud map hook is missing; no argument shows the state", run: maphide },
     Spec { name: "rivalhud", args: "[0|1|auto]", help: "RW-9: rivals off the map, compass, party bars and name tags (the tag comes back on the lock-on target); 1 = force on, 0 = force off, auto (default) = while a match runs; no argument shows the state and the per-site counters", run: rivalhud },
-    Spec { name: "poke", args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
+    Spec { name: "runeshare", args: "[0|1|auto]", help: "RW-8: kill runes from a rival's kill are not credited (death-credit hook); 1 = force on, 0 = force off (vanilla share), auto (default) = while a match runs; no argument shows the state, LOCAL's runes since `runes_mark` and the counters", run: runeshare },
+    Spec { name: "runes_mark", args: "", help: "RW-8 test aid: remember LOCAL's rune count now; `runeshare` then shows the change since", run: |_| Ok(Act::Reply(crate::game::runeshare::mark())) },
+    Spec { name: "mobs", args: "", help: "RW-8 test aid: the nearest living enemies loaded on this game (handle, npc id, HP, distance)", run: |_| crate::game::teleport::mobs_cmd().map(Act::Reply) },
+    Spec { name: "mob_go", args: "[hp] [skip]", help: "RW-8 test aid: put this game's player 1.5 m from the nearest living enemy (or the skip-th nearest), facing it; with hp, write that enemy's HP first (1 = one hit kills; only the enemy's owner game makes it stick)", run: |a| crate::game::teleport::mob_go_cmd(a).map(Act::Reply) },
+    Spec { name: "mob_kill", args: "[skip]", help: "RW-8 test aid: the nearest living enemy (or the skip-th nearest) gets LOCAL as last/current attacker and HP 0, so this game's death credit runs as after a real LOCAL kill; the other game sees no attacker (MEMORY_MAP §21). Dev only", run: |a| crate::game::teleport::mob_kill_cmd(a).map(Act::Reply) },
+    Spec { name: "poke",args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
     Spec { name: "memscan", args: "[utf16|ascii|hex] <text|hex bytes>", help: "research (RW-6): scan the whole process for a string (UTF-16 by default) or bytes on a background thread (about a minute) and log every hit with 64 bytes around it as `memscan:`; no argument shows the last result. Used to find where the game keeps a text the menu shows", run: memscan },
     Spec { name: "rival_hit", args: "", help: "RW-1 test aid: record a rival's hit on this game's player now (the player build's hit log does it for real hits); a death within 30 s after it is a defeat for good, a death without it is a normal one", run: rival_hit },
     Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
@@ -603,6 +608,17 @@ fn rivalhud(args: &[String]) -> Result<Act, String> {
         Some(_) => hudfilter::set_override(switch_arg(args, "usage: rivalhud [0|1|auto]")?),
     }
     Ok(Act::Reply(hudfilter::describe()))
+}
+
+/// RW-8: `runeshare [0|1|auto]`.
+fn runeshare(args: &[String]) -> Result<Act, String> {
+    use crate::game::runeshare;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("auto") if args.len() == 1 => runeshare::set_override(None),
+        Some(_) => runeshare::set_override(switch_arg(args, "usage: runeshare [0|1|auto]")?),
+    }
+    Ok(Act::Reply(runeshare::describe()))
 }
 
 /// RW-9: `maphide [0|1|auto]`.

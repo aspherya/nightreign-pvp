@@ -19,7 +19,7 @@
 | Offline mode (`mode = "offline"`): Commence Solo runs the game's own solo expedition | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro` + puppet players** (in this repo since 2026-10-24): offline launch through me3, AFK players the mod counts as rivals, keys/screenshots, scenarios | **Works**; `scripts\regress.ps1` runs `night1-count`, `night1-local-dies`, `night2-win`, `night2-loss`, `puppets-smoke` |
 
-Not built yet: **RW-3** defeat item drops, **RW-5** boss drops to the last hitter, **RW-8** runes shared only inside a team, **RW-9** (built: rivals and the map pins they place are off the map, compass, 3D world, party bars and name tags, seen with two instances 2026-10-27; open: the pin toast, Duo / Trio teammate run, TASKS), the other three need a second real client to observe, final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
+Not built yet: **RW-3** defeat item drops, **RW-5** boss drops to the last hitter. **RW-8** runes shared only inside a team is **built and accepted on one PC** (2026-10-28: a rival's kill is not credited, the control pays; `mi-rw8-runes` PASS 2/2; open: Duo/Trio teammate case, the message credit, the two-PC runes photo — TASKS). **RW-9** built: rivals and the map pins they place are off the map, compass, 3D world, party bars and name tags, seen with two instances 2026-10-27; open: the pin toast, Duo / Trio teammate run (TASKS). RW-3, RW-5 and the two-PC halves need a second real client to observe; also open: final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10; not proven to be Seamless Co-op's. The
 first quit on a post-R5 build did not crash (SMOKE-2), Alt-F4 on the older zip did. A player zip from `main` is the real check. Runs end
@@ -37,7 +37,7 @@ with `nro stop` (kill) for this reason.
 
 The list Leonardo gave on 2026-10-24 (fixes F1-F4, design changes D1-D7) is tracked in [TASKS.md](TASKS.md) ("Leonardo's list"), with state and test route per item.
 
-1. **F2 / RW-8: runes shared only inside the own team** (not built; started in its own session 2026-10-27). Then **D2 / RW-3** (defeat drops) and **D4 / RW-5** (boss drops to the last hitter): both need RE.
+1. **F2 / RW-8: runes shared only inside the own team** — built and accepted on one PC 2026-10-28 (`mi-rw8-runes` PASS 2/2; the two-PC rune photo is left, TESTING §6 step 7a). Then **D2 / RW-3** (defeat drops) and **D4 / RW-5** (boss drops to the last hitter): both need RE.
 2. **Two-instance checks** (orchestrator `mi-*` scenarios, one PC, no friend needed): respawn far (F1), enemy scaling measured (F4), the other screen of a defeat and spectating (D1), private match (D7), Duo/Trio teammates for RW-9.
 3. **RW-9 leftovers:** the pin toast "Ally is showing location" and the killfeed idea built on the same mechanism ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
 4. **Friend session FS-RW1** (TESTING §6) with a fresh zip: the real two-PC check of everything above (lag, the other screen, real Steam). Zip of §2 is older than the RW-9 work: rebuild first.

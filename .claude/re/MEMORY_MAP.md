@@ -456,3 +456,38 @@ when the filter turns on stays until its owner moves it (the filter is on from t
 pin is not tested; pings other than pins: none found. **Still shown to the rival:** the toast "Ally is showing location" with
 the icon of the landmark nearest the pin (bottom right, a few seconds), not the pin's position; its producer is UNKNOWN (candidates: the
 message-id code in `exe+0x7C67E0` that reads the marker manager). Seen working: `mi-rw9-markers` (testing-log 2026-10-27).
+
+## 21. Kill runes: who gets credited (RW-8 static reading, 2026-10-27, exe 1.3.3.0)
+
+Python + capstone on the file. The table rows are `[VERIFIED: static disassembly]`; the live reading follows the table.
+
+| What | Where | Behaviour |
+|---|---|---|
+| Add runes | `exe+0x2098C0(PlayerGameData*, int delta)` | `+0x6C` (runes) += delta, clamped 0..999,999,999 (store at `exe+0x2098EC`); a positive delta also adds to `+0x70` (u64 total) and `+0x110` |
+| LOCAL-only adder | `PlayerIns` vf slot 186 (`+0x5D0`) = `exe+0x668300(chr, n, apply_rate)` (PlayerIns vtable `exe+0x2C307F8`) | Adds only when `chr` is LOCAL (`exe+0x3D4180`); optional SpEffect rune rate |
+| Float credit | `exe+0x668380(chr, float amount, src chr, u8 flag)` | amount <= 0 → nothing added; else vf `0x5D0`; always ends in `exe+0x50A150` |
+| **Death credit** | `exe+0x3DE710(ChrIns* dying)`, call at **`exe+0x3DE800`** (`E8 7B 9B 28 00`) | Receiver is always `[WorldChrMan]+0x174E8` (LOCAL); amount = `vf 0x1A0` param `+0x2C` × SpEffect rate (`exe+0x506E30`); skipped when `dying+0x1F4 & 4`. **No killer check: each game credits its own player for every death it processes**, which is why rivals' kills pay everyone. Called from `exe+0x3CD401`, `exe+0x3CD5B2`, `exe+0x3D5199` |
+| Message credit | `exe+0x51DA30` (loop over received records, `exe+0x4F4090`), call at **`exe+0x51DC0B`** (`E8 70 A7 14 00`) | Credits LOCAL for an enemy that is **not loaded** on this game (skips loaded ones, `exe+0x5287A0`); no dying character |
+| Other rune writers | `exe+0x607A50` (rate × value, from `exe+0x58FBD2`), `exe+0xFE05EC` (negative: spending), `exe+0x7EDF80` (to `[GameDataMan]+8`) | Not kill credits `[HYPOTHESIS]` |
+| Enemy sets (test aid `mobs`) | vtables `CS::ChrSet` `exe+0x2C15D70`, `CS::OpenFieldChrSet` `exe+0x2C19B48`, `CS::EnemyIns` `exe+0x2C18120` | Found from the RTTI; the sets' place inside `WorldChrMan` is searched at run time |
+
+**Seen with two real instances (2026-10-27, runs `1793117763/-770-mi-rw8-runes-i1/-i2`, Solo queue, rivals).** Player 1 (host) killed
+two enemies (npc 36200010) next to player 2: **both games ran the death credit** for the same character, 180 runes each time, and
+**both counts rose by the same 3742** (`runeshare: death credit of 180 rune(s) for chr 0x260001091100000C ...` in both logs): the
+"shared" runes are each game crediting itself, not a transfer. The dying enemy's attacker fields differ per game: on the killer's
+game (the enemy's owner) `+0x198` / `+0x1A0` = the killer's handle (`0xFFFFFFFF10C00000`); **on the other game both read -1**
+(that game applies no hit itself) `[VERIFIED: logs]`. So `+0x1A0` names the killer only where the hits were applied.
+
+Filter (`game/runeshare.rs`, both builds): both calls repointed (bytes checked, trampoline as §20). At the death site amount 0 is
+passed when the last attacker is a rival, or, with **no teammate** (team size 1), when no attacker is recorded (in Solo every kill
+that is LOCAL's own records LOCAL). **Limits:** with teammates (Duo / Trio) an unrecorded killer stays vanilla, so a rival's kill of
+an enemy owned by another game still pays the team (needs the killer from the owner's sync, UNKNOWN); LOCAL's kills by a means that
+records no attacker (UNKNOWN which, if any) are not paid in Solo; the message site (enemy not loaded here) is counted, not filtered.
+
+**Acceptance of the filter, two instances (2026-10-28, `scenarios/mi-rw8-runes.toml` PASS 2/2, runs `1793219963/-969` and `1793220173/-180`).** With the
+test aid `mob_kill` (LOCAL written as the enemy's `+0x198` / `+0x1A0` and its HP 0, the fields a real LOCAL hit fills) the killer's game logged
+`last attacker 0xFFFFFFFF10C00000 = Local -> credited` (runes `+1040`, `0 credited`), while the other game logged
+`last attacker 0xFFFFFFFFFFFFFFFF = Unknown -> BLOCKED` (`+0 since mark`, `1 blocked = 100 rune(s)`); with `runeshare 0` there it credited the
+vanilla share (`+1040`). This is the **Solo** path: the other game has no attacker recorded (seen live above: both games credited the same
+kill, the client read `-1`). With teammates an unrecorded killer stays vanilla (the limit above). The label was reworded to
+`BLOCKED (not this team's kill)` because the blocked case can be a rival's kill *or* an unrecorded one in Solo.
