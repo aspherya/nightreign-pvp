@@ -279,14 +279,20 @@ const WCM_SCAN: usize = 0x2_0000;
 const MAX_SET_CAPACITY: u32 = 4096;
 /// `mobs` / `mob_go` skip enemies with more HP (big ones survived a swing at HP 1 in run 5, 2026-10-27).
 const MOB_MAX_HP: u32 = 1000;
+/// `boss_list` / `boss_go` / `boss_kill` take the other side: characters with more than this HP (field bosses such as the
+/// Death Rite Bird and the Black Knife Assassin; the boss health bar is the in-game sign, this is our test-aid cut-off).
+const BOSS_MIN_HP: u32 = 1000;
 
-/// One living enemy: address, handle, npc id, HP, physics position.
+/// One living enemy: address, handle, npc id, HP, physics position and which set it came from.
+#[derive(Clone)]
 struct Mob {
     chr: usize,
     handle: u64,
     npc: u32,
     hp: u32,
     pos: [f32; 3],
+    /// Came from the open-field set (world characters) rather than the plain `ChrSet` (Roundtable NPCs are in `ChrSet`).
+    open_field: bool,
 }
 
 fn hp_field(chr: usize) -> Option<usize> {
@@ -296,7 +302,7 @@ fn hp_field(chr: usize) -> Option<usize> {
     Some(data + super::layout::DATA_MODULE_HP)
 }
 
-fn mobs_alive() -> Result<Vec<Mob>, String> {
+fn enemies_alive(min_hp: u32, max_hp: u32) -> Result<Vec<Mob>, String> {
     let b = crate::game::puppet::exe_base()?;
     let wcm = mem::read::<usize>(b + RVA_WCM_SLOT)
         .filter(|&w| w != 0)
@@ -314,12 +320,14 @@ fn mobs_alive() -> Result<Vec<Mob>, String> {
         } else {
             continue;
         };
-        if !sets.contains(&set) {
-            sets.push(set);
+        if !sets.iter().any(|(s, _)| *s == set) {
+            // The set's first qword is its vtable: open-field (world characters) vs the plain ChrSet (Roundtable NPCs live there).
+            let open_field = mem::read::<usize>(set) == Some(b + VT_OPENFIELD_CHRSET);
+            sets.push((set, open_field));
         }
     }
     let mut out = Vec::new();
-    for set in sets {
+    for (set, open_field) in sets {
         let cap = mem::read::<u32>(set + super::layout::CHRSET_CAPACITY).unwrap_or(0);
         let Some(ents) = mem::read::<usize>(set + CHRSET_ENTRIES).filter(|e| mem::is_ptr(*e))
         else {
@@ -344,20 +352,36 @@ fn mobs_alive() -> Result<Vec<Mob>, String> {
             let handle = mem::read::<u64>(chr + super::layout::CHR_HANDLE).unwrap_or(0);
             // Handles 0xFFFFFFFF_xxxxxxxx are the session's own characters (players, the hawks: seen 2026-10-27, npc 100000 at
             // the player's feet); map enemies carry a map-based handle (e.g. 0x3C2C2500_11000013).
-            if let (true, true, Some(pos)) =
-                (hp > 0 && hp <= MOB_MAX_HP, handle >> 32 != 0xFFFF_FFFF, pos)
-            {
+            if let (true, true, Some(pos)) = (
+                hp > min_hp && hp <= max_hp,
+                handle >> 32 != 0xFFFF_FFFF,
+                pos,
+            ) {
                 out.push(Mob {
                     chr,
                     handle,
                     npc: mem::read::<u32>(chr + super::layout::CHR_ID).unwrap_or(0),
                     hp,
                     pos,
+                    open_field,
                 });
             }
         }
     }
     Ok(out)
+}
+
+/// The ordinary mobs (HP up to [`MOB_MAX_HP`]).
+fn mobs_alive() -> Result<Vec<Mob>, String> {
+    enemies_alive(0, MOB_MAX_HP)
+}
+
+/// Bosses (HP above [`BOSS_MIN_HP`]): prefer the open-field set, where the world characters live; at the Roundtable the
+/// plain `ChrSet` also holds NPCs with high HP (1939), so they are only a fallback.
+fn bosses_alive() -> Result<Vec<Mob>, String> {
+    let all = enemies_alive(BOSS_MIN_HP, u32::MAX)?;
+    let field: Vec<Mob> = all.iter().filter(|m| m.open_field).cloned().collect();
+    Ok(if field.is_empty() { all } else { field })
 }
 
 fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
@@ -390,22 +414,51 @@ pub(crate) fn mobs_cmd() -> Result<String, String> {
     ))
 }
 
-/// `mob_go [hp] [skip]`: put LOCAL 1.5 m from the nearest living enemy (the `skip`-th nearest, default 0), facing it; with `hp`, write
-/// that enemy's HP on this game first (e.g. 1, so one hit kills; only the enemy's owner game makes it stick).
-pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
-    let usage = "usage: mob_go [hp] [skip]";
-    let hp: Option<u32> = args
-        .first()
-        .map(|v| v.parse().map_err(|_| usage))
-        .transpose()?;
-    let skip: usize = args
-        .get(1)
-        .map(|v| v.parse().map_err(|_| usage))
-        .transpose()?
-        .unwrap_or(0);
+/// `boss_list`: the living bosses (HP above [`BOSS_MIN_HP`]) with handle, npc id, HP, world position and distance.
+pub(crate) fn boss_list_cmd() -> Result<String, String> {
+    let (chr, phys) = local()?;
+    let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
+    let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
+    let mut list = bosses_alive()?;
+    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    let lines: Vec<String> = list
+        .iter()
+        .take(8)
+        .map(|m| {
+            format!(
+                "{:#X} npc {} hp {} at ({:.1}, {:.1}, {:.1}) {:.0} m{}",
+                m.handle,
+                m.npc,
+                m.hp,
+                m.pos[0] - origin[0],
+                m.pos[1] - origin[1],
+                m.pos[2] - origin[2],
+                dist(m.pos, me),
+                if m.open_field {
+                    " [field]"
+                } else {
+                    " [chrset]"
+                }
+            )
+        })
+        .collect();
+    Ok(format!(
+        "boss_list: {} boss(es); nearest: {}",
+        list.len(),
+        lines.join("; ")
+    ))
+}
+
+/// Move LOCAL next to the `skip`-th entry of a scanned list (1.5 m on the line towards where LOCAL is, facing it); with
+/// `hp`, write that entry's HP on this game first (only the owner game makes it stick). `label` is the console command.
+fn go_to_enemy(
+    mut list: Vec<Mob>,
+    hp: Option<u32>,
+    skip: usize,
+    label: &str,
+) -> Result<String, String> {
     let (_, phys) = local()?;
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
-    let mut list = mobs_alive()?;
     list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
     let m = list.get(skip).ok_or("no living enemy loaded")?;
     let d = dist(m.pos, me);
@@ -435,14 +488,14 @@ pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
         mem::write_bytes(phys + PHYSICS_ORIENT, &qb).map_err(|e| e.to_string())?;
     }
     tracing::info!(
-        "teleport: LOCAL next to enemy {:#X} (npc {}, hp {} -> {:?}), {d:.0} m, yaw {yaw:.0}",
+        "teleport: {label} next to enemy {:#X} (npc {}, hp {} -> {:?}), {d:.0} m, yaw {yaw:.0}",
         m.handle,
         m.npc,
         m.hp,
         hp
     );
     Ok(format!(
-        "mob_go: next to enemy {:#X} npc {} (hp {}{}), was {d:.0} m away, facing it",
+        "{label}: next to enemy {:#X} npc {} (hp {}{}), was {d:.0} m away, facing it",
         m.handle,
         m.npc,
         m.hp,
@@ -450,23 +503,43 @@ pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
     ))
 }
 
-/// `mob_kill [skip]`: RW-8 test aid. Writes LOCAL's handle into the nearest living enemy's attacker fields (`+0x198` /
-/// `+0x1A0`, the fields a real hit by LOCAL fills; MEMORY_MAP §21) and sets its HP to 0, so this game's death credit runs
-/// exactly as after a real LOCAL kill. The enemy's owner game applies the death; another game sees no attacker (the filter's
-/// `Unknown` case). Dev only.
-pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
-    let usage = "usage: mob_kill [skip]";
+/// `mob_go [hp] [skip]`: put LOCAL 1.5 m from the nearest ordinary enemy (the `skip`-th nearest), facing it; with `hp`,
+/// write that enemy's HP first (e.g. 1, so one hit kills; only the owner game makes it stick).
+pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: mob_go [hp] [skip]";
+    let hp: Option<u32> = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?;
+    let skip: usize = args
+        .get(1)
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    go_to_enemy(mobs_alive()?, hp, skip, "mob_go")
+}
+
+/// `boss_go [skip]`: put LOCAL 1.5 m from the nearest boss (HP above [`BOSS_MIN_HP`]), facing it.
+pub(crate) fn boss_go_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: boss_go [skip]";
     let skip: usize = args
         .first()
         .map(|v| v.parse().map_err(|_| usage))
         .transpose()?
         .unwrap_or(0);
+    go_to_enemy(bosses_alive()?, None, skip, "boss_go")
+}
+
+/// Write LOCAL's handle into an entry's attacker fields (`+0x198` / `+0x1A0`, the fields a real hit by LOCAL fills;
+/// MEMORY_MAP §21) and set its HP to 0, so this game runs the death as after a real LOCAL kill. `label` is the console
+/// command. Dev only.
+fn kill_enemy(list: Vec<Mob>, skip: usize, label: &str) -> Result<String, String> {
     let (chr, phys) = local()?;
     let handle = mem::read::<u64>(chr + super::layout::CHR_HANDLE)
         .filter(|h| *h != 0 && *h != u64::MAX)
         .ok_or("LOCAL's handle unreadable")?;
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
-    let mut list = mobs_alive()?;
+    let mut list = list;
     list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
     let m = list.get(skip).ok_or("no living enemy loaded")?;
     let f = hp_field(m.chr).ok_or("enemy HP field unreadable")?;
@@ -479,15 +552,37 @@ pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
     mem::write_bytes(f, &0u32.to_le_bytes()).map_err(|e| e.to_string())?;
     let d = dist(m.pos, me);
     tracing::info!(
-        "teleport: mob_kill enemy {:#X} (npc {}), {d:.0} m: hp {} -> 0, attacker -> LOCAL 0x{handle:X}",
+        "teleport: {label} enemy {:#X} (npc {}), {d:.0} m: hp {} -> 0, attacker -> LOCAL 0x{handle:X}",
         m.handle,
         m.npc,
         m.hp
     );
     Ok(format!(
-        "mob_kill: enemy {:#X} npc {} at {d:.0} m: hp {} -> 0, last attacker -> LOCAL 0x{handle:X}",
+        "{label}: enemy {:#X} npc {} at {d:.0} m: hp {} -> 0, last attacker -> LOCAL 0x{handle:X}",
         m.handle, m.npc, m.hp
     ))
+}
+
+/// `mob_kill [skip]`: RW-8 test aid on the ordinary mobs (see [`kill_enemy`]).
+pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: mob_kill [skip]";
+    let skip: usize = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    kill_enemy(mobs_alive()?, skip, "mob_kill")
+}
+
+/// `boss_kill [skip]`: RW-5 test aid — the same on the nearest boss.
+pub(crate) fn boss_kill_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: boss_kill [skip]";
+    let skip: usize = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    kill_enemy(bosses_alive()?, skip, "boss_kill")
 }
 
 #[cfg(test)]
