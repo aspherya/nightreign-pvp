@@ -139,6 +139,50 @@ sized estimate of our own session layer if SC ever blocks us. Static analysis of
 installs, plus runtime traces with our existing hardware-breakpoint tooling. Output: `research/S10-seamless-coop-internals.md` with
 evidence tags and a go/no-go on host migration.
 
+## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
+
+Order: NET-1, NET-2 unblock RW-5 and stand on their own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
+
+### NET-1 — `net` module: PeerLink over ISteamNetworkingMessages, ping/pong between two instances
+Owner: SONNET/implementer | Status: ready | Depends on: none
+Goal: a private-channel data link between our mods that does not depend on SC's session.
+Steps: (1) `crates/nrpvp/src/net/`: `Msg` codec (1-byte type, version byte, <= 256 B, strict caps, fuzz/unit tests), trait `PeerLink`, `FakeLink`; (2) `SteamMessagesLink` through the flat accessor `SteamAPI_SteamNetworkingMessages_SteamAPI_v002` (never Init/ManualDispatch/Shutdown, never `CloseSessionWithUser`; private odd channel; send every 1 s so sessions open without callbacks) on the existing Steam worker pattern; (3) roster = members of the SC lobby the probe already knows; accept only roster Steam ids; (4) console `net_ping` / `net_status` (skill `add-console-command`); (5) fallback `LobbyDataLink` on member data behind the same trait, chosen by config if Messages fail on the emulator.
+Acceptance: `scenarios/mi-net-ping.toml` (copy of `mi-join` up to ALL PRESENT, then `net_ping` on both): log `net: pong from <id>` on both instances, > 100 round trips, then a normal Commence still loads the expedition (SC unharmed). `cargo test` codec/fuzz, clippy clean both builds. Real-network behaviour goes to the next FS runbook.
+Out of scope: any game message (NET-2), changes to `mm/`, session replacement.
+
+### NET-2 — Verdict message and a stable cross-game boss id (RW-5 plumbing)
+Owner: SONNET/implementer + OPUS (RE judgement) | Status: todo | Depends on: NET-1
+Goal: game A says "boss B: last hitter team T" and game B records it once.
+Steps: (1) find a boss identity that is equal in both games (map entity id, NpcParam id + map, or the boss-map flags `XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e) with console `peek`/`memscan` on a spawned enemy; record in MEMORY_MAP; (2) `Msg::Verdict{boss, team, seq}` + `MatchBus` publish/subscribe (features never touch the link), first verdict per boss wins, idempotent re-send until acked; (3) console `net_verdict <boss> <team>` test aid.
+Acceptance: `scenarios/mi-net-verdict.toml`: instance 1 sends, instance 2 logs `net: verdict boss=... team=...` exactly once even when sent three times; wrong sender (not in roster) is ignored (unit test). If the id cannot be found, the card ends with the finding and the alternative.
+Out of scope: dropping loot (RW-5 itself).
+
+### NET-3 — Study: the game's own P2P traffic (read-only)
+Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none (better after NET-1)
+Goal: packet type / size / rate histogram of the game's `SendP2PPacket`/`ReadP2PPacket` (SteamNetworking006) and of SC's Messages channels, per phase (Roundtable, loading, expedition, a rival hit).
+Steps: hardware-breakpoint trace like `steam/lobtrace.rs` on the interface's send/read vtable targets (dev build only), log `(peer, size, channel, first byte)` aggregates; `ISteamNetworkingMessages` send/receive likewise to learn SC's channel numbers. Two instances, `mi-join` flow.
+Acceptance: `scenarios/mi-net-trace.toml` produces logs with non-zero histograms for each phase; findings table in NETWORKING §2/MEMORY_MAP (type ids, which carries hits/HP/SpEffects); UNKNOWN 2 and the channel question answered or restated.
+Out of scope: injecting packets, changing any game or SC byte.
+
+### NET-4 — Study: NR `CSSessionManager` layout (read-only)
+Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none
+Goal: map the singleton at `exe+0x3C21EC8` (state, `players` vector, steam id offset, send queue, limit fields) and `CSTeamSessionManager`.
+Steps: dump the object in a 2-instance session (`memscan`/`peek`), match each instance's Steam id (user getter), cross-check with ORCH-R2 (`[[exe+0x3C078D0]+0x10]+idx*0x8A0`) and the ER layout; answer whether `0x6001` is the engine's or SC's numbering.
+Acceptance: table in `re/MEMORY_MAP.md` with a `[VERIFIED]` tag per offset; console `session` dump command; scenario `mi-session-dump` logs both players with their Steam ids.
+Out of scope: writes.
+
+### NET-5 — Study: the game without SC (where does the session stack stop?)
+Owner: SONNET/researcher + OPUS | Status: todo | Depends on: NET-4 helpful
+Goal: list the blockers for S1 (NETWORKING §5).
+Steps: dev me3 profile without `nrsc.dll` (offline or emulator only, never real Steam online), mod present; boot to the Roundtable; try the game's Invite Members/join between two instances; log `CSSessionManager` state and the first failing job (`JoinSessionJob`, server step, EAC peer path `EOS_AntiCheatClient_*`); run S10 runbook R1 (hook census) for the sites SC covers.
+Acceptance: written list of blockers with exe addresses (or "two instances in one lobby without SC") in NETWORKING §8; `mi-nosc-boot` scenario: both instances reach the title and the log shows the session classes; UNKNOWNs 5-6 answered.
+Safety: nro preflight must refuse a no-SC launch on real Steam (guard rebuilt for this profile).
+
+### NET-6 — Gate G1: replace the session layer, yes or no
+Owner: OPUS → Leonardo decides | Status: blocked on NET-3..5
+Goal: a decision in DECISIONS.md with evidence, size estimate, the read EULA/support text (UNKNOWN 8) and, if still wanted, the question to SC's author.
+Out of scope: starting S1.
+
 ## Offline mode (decided 2026-10-22; first new feature, so it carries the open R2/R3 halves)
 
 Leonardo's decision: a separate **Offline** mode for solo play and solo testing, so `br_menu` / `matchmaking` never have to be switched
