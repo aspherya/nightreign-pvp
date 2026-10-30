@@ -381,7 +381,10 @@ fn mobs_alive() -> Result<Vec<Mob>, String> {
 fn bosses_alive() -> Result<Vec<Mob>, String> {
     let all = enemies_alive(BOSS_MIN_HP, u32::MAX)?;
     let field: Vec<Mob> = all.iter().filter(|m| m.open_field).cloned().collect();
-    Ok(if field.is_empty() { all } else { field })
+    let mut list = if field.is_empty() { all } else { field };
+    // Strongest first: the real bosses carry far more HP than the strong ordinary enemies (1939 and the like).
+    list.sort_by(|a, b| b.hp.cmp(&a.hp));
+    Ok(list)
 }
 
 fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
@@ -420,13 +423,14 @@ pub(crate) fn boss_list_cmd() -> Result<String, String> {
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
     let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
     let mut list = bosses_alive()?;
-    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    list.sort_by(|a, b| b.hp.cmp(&a.hp));
     let lines: Vec<String> = list
         .iter()
-        .take(8)
-        .map(|m| {
+        .take(10)
+        .enumerate()
+        .map(|(i, m)| {
             format!(
-                "{:#X} npc {} hp {} at ({:.1}, {:.1}, {:.1}) {:.0} m{}",
+                "#{i} {:#X} npc {} hp {} at ({:.1}, {:.1}, {:.1}) {:.0} m{}",
                 m.handle,
                 m.npc,
                 m.hp,
@@ -443,7 +447,7 @@ pub(crate) fn boss_list_cmd() -> Result<String, String> {
         })
         .collect();
     Ok(format!(
-        "boss_list: {} boss(es); nearest: {}",
+        "boss_list: {} boss(es); strongest: {}",
         list.len(),
         lines.join("; ")
     ))
@@ -456,13 +460,17 @@ fn go_to_enemy(
     hp: Option<u32>,
     skip: usize,
     label: &str,
+    by_dist: bool,
 ) -> Result<String, String> {
     let (_, phys) = local()?;
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
-    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    if by_dist {
+        list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    }
     let m = list.get(skip).ok_or("no living enemy loaded")?;
     let d = dist(m.pos, me);
-    if d > 300.0 {
+    // Bosses are picked by number and live far apart (field bosses 400-1000 m away); only the ordinary mobs keep the limit.
+    if by_dist && d > 300.0 {
         return Err(format!("the nearest enemy is {d:.0} m away (at most 300)"));
     }
     if let (Some(hp), Some(f)) = (hp, hp_field(m.chr)) {
@@ -516,10 +524,10 @@ pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
         .map(|v| v.parse().map_err(|_| usage))
         .transpose()?
         .unwrap_or(0);
-    go_to_enemy(mobs_alive()?, hp, skip, "mob_go")
+    go_to_enemy(mobs_alive()?, hp, skip, "mob_go", true)
 }
 
-/// `boss_go [skip]`: put LOCAL 1.5 m from the nearest boss (HP above [`BOSS_MIN_HP`]), facing it.
+/// `boss_go [n]`: put LOCAL 1.5 m from boss number n of `boss_list` (strongest first), facing it.
 pub(crate) fn boss_go_cmd(args: &[String]) -> Result<String, String> {
     let usage = "usage: boss_go [skip]";
     let skip: usize = args
@@ -527,20 +535,22 @@ pub(crate) fn boss_go_cmd(args: &[String]) -> Result<String, String> {
         .map(|v| v.parse().map_err(|_| usage))
         .transpose()?
         .unwrap_or(0);
-    go_to_enemy(bosses_alive()?, None, skip, "boss_go")
+    go_to_enemy(bosses_alive()?, None, skip, "boss_go", false)
 }
 
 /// Write LOCAL's handle into an entry's attacker fields (`+0x198` / `+0x1A0`, the fields a real hit by LOCAL fills;
 /// MEMORY_MAP §21) and set its HP to 0, so this game runs the death as after a real LOCAL kill. `label` is the console
 /// command. Dev only.
-fn kill_enemy(list: Vec<Mob>, skip: usize, label: &str) -> Result<String, String> {
+fn kill_enemy(list: Vec<Mob>, skip: usize, label: &str, by_dist: bool) -> Result<String, String> {
     let (chr, phys) = local()?;
     let handle = mem::read::<u64>(chr + super::layout::CHR_HANDLE)
         .filter(|h| *h != 0 && *h != u64::MAX)
         .ok_or("LOCAL's handle unreadable")?;
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
     let mut list = list;
-    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    if by_dist {
+        list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    }
     let m = list.get(skip).ok_or("no living enemy loaded")?;
     let f = hp_field(m.chr).ok_or("enemy HP field unreadable")?;
     for off in [
@@ -571,10 +581,10 @@ pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
         .map(|v| v.parse().map_err(|_| usage))
         .transpose()?
         .unwrap_or(0);
-    kill_enemy(mobs_alive()?, skip, "mob_kill")
+    kill_enemy(mobs_alive()?, skip, "mob_kill", true)
 }
 
-/// `boss_kill [skip]`: RW-5 test aid — the same on the nearest boss.
+/// `boss_kill [n]`: RW-5 test aid — the same on boss number n of `boss_list`.
 pub(crate) fn boss_kill_cmd(args: &[String]) -> Result<String, String> {
     let usage = "usage: boss_kill [skip]";
     let skip: usize = args
@@ -582,7 +592,64 @@ pub(crate) fn boss_kill_cmd(args: &[String]) -> Result<String, String> {
         .map(|v| v.parse().map_err(|_| usage))
         .transpose()?
         .unwrap_or(0);
-    kill_enemy(bosses_alive()?, skip, "boss_kill")
+    kill_enemy(bosses_alive()?, skip, "boss_kill", false)
+}
+
+/// The NpcParam row of an enemy: `[ChrIns vf 0x1A0 result]` (the death credit `exe+0x3DE710` reads `+0x2C` of it; MEMORY_MAP §21).
+fn npc_row(chr: usize) -> Option<usize> {
+    let vt = mem::read::<usize>(chr).filter(|v| mem::is_ptr(*v))?;
+    let f = mem::read::<usize>(vt + 0x1A0).filter(|v| mem::is_ptr(*v))?;
+    // SAFETY: the game's own getter (`rcx` = the character, returns a pointer), called on the main loop like the game does.
+    let get: unsafe extern "system" fn(usize) -> usize = unsafe { std::mem::transmute(f) };
+    let holder = unsafe { get(chr) };
+    mem::read::<usize>(holder).filter(|r| mem::is_ptr(*r))
+}
+
+/// NpcParam fields (Paramdex NR, offsets computed from the def; getSoul 0x2C confirmed against the game's code).
+const NPC_LOT_FIELDS: [(&str, usize); 6] = [
+    ("getSoul", 0x2C),
+    ("itemLotId_enemy", 0x30),
+    ("itemLotId_map", 0x34),
+    ("rewardItemLot_1", 0x6C),
+    ("rewardItemLot_2", 0x2D8),
+    ("chaosMatchingRewardLotId", 0x338),
+];
+
+/// `boss_info [n]`: boss number n of `boss_list`: its address, vtable and NpcParam reward fields.
+pub(crate) fn boss_info_cmd(args: &[String]) -> Result<String, String> {
+    let n: usize = args.first().map_or(Ok(0), |v| v.parse().map_err(|_| "usage: boss_info [n]"))?;
+    let list = bosses_alive()?;
+    let m = list.get(n).ok_or("no such boss")?;
+    let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
+    let fields: Vec<String> = NPC_LOT_FIELDS
+        .iter()
+        .map(|(name, off)| format!("{name}={}", mem::read::<i32>(row + off).map_or("?".into(), |v| v.to_string())))
+        .collect();
+    let b = crate::game::puppet::exe_base()?;
+    Ok(format!(
+        "boss_info #{n}: chr {:#X} vtable exe+{:#X} npc {} row {:#X}: {}",
+        m.chr,
+        mem::read::<usize>(m.chr).unwrap_or(0).wrapping_sub(b),
+        m.npc,
+        row,
+        fields.join(", ")
+    ))
+}
+
+/// `boss_lots <n> <field> <value>`: write one NpcParam reward field of boss n (this game only; the row is shared by every enemy of
+/// that kind). `field` is one of the names `boss_info` prints. RW-5 test aid.
+pub(crate) fn boss_lots_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: boss_lots <n> <field> <value>";
+    let [n, field, value] = args else { return Err(usage.into()) };
+    let n: usize = n.parse().map_err(|_| usage)?;
+    let value: i32 = value.parse().map_err(|_| usage)?;
+    let off = NPC_LOT_FIELDS.iter().find(|(f, _)| f == field).ok_or(usage)?.1;
+    let list = bosses_alive()?;
+    let m = list.get(n).ok_or("no such boss")?;
+    let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
+    mem::write_bytes(row + off, &value.to_le_bytes()).map_err(|e| e.to_string())?;
+    tracing::info!("teleport: boss_lots npc {} {field} -> {value}", m.npc);
+    Ok(format!("boss_lots: npc {} {field} -> {value}", m.npc))
 }
 
 #[cfg(test)]
@@ -637,3 +704,4 @@ mod tests {
         assert_eq!(yaw_deg([0.7, 0.0, 0.0, 0.7]), None);
     }
 }
+
