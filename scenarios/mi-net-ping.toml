@@ -1,0 +1,71 @@
+name = "mi-net-ping"
+about = "NET-1 on one PC: two emulated instances open our private ISteamNetworkingMessages channel (net = true), add each other as roster peers, and ping/pong 120 times in both directions; the channel never touches Seamless Co-op's session (no lobby is made)"
+# Two emulated-Steam instances (MULTI-INSTANCE.md): Steam closed, `nro desk` running. Instance 1 = Steam id 76561199023125438, instance 2 = ...439.
+# Run: nro run scenarios\mi-net-ping.toml --mod-dist <dev dist>      (add env NRO_NO_SC=1 to run it without Seamless Co-op)
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_queue = false
+net = true
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+[[step]]
+instance = 1
+wait = { console = "net_status", contains = ["id=76561199023125438"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "net_status", contains = ["id=76561199023125439"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+console = "net_peer 76561199023125439"
+
+[[step]]
+instance = 2
+console = "net_peer 76561199023125438"
+
+# The heartbeat opens the session both ways.
+[[step]]
+instance = 1
+wait = { console = "net_status", contains = ["recv="], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+console = "net_ping 120"
+
+[[step]]
+instance = 2
+console = "net_ping 120"
+
+[[step]]
+instance = 1
+wait = { console = "net_status", contains = ["pongs=120"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "net_status", contains = ["pongs=120"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "net_status", contains = ["send_errors=0", "strangers=0", "undecodable=0"], absent = ["last_error"] }
+
+[[step]]
+instance = 2
+expect = { console = "net_status", contains = ["send_errors=0", "strangers=0", "undecodable=0"], absent = ["last_error"] }

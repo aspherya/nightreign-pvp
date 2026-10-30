@@ -58,6 +58,11 @@ pub(crate) fn run() {
                     cfg.dev_mode,
                 );
             }
+            // NET-1: the mod-to-mod data channel (developer builds; no Steam call until the game has initialised Steam).
+            #[cfg(feature = "dev")]
+            if cfg.dev_mode && cfg.net {
+                crate::net::spawn();
+            }
             // MM-3f: the invite-window suppression (hardware breakpoints, no patching). The config already turned it off when
             // mm_lobby_trace is on (both own the debug registers).
             if cfg.mm_quiet_invite && cfg.mm_join && cfg.mm_queue && !cfg.mm_lobby_trace {

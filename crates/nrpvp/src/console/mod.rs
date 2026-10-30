@@ -137,6 +137,9 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "tp_player", args: "<slot 1..5> [dx dz]", help: "RW-9 test aid: put this game's player next to the player in that player-list slot (default 3 m along x, at most 50 m offset), any distance; two instances can then see each other", run: |a| crate::game::teleport::tp_player_cmd(a).map(Act::Reply) },
     Spec { name: "puppet_list", args: "", help: "ORCH-2: every entry of the game's player list (slot, address, vtable, handle, npc id, team, hp, downed state)", run: |_| Ok(Act::Reply(crate::game::puppet::list())) },
     Spec { name: "speffects", args: "", help: "M5-8 research: this game's player's SpEffect ids (revive items 540155 / 6999100 / 6999500 / 8970061, die-at-once 102130, ...)", run: |_| Ok(Act::Reply(crate::game::deathtrace::speffects_cmd())) },
+    Spec { name: "net_peer", args: "<steamid64>", help: "NET-1: add a peer to the data channel roster (only roster peers are heard)", run: net_peer },
+    Spec { name: "net_ping", args: "[count]", help: "NET-1: ping every roster peer `count` times (default 10, 100 ms apart); pongs show in net_status", run: net_ping },
+    Spec { name: "net_status", args: "", help: "NET-1: data channel counters (sent, received, pongs, last round trip)", run: net_status },
     Spec { name: "rawcall", args: "<rva hex> [arg]", help: "NET-5 research: call exe+rva(arg) once on the game thread (one integer argument), reply with rax. Example: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0)", run: rawcall },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
@@ -643,6 +646,31 @@ fn death_trace(args: &[String]) -> Result<Act, String> {
 fn death_hold(args: &[String]) -> Result<Act, String> {
     let on = switch_arg(args, "usage: death_hold [0|1]")?;
     Ok(Act::Reply(crate::game::deathtrace::hold_cmd(on)))
+}
+
+fn net_peer(args: &[String]) -> Result<Act, String> {
+    let id = args
+        .first()
+        .and_then(|a| a.parse::<u64>().ok())
+        .ok_or("steam id must be a number")?;
+    crate::net::send_cmd(crate::net::Cmd::Peer(id))?;
+    Ok(Act::Reply(format!("net: peer {id} queued")))
+}
+
+fn net_ping(args: &[String]) -> Result<Act, String> {
+    let n = match args.first() {
+        None => 10,
+        Some(a) => a.parse::<u32>().map_err(|_| "count must be a number")?,
+    };
+    crate::net::send_cmd(crate::net::Cmd::Ping(n.min(10_000)))?;
+    Ok(Act::Reply(format!("net: {n} pings queued")))
+}
+
+fn net_status(args: &[String]) -> Result<Act, String> {
+    if !args.is_empty() {
+        return Err("usage: net_status".into());
+    }
+    Ok(Act::Reply(crate::net::status()))
 }
 
 fn rawcall(args: &[String]) -> Result<Act, String> {

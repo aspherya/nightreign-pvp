@@ -141,14 +141,7 @@ evidence tags and a go/no-go on host migration.
 
 ## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
 
-Order: NET-1, NET-2 unblock RW-5 and stand on their own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
-
-### NET-1 — `net` module: PeerLink over ISteamNetworkingMessages, ping/pong between two instances
-Owner: SONNET/implementer | Status: ready | Depends on: none
-Goal: a private-channel data link between our mods that does not depend on SC's session.
-Steps: (1) `crates/nrpvp/src/net/`: `Msg` codec (1-byte type, version byte, <= 256 B, strict caps, fuzz/unit tests), trait `PeerLink`, `FakeLink`; (2) `SteamMessagesLink` through the flat accessor `SteamAPI_SteamNetworkingMessages_SteamAPI_v002` (never Init/ManualDispatch/Shutdown, never `CloseSessionWithUser`; private odd channel; send every 1 s so sessions open without callbacks) on the existing Steam worker pattern; (3) roster = members of the SC lobby the probe already knows; accept only roster Steam ids; (4) console `net_ping` / `net_status` (skill `add-console-command`); (5) fallback `LobbyDataLink` on member data behind the same trait, chosen by config if Messages fail on the emulator.
-Acceptance: `scenarios/mi-net-ping.toml` (copy of `mi-join` up to ALL PRESENT, then `net_ping` on both): log `net: pong from <id>` on both instances, > 100 round trips, then a normal Commence still loads the expedition (SC unharmed). `cargo test` codec/fuzz, clippy clean both builds. Real-network behaviour goes to the next FS runbook.
-Out of scope: any game message (NET-2), changes to `mm/`, session replacement.
+Order: NET-1 is done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`; roster is set with console `net_peer`, auto-roster from the SC lobby is a follow-up inside NET-2); NET-2 unblocks RW-5 and stand on their own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
 
 ### NET-2 — Verdict message and a stable cross-game boss id (RW-5 plumbing)
 Owner: SONNET/implementer + OPUS (RE judgement) | Status: todo | Depends on: NET-1
@@ -180,7 +173,7 @@ Safety: nro preflight must refuse a no-SC launch on real Steam (guard rebuilt fo
 Result (2026-10-30): the game boots and loads the Roundtable without SC in two instances (`NRO_NO_SC=1`, `scenarios/mi-nosc-join.toml`, `nro` profile `text_no_sc`, savefile redirect); Invite Members is dead without SC because the sign-in state machine stays at "offline" (state 9, flag 0); SC runs sit at state 2, flag 1; `CSSessionManager+0x170` is the player limit (3 vs 6). Details and evidence: NETWORKING §2b. The scenario itself FAILS by design at Invite Members (the roadblock). New dev tool: console `rawcall <rva hex> [arg]`.
 
 ### NET-7 — Sign-in gate: make the game "signed in" without Bandai's server (the decider for replacing SC)
-Owner: OPUS + SONNET/researcher | Status: ready | Depends on: NET-5 round 1 | Budget: 3 to 5 working days, then stop and decide (NET-6)
+Owner: OPUS + SONNET/researcher | Status: **on hold: needs the ban-risk decision (NETWORKING §7a)** | Depends on: NET-5 round 1 | Budget: 3 to 5 working days, then stop and decide (NET-6)
 Goal: find what takes the three sign-in state objects from 3 (request in flight) to 2 (done), and complete it ourselves with local data, so that Invite Members works in a game without `nrsc.dll`.
 Steps: (1) in an SC run (the oracle) find the writer of state 2 and the function that handles the sign-in answer: reset the state, run `rawcall F18D30 0`, trace writes with hardware breakpoints on the state words and the step function `exe+0xDEC110` (static: its callee `0xDEBA10`, the request builder, and the 0x41-byte profile at `0xE01370`); (2) call that completion from our mod after our own conditions (never with the real server reachable: `Menu.IsEnableOnlineMode` stays false, flag byte handling decided by what (1) shows); (3) set `CSSessionManager+0x170` to 6 and look at what the table menu and the lobby do; (4) try `mi-nosc-join` again.
 Acceptance: `mi-nosc-join` PASS: Invite Members creates a lobby (`LobbyCreated_t result=1`) and instance 2 joins it, both consoles show `world loaded, 2 player(s)`. **Stop rule:** if after 5 days the sign-in cannot be completed locally, or the next gate is a server call that needs a real answer, record the blocker and take NET-6 with "no": the data channel (NET-1, NET-2) stays the plan.

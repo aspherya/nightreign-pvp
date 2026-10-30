@@ -91,6 +91,8 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `puppet_move` | `<slot> <dx> <dz>` | ORCH-2: put the puppet in that player slot at LOCAL's position + (dx, dz) m (physics position write, at most 50 m). Dev only |
 | `puppet_hp` | `<slot> <hp>` | ORCH-2: write a puppet's HP (character data module); a hit at 1 HP downs it. Dev only |
 | `puppet_near_death` | `[0\|1]` | ORCH-2: 1 (default) = a puppet holds SpEffect 8970061 while up (0 HP downs instead of killing) and loses it while downed (bleeds out instead of the solo auto-revive). Dev only |
+| `net_peer <steamid64>`, `net_ping [n]`, `net_status` | | NET-1 (config `net = true`): add a roster peer to the data channel, ping every peer n times, counters (sent, recv, pongs, rtt). Dev only |
+| `rawcall <rva hex> [arg]` | | NET-5 research: call `exe+rva(arg)` once on the game thread (one integer argument), reply with rax. Dev only |
 | `puppet_think`, `puppet_forget`, `puppet_session`, `puppet_watch`, `peek` | | ORCH-2 research: NpcThink id for new puppets (default -1, no AI); bot manager forget; the session-field experiment; a write watch / execute trace; a read-only hex dump (`peek wcm+0x9A40 0x40`). Dev only |
 | `pad`, `pad_connect`, `pad_clear`, `pad_status` | `A; wait 500; LS 0 1 800` | ORCH-1: a virtual XInput pad 0 (import-table hook of `XINPUT1_4` ordinal 2). **Not effective yet**: the game only polls XInput pads it found in a device scan, which does not run without a real pad. Dev only |
 | `whoami` (pipe only) | | `pid <pid> <DLL folder>`; `nrcon list` uses it |

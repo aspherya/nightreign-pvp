@@ -22,6 +22,8 @@ mod logging;
 mod logring;
 mod mark;
 mod mm;
+#[cfg(feature = "dev")]
+mod net;
 mod overlay;
 mod rules;
 mod startup;

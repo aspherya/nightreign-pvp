@@ -161,6 +161,19 @@ into a Friend Session (TESTING §6).
 | Peers are untrusted | §3 Security | |
 | Saves | Back up `%APPDATA%\Nightreign\<steamid>\` before save-touching steps; S1 changes the save extension story (`.co2`) - a vanilla `.sl2` is never touched | CLAUDE.md |
 
+### 7a. Ban-safety evidence and the decision of 2026-10-30
+
+Leonardo: proceed only with enough proof that the path does not get players banned. **There is no proof, and none can exist from our side**: neither Bandai Namco nor FromSoftware has published a rule on offline mods or on third-party Steam traffic (UNKNOWN 8; searched again 2026-10-30, only press and guides). What we can show:
+
+| Evidence | Tag |
+|---|---|
+| Every run launched through me3 with `start_online = false`: no `start_protected_game.exe`, no EasyAntiCheat module (nro's watchdog kills the game if EAC appears), same posture as Seamless Co-op today | `[VERIFIED: preflight P1-P6, L1 in every run]` |
+| In all runs of 2026-10-30 (no-SC, rawcall, net ping) the only remote TCP endpoints were the emulator's own LAN addresses (172.25.x, 192.168.x); none to Bandai (`cl-steam.fromsoftware-game.net`) or any public address | `[VERIFIED: watch.log "tcp remote" lines of runs 1793383721, 1793384326]` |
+| The data channel is Steam networking between the two players' own games (our private channel number), the same Valve service the game already uses for lobbies; it carries no account, save or Bandai data | `[VERIFIED: NET-1 code and scenario]` |
+| Reports of bans concern modified files used **online** with EAC; SC's own author says there is no ban risk unless connecting with vanilla users (secondary sources) | `[SOURCE: press/guide search, 2026-10-30]` |
+
+Not shown: that any of this is safe under Bandai's rules. Decision: **NET-1 / NET-2 (the data channel) go ahead**: they add no Bandai contact and no EAC interaction, and sit next to SC exactly as SC's own traffic does. **NET-7 (faking the sign-in) is on hold** until we have either an official statement or Leonardo accepts the residual risk in writing in DECISIONS: it changes how the game believes it is signed in to Bandai, and a mistake there (flag byte set, server reachable) could produce a real sign-in request. If it is ever run: emulated Steam ids only, `Menu.IsEnableOnlineMode` stays false, firewall-blocked game exe, and nro's TCP watch must show no public endpoint.
+
 ## 8. Open unknowns
 
 | # | Unknown | How to find out (card) |
