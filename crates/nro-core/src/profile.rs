@@ -30,15 +30,50 @@ pub fn text(nrsc: &str, nrpvp: &str, gamedata: Option<&str>) -> String {
     s
 }
 
+/// NET-5 experiment (NETWORKING.md): the same profile without Seamless Co-op. Marked with [`NO_SC_MARK`] so [`audit`] accepts exactly this
+/// shape. `savefile` keeps the run off the game's default `.sl2` name (the folder is the emulated id's, never a real player's).
+pub const NO_SC_MARK: &str = "# nro: no-sc experiment";
+
+pub fn text_no_sc(nrpvp: &str, gamedata: Option<&str>) -> String {
+    let mut s = format!(
+        "{NO_SC_MARK}
+profileVersion = \"v1\"
+savefile = \"NRNOSC.sl2\"
+
+         [[supports]]
+game = \"nightreign\"
+
+         [[natives]]
+path = {}
+",
+        toml_path(nrpvp)
+    );
+    if let Some(g) = gamedata {
+        s.push_str(&format!(
+            "
+[[packages]]
+id = \"nrpvp-gamedata\"
+path = {}
+",
+            toml_path(g)
+        ));
+    }
+    s
+}
+
 /// Problems with a profile text (empty = acceptable). Used by preflight P2 on the exact text that is passed to me3.
 pub fn audit(profile: &str) -> Vec<String> {
     let mut out = Vec::new();
+    let no_sc = profile.lines().next().map(str::trim) == Some(NO_SC_MARK);
     match toml::from_str::<toml::Table>(profile) {
         Err(e) => out.push(format!("profile does not parse: {e}")),
         Ok(t) => {
             // Anywhere, not only at the top level: a key after a table header belongs to that table, and me3's reading of a
             // misplaced key is not something to rely on.
             for key in ["start_online", "savefile", "disable_arxan"] {
+                if no_sc && key == "savefile" {
+                    continue;
+                }
                 if profile.lines().any(|l| l.trim_start().starts_with(key)) {
                     out.push(format!("profile sets {key}"));
                 }
@@ -48,10 +83,12 @@ pub fn audit(profile: &str) -> Vec<String> {
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
-            if natives.len() != 2 {
+            let want = if no_sc { 1 } else { 2 };
+            if natives.len() != want {
                 out.push(format!(
-                    "profile has {} natives, expected 2 (nrsc.dll, nrpvp.dll)",
-                    natives.len()
+                    "profile has {} natives, expected {want} ({}nrpvp.dll)",
+                    natives.len(),
+                    if no_sc { "" } else { "nrsc.dll, " }
                 ));
             }
             for n in &natives {
@@ -122,5 +159,15 @@ mod tests {
         let a = audit(&t);
         assert!(a.iter().any(|s| s.contains("start_online")));
         assert!(a.iter().any(|s| s.contains("evil.dll")));
+    }
+
+    #[test]
+    fn no_sc_profile_passes_its_own_audit_only() {
+        let t = text_no_sc(r"S:\run\mod\nrpvp.dll", Some(r"S:\run\mod\gamedata"));
+        assert!(audit(&t).is_empty(), "{:?}", audit(&t));
+        assert!(t.contains("savefile = \"NRNOSC.sl2\""));
+        // Without the marker the same text is refused (savefile, one native).
+        let plain = t.replacen(NO_SC_MARK, "# x", 1);
+        assert!(audit(&plain).iter().any(|e| e.contains("savefile")));
     }
 }

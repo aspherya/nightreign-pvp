@@ -59,6 +59,9 @@ pub(crate) enum Command {
     NightEnd,
     /// M5-4 (dev console): read an event flag, or write one of ours / the research list (`game::flags::console_cmd`).
     Flag(u32, Option<bool>),
+    /// NET-5 research (dev only): call `exe+rva(arg)` on the main loop (`game::rawcall`).
+    #[cfg(feature = "dev")]
+    RawCall(u32, u32),
 }
 
 /// HAWK-3 console commands (`hawk_*`).

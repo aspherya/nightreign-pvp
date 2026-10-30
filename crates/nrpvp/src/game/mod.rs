@@ -34,8 +34,10 @@ pub(crate) mod menutrace;
 pub(crate) mod multi_instance;
 pub(crate) mod multiplay;
 pub(crate) mod poswrite;
-#[cfg(feature = "dev")]
 pub(crate) mod puppet;
+#[cfg(feature = "dev")]
+#[cfg(feature = "dev")]
+pub(crate) mod rawcall;
 pub(crate) mod reviveblock;
 pub(crate) mod rtti;
 pub(crate) mod runeshare;
@@ -546,6 +548,8 @@ fn watch(
                 Command::Clock(c) => features.clock.request(c, "console", &world, &mut fctx),
                 Command::NightEnd => features.nights.request_end("console", &world, &mut fctx),
                 Command::Flag(f, v) => crate::game::flags::console_cmd(base, f, v),
+                #[cfg(feature = "dev")]
+                Command::RawCall(rva, arg) => rawcall::call(base, rva, arg),
                 Command::Bots(b) => features.bots.request(
                     b,
                     "console",
@@ -859,6 +863,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         | Command::Clock(_)
         | Command::NightEnd
         | Command::Flag(..) => {}
+        #[cfg(feature = "dev")]
+        Command::RawCall(..) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {
