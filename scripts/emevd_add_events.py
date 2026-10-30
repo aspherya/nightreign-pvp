@@ -121,7 +121,22 @@ def speffect_instrs(ev):
     ]
 
 
+def mirror_instrs(ev):
+    """RW-5 verdict transport: while the local flag `from` is ON the network-connected flag `to` is ON in every game, OFF when it goes
+    OFF. One game's DLL sets `from` (a local write there); every game's DLL reads `to`. Then the event restarts."""
+    a, b = ev['from'], ev['to']
+    return [
+        flag_cond(MAIN, True, a),
+        set_flag(b, True, network=True),
+        flag_cond(MAIN, False, a),
+        set_flag(b, False, network=True),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
 def build_event_instrs(ev):
+    if 'mirror' in ev:
+        return mirror_instrs(ev)
     if 'night_end' in ev:
         return night_end_instrs(ev)
     if 'speffect' in ev:
