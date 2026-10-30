@@ -61,6 +61,15 @@ feature that cannot: the hit is applied in one game only (RW-8 found the same: t
 research already has the Invite Members call chain; (4) `SendP2PPacket`/`ReadP2PPacket` call sites for tracing (NET-3), possibly to
 inject our own typed packets into the game's stream (risky: the peer's packet dispatcher must know the type).
 
+### 2a. Findings from the first investigation round (2026-10-30, static)
+
+| Finding | Effect on the plan | Tag |
+|---|---|---|
+| **The Bandai-server block is not SC's job.** me3 (`start_online = false`, the default) sets the game property `Menu.IsEnableOnlineMode = false` through the game's own `CSAutoControlAPI::SetGameProperty` (me3 `host/game_properties.rs`). `CSAutoControlAPI` exposes only `SetGameProperty`, `SignIn`, `Sleep` (no session control). | UNKNOWN 5 is half answered: without SC the server path is already switched off by a stock game switch. Whether the game's *session jobs* then work (friend-invite co-op) is the live question | `[SOURCE: me3 v0.11.0 lib.rs L174, game_properties.rs]` `[VERIFIED: exe strings, method table at +0x2CBA028..]` |
+| The remote-member table is a **hard-coded 2 entries**: the getter at `exe+0x1FE530` is `cmp ecx,1; ja -> null; idx*0x8A0 + [[exe+0x3C078D0]+0x10]`, and the key lookup at `exe+0x1FE560` loops `idx < 2`. Vanilla Nightreign co-op is 3 players (you + 2). So **a game without SC already does up to 3 players by design**; widening needs the table, its two bounds and the allocation, not a new protocol | Two-player PvP (what we ship now: `-MatchPlayers 2`) may not need SC at all; >3 players needs the widening that SC does | `[VERIFIED: static disassembly, 2026-10-30]`; "no SC needed for 2-3" is `[HYPOTHESIS]` until NET-5 |
+| `imul reg,reg,0x8A0` (the member stride) occurs at only **9 sites**, all in `exe+0x1FC3E8..0x200A68` (about 5 functions) | Counting the code that indexes the member array is small; the size of the widening is bounded by this region plus the allocation and the sync code that reads the member count (not yet counted) | `[VERIFIED: byte search; stride 0x8A0 also appears in unrelated constants, 236 hits of the raw immediate]` |
+
+
 ## 3. Designs for the transport (problem a)
 
 | # | Design | Verdict | Flaws |
