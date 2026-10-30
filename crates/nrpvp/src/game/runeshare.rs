@@ -65,8 +65,6 @@ struct Event {
     cur: u64,
     who: Killer,
     blocked: bool,
-    /// The dying character's reward lots were blanked on this game (RW-5).
-    rewards_cut: bool,
 }
 static EVENTS: Mutex<Vec<Event>> = Mutex::new(Vec::new());
 
@@ -171,9 +169,6 @@ unsafe extern "system" fn hook_death(local: usize, amount: f32, dying: usize, fl
     } else {
         KEPT.fetch_add(1, Ordering::Relaxed);
     }
-    // RW-5: a boss's reward ("Dormant Power" lot) is read from its NpcParam row when it dies; on a game that is not credited with the
-    // kill the lots are blanked now and put back by `tick` after `RESTORE_AFTER`.
-    let rewards_cut = blocked && cut_rewards(dying);
     push(Event {
         site: "death",
         amount,
@@ -183,7 +178,6 @@ unsafe extern "system" fn hook_death(local: usize, amount: f32, dying: usize, fl
         cur,
         who,
         blocked,
-        rewards_cut,
     });
     // SAFETY: the game's own function with the game's own arguments; amount 0 = "this kill is worth nothing" (its own early-out).
     unsafe { orig()(local, if blocked { 0.0 } else { amount }, dying, flag) }
@@ -201,25 +195,10 @@ unsafe extern "system" fn hook_message(local: usize, amount: f32, src: usize, fl
         cur: u64::MAX,
         who: Killer::Unknown,
         blocked: false,
-        rewards_cut: false,
     });
     // SAFETY: as `hook_death`, arguments unchanged.
     unsafe { orig()(local, amount, src, flag) }
 }
-
-/// `NpcParam` reward fields of a boss row: `rewardItemLot_1`, `rewardItemLot_2` ("Dormant Power ItemLot"), `chaosMatchingRewardLotId`
-/// (Paramdex NR; offsets computed from the def, `getSoul` +0x2C checked against the death credit's own read). RW-5.
-const NPC_REWARD_FIELDS: [usize; 3] = [0x6C, 0x2D8, 0x338];
-/// How long a blanked row stays blank (the boss's death handling is over within seconds).
-const RESTORE_AFTER: std::time::Duration = std::time::Duration::from_secs(30);
-
-/// One blanked row: its address, the original values, when to put them back.
-struct Cut {
-    row: usize,
-    orig: [i32; 3],
-    at: std::time::Instant,
-}
-static CUTS: Mutex<Vec<Cut>> = Mutex::new(Vec::new());
 
 /// The `NpcParam` row of a character: `[ChrIns vf 0x1A0 result]` (the death credit `exe+0x3DE710` reads `+0x2C` of it, MEMORY_MAP §21).
 pub(crate) fn npc_row(chr: usize) -> Option<usize> {
@@ -229,50 +208,6 @@ pub(crate) fn npc_row(chr: usize) -> Option<usize> {
     let get: unsafe extern "system" fn(usize) -> usize = unsafe { std::mem::transmute(f) };
     let holder = unsafe { get(chr) };
     super::mem::read::<usize>(holder).filter(|r| super::mem::is_ptr(*r))
-}
-
-/// Blank the reward lots of `dying`'s row when it has any; `true` when it did. Game thread.
-fn cut_rewards(dying: usize) -> bool {
-    if dying == 0 {
-        return false;
-    }
-    let Some(row) = npc_row(dying) else {
-        return false;
-    };
-    let mut orig = [-1i32; 3];
-    for (o, off) in orig.iter_mut().zip(NPC_REWARD_FIELDS) {
-        *o = super::mem::read::<i32>(row + off).unwrap_or(-1);
-    }
-    if orig.iter().all(|v| *v <= 0) {
-        return false;
-    }
-    for off in NPC_REWARD_FIELDS {
-        let _ = super::mem::write_bytes(row + off, &(-1i32).to_le_bytes());
-    }
-    if let Ok(mut v) = CUTS.lock() {
-        v.push(Cut {
-            row,
-            orig,
-            at: std::time::Instant::now(),
-        });
-    }
-    true
-}
-
-/// Put back the rows blanked more than [`RESTORE_AFTER`] ago (main loop).
-fn restore_rewards() {
-    let Ok(mut v) = CUTS.lock() else { return };
-    v.retain(|c| {
-        if c.at.elapsed() < RESTORE_AFTER {
-            return true;
-        }
-        for (val, off) in c.orig.iter().zip(NPC_REWARD_FIELDS) {
-            if super::mem::read::<i32>(c.row + off) == Some(-1) {
-                let _ = super::mem::write_bytes(c.row + off, &val.to_le_bytes());
-            }
-        }
-        false
-    });
 }
 
 fn install(base: usize) {
@@ -322,7 +257,6 @@ fn install(base: usize) {
 pub(crate) fn tick(base: usize, in_match: bool, solo: bool, rivals: &[u64], local: Option<usize>) {
     SOLO.store(solo, Ordering::Relaxed);
     install(base);
-    restore_rewards();
     let n = rivals.len().min(MAX_RIVALS);
     for (slot, &h) in RIVALS.iter().zip(rivals) {
         slot.store(h, Ordering::Relaxed);
@@ -353,7 +287,7 @@ pub(crate) fn tick(base: usize, in_match: bool, solo: bool, rivals: &[u64], loca
         std::mem::take(&mut *EVENTS.lock().unwrap_or_else(PoisonError::into_inner));
     for e in events {
         tracing::info!(
-            "runeshare: {} credit of {:.0} rune(s) for chr {:#X} (npc {}), last attacker {:#X}, current {:#X} = {:?} -> {}{}",
+            "runeshare: {} credit of {:.0} rune(s) for chr {:#X} (npc {}), last attacker {:#X}, current {:#X} = {:?} -> {}",
             e.site,
             e.amount,
             e.dying,
@@ -365,11 +299,6 @@ pub(crate) fn tick(base: usize, in_match: bool, solo: bool, rivals: &[u64], loca
                 "BLOCKED (not this team's kill)"
             } else {
                 "credited"
-            },
-            if e.rewards_cut {
-                "; boss reward lots blanked"
-            } else {
-                ""
             }
         );
     }
