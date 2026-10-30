@@ -62,6 +62,8 @@ pub(crate) const RIVAL_HIT_SECONDS_RANGE: (f32, f32) = (0.5, 15.0);
 use crate::game::layout::{DATA_MODULE_HP as DM_HP_OFF, DATA_MODULE_MAX_HP as DM_MAX_HP_OFF};
 
 /// Dev console `god 0|1` (off at launch; only the console sets it).
+/// `god` raises the maximum HP to this (RW-5 boss test: a boss's single hit is bigger than the normal maximum).
+const GOD_MAX_HP: u32 = 1_000_000;
 pub(crate) static GOD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Dev console `hp0` (2026-10-24, M5-9 tests): the next tick writes 0 to LOCAL's HP, see [`zero_hp`].
@@ -388,10 +390,13 @@ impl CombatCtl {
             return;
         };
         if let Ok((field, hp)) = data_module_hp(&self.mem, addr) {
-            let max = self
-                .mem
-                .read_u32(field - DM_HP_OFF + DM_MAX_HP_OFF)
-                .unwrap_or(0);
+            // A boss's single hit can exceed full HP (2026-10-30, RW-5 boss test): raise the maximum first, the game clamps the
+            // value it holds (it kept 524287 after a write of 1,000,000).
+            let max_at = field - DM_HP_OFF + DM_MAX_HP_OFF;
+            if self.mem.read_u32(max_at).unwrap_or(GOD_MAX_HP) < GOD_MAX_HP {
+                let _ = self.mem.write(max_at, &GOD_MAX_HP.to_le_bytes());
+            }
+            let max = self.mem.read_u32(max_at).unwrap_or(0);
             if hp < max {
                 let _ = self.mem.write(field, &max.to_le_bytes());
             }

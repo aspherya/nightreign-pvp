@@ -99,6 +99,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). In a session it downs the player; with `flag 10007420 1` (die at once) it is a real death even offline", run: hp0 },
     Spec { name: "spectate", args: "[0|1]", help: "RW-1: 1 = a defeated player's held body follows a living player (the mod's spectator), 0 = it stays where it fell (shows what the game itself does for a dead player); no argument shows it", run: spectate },
     Spec { name: "trace_write", args: "<addr>|0", help: "research: log which instruction writes the 4-byte aligned address (hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace` lines; 0 stops. Heap addresses change every launch", run: trace_write },
+    Spec { name: "trace_read", args: "<0xaddr>|0", help: "RW-5 research: like trace_write but the hardware watch (slot 3) also fires on READS of the 4-byte aligned address, logged as `T-041 bar_trace` lines with registers and stack; 0 stops (and goes back to write-only)", run: trace_read },
     Spec { name: "rune_watch", args: "[0|1]", help: "RW-8 research: 1 = log which instruction writes LOCAL's rune count (PlayerGameData+0x6C; hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace`; 0 = off", run: rune_watch },
     Spec { name: "padpoll", args: "", help: "RW-1 research: every virtual input bit of the game's own pad that is set now (hold a button, call it)", run: |_| Ok(Act::Reply(crate::game::menugate::describe())) },
     Spec { name: "menugate", args: "[0|1]", help: "RW-1 research: 1 = the Esc key asks the game to open the pause menu even while LOCAL is dead (sets CSMenuMan ctrl+0x179); 0 = left to the game (the night match does this by itself for a defeated player)", run: |a| { let on = match a.first().map(String::as_str) { Some("0") => false, Some("1") | None => true, Some(_) => return Err("expected 0 or 1".into()) }; crate::game::menugate::set_active(on); Ok(Act::Reply(format!("menugate {}", u8::from(on)))) } },
@@ -112,12 +113,13 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "boss_list", args: "", help: "RW-5 test aid: the living bosses (HP above 1000: field bosses such as the Death Rite Bird / Black Knife Assassin) with handle, npc id, HP, world position and distance. `mobs` deliberately skips them. Dev only", run: |_| crate::game::teleport::boss_list_cmd().map(Act::Reply) },
     Spec { name: "boss_go", args: "[skip]", help: "RW-5 test aid: put this game's player 1.5 m from the nearest boss (or the skip-th nearest), facing it. Dev only", run: |a| crate::game::teleport::boss_go_cmd(a).map(Act::Reply) },
     Spec { name: "boss_kill", args: "[skip]", help: "RW-5 test aid: the nearest boss gets LOCAL as last/current attacker and HP 0, so this game runs the boss death as after a real LOCAL kill (the other game sees no attacker, MEMORY_MAP §21). Dev only", run: |a| crate::game::teleport::boss_kill_cmd(a).map(Act::Reply) },
+    Spec { name: "hitkill", args: "[0|1]", help: "test aid: 1 = any enemy within 80 m of this game's player that lost HP dies at once with this player as the killer (works on the enemy's owner game, the host's). Dev only", run: |a| crate::game::teleport::hitkill_cmd(a).map(Act::Reply) },
     Spec { name: "boss_info", args: "[n]", help: "RW-5 test aid: boss number n of `boss_list`: address, vtable and its NpcParam reward lot fields. Dev only", run: |a| crate::game::teleport::boss_info_cmd(a).map(Act::Reply) },
     Spec { name: "boss_lots", args: "<n> <field> <value>", help: "RW-5 test aid: write one NpcParam reward field (rewardItemLot_1 / rewardItemLot_2 / itemLotId_enemy / ...) of boss n on this game. Dev only", run: |a| crate::game::teleport::boss_lots_cmd(a).map(Act::Reply) },
     Spec { name: "poke",args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
     Spec { name: "memscan", args: "[utf16|ascii|hex] <text|hex bytes>", help: "research (RW-6): scan the whole process for a string (UTF-16 by default) or bytes on a background thread (about a minute) and log every hit with 64 bytes around it as `memscan:`; no argument shows the last result. Used to find where the game keeps a text the menu shows", run: memscan },
     Spec { name: "rival_hit", args: "", help: "RW-1 test aid: record a rival's hit on this game's player now (the player build's hit log does it for real hits); a death within 30 s after it is a defeat for good, a death without it is a normal one", run: rival_hit },
-    Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (a single hit bigger than full HP still downs); 0 off (default); no argument shows it", run: god },
+    Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (max HP raised to 1,000,000 first, so a boss's hit does not down); 0 off (default); no argument shows it", run: god },
     Spec { name: "night_count", args: "[0|1]", help: "test switch: 1 (default) the match ends when one team is left standing; 0 it never ends by count; no argument shows it", run: night_count },
     Spec { name: "death_trace", args: "[0|1]", help: "M5-8 research: while this game's player is dead, log the comeback steps (RejoinMapEnterStep breakpoints) and the player's state every second; no argument shows it", run: death_trace },
     Spec { name: "death_hold", args: "[0|1]", help: "M5-9: 1 = a dead player stays dead (the comeback's start step is held, same module as the Solo night hold); 0 = a held step is called through the gate (exe+0x5BCE10, else exe+0x675480 after 2 s) and the game's comeback runs; no argument shows the state", run: death_hold },
@@ -384,6 +386,14 @@ fn trace_write(args: &[String]) -> Result<Act, String> {
     Ok(Act::Reply(format!(
         "trace_write {v:#X}: armed (slot 3); the writers are logged as `T-041 bar_trace` lines"
     )))
+}
+
+fn trace_read(args: &[String]) -> Result<Act, String> {
+    crate::dr::WATCH_READS.store(
+        args.first().is_some_and(|a| a != "0"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    trace_write(args)
 }
 
 fn rune_watch(args: &[String]) -> Result<Act, String> {

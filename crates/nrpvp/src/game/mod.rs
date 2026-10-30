@@ -650,6 +650,8 @@ fn watch(
                 .and_then(|c| c.local_state())
                 .map(|(a, _)| a),
         );
+        #[cfg(feature = "dev")]
+        teleport::hitkill_tick();
         // RW-8 (both builds): a rival's kill credits no runes to LOCAL; teammates' and LOCAL's own kills stay vanilla.
         runeshare::tick(
             base,

@@ -383,7 +383,7 @@ fn bosses_alive() -> Result<Vec<Mob>, String> {
     let field: Vec<Mob> = all.iter().filter(|m| m.open_field).cloned().collect();
     let mut list = if field.is_empty() { all } else { field };
     // Strongest first: the real bosses carry far more HP than the strong ordinary enemies (1939 and the like).
-    list.sort_by(|a, b| b.hp.cmp(&a.hp));
+    list.sort_by_key(|m| std::cmp::Reverse(m.hp));
     Ok(list)
 }
 
@@ -423,7 +423,7 @@ pub(crate) fn boss_list_cmd() -> Result<String, String> {
     let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
     let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
     let mut list = bosses_alive()?;
-    list.sort_by(|a, b| b.hp.cmp(&a.hp));
+    list.sort_by_key(|m| std::cmp::Reverse(m.hp));
     let lines: Vec<String> = list
         .iter()
         .take(10)
@@ -617,13 +617,20 @@ const NPC_LOT_FIELDS: [(&str, usize); 6] = [
 
 /// `boss_info [n]`: boss number n of `boss_list`: its address, vtable and NpcParam reward fields.
 pub(crate) fn boss_info_cmd(args: &[String]) -> Result<String, String> {
-    let n: usize = args.first().map_or(Ok(0), |v| v.parse().map_err(|_| "usage: boss_info [n]"))?;
+    let n: usize = args
+        .first()
+        .map_or(Ok(0), |v| v.parse().map_err(|_| "usage: boss_info [n]"))?;
     let list = bosses_alive()?;
     let m = list.get(n).ok_or("no such boss")?;
     let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
     let fields: Vec<String> = NPC_LOT_FIELDS
         .iter()
-        .map(|(name, off)| format!("{name}={}", mem::read::<i32>(row + off).map_or("?".into(), |v| v.to_string())))
+        .map(|(name, off)| {
+            format!(
+                "{name}={}",
+                mem::read::<i32>(row + off).map_or("?".into(), |v| v.to_string())
+            )
+        })
         .collect();
     let b = crate::game::puppet::exe_base()?;
     Ok(format!(
@@ -640,16 +647,105 @@ pub(crate) fn boss_info_cmd(args: &[String]) -> Result<String, String> {
 /// that kind). `field` is one of the names `boss_info` prints. RW-5 test aid.
 pub(crate) fn boss_lots_cmd(args: &[String]) -> Result<String, String> {
     let usage = "usage: boss_lots <n> <field> <value>";
-    let [n, field, value] = args else { return Err(usage.into()) };
+    let [n, field, value] = args else {
+        return Err(usage.into());
+    };
     let n: usize = n.parse().map_err(|_| usage)?;
     let value: i32 = value.parse().map_err(|_| usage)?;
-    let off = NPC_LOT_FIELDS.iter().find(|(f, _)| f == field).ok_or(usage)?.1;
+    let off = NPC_LOT_FIELDS
+        .iter()
+        .find(|(f, _)| f == field)
+        .ok_or(usage)?
+        .1;
     let list = bosses_alive()?;
     let m = list.get(n).ok_or("no such boss")?;
     let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
     mem::write_bytes(row + off, &value.to_le_bytes()).map_err(|e| e.to_string())?;
     tracing::info!("teleport: boss_lots npc {} {field} -> {value}", m.npc);
     Ok(format!("boss_lots: npc {} {field} -> {value}", m.npc))
+}
+
+/// `hitkill` test aid: every enemy within [`HITKILL_RANGE`] m of LOCAL that has lost HP since this game first saw it is killed
+/// with LOCAL as its attacker (so a single hit is enough). Only the enemy's owner game makes it stick (the host's). Dev only.
+static HITKILL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+const HITKILL_RANGE: f32 = 80.0;
+static HITKILL_SEEN: std::sync::Mutex<Vec<(u64, u32)>> = std::sync::Mutex::new(Vec::new());
+static HITKILL_LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+
+/// Console `hitkill [0|1]`.
+pub(crate) fn hitkill_cmd(args: &[String]) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("0") => HITKILL.store(false, Ordering::Relaxed),
+        Some("1") => HITKILL.store(true, Ordering::Relaxed),
+        _ => return Err("usage: hitkill [0|1]".into()),
+    }
+    Ok(format!(
+        "hitkill {}",
+        if HITKILL.load(Ordering::Relaxed) {
+            "ON: any enemy within 80 m that took damage dies (host game only)"
+        } else {
+            "off"
+        }
+    ))
+}
+
+/// Main loop, every tick (dev build): the `hitkill` pass, at most every 100 ms.
+pub(crate) fn hitkill_tick() {
+    use std::sync::atomic::Ordering;
+    if !HITKILL.load(Ordering::Relaxed) {
+        return;
+    }
+    {
+        let mut last = HITKILL_LAST
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if last.is_some_and(|t| t.elapsed() < std::time::Duration::from_millis(100)) {
+            return;
+        }
+        *last = Some(std::time::Instant::now());
+    }
+    let Ok((chr, phys)) = local() else { return };
+    let (Some(me), Some(handle)) = (
+        read3(phys + PHYSICS_POS),
+        mem::read::<u64>(chr + super::layout::CHR_HANDLE).filter(|h| *h != 0 && *h != u64::MAX),
+    ) else {
+        return;
+    };
+    let Ok(list) = enemies_alive(0, u32::MAX) else {
+        return;
+    };
+    let mut seen = HITKILL_SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for m in list.iter().filter(|m| dist(m.pos, me) <= HITKILL_RANGE) {
+        let Some(slot) = seen.iter_mut().find(|(h, _)| *h == m.handle) else {
+            seen.push((m.handle, m.hp));
+            continue;
+        };
+        if m.hp >= slot.1 {
+            slot.1 = m.hp;
+            continue;
+        }
+        let Some(f) = hp_field(m.chr) else { continue };
+        for off in [
+            super::layout::PLAYER_LAST_ATTACKER,
+            super::layout::PLAYER_CUR_ATTACKER,
+        ] {
+            let _ = mem::write_bytes(m.chr + off, &handle.to_le_bytes());
+        }
+        let _ = mem::write_bytes(f, &0u32.to_le_bytes());
+        tracing::info!(
+            "teleport: hitkill enemy {:#X} (npc {}), hp {} -> 0",
+            m.handle,
+            m.npc,
+            m.hp
+        );
+    }
+    if seen.len() > 4096 {
+        seen.clear();
+    }
 }
 
 #[cfg(test)]
@@ -704,4 +800,3 @@ mod tests {
         assert_eq!(yaw_deg([0.7, 0.0, 0.0, 0.7]), None);
     }
 }
-
