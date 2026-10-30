@@ -141,8 +141,8 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let addr = ADDR.load(Ordering::Relaxed);
-        // Slot 3 hit, and slot 3 is a write watch (RW3 = 01 in DR7 bits 28-29), and we have armed it at least once.
-        if addr == 0 || (*ctx).Dr6 & 8 == 0 || ((*ctx).Dr7 >> 28) & 3 != 1 {
+        // Slot 3 hit, and slot 3 is a data watch (RW3 = 01 write, or 11 read/write for `trace_read`, in DR7 bits 28-29), and we have armed it at least once.
+        if addr == 0 || (*ctx).Dr6 & 8 == 0 || !matches!(((*ctx).Dr7 >> 28) & 3, 1 | 3) {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         if RECORD.load(Ordering::Relaxed) {

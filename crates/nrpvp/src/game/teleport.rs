@@ -529,13 +529,9 @@ pub(crate) fn mob_go_cmd(args: &[String]) -> Result<String, String> {
 
 /// `boss_go [n]`: put LOCAL 1.5 m from boss number n of `boss_list` (strongest first), facing it.
 pub(crate) fn boss_go_cmd(args: &[String]) -> Result<String, String> {
-    let usage = "usage: boss_go [skip]";
-    let skip: usize = args
-        .first()
-        .map(|v| v.parse().map_err(|_| usage))
-        .transpose()?
-        .unwrap_or(0);
-    go_to_enemy(bosses_alive()?, None, skip, "boss_go", false)
+    let list = bosses_alive()?;
+    let skip = boss_pick(args.first(), &list)?;
+    go_to_enemy(list, None, skip, "boss_go", false)
 }
 
 /// Write LOCAL's handle into an entry's attacker fields (`+0x198` / `+0x1A0`, the fields a real hit by LOCAL fills;
@@ -586,24 +582,44 @@ pub(crate) fn mob_kill_cmd(args: &[String]) -> Result<String, String> {
 
 /// `boss_kill [n]`: RW-5 test aid — the same on boss number n of `boss_list`.
 pub(crate) fn boss_kill_cmd(args: &[String]) -> Result<String, String> {
-    let usage = "usage: boss_kill [skip]";
-    let skip: usize = args
-        .first()
-        .map(|v| v.parse().map_err(|_| usage))
-        .transpose()?
-        .unwrap_or(0);
-    kill_enemy(bosses_alive()?, skip, "boss_kill", false)
+    let list = bosses_alive()?;
+    let skip = boss_pick(args.first(), &list)?;
+    kill_enemy(list, skip, "boss_kill", false)
 }
 
-/// The NpcParam row of an enemy: `[ChrIns vf 0x1A0 result]` (the death credit `exe+0x3DE710` reads `+0x2C` of it; MEMORY_MAP §21).
-fn npc_row(chr: usize) -> Option<usize> {
-    let vt = mem::read::<usize>(chr).filter(|v| mem::is_ptr(*v))?;
-    let f = mem::read::<usize>(vt + 0x1A0).filter(|v| mem::is_ptr(*v))?;
-    // SAFETY: the game's own getter (`rcx` = the character, returns a pointer), called on the main loop like the game does.
-    let get: unsafe extern "system" fn(usize) -> usize = unsafe { std::mem::transmute(f) };
-    let holder = unsafe { get(chr) };
-    mem::read::<usize>(holder).filter(|r| mem::is_ptr(*r))
+/// Which boss a console argument names: its number in `boss_list` (the order changes as HP changes) or its handle as printed
+/// (`0x2E5B073911000001`, stable). No argument = the first.
+fn boss_pick(arg: Option<&String>, list: &[Mob]) -> Result<usize, String> {
+    let Some(a) = arg else { return Ok(0) };
+    if let Some(h) = a.strip_prefix("0x") {
+        let h = u64::from_str_radix(h, 16).map_err(|_| format!("{a:?} is not a handle"))?;
+        return list
+            .iter()
+            .position(|m| m.handle == h)
+            .ok_or_else(|| format!("no living boss with handle {a}"));
+    }
+    a.parse()
+        .map_err(|_| format!("{a:?} is neither a number nor a 0x handle"))
 }
+
+/// `boss_hp <n|handle> <hp>`: write a boss's HP on this game (1 = a real hit kills it; only the owner game's value sticks).
+pub(crate) fn boss_hp_cmd(args: &[String]) -> Result<String, String> {
+    let [n, hp] = args else {
+        return Err("usage: boss_hp <n|0xhandle> <hp>".into());
+    };
+    let hp: u32 = hp.parse().map_err(|_| "usage: boss_hp <n|0xhandle> <hp>")?;
+    let list = bosses_alive()?;
+    let i = boss_pick(Some(n), &list)?;
+    let m = list.get(i).ok_or("no such boss")?;
+    let f = hp_field(m.chr).ok_or("HP field unreadable")?;
+    mem::write_bytes(f, &hp.to_le_bytes()).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "boss_hp: {:#X} npc {} hp {} -> {hp}",
+        m.handle, m.npc, m.hp
+    ))
+}
+
+use super::runeshare::npc_row;
 
 /// NpcParam fields (Paramdex NR, offsets computed from the def; getSoul 0x2C confirmed against the game's code).
 const NPC_LOT_FIELDS: [(&str, usize); 6] = [
@@ -617,10 +633,8 @@ const NPC_LOT_FIELDS: [(&str, usize); 6] = [
 
 /// `boss_info [n]`: boss number n of `boss_list`: its address, vtable and NpcParam reward fields.
 pub(crate) fn boss_info_cmd(args: &[String]) -> Result<String, String> {
-    let n: usize = args
-        .first()
-        .map_or(Ok(0), |v| v.parse().map_err(|_| "usage: boss_info [n]"))?;
     let list = bosses_alive()?;
+    let n = boss_pick(args.first(), &list)?;
     let m = list.get(n).ok_or("no such boss")?;
     let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
     let fields: Vec<String> = NPC_LOT_FIELDS
@@ -650,7 +664,6 @@ pub(crate) fn boss_lots_cmd(args: &[String]) -> Result<String, String> {
     let [n, field, value] = args else {
         return Err(usage.into());
     };
-    let n: usize = n.parse().map_err(|_| usage)?;
     let value: i32 = value.parse().map_err(|_| usage)?;
     let off = NPC_LOT_FIELDS
         .iter()
@@ -658,6 +671,7 @@ pub(crate) fn boss_lots_cmd(args: &[String]) -> Result<String, String> {
         .ok_or(usage)?
         .1;
     let list = bosses_alive()?;
+    let n = boss_pick(Some(n), &list)?;
     let m = list.get(n).ok_or("no such boss")?;
     let row = npc_row(m.chr).ok_or("NpcParam row unreadable")?;
     mem::write_bytes(row + off, &value.to_le_bytes()).map_err(|e| e.to_string())?;
