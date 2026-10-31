@@ -100,30 +100,38 @@ current roster; parse with strict length and field caps (never trust a length); 
 observation" (no code, no file, no memory addresses); version byte so mixed builds ignore each other (like lobby `proto`). Fuzz test
 the decoder (`cargo test`), no `unsafe` in the codec.
 
-## 4. The RW-5 first step (what and behind which interface)
+## 4. The data channel as built (NET-1, NET-2)
 
-RW-5 needs: the game that applied the hits (the "owner" of the damage) tells every other game "boss B died, last hitter team T". Only
-this message is required; everything else RW-5 does is local (dropping the loot, which still needs its own RE, TASKS RW-5).
+Seamless Co-op stays. The channel only lets our mods tell each other about events; RW-5 is its first user ("boss B died, last hitter team
+T"), the loot drop itself stays local and still needs its own RE (TASKS RW-5). Code: `crates/nrpvp/src/net/`, in every build.
 
 ```text
-// crates/nrpvp/src/net/ (new), pure types + traits, no Steam in the signatures
-trait PeerLink {                       // implemented by SteamMessagesLink, LobbyDataLink, FakeLink (tests)
-    fn peers(&self) -> Vec<SteamId>;           // roster, from the SC lobby today, from our own session later
-    fn send(&mut self, to: SteamId, msg: &Msg) -> Result<(), SendError>;
-    fn broadcast(&mut self, msg: &Msg);
-    fn poll(&mut self, out: &mut Vec<(SteamId, Msg)>);   // called once per tick on the game loop; the Steam work is on the worker thread
-}
-enum Msg { Hello{proto,build}, Ping{seq}, Pong{seq}, Verdict{boss: BossId, team: u8, seq: u32}, ... }  // 1-byte type, version byte, <= 256 B
+feature  --publish(topic,key,value)-->  net::bus  -->  worker thread  -->  Channel<PeerLink>  -->  SteamLink (ISteamNetworkingMessages)
+feature  <--take(topic)---------------  net::bus  <--  worker thread  <--  Channel  <-- roster = members of the SC lobby (+ net_peer)
 ```
 
-Rules: features talk to a `MatchBus` (publish / subscribe by message type), never to the link (ARCHITECTURE §6 ports and adapters), so a
-future own session layer swaps the roster source and the link without touching RW-5. `Verdict` is idempotent (same boss + seq twice
-= once) and acknowledged by `Pong`-style ack; the receiver keeps the first verdict per boss. All Steam calls on our worker thread
-(like `mm/worker.rs`).
+- **What a feature touches:** only `net::bus` - `publish(topic, key, value)` and `take(topic) -> Vec<Received{from, fact}>`. A fact is three
+  plain numbers. A new kind of message = a new `topic` constant in `bus.rs` (with what key and value mean); the wire format, the worker and
+  the tests do not change. `topic::BOSS_VERDICT` (1): key = boss id, value = team of the last hitter.
+- **Guarantees (`net/facts.rs`, unit-tested with fake time):** a fact is resent every 0.5 s to each roster peer until it acks (at most
+  120 s, also waits for a peer that joins later); a receiver delivers it **once** however often it arrives; the **first value per
+  `(topic, key)` wins** on each machine, a different later value is counted (`fact_conflicts`) and ignored, a second `publish` of a key is
+  refused. So design keys so one machine publishes each key (the one that saw the kill). Bounds: 256 pending, 4096 keys, 1024 unread.
+- **Delivered to the other machines only;** the publisher already knows its value.
+- **Roster (`net/feed.rs`):** the Steam thread (`steam/probe.rs`) asks once a second which Seamless Co-op lobbies (data key
+  `nrsc_lobby_type`) we are a member of and publishes their members; getters only, nothing is ever written to a lobby. Console `net_peer`
+  adds test peers. Only roster members are heard (everything else is counted as `strangers`).
+- **Wire (`net/msg.rs`):** `[version][type][body]`, little endian, at most 256 bytes, strict decoder (exact length, known version and
+  type, never allocates from a length field). Messages: `Hello`, `Ping`, `Pong`, `Fact`, `Ack`. Facts only, nothing asks the receiver to run
+  or write anything. `PeerLink` is the port (`SteamLink` real, `FakeLink` in tests), so another transport or an own session layer can
+  replace the link without touching features.
+- **Switch:** config `net`. Developer builds: the file (default true; the worker idles until Steam and a roster exist). Player build: follows
+  `matchmaking`. Console: `net_status`, `net_peer`, `net_ping`, `net_verdict`, `net_publish` (CONSOLE.md).
+- **Not covered:** two real PCs (relay, latency, Steam rate limits): next Friend Session. Messages larger than 256 bytes or streaming.
 
-**Open for RW-5 (NET-2):** a stable cross-game *boss id*. Handles/addresses differ per game; candidates are the map entity id of the
-boss (EMEVD entity), its NpcParam id plus map, or the boss-map flag (`XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e). UNKNOWN which is
-readable from a live `ChrIns`; NET-2 settles it on one PC (`mob_kill` aids exist, RW-8).
+**Open for RW-5:** a stable cross-game *boss id* (`key`). Handles/addresses differ per game; candidates are the map entity id of the boss
+(EMEVD entity), its NpcParam id plus map, or the boss-map flag (`XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e). UNKNOWN which is readable
+from a live `ChrIns`; it needs a boss in a live session (`mob_kill` aids exist, RW-8). The channel treats the key as an opaque number.
 
 ## 5. Designs for the session layer (problem b)
 

@@ -141,14 +141,11 @@ evidence tags and a go/no-go on host migration.
 
 ## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
 
-Order: NET-1 is done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`; roster is set with console `net_peer`, auto-roster from the SC lobby is a follow-up inside NET-2); NET-2 unblocks RW-5 and stand on their own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
+Order: NET-1 is done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`; NET-2 is done too: facts, auto-roster, `mi-net-verdict`; only RW-5's boss id is open); NET-2 unblocks RW-5 and stands on its own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
 
-### NET-2 — Verdict message and a stable cross-game boss id (RW-5 plumbing)
-Owner: SONNET/implementer + OPUS (RE judgement) | Status: todo | Depends on: NET-1
-Goal: game A says "boss B: last hitter team T" and game B records it once.
-Steps: (1) find a boss identity that is equal in both games (map entity id, NpcParam id + map, or the boss-map flags `XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e) with console `peek`/`memscan` on a spawned enemy; record in MEMORY_MAP; (2) `Msg::Verdict{boss, team, seq}` + `MatchBus` publish/subscribe (features never touch the link), first verdict per boss wins, idempotent re-send until acked; (3) console `net_verdict <boss> <team>` test aid.
-Acceptance: `scenarios/mi-net-verdict.toml`: instance 1 sends, instance 2 logs `net: verdict boss=... team=...` exactly once even when sent three times; wrong sender (not in roster) is ignored (unit test). If the id cannot be found, the card ends with the finding and the alternative.
-Out of scope: dropping loot (RW-5 itself).
+### NET-2 — Facts on the data channel, roster from the SC lobby (DONE 2026-10-30); open: the cross-game boss id
+Done: `net::bus` (`publish` / `take`), exactly-once facts with ack and resend, roster from the SC lobby, `mi-net-verdict` PASS, see NETWORKING §4 and the testing-log entry. RW-5 can start on `bus::topic::BOSS_VERDICT`.
+Remaining (belongs to RW-5, needs a boss in a live session): find a boss identity that is **equal on both PCs** (map entity id, NpcParam id + map, or the boss-map flags `XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e) with `peek`/`memscan` on a spawned enemy; record it in MEMORY_MAP. The channel takes the key as an opaque `u32`; the machine that saw the kill is the only one that publishes it.
 
 ### NET-3 — Study: the game's own P2P traffic (read-only)
 Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none (better after NET-1)

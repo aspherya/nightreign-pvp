@@ -49,7 +49,8 @@ pub(crate) fn run() {
                         .unwrap_or_else(|| crate::mm::worker::GAME_UNKNOWN.to_string()),
                 }
             });
-            if cfg.mm_probe || cfg.mm_queue || cfg.mm_join {
+            // NET-2: the data channel takes its roster from the Seamless Co-op lobby, which the Steam thread watches: it runs for `net` too.
+            if cfg.mm_probe || cfg.mm_queue || cfg.mm_join || cfg.net {
                 // MM-3: `mm_join` or `mm_probe` also turn on the evidence logging (per-lobby membership lines) even without the queue worker.
                 // MM-4: the player build keeps the callbacks the queue needs but not the probe's lobby dumps (both flags are dev only).
                 crate::steam::probe::spawn(
@@ -58,9 +59,9 @@ pub(crate) fn run() {
                     cfg.dev_mode,
                 );
             }
-            // NET-1: the mod-to-mod data channel (developer builds; no Steam call until the game has initialised Steam).
-            #[cfg(feature = "dev")]
-            if cfg.dev_mode && cfg.net {
+            // NET-1/2: the mod-to-mod data channel (no Steam call until the game has initialised Steam). Developer builds: `net = true`;
+            // player build: with matchmaking (config.rs).
+            if cfg.net {
                 crate::net::spawn();
             }
             // MM-3f: the invite-window suppression (hardware breakpoints, no patching). The config already turned it off when

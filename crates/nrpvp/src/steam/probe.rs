@@ -527,11 +527,20 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     let mut watch = LobbyWatch::default();
     let mut next_watch = Instant::now();
     let mut dropped_seen = 0u32;
+    // NET-2: lobbies seen in events, and when the data channel's roster was last refreshed from them.
+    let mut lobbies_seen: Vec<u64> = Vec::new();
+    let mut next_feed = Instant::now();
     loop {
         for raw in callback::drain() {
             let RawEvent { id, len, data } = raw;
             match decode(id, &data[..len]) {
                 Some(ev) => {
+                    if ev.lobby() != 0
+                        && !lobbies_seen.contains(&ev.lobby())
+                        && lobbies_seen.len() < 32
+                    {
+                        lobbies_seen.push(ev.lobby());
+                    }
                     // MM-4: the player build keeps the callbacks but drops the verbose lobby dumps (the queue worker logs what matters).
                     if verbose {
                         // Without matchmaking, log the event only.
@@ -561,6 +570,11 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
         }
         if let Some(w) = worker.as_mut() {
             w.tick(Instant::now());
+        }
+        // NET-2: the data channel's roster = members of the Seamless Co-op lobby we are in (getters only, once a second).
+        if mm_ok && Instant::now() >= next_feed {
+            next_feed = Instant::now() + Duration::from_secs(1);
+            crate::net::feed::publish_members(crate::net::feed::scan(&flat, own_id, &lobbies_seen));
         }
         // MM-3 evidence: which lobby holds whom, on change and at least every 10 s (SC's lobby A, the game's lobby B, our queue lobby).
         if evidence && mm_ok {

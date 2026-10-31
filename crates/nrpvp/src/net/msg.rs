@@ -22,6 +22,18 @@ pub(crate) enum Msg {
     Pong {
         seq: u32,
     },
+    /// A fact for [`super::facts`]: "under `key` of `topic` the value is `value`". Features choose topic, key and value; the channel
+    /// does not look inside. Resent until the receiver answers with [`Msg::Ack`].
+    Fact {
+        topic: u16,
+        key: u32,
+        value: u32,
+    },
+    /// "I have recorded the fact `(topic, key)`" (also sent for a duplicate, so the sender stops).
+    Ack {
+        topic: u16,
+        key: u32,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +48,8 @@ pub(crate) enum DecodeError {
 const T_HELLO: u8 = 1;
 const T_PING: u8 = 2;
 const T_PONG: u8 = 3;
+const T_FACT: u8 = 4;
+const T_ACK: u8 = 5;
 
 pub(crate) fn encode(m: &Msg) -> Vec<u8> {
     let mut v = vec![VERSION];
@@ -51,6 +65,17 @@ pub(crate) fn encode(m: &Msg) -> Vec<u8> {
         Msg::Pong { seq } => {
             v.push(T_PONG);
             v.extend_from_slice(&seq.to_le_bytes());
+        }
+        Msg::Fact { topic, key, value } => {
+            v.push(T_FACT);
+            v.extend_from_slice(&topic.to_le_bytes());
+            v.extend_from_slice(&key.to_le_bytes());
+            v.extend_from_slice(&value.to_le_bytes());
+        }
+        Msg::Ack { topic, key } => {
+            v.push(T_ACK);
+            v.extend_from_slice(&topic.to_le_bytes());
+            v.extend_from_slice(&key.to_le_bytes());
         }
     }
     v
@@ -92,6 +117,21 @@ pub(crate) fn decode(b: &[u8]) -> Result<Msg, DecodeError> {
             want(4)?;
             Ok(Msg::Pong { seq: u32le() })
         }
+        T_FACT => {
+            want(10)?;
+            Ok(Msg::Fact {
+                topic: u16::from_le_bytes([body[0], body[1]]),
+                key: u32::from_le_bytes([body[2], body[3], body[4], body[5]]),
+                value: u32::from_le_bytes([body[6], body[7], body[8], body[9]]),
+            })
+        }
+        T_ACK => {
+            want(6)?;
+            Ok(Msg::Ack {
+                topic: u16::from_le_bytes([body[0], body[1]]),
+                key: u32::from_le_bytes([body[2], body[3], body[4], body[5]]),
+            })
+        }
         t => Err(DecodeError::Type(t)),
     }
 }
@@ -106,6 +146,12 @@ mod tests {
             Msg::Hello { build: 0xBEEF },
             Msg::Ping { seq: 7 },
             Msg::Pong { seq: u32::MAX },
+            Msg::Fact {
+                topic: 0xFFFF,
+                key: u32::MAX,
+                value: 7,
+            },
+            Msg::Ack { topic: 1, key: 0 },
         ] {
             assert_eq!(decode(&encode(&m)), Ok(m));
         }
@@ -127,6 +173,14 @@ mod tests {
         assert_eq!(
             decode(&[VERSION, T_PING, 1, 2, 3, 4, 5]),
             Err(DecodeError::Length { want: 4, got: 5 })
+        );
+        assert_eq!(
+            decode(&[VERSION, T_FACT, 0, 0, 0, 0, 0, 0, 0, 0]),
+            Err(DecodeError::Length { want: 10, got: 8 })
+        );
+        assert_eq!(
+            decode(&[VERSION, T_ACK, 0, 0, 0, 0, 0, 0, 0]),
+            Err(DecodeError::Length { want: 6, got: 7 })
         );
         assert_eq!(
             decode(&vec![VERSION; MAX_LEN + 1]),
