@@ -1,6 +1,6 @@
-﻿name = "tmp-rw5-explore"
+name = "tmp-rw5-explore"
 about = "RW-5 research keep-alive: mi-queue flow to one expedition as rivals, then hold both games open for hand-driven boss commands"
-# Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
 # Run: nro run scenarios\mi-queue.toml --mod-dist <dev dist>
 
@@ -12,7 +12,7 @@ mm_queue = true
 mm_match_players = 2
 mm_join = true
 mm_quiet_invite = true
-mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING Â§8)
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
 
 [[instance]]
 n = 1
@@ -112,11 +112,11 @@ wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type
 
 [[step]]
 instance = 1
-wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+wait = { console = "players", contains = ["me", "rival"], timeout_s = 150, every_ms = 1000 }
 
 [[step]]
 instance = 2
-wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+wait = { console = "players", contains = ["me", "rival"], timeout_s = 150, every_ms = 1000 }
 
 [[step]]
 instance = 1
@@ -137,5 +137,5 @@ screenshot = "joiner_expedition"
 # RW-5 research: keep both games alive so `nro --i N cmd ...` can drive the boss aids by hand.
 [[step]]
 instance = 1
-sleep_ms = 900000
+sleep_ms = 10800000
 
