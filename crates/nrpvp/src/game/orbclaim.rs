@@ -33,8 +33,6 @@ const REC_HANDLE: usize = 0x80;
 const REC_LOT: usize = 0xD8;
 const REC_NODE: [usize; 2] = [0xE8, 0x88];
 const NODE_POS: usize = 0xA0;
-/// Lot ids of boss rewards seen so far: 6110000 (Dormant Power) is in this range.
-const LOT_RANGE: std::ops::Range<u32> = 6_000_000..7_000_000;
 /// LOCAL counts as standing at the orb inside this distance (metres, physics coordinates).
 const CLAIM_RADIUS: f32 = 3.0;
 
@@ -50,8 +48,8 @@ pub(crate) struct Rec {
 }
 
 /// Is this record a boss reward lot record? (pure)
-pub(crate) fn is_boss_orb(flags: u64, id: u32, lot: u32) -> bool {
-    flags >> 56 == 0x48 && id & 0xFF00_0000 == 0x4000_0000 && LOT_RANGE.contains(&lot)
+pub(crate) fn is_boss_orb(flags: u64, id: u32) -> bool {
+    flags >> 56 == 0x48 && id & 0xFF00_0000 == 0x4000_0000
 }
 
 /// The key of the orb of the boss with this handle: the handle's high 5 bytes (the low 3 differ per game, MEMORY_MAP §22) folded to 32
@@ -154,13 +152,23 @@ impl Book {
 
     /// LOCAL opened the Dormant Power screen next to an unowned orb: the key of the nearest one within [`CLAIM_RADIUS`].
     pub(crate) fn claimable(&self, local: [f32; 3]) -> Option<u32> {
-        self.orbs
+        let open: Vec<_> = self
+            .orbs
             .iter()
             .filter(|(k, o)| !o.off && !self.owner.contains_key(k))
-            .filter_map(|(k, o)| Some((*k, dist(local, o.pos?))))
+            .collect();
+        let near = open
+            .iter()
+            .filter_map(|(k, o)| Some((**k, dist(local, o.pos?))))
             .filter(|(_, d)| *d <= CLAIM_RADIUS)
             .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(k, _)| k)
+            .map(|(k, _)| k);
+        // A game whose weapon record is stale has no position for the orb (seen on the second game, MEMORY_MAP §22): with exactly one
+        // open orb and no position known for it, the screen being open is taken as the claim. [HYPOTHESIS]
+        near.or_else(|| match open.as_slice() {
+            [(k, o)] if o.pos.is_none() => Some(**k),
+            _ => None,
+        })
     }
 
     /// LOCAL's team claims `key`. Returns `true` when this is news (the caller publishes it); an orb that already has an owner keeps it.
@@ -300,7 +308,7 @@ fn scan(base: usize) -> Vec<(Rec, Option<[f32; 3]>)> {
                 lot,
                 handle,
             };
-            all.push((rec, is_boss_orb(flags, id, lot), read_node_pos(ptr)));
+            all.push((rec, is_boss_orb(flags, id), read_node_pos(ptr)));
         }
     }
     all.iter()
@@ -529,10 +537,9 @@ mod tests {
 
     #[test]
     fn records_are_told_by_content() {
-        assert!(is_boss_orb(0x4800_0000_0000_0000, 0x4012_3456, 6_110_000));
-        assert!(!is_boss_orb(0x6800_0000_0000_0000, 0x4012_3456, 6_110_000), "a map item");
-        assert!(!is_boss_orb(0x4800_0000_0000_0000, 0x0012_3456, 6_110_000));
-        assert!(!is_boss_orb(0x4800_0000_0000_0000, 0x4012_3456, 5_000_000));
+        assert!(is_boss_orb(0x4800_0000_0000_0000, 0x4012_3456));
+        assert!(!is_boss_orb(0x6800_0000_0000_0000, 0x4012_3456), "a map item");
+        assert!(!is_boss_orb(0x4800_0000_0000_0000, 0x0012_3456));
     }
 
     #[test]
@@ -595,6 +602,19 @@ mod tests {
         c.claim_remote(K, 2);
         assert!(!c.claim_local(K, 1), "a rival got there first");
         assert_eq!(c.owner(K), Some(2));
+    }
+
+    #[test]
+    fn a_lone_orb_without_a_position_is_claimed_by_the_open_screen() {
+        let mut b = Book::default();
+        let mut r = rec(H, 0x1000);
+        r.1 = None;
+        b.observe(&[r]);
+        assert_eq!(b.claimable([0.0, 0.0, 0.0]), Some(K));
+        let mut h2 = rec(0x2E4A_0738_1100_0001, 0x2000);
+        h2.1 = None;
+        b.observe(&[r, h2]);
+        assert_eq!(b.claimable([0.0, 0.0, 0.0]), None, "two candidates: not guessed");
     }
 
     #[test]
