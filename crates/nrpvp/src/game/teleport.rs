@@ -762,6 +762,34 @@ pub(crate) fn hitkill_tick() {
     }
 }
 
+/// Bosses whose death ends the expedition (npc ids; RW-5 notes): never a test target.
+const BOSS_NEVER: [u32; 2] = [46_400_010, 75_700_010];
+/// `rewardItemLot_2` of the bosses that give a Dormant Power orb (MEMORY_MAP §22).
+const DORMANT_LOT: i32 = 6_110_000;
+
+/// `boss_orb [go|hp]`: RW-5 test aid that picks the same boss on every game (the strongest living boss whose `rewardItemLot_2` is the
+/// Dormant Power lot, never an expedition-ending one): `go` stands next to it, `hp` sets its HP to 1 (run it on the host game only; the
+/// boss then leaves `boss_list`), no argument names it. Dev only.
+pub(crate) fn boss_orb_cmd(args: &[String]) -> Result<String, String> {
+    let mut list = bosses_alive()?;
+    list.sort_by_key(|m| (std::cmp::Reverse(m.hp), m.handle));
+    let i = list
+        .iter()
+        .position(|m| {
+            !BOSS_NEVER.contains(&m.npc)
+                && npc_row(m.chr).and_then(|r| mem::read::<i32>(r + 0x2D8)) == Some(DORMANT_LOT)
+        })
+        .ok_or("no living Dormant Power boss")?;
+    let m = list[i].clone();
+    let h = format!("{:#X}", m.handle);
+    match args.first().map(String::as_str) {
+        None => Ok(format!("boss_orb: {h} npc {} hp {}", m.npc, m.hp)),
+        Some("go") => go_to_enemy(list, None, i, "boss_orb", false),
+        Some("hp") => boss_hp_cmd(&[h, "1".into()]),
+        Some(_) => Err("usage: boss_orb [go|hp]".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -812,33 +840,5 @@ mod tests {
             assert!((yaw_deg(quat_of_yaw(y)).unwrap() - y).abs() < 0.01, "{y}");
         }
         assert_eq!(yaw_deg([0.7, 0.0, 0.0, 0.7]), None);
-    }
-}
-
-/// Bosses whose death ends the expedition (npc ids; RW-5 notes): never a test target.
-const BOSS_NEVER: [u32; 2] = [46_400_010, 75_700_010];
-/// `rewardItemLot_2` of the bosses that give a Dormant Power orb (MEMORY_MAP §22).
-const DORMANT_LOT: i32 = 6_110_000;
-
-/// `boss_orb [go|hp]`: RW-5 test aid that picks the same boss on every game (the strongest living boss whose `rewardItemLot_2` is the
-/// Dormant Power lot, never an expedition-ending one): `go` stands next to it, `hp` sets its HP to 1 (run it on the host game only; the
-/// boss then leaves `boss_list`), no argument names it. Dev only.
-pub(crate) fn boss_orb_cmd(args: &[String]) -> Result<String, String> {
-    let mut list = bosses_alive()?;
-    list.sort_by_key(|m| (std::cmp::Reverse(m.hp), m.handle));
-    let i = list
-        .iter()
-        .position(|m| {
-            !BOSS_NEVER.contains(&m.npc)
-                && npc_row(m.chr).and_then(|r| mem::read::<i32>(r + 0x2D8)) == Some(DORMANT_LOT)
-        })
-        .ok_or("no living Dormant Power boss")?;
-    let m = list[i].clone();
-    let h = format!("{:#X}", m.handle);
-    match args.first().map(String::as_str) {
-        None => Ok(format!("boss_orb: {h} npc {} hp {}", m.npc, m.hp)),
-        Some("go") => go_to_enemy(list, None, i, "boss_orb", false),
-        Some("hp") => boss_hp_cmd(&[h, "1".into()]),
-        Some(_) => Err("usage: boss_orb [go|hp]".into()),
     }
 }

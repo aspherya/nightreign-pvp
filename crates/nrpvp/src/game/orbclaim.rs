@@ -140,7 +140,12 @@ impl Book {
         let gone: Vec<u32> = self
             .orbs
             .iter()
-            .filter(|(k, o)| !o.off && !found.iter().any(|(r, _)| key_of(r.handle) == **k && r.ptr == o.rec.ptr))
+            .filter(|(k, o)| {
+                !o.off
+                    && !found
+                        .iter()
+                        .any(|(r, _)| key_of(r.handle) == **k && r.ptr == o.rec.ptr)
+            })
             .map(|(k, _)| *k)
             .collect();
         for k in gone {
@@ -236,8 +241,10 @@ impl Book {
                     o.rec.lot,
                     o.rec.handle,
                     o.rec.slot,
-                    o.pos
-                        .map_or("?".into(), |p| format!("({:.1}, {:.1}, {:.1})", p[0], p[1], p[2])),
+                    o.pos.map_or("?".into(), |p| format!(
+                        "({:.1}, {:.1}, {:.1})",
+                        p[0], p[1], p[2]
+                    )),
                     self.owner
                         .get(k)
                         .map_or("-".into(), |t| format!("team {}", t - 1)),
@@ -256,6 +263,7 @@ struct State {
     base: usize,
     my: Option<u32>,
     in_match: bool,
+    local: Option<usize>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -266,10 +274,13 @@ static STATE: Mutex<State> = Mutex::new(State {
     base: 0,
     my: None,
     in_match: false,
+    local: None,
 });
 
 fn lock() -> std::sync::MutexGuard<'static, State> {
-    STATE.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn read_node_pos(rec: usize) -> Option<[f32; 3]> {
@@ -405,6 +416,7 @@ pub(crate) fn tick(base: usize, in_match: bool, my_team: Option<u8>, local: Opti
     use crate::net::bus::{self, topic};
     let mut st = lock();
     st.base = base;
+    st.local = local;
     st.my = my_team.map(|t| u32::from(t) + 1);
     if st.in_match != in_match {
         st.in_match = in_match;
@@ -485,26 +497,42 @@ pub(crate) fn list_cmd() -> Result<String, String> {
     Ok(lines.join("\n"))
 }
 
+/// The orb a console command names: its key, or (no argument) the only orb the book knows.
+fn pick_key(st: &State, args: &[String]) -> Result<u32, String> {
+    if let Some(a) = args.first() {
+        return parse_key(a);
+    }
+    match st.book.orbs.keys().collect::<Vec<_>>().as_slice() {
+        [k] => Ok(**k),
+        _ => Err(
+            "name the orb: its key (orb_list); without one there must be exactly one orb".into(),
+        ),
+    }
+}
+
 /// `orb_off <key>` / `orb_on <key>`: switch by hand (the automatic rules then leave that orb alone).
 #[cfg_attr(not(feature = "dev"), allow(dead_code))]
 pub(crate) fn switch_cmd(args: &[String], on: bool) -> Result<String, String> {
-    let key = parse_key(args.first().ok_or("an orb key is needed")?)?;
     let mut st = lock();
+    let key = pick_key(&st, args)?;
     let res = if on {
         switch_on(&mut st, key)
     } else {
         switch_off(&mut st, key, true)
     };
     res?;
-    tracing::info!("orb: {key:#010X} switched {} by the console", if on { "on" } else { "off" });
+    tracing::info!(
+        "orb: {key:#010X} switched {} by the console",
+        if on { "on" } else { "off" }
+    );
     Ok(format!("orb {key:#010X} {}", if on { "on" } else { "OFF" }))
 }
 
 /// `orb_claim <key>`: LOCAL's team claims the orb as if the screen had been opened (publishes the claim).
 #[cfg_attr(not(feature = "dev"), allow(dead_code))]
 pub(crate) fn claim_cmd(args: &[String]) -> Result<String, String> {
-    let key = parse_key(args.first().ok_or("an orb key is needed")?)?;
     let mut st = lock();
+    let key = pick_key(&st, args)?;
     let my = st.my.ok_or("my team is not known yet")?;
     if !st.book.orbs.contains_key(&key) {
         return Err("unknown orb (orb_list)".into());
@@ -514,6 +542,38 @@ pub(crate) fn claim_cmd(args: &[String]) -> Result<String, String> {
     }
     claim_local(&mut st, key, my);
     Ok(format!("orb {key:#010X} claimed by team {}", my - 1))
+}
+
+/// `orb_go [key]` (dev builds): stand 1.2 m from the orb, facing it, so its prompt shows and a real `F` opens the screen. Needs the
+/// orb's position (see [`Book::claimable`]).
+#[cfg(feature = "dev")]
+pub(crate) fn go_cmd(args: &[String]) -> Result<String, String> {
+    let st = lock();
+    let key = pick_key(&st, args)?;
+    let pos = st
+        .book
+        .orbs
+        .get(&key)
+        .and_then(|o| o.pos)
+        .ok_or("this game has no position for the orb")?;
+    let me = st.local.ok_or("no local player")?;
+    let here = local_phys(me).ok_or("position unreadable")?;
+    let origin =
+        [0, 4, 8].map(|o| mem::read::<f32>(me + super::layout::PLAYER_ORIGIN + o).unwrap_or(0.0));
+    let (dx, dz) = (pos[0] - here[0], pos[2] - here[2]);
+    let len = dx.hypot(dz).max(0.01);
+    let target = [
+        pos[0] - dx / len * 1.2 - origin[0],
+        pos[1] - origin[1],
+        pos[2] - dz / len * 1.2 - origin[2],
+    ];
+    let yaw = dx.atan2(dz).to_degrees();
+    drop(st);
+    let args: Vec<String> = [target[0], target[1], target[2], yaw]
+        .iter()
+        .map(|v| format!("{v:.2}"))
+        .collect();
+    super::teleport::tp_cmd(&args)
 }
 
 #[cfg(test)]
@@ -538,7 +598,10 @@ mod tests {
     #[test]
     fn records_are_told_by_content() {
         assert!(is_boss_orb(0x4800_0000_0000_0000, 0x4012_3456));
-        assert!(!is_boss_orb(0x6800_0000_0000_0000, 0x4012_3456), "a map item");
+        assert!(
+            !is_boss_orb(0x6800_0000_0000_0000, 0x4012_3456),
+            "a map item"
+        );
         assert!(!is_boss_orb(0x4800_0000_0000_0000, 0x0012_3456));
     }
 
@@ -563,7 +626,10 @@ mod tests {
         let mut c = Book::default();
         c.observe(&[rec(H, 0x1000)]);
         c.claim_remote(K, 1);
-        assert!(c.plan(Some(1)).is_empty(), "a teammate's claim keeps the orb");
+        assert!(
+            c.plan(Some(1)).is_empty(),
+            "a teammate's claim keeps the orb"
+        );
     }
 
     #[test]
@@ -614,7 +680,11 @@ mod tests {
         let mut h2 = rec(0x2E4A_0738_1100_0001, 0x2000);
         h2.1 = None;
         b.observe(&[r, h2]);
-        assert_eq!(b.claimable([0.0, 0.0, 0.0]), None, "two candidates: not guessed");
+        assert_eq!(
+            b.claimable([0.0, 0.0, 0.0]),
+            None,
+            "two candidates: not guessed"
+        );
     }
 
     #[test]
@@ -622,7 +692,11 @@ mod tests {
         let mut b = Book::default();
         assert_eq!(b.observe(&[rec(H, 0x1000)]).len(), 1);
         assert!(b.observe(&[rec(H, 0x1000)]).is_empty(), "unchanged");
-        assert_eq!(b.observe(&[rec(H, 0x2000)]).len(), 1, "a new record under the same key");
+        assert_eq!(
+            b.observe(&[rec(H, 0x2000)]).len(),
+            1,
+            "a new record under the same key"
+        );
         assert_eq!(b.observe(&[]).len(), 1, "gone");
         assert!(b.describe().is_empty());
         // An orb we switched off is not in the scan and stays.
