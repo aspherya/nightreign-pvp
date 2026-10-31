@@ -25,9 +25,9 @@ def q(d, off):
 
 slot = peek_slot = cmd("peek exe+0x3C10B68 8").split("+000: ")[1][:16]
 mim = int(slot, 16)
-head = peek(mim, 0x80)
+head = peek(mim, 0xA0)
 print(f"MapItemMan 0x{mim:X}")
-for off in range(0x48, 0x70, 8):
+for off in range(0x48, 0x90, 8):
     p = q(head, off)
     if not p:
         continue

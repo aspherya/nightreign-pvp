@@ -86,6 +86,8 @@ pub(crate) enum Step {
 pub(crate) struct Book {
     orbs: BTreeMap<u32, Orb>,
     owner: BTreeMap<u32, u32>,
+    /// Orbs that vanished because another record took their slot (not because they were picked): candidates to keep.
+    displaced: Vec<Rec>,
 }
 
 impl Book {
@@ -149,6 +151,14 @@ impl Book {
             .map(|(k, _)| *k)
             .collect();
         for k in gone {
+            if let Some(o) = self.orbs.get(&k) {
+                if found
+                    .iter()
+                    .any(|(r, _)| r.slot == o.rec.slot && r.ptr != o.rec.ptr)
+                {
+                    self.displaced.push(o.rec);
+                }
+            }
             self.orbs.remove(&k);
             log.push(format!("orb {k:#010X} disappeared"));
         }
@@ -225,7 +235,17 @@ impl Book {
         }
     }
 
+    /// The orbs a newer record pushed out of their slot that nobody else owns (ours or unowned): worth keeping in another slot.
+    pub(crate) fn take_displaced(&mut self, my: Option<u32>) -> Vec<Rec> {
+        let owner = &self.owner;
+        std::mem::take(&mut self.displaced)
+            .into_iter()
+            .filter(|r| owner.get(&key_of(r.handle)).is_none_or(|t| Some(*t) == my))
+            .collect()
+    }
+
     fn clear(&mut self) {
+        self.displaced.clear();
         self.orbs.clear();
         self.owner.clear();
     }
@@ -270,6 +290,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     book: Book {
         orbs: BTreeMap::new(),
         owner: BTreeMap::new(),
+        displaced: Vec::new(),
     },
     base: 0,
     my: None,
@@ -373,7 +394,26 @@ fn switch_on(st: &mut State, key: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Console `orb_auto 0`: the automatic switching off / on is paused (claims are still made, sent and remembered).
+static AUTO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// `orb_auto [0|1]`: pause or resume the automatic switching; no argument shows it. Dev aid for tests that need an orb left alone.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn auto_cmd(args: &[String]) -> Result<String, String> {
+    use std::sync::atomic::Ordering::Relaxed;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("0") => AUTO.store(false, Relaxed),
+        Some("1") => AUTO.store(true, Relaxed),
+        _ => return Err("usage: orb_auto [0|1]".into()),
+    }
+    Ok(format!("orb_auto {}", u8::from(AUTO.load(Relaxed))))
+}
+
 fn apply(st: &mut State) {
+    if !AUTO.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
     for step in st.book.plan(st.my) {
         let (key, on) = match step {
             Step::Off(k) => (k, false),
@@ -429,6 +469,7 @@ pub(crate) fn tick(base: usize, in_match: bool, my_team: Option<u8>, local: Opti
     for line in st.book.observe(&found) {
         tracing::info!("{line}");
     }
+    rescue(&mut st);
     // Facts first, so a claim that arrived with the record is applied in the same pass.
     for r in bus::take(topic::ORB_CLAIM) {
         let team = r.fact.value;
@@ -456,6 +497,62 @@ pub(crate) fn tick(base: usize, in_match: bool, my_team: Option<u8>, local: Opti
         }
     }
     apply(&mut st);
+}
+
+/// EXPERIMENT (option 2, 2026-10-31): a boss kill writes its new orb record over the slot of an orb nobody picked yet (MEMORY_MAP §22).
+/// When the old record is still intact, its pointer goes into a free slot (from `+0x70`) so the orb stays usable. Whether the engine
+/// keeps its records alive and finds them in that slot is UNKNOWN until seen live: console `orb_rescue 0` turns it off.
+fn rescue(st: &mut State) {
+    let my = st.my;
+    for rec in st.book.take_displaced(my) {
+        if !RESCUE.load(std::sync::atomic::Ordering::Relaxed) {
+            continue;
+        }
+        let key = key_of(rec.handle);
+        let Some(man) = mem::read::<usize>(st.base + RVA_MAP_ITEM_MAN).filter(|m| mem::is_ptr(*m))
+        else {
+            continue;
+        };
+        if !record_intact(&rec) {
+            tracing::warn!(
+                "orb: {key:#010X} was pushed out of slot +{:#X} and its record is gone",
+                rec.slot
+            );
+            continue;
+        }
+        let free = (0x70..SLOT_END)
+            .step_by(8)
+            .find(|s| mem::read::<usize>(man + s) == Some(0));
+        let Some(slot) = free else {
+            tracing::warn!(
+                "orb: {key:#010X} pushed out of slot +{:#X}: no free slot",
+                rec.slot
+            );
+            continue;
+        };
+        match mem::swap_ptr(man + slot, 0, rec.ptr) {
+            Ok(()) => tracing::info!(
+                "orb: {key:#010X} was pushed out of slot +{:#X}, kept in slot +{slot:#X}",
+                rec.slot
+            ),
+            Err(e) => tracing::warn!("orb: {key:#010X} could not be kept: {e}"),
+        }
+    }
+}
+
+static RESCUE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// `orb_rescue [0|1]`: the experiment above on or off; no argument shows it.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn rescue_cmd(args: &[String]) -> Result<String, String> {
+    use std::sync::atomic::Ordering::Relaxed;
+    match args.first().map(String::as_str) {
+        None => {}
+        Some("0") => RESCUE.store(false, Relaxed),
+        Some("1") => RESCUE.store(true, Relaxed),
+        _ => return Err("usage: orb_rescue [0|1]".into()),
+    }
+    Ok(format!("orb_rescue {}", u8::from(RESCUE.load(Relaxed))))
 }
 
 fn claim_local(st: &mut State, key: u32, my: u32) {
@@ -573,7 +670,7 @@ pub(crate) fn go_cmd(args: &[String]) -> Result<String, String> {
         .iter()
         .map(|v| format!("{v:.2}"))
         .collect();
-    super::teleport::tp_cmd(&args)
+    super::teleport::tp_far(&args)
 }
 
 #[cfg(test)]
@@ -706,6 +803,33 @@ mod tests {
         assert_eq!(b.describe().len(), 1);
     }
 
+    #[test]
+    fn an_orb_pushed_out_of_its_slot_is_a_rescue_candidate_unless_a_rival_owns_it() {
+        let h2 = 0x2E4A_0738_1100_0259;
+        let mut b = Book::default();
+        b.observe(&[rec(H, 0x1000)]);
+        let mut newer = rec(h2, 0x2000);
+        newer.0.slot = 0x58;
+        let log = b.observe(&[newer]);
+        assert_eq!(
+            log.len(),
+            2,
+            "the new one appeared, the old one disappeared"
+        );
+        assert_eq!(b.take_displaced(Some(1)).len(), 1);
+        assert!(b.take_displaced(Some(1)).is_empty(), "taken once");
+        // Picked (slot empty, nothing took it): nothing to rescue.
+        let mut c = Book::default();
+        c.observe(&[rec(H, 0x1000)]);
+        c.observe(&[]);
+        assert!(c.take_displaced(Some(1)).is_empty());
+        // A rival owns it: not ours to keep.
+        let mut d = Book::default();
+        d.observe(&[rec(H, 0x1000)]);
+        d.claim_remote(K, 2);
+        d.observe(&[newer]);
+        assert!(d.take_displaced(Some(1)).is_empty());
+    }
     #[test]
     fn manual_and_blocked_orbs_are_left_alone() {
         let mut b = Book::default();

@@ -154,11 +154,24 @@ pub(crate) fn pos_cmd() -> Result<String, String> {
 
 /// `tp <x> <y> <z> [yaw]`: put LOCAL at that world position (metres) and, with a yaw, turn it to face that heading.
 pub(crate) fn tp_cmd(args: &[String]) -> Result<String, String> {
+    tp_inner(args, true)
+}
+
+/// `tp` without the distance limit (the orb test aid walks to a place the boss kill loaded; dev only).
+pub(crate) fn tp_far(args: &[String]) -> Result<String, String> {
+    tp_inner(args, false)
+}
+
+fn tp_inner(args: &[String], limited: bool) -> Result<String, String> {
     let (to, yaw) = parse_target(args)?;
     let (chr, phys) = local()?;
     let p = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
     let o = read3(chr + PLAYER_ORIGIN).ok_or("origin unreadable")?;
-    let d = check_jump(world_of(p, o), to)?;
+    let d = if limited {
+        check_jump(world_of(p, o), to)?
+    } else {
+        dist(world_of(p, o), to)
+    };
     // The heading is only written over a value that reads as a rotation about y (the field is a HYPOTHESIS until then).
     if yaw.is_some() {
         let q = [
