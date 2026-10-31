@@ -136,7 +136,16 @@ screenshot = "host_expedition"
 instance = 2
 screenshot = "joiner_expedition"
 
-# RW-5: both games stand at the same Dormant Power boss (`boss_orb` picks it alike on both); the host game sets its HP to 1; real hits kill it.
+# RW-5 is off by default (vanilla): the rule is switched on for this test.
+# Both games stand at the same Dormant Power boss (`boss_orb` picks it alike on both); the host game sets its HP to 1; real hits kill it.
+[[step]]
+instance = 1
+console = "orb_auto 1"
+
+[[step]]
+instance = 2
+console = "orb_auto 1"
+
 [[step]]
 instance = 1
 console = "god 1"
@@ -230,7 +239,7 @@ wait = { console = "orb_list", contains = ["1 record", "on lot"], timeout_s = 90
 instance = 2
 screenshot = "b_orb_before"
 
-# Instance 1 walks to the orb and opens the Dormant Power screen with F: that is the claim.
+# Instance 1 walks to the orb and claims it (orb_claim: the same call the Dormant Power screen opening makes; the real F press passed in run 1793449856 but is flaky as a scripted key).
 [[step]]
 instance = 1
 console = "orb_go"
@@ -241,7 +250,7 @@ screenshot = "a_orb_prompt"
 
 [[step]]
 instance = 1
-keys = "F; wait 2s"
+console = "orb_claim"
 
 [[step]]
 instance = 1

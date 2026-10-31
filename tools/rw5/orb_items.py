@@ -1,7 +1,8 @@
 """List MapItemMan item records of one running game: python items.py <instance>"""
 import os, json, struct, subprocess, sys
 
-NRO = r"C:\Users\Leonardo\source\repos\nightreign-pvp\.claude\worktrees\happy-goldstine-746484\target\release\nro.exe"
+import pathlib
+NRO = str(pathlib.Path(__file__).resolve().parents[2] / "target" / "release" / "nro.exe")
 inst = sys.argv[1]
 
 

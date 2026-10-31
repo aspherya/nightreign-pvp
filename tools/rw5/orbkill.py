@@ -3,7 +3,8 @@ Usage: python orbkill.py            (both games already in an expedition)
 """
 import json, re, subprocess, sys, time
 
-NRO = r"C:\Users\Leonardo\source\repos\nightreign-pvp\.claude\worktrees\happy-goldstine-746484\target\release\nro.exe"
+import pathlib
+NRO = str(pathlib.Path(__file__).resolve().parents[2] / "target" / "release" / "nro.exe")
 NEVER = ("46400010", "75700010")  # Nightlord-class: killing them ends the expedition
 
 
