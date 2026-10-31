@@ -1,0 +1,70 @@
+name = "mi-nosc-join"
+about = "NET-5 on one PC, NO Seamless Co-op (run with env NRO_NO_SC=1): does the game's own friend-invite co-op session work? instance 2 joins instance 1 after the host presses Invite Members; both consoles must see 2 players"
+# Two emulated-Steam instances (MULTI-INSTANCE.md): Steam closed, `nro desk` running, about 7 GB of free RAM per game.
+# Run: set NRO_NO_SC=1, then nro run scenarios\mi-nosc-join.toml --mod-dist <dev dist>   (profile has no nrsc.dll, NETWORKING.md §6)
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+[[step]]
+instance = 1
+screenshot = "host_world"
+
+# Move the host away from wherever the save put it and turn it (back, then sideways), so every run starts the invite from another
+# place and heading: the macro must not depend on the spawn.
+[[step]]
+instance = 1
+keys = "S 1800ms; wait 300ms; A 1200ms; wait 800ms"
+
+[[step]]
+instance = 1
+console = "pos"
+
+# Host: stand at the table (tp with heading), F, Matchmaking Settings, Invite Members; waits for the game's LobbyCreated_t.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+# The client reloads into the host's Roundtable (it shows `no world` meanwhile).
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 30 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "client"

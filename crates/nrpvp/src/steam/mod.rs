@@ -89,7 +89,7 @@ pub(crate) struct Flat {
 }
 
 /// `GetModuleHandleW` + `GetProcAddress` for one NUL-terminated export name. `None` if the DLL is not loaded or lacks it.
-fn export(name: &'static str) -> Option<usize> {
+pub(crate) fn export(name: &'static str) -> Option<usize> {
     debug_assert!(name.ends_with('\0'));
     // SAFETY: GetModuleHandleW does not load or free anything and takes a valid static wide string; the module stays loaded
     // for the life of the process (steam_api64.dll is never unloaded by the game). GetProcAddress gets a NUL-terminated name.

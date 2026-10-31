@@ -1072,7 +1072,11 @@ pub(crate) fn watch_cmd(args: &[String]) -> Result<String, String> {
             if exec {
                 hwbp::set(s, addr);
             } else {
+                // The write watch is a developer tracing aid (hwbp::set_write exists only in dev builds).
+                #[cfg(feature = "dev")]
                 hwbp::set_write(s, addr & !3);
+                #[cfg(not(feature = "dev"))]
+                return Err("puppet_watch: write watches are dev builds only".to_string());
             }
             tracing::info!("puppet: write watch slot {s} on 0x{addr:X}");
         }

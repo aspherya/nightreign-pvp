@@ -22,6 +22,7 @@ mod logging;
 mod logring;
 mod mark;
 mod mm;
+mod net;
 mod overlay;
 mod rules;
 mod startup;

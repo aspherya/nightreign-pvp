@@ -293,11 +293,19 @@ pub fn stage(pins: &Pins, opt: &Stage) -> Result<State, String> {
         .join("SeamlessCoop")
         .join("nrsc.dll");
     let gdp = m.join("gamedata").display().to_string();
-    let prof = profile::text(
-        &nrsc.display().to_string(),
-        &m.join("nrpvp.dll").display().to_string(),
-        with_gd.then_some(gdp.as_str()),
-    );
+    let prof = if std::env::var_os("NRO_NO_SC").is_some() {
+        // NET-5 experiment: no Seamless Co-op (NETWORKING.md). Emulated instances only; the staged folder keeps its SC copy unused.
+        profile::text_no_sc(
+            &m.join("nrpvp.dll").display().to_string(),
+            with_gd.then_some(gdp.as_str()),
+        )
+    } else {
+        profile::text(
+            &nrsc.display().to_string(),
+            &m.join("nrpvp.dll").display().to_string(),
+            with_gd.then_some(gdp.as_str()),
+        )
+    };
     fs::write(dir.join("profile.me3.toml"), prof).map_err(|e| e.to_string())?;
     let st = State {
         id,

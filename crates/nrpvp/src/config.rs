@@ -70,6 +70,10 @@ auto_team_all = 0
 # never calls Steam setters. The player build forces this off.
 mm_probe = false
 
+# NET-1/2: the mod-to-mod data channel over Steam networking messages (NETWORKING.md). Its peers are the other members of your
+# Seamless Co-op lobby; extra peers for tests via console `net_peer`. In the player build it follows `matchmaking`.
+net = true
+
 # Several game instances on one PC (orchestrator, dev mode only): the game closes its own single-instance mutex (SekiroMutex) so
 # the next instance can start. Also the console command `mutex`.
 allow_multi_instance = false
@@ -243,6 +247,8 @@ pub(crate) struct Config {
     pub auto_team_all: u32,
     /// MM-1: Steam access probe on (developer mode only; forced off in the player build).
     pub mm_probe: bool,
+    /// NET-1/2: mod-to-mod data channel on (developer builds: the file; player build: follows `matchmaking`).
+    pub net: bool,
     /// Dev mode only: close the engine's single-instance mutex in this process (game/multi_instance.rs).
     pub allow_multi_instance: bool,
     /// MM-2: public matchmaking queue on (developer mode only; forced off in the player build).
@@ -366,6 +372,7 @@ impl Default for Config {
             team_size: DEFAULT_TEAM_SIZE,
             auto_team_all: 0,
             mm_probe: false,
+            net: true,
             allow_multi_instance: false,
             mm_queue: false,
             mm_match_players: DEFAULT_MM_MATCH_PLAYERS,
@@ -525,6 +532,8 @@ fn enforce_player_mode(
     cfg.mm_join_auto = "invite+link".to_string();
     // MM-1: the Steam probe's logging is a developer tool (the callbacks it registers stay when the queue needs them).
     cfg.mm_probe = false;
+    // NET-2: features (RW-5) need the data channel in a match; it only talks to the members of your Seamless Co-op lobby.
+    cfg.net = cfg.matchmaking;
     cfg.allow_multi_instance = false;
     // MM-3e: the host-side lobby creation failed in FS-MM2 and is a developer tool.
     cfg.mm_host_create = false;

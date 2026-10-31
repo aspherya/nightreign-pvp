@@ -139,6 +139,48 @@ sized estimate of our own session layer if SC ever blocks us. Static analysis of
 installs, plus runtime traces with our existing hardware-breakpoint tooling. Output: `research/S10-seamless-coop-internals.md` with
 evidence tags and a go/no-go on host migration.
 
+## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
+
+Order: NET-1 is done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`; NET-2 is done too: facts, auto-roster, `mi-net-verdict`; only RW-5's boss id is open); NET-2 unblocks RW-5 and stands on its own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
+
+### NET-2 — Facts on the data channel, roster from the SC lobby (DONE 2026-10-30); open: the cross-game boss id
+Done: `net::bus` (`publish` / `take`), exactly-once facts with ack and resend, roster from the SC lobby, `mi-net-verdict` PASS, see NETWORKING §4 and the testing-log entry. RW-5 can start on `bus::topic::BOSS_VERDICT`.
+Remaining (belongs to RW-5, needs a boss in a live session): find a boss identity that is **equal on both PCs** (map entity id, NpcParam id + map, or the boss-map flags `XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e) with `peek`/`memscan` on a spawned enemy; record it in MEMORY_MAP. The channel takes the key as an opaque `u32`; the machine that saw the kill is the only one that publishes it.
+
+### NET-3 — Study: the game's own P2P traffic (read-only)
+Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none (better after NET-1)
+Goal: packet type / size / rate histogram of the game's `SendP2PPacket`/`ReadP2PPacket` (SteamNetworking006) and of SC's Messages channels, per phase (Roundtable, loading, expedition, a rival hit).
+Steps: hardware-breakpoint trace like `steam/lobtrace.rs` on the interface's send/read vtable targets (dev build only), log `(peer, size, channel, first byte)` aggregates; `ISteamNetworkingMessages` send/receive likewise to learn SC's channel numbers. Two instances, `mi-join` flow.
+Acceptance: `scenarios/mi-net-trace.toml` produces logs with non-zero histograms for each phase; findings table in NETWORKING §2/MEMORY_MAP (type ids, which carries hits/HP/SpEffects); UNKNOWN 2 and the channel question answered or restated.
+Out of scope: injecting packets, changing any game or SC byte.
+
+### NET-4 — Study: NR `CSSessionManager` layout (read-only)
+Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none
+Goal: map the singleton at `exe+0x3C21EC8` (state, `players` vector, steam id offset, send queue, limit fields) and `CSTeamSessionManager`.
+Steps: dump the object in a 2-instance session (`memscan`/`peek`), match each instance's Steam id (user getter), cross-check with ORCH-R2 (`[[exe+0x3C078D0]+0x10]+idx*0x8A0`) and the ER layout; answer whether `0x6001` is the engine's or SC's numbering.
+Acceptance: table in `re/MEMORY_MAP.md` with a `[VERIFIED]` tag per offset; console `session` dump command; scenario `mi-session-dump` logs both players with their Steam ids.
+Out of scope: writes.
+
+### NET-5 — Study: the game without SC (where does the session stack stop?)
+Owner: SONNET/researcher + OPUS | Status: **first round done 2026-10-30** (NETWORKING §2b); continues as NET-7 | Depends on: NET-4 helpful
+Goal: list the blockers for S1 (NETWORKING §5).
+Steps: dev me3 profile without `nrsc.dll` (offline or emulator only, never real Steam online), mod present; boot to the Roundtable; try the game's Invite Members/join between two instances; log `CSSessionManager` state and the first failing job (`JoinSessionJob`, server step, EAC peer path `EOS_AntiCheatClient_*`); run S10 runbook R1 (hook census) for the sites SC covers.
+Acceptance: written list of blockers with exe addresses (or "two instances in one lobby without SC") in NETWORKING §8; `mi-nosc-boot` scenario: both instances reach the title and the log shows the session classes; UNKNOWNs 5-6 answered.
+Safety: nro preflight must refuse a no-SC launch on real Steam (guard rebuilt for this profile).
+Result (2026-10-30): the game boots and loads the Roundtable without SC in two instances (`NRO_NO_SC=1`, `scenarios/mi-nosc-join.toml`, `nro` profile `text_no_sc`, savefile redirect); Invite Members is dead without SC because the sign-in state machine stays at "offline" (state 9, flag 0); SC runs sit at state 2, flag 1; `CSSessionManager+0x170` is the player limit (3 vs 6). Details and evidence: NETWORKING §2b. The scenario itself FAILS by design at Invite Members (the roadblock). New dev tool: console `rawcall <rva hex> [arg]`.
+
+### NET-7 — Sign-in gate: make the game "signed in" without Bandai's server (the decider for replacing SC)
+Owner: OPUS + SONNET/researcher | Status: **on hold: needs the ban-risk decision (NETWORKING §7a)** | Depends on: NET-5 round 1 | Budget: 3 to 5 working days, then stop and decide (NET-6)
+Goal: find what takes the three sign-in state objects from 3 (request in flight) to 2 (done), and complete it ourselves with local data, so that Invite Members works in a game without `nrsc.dll`.
+Steps: (1) in an SC run (the oracle) find the writer of state 2 and the function that handles the sign-in answer: reset the state, run `rawcall F18D30 0`, trace writes with hardware breakpoints on the state words and the step function `exe+0xDEC110` (static: its callee `0xDEBA10`, the request builder, and the 0x41-byte profile at `0xE01370`); (2) call that completion from our mod after our own conditions (never with the real server reachable: `Menu.IsEnableOnlineMode` stays false, flag byte handling decided by what (1) shows); (3) set `CSSessionManager+0x170` to 6 and look at what the table menu and the lobby do; (4) try `mi-nosc-join` again.
+Acceptance: `mi-nosc-join` PASS: Invite Members creates a lobby (`LobbyCreated_t result=1`) and instance 2 joins it, both consoles show `world loaded, 2 player(s)`. **Stop rule:** if after 5 days the sign-in cannot be completed locally, or the next gate is a server call that needs a real answer, record the blocker and take NET-6 with "no": the data channel (NET-1, NET-2) stays the plan.
+Out of scope: widening the member table beyond 2 remotes (only after this passes), real Steam, any connection to Bandai servers.
+
+### NET-6 — Gate G1: replace the session layer, yes or no
+Owner: OPUS → Leonardo decides | Status: blocked on NET-3..5
+Goal: a decision in DECISIONS.md with evidence, size estimate, the read EULA/support text (UNKNOWN 8) and, if still wanted, the question to SC's author.
+Out of scope: starting S1.
+
 ## Offline mode (decided 2026-10-22; first new feature, so it carries the open R2/R3 halves)
 
 Leonardo's decision: a separate **Offline** mode for solo play and solo testing, so `br_menu` / `matchmaking` never have to be switched
