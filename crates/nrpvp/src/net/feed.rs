@@ -13,9 +13,18 @@ const MAX_MEMBERS: i32 = 64;
 
 static MEMBERS: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
 
-/// Members (including ourselves) of every Seamless Co-op lobby in `lobbies` that `own` is a member of.
-pub(crate) fn scan(api: &dyn LobbyApi, own: u64, lobbies: &[u64]) -> BTreeSet<u64> {
-    let mut out = BTreeSet::new();
+/// Result of one [`scan`].
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Scan {
+    /// Members (including ourselves) of every Seamless Co-op lobby we are a member of.
+    pub(crate) members: BTreeSet<u64>,
+    /// The lobbies of the input that we are still a member of (the caller keeps only these, so left lobbies do not pile up).
+    pub(crate) joined: Vec<u64>,
+}
+
+/// Look at the lobbies in `lobbies` (getters only).
+pub(crate) fn scan(api: &dyn LobbyApi, own: u64, lobbies: &[u64]) -> Scan {
+    let mut out = Scan::default();
     if own == 0 {
         return out;
     }
@@ -30,11 +39,12 @@ pub(crate) fn scan(api: &dyn LobbyApi, own: u64, lobbies: &[u64]) -> BTreeSet<u6
         if !ids.contains(&own) {
             continue;
         }
+        out.joined.push(lobby);
         let is_sc = (0..api.data_count(lobby).clamp(0, 256))
             .filter_map(|i| api.data_by_index(lobby, i))
             .any(|(k, _)| k == KEY_SC_TYPE);
         if is_sc {
-            out.extend(ids.into_iter().filter(|&i| i != 0));
+            out.members.extend(ids.into_iter().filter(|&i| i != 0));
         }
     }
     out
@@ -107,9 +117,22 @@ mod tests {
     fn only_sc_lobbies_we_are_in_count() {
         let f = fake();
         let got = scan(&f, 1, &[100, 200, 300, 400, 999]);
-        assert_eq!(got, BTreeSet::from([1, 2, 3]));
-        assert!(scan(&f, 0, &[100]).is_empty(), "unknown own id: nothing");
-        assert!(scan(&f, 7, &[100]).is_empty(), "not a member: nothing");
+        assert_eq!(got.members, BTreeSet::from([1, 2, 3]));
+        assert_eq!(
+            got.joined,
+            vec![100, 200],
+            "left or foreign lobbies are not kept"
+        );
+        assert_eq!(
+            scan(&f, 0, &[100]),
+            Scan::default(),
+            "unknown own id: nothing"
+        );
+        assert_eq!(
+            scan(&f, 7, &[100]),
+            Scan::default(),
+            "not a member: nothing"
+        );
     }
 
     #[test]

@@ -118,19 +118,27 @@ fn run(rx: Receiver<Cmd>) {
     );
     let mut ch = chan::Channel::new(link, BUILD);
     let mut last_log = Instant::now();
-    let mut last_line = String::new();
+    let mut last_key = String::new();
     // Roster = peers added by console + members of our Seamless Co-op lobby (feed). Recomputed when either changes.
     let mut manual: BTreeSet<u64> = BTreeSet::new();
     let mut lobby: BTreeSet<u64> = BTreeSet::new();
     loop {
         let now_lobby = feed::lobby_members();
         let mut roster_changed = now_lobby != lobby;
+        if now_lobby.is_empty() && !lobby.is_empty() {
+            // The SC lobby is gone: the match is over, its fact keys can be used again.
+            ch.reset_facts();
+            tracing::info!("net: lobby left, fact keys forgotten");
+        }
         lobby = now_lobby;
         while let Ok(c) = rx.try_recv() {
             match c {
                 Cmd::Peer(id) => {
                     let added = id != 0 && id != ch.own_id() && manual.insert(id);
                     roster_changed |= added;
+                    // Apply now: a `Ping` in the same batch must already see the new peer.
+                    let all: BTreeSet<u64> = manual.union(&lobby).copied().collect();
+                    ch.set_roster(&all);
                     tracing::info!(
                         "net: peer {id} {}",
                         if added {
@@ -182,12 +190,14 @@ fn run(rx: Receiver<Cmd>) {
         }
         bus::deliver(got);
         let line = ch.status();
-        if line != last_line && last_log.elapsed() >= Duration::from_secs(2) {
+        // Log only when something meaningful changed (roster, errors, facts), not for the counters every heartbeat moves.
+        let key = ch.log_key();
+        if key != last_key && last_log.elapsed() >= Duration::from_secs(2) {
             tracing::info!("{line}");
             last_log = Instant::now();
+            last_key = key;
         }
-        set_status(line.clone());
-        last_line = line;
+        set_status(line);
         std::thread::sleep(TICK);
     }
 }

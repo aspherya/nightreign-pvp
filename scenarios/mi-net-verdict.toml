@@ -103,6 +103,7 @@ wait = { console = "net_status", contains = ["facts_in=1", "last_fact=1:4012:1"]
 instance = 1
 wait = { console = "net_status", contains = ["facts_out=1", "facts_acked=1", "fact_pending=0"], timeout_s = 60, every_ms = 2000 }
 
+# (A Hello that arrives before the receiver's lobby roster has caught up is counted as `strangers` and ignored: expected, so not asserted.)
 # Instance 2 tries to overwrite the settled key with another value: refused locally, nothing is sent.
 [[step]]
 instance = 2
@@ -114,11 +115,11 @@ wait = { console = "log 100", contains = ["net: publish topic=1 key=4012 value=0
 
 [[step]]
 instance = 2
-expect = { console = "net_status", contains = ["facts_out=0", "facts_in=1", "fact_conflicts=0", "send_errors=0", "strangers=0"], absent = ["last_error"] }
+expect = { console = "net_status", contains = ["facts_out=0", "facts_in=1", "fact_conflicts=0", "send_errors=0"], absent = ["last_error"] }
 
 [[step]]
 instance = 1
-expect = { console = "net_status", contains = ["facts_out=1", "facts_in=0", "send_errors=0", "strangers=0"], absent = ["last_error"] }
+expect = { console = "net_status", contains = ["facts_out=1", "facts_in=0", "send_errors=0"], absent = ["last_error"] }
 
 # The log line the card asks for: instance 2 logged the verdict exactly once.
 [[step]]

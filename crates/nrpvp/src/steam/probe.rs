@@ -528,7 +528,7 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
     let mut next_watch = Instant::now();
     let mut dropped_seen = 0u32;
     // NET-2: lobbies seen in events, and when the data channel's roster was last refreshed from them.
-    let mut lobbies_seen: Vec<u64> = Vec::new();
+    let mut lobbies_seen: Vec<(u64, Instant)> = Vec::new();
     let mut next_feed = Instant::now();
     loop {
         for raw in callback::drain() {
@@ -536,10 +536,10 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
             match decode(id, &data[..len]) {
                 Some(ev) => {
                     if ev.lobby() != 0
-                        && !lobbies_seen.contains(&ev.lobby())
+                        && !lobbies_seen.iter().any(|l| l.0 == ev.lobby())
                         && lobbies_seen.len() < 32
                     {
-                        lobbies_seen.push(ev.lobby());
+                        lobbies_seen.push((ev.lobby(), Instant::now()));
                     }
                     // MM-4: the player build keeps the callbacks but drops the verbose lobby dumps (the queue worker logs what matters).
                     if verbose {
@@ -574,7 +574,16 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
         // NET-2: the data channel's roster = members of the Seamless Co-op lobby we are in (getters only, once a second).
         if mm_ok && Instant::now() >= next_feed {
             next_feed = Instant::now() + Duration::from_secs(1);
-            crate::net::feed::publish_members(crate::net::feed::scan(&flat, own_id, &lobbies_seen));
+            let ids: Vec<u64> = lobbies_seen.iter().map(|l| l.0).collect();
+            let scan = crate::net::feed::scan(&flat, own_id, &ids);
+            crate::net::feed::publish_members(scan.members);
+            // Keep lobbies we are in, plus new ones for a grace period (Steam may not list us yet); left ones and strangers' lobbies
+            // must not fill the list (a later event re-adds a lobby).
+            let now = Instant::now();
+            lobbies_seen.retain(|l| {
+                scan.joined.contains(&l.0)
+                    || now.saturating_duration_since(l.1) < Duration::from_secs(15)
+            });
         }
         // MM-3 evidence: which lobby holds whom, on change and at least every 10 s (SC's lobby A, the game's lobby B, our queue lobby).
         if evidence && mm_ok {

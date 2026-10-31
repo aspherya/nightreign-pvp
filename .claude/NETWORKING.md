@@ -113,10 +113,13 @@ feature  <--take(topic)---------------  net::bus  <--  worker thread  <--  Chann
 - **What a feature touches:** only `net::bus` - `publish(topic, key, value)` and `take(topic) -> Vec<Received{from, fact}>`. A fact is three
   plain numbers. A new kind of message = a new `topic` constant in `bus.rs` (with what key and value mean); the wire format, the worker and
   the tests do not change. `topic::BOSS_VERDICT` (1): key = boss id, value = team of the last hitter.
-- **Guarantees (`net/facts.rs`, unit-tested with fake time):** a fact is resent every 0.5 s to each roster peer until it acks (at most
-  120 s, also waits for a peer that joins later); a receiver delivers it **once** however often it arrives; the **first value per
-  `(topic, key)` wins** on each machine, a different later value is counted (`fact_conflicts`) and ignored, a second `publish` of a key is
-  refused. So design keys so one machine publishes each key (the one that saw the kill). Bounds: 256 pending, 4096 keys, 1024 unread.
+- **Guarantees (`net/facts.rs`, unit-tested with fake time):** a fact is resent every 0.5 s to each roster peer until it acks, and stays
+  for peers who join later (up to 1 h or until the lobby is left); a receiver delivers it **once** however often it arrives and acks it
+  (a fact refused because of a limit is *not* acked, so the sender keeps trying). If two machines publish the same key with different
+  values, the **lowest publisher Steam id wins** on every machine: the loser receives the winner's fact (a later fact for a key
+  supersedes the earlier one) and stops resending its own. A second `publish` of a key on one machine is refused. Keys are forgotten when
+  the SC lobby is left (the next match), so reuse across matches is fine, within a match it is not. Facts of a topic this build does not
+  know are dropped without recording or ack. Bounds: 256 pending, 4096 keys, 1024 unread.
 - **Delivered to the other machines only;** the publisher already knows its value.
 - **Roster (`net/feed.rs`):** the Steam thread (`steam/probe.rs`) asks once a second which Seamless Co-op lobbies (data key
   `nrsc_lobby_type`) we are a member of and publishes their members; getters only, nothing is ever written to a lobby. Console `net_peer`

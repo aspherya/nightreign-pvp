@@ -8,8 +8,12 @@
 //! for r in net::bus::take(net::bus::topic::BOSS_VERDICT) { /* r.fact.key, r.fact.value, r.from */ }
 //! ```
 //!
-//! Semantics are those of [`super::facts`]: delivered exactly once, resent until acked, first value per key wins. A fact is delivered
-//! to the *other* machines only; the publisher already knows its own value. To add a new kind of message, add a `topic` constant here
+//! Semantics are those of [`super::facts`]: delivered once, resent until acked, kept for peers who join later, the lowest publisher
+//! Steam id wins if two machines publish the same key (a later fact for a key supersedes the earlier one). A fact is delivered to the
+//! *other* machines only; the publisher applies its own value itself. `publish` returns `true` when the fact was queued; the worker
+//! may still refuse it (key already used, limits) and says so in the log (`net: publish ... refused`). Keys are remembered until the
+//! lobby is left (a new match), so a key may be reused in the next match but not twice in one. Use keys that are the same on every
+//! machine and publish each key from one machine only. To add a new kind of message, add a `topic` constant here
 //! and document what `key` and `value` mean for it; the wire format and the worker do not change.
 
 use std::sync::Mutex;
@@ -25,6 +29,11 @@ pub(crate) mod topic {
     /// Dev tests (console `net_publish`).
     #[allow(dead_code)] // used by the dev console and tests
     pub(crate) const TEST: u16 = 0xF000;
+
+    /// Topics this build understands: a fact of any other topic is dropped (not recorded, not acked). Add yours here too.
+    pub(crate) fn known(t: u16) -> bool {
+        matches!(t, BOSS_VERDICT | TEST)
+    }
 }
 
 static OUT: Mutex<Vec<Fact>> = Mutex::new(Vec::new());

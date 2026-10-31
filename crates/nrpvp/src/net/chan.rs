@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 
-use super::facts::{Fact, Facts, Received};
+use super::facts::{Fact, Facts, Outcome, Received};
 use super::link::{PeerLink, SteamId};
 use super::msg::Msg;
 
@@ -19,6 +19,9 @@ pub(crate) struct Channel<L: PeerLink> {
     last_hello: Option<Instant>,
     next_seq: u32,
     waiting: BTreeMap<(SteamId, u32), Instant>,
+    /// Build number each peer announced in its last `Hello` (to log a mismatch once).
+    builds: BTreeMap<SteamId, u16>,
+    unknown_topic: u64,
     /// Pings still to send: (peer, how many left, next due).
     burst: Vec<(SteamId, u32, Instant)>,
     gap: Duration,
@@ -43,6 +46,8 @@ impl<L: PeerLink> Channel<L> {
             last_hello: None,
             next_seq: 1,
             waiting: BTreeMap::new(),
+            builds: BTreeMap::new(),
+            unknown_topic: 0,
             burst: Vec::new(),
             gap: Duration::from_millis(100),
             facts: Facts::default(),
@@ -82,7 +87,13 @@ impl<L: PeerLink> Channel<L> {
 
     /// Publish a fact to the roster (see [`Facts`]). `false` when it was refused.
     pub(crate) fn publish(&mut self, fact: Fact, now: Instant) -> bool {
-        self.facts.publish(fact, now)
+        let own = self.link.own_id();
+        self.facts.publish(fact, own, now)
+    }
+
+    /// Forget every fact key (a new match starts): keys can be used again.
+    pub(crate) fn reset_facts(&mut self) {
+        self.facts.reset();
     }
 
     /// Facts received since the last call, each one once.
@@ -157,7 +168,14 @@ impl<L: PeerLink> Channel<L> {
             }
             self.received += 1;
             match m {
-                Msg::Hello { .. } => {}
+                Msg::Hello { build } => {
+                    if self.builds.insert(from, build) != Some(build) && build != self.build {
+                        tracing::warn!(
+                            "net: peer {from} runs build {build}, we run {}: messages may not match",
+                            self.build
+                        );
+                    }
+                }
                 Msg::Ping { seq } => self.send(from, &Msg::Pong { seq }),
                 Msg::Pong { seq } => {
                     if let Some(t) = self.waiting.remove(&(from, seq)) {
@@ -166,19 +184,45 @@ impl<L: PeerLink> Channel<L> {
                     }
                 }
                 Msg::Fact { topic, key, value } => {
-                    if let Some(r) = self.facts.on_fact(from, Fact { topic, key, value }) {
-                        self.inbox.push(r);
+                    if !super::bus::topic::known(topic) {
+                        // Not a topic of this build: not recorded and not acked (a hostile or newer peer cannot fill our tables).
+                        self.unknown_topic += 1;
+                        continue;
                     }
-                    self.send(from, &Msg::Ack { topic, key });
+                    match self.facts.on_fact(from, Fact { topic, key, value }) {
+                        Outcome::New(r) => {
+                            self.inbox.push(r);
+                            self.send(from, &Msg::Ack { topic, key });
+                        }
+                        Outcome::Known => self.send(from, &Msg::Ack { topic, key }),
+                        // A limit was hit: no ack, so the sender keeps the fact and tries again later.
+                        Outcome::Refused => {}
+                    }
                 }
                 Msg::Ack { topic, key } => self.facts.on_ack(from, topic, key),
             }
         }
     }
 
+    /// The parts of the status that are worth a log line when they change (not the counters that grow every heartbeat).
+    pub(crate) fn log_key(&self) -> String {
+        format!(
+            "{:?} {} {} {} {} {} {} {} {}",
+            self.roster,
+            self.send_errors,
+            self.from_strangers,
+            self.link.dropped(),
+            self.facts.published,
+            self.facts.received,
+            self.facts.conflicts,
+            self.facts.superseded,
+            self.unknown_topic
+        )
+    }
+
     pub(crate) fn status(&self) -> String {
         format!(
-            "net: id={} peers={:?} sent={} recv={} pongs={} send_errors={} strangers={} undecodable={} last_rtt={} facts_out={} facts_acked={} facts_in={} fact_dups={} fact_conflicts={} fact_pending={}{}{}",
+            "net: id={} peers={:?} sent={} recv={} pongs={} send_errors={} strangers={} undecodable={} last_rtt={} facts_out={} facts_acked={} facts_in={} fact_dups={} fact_conflicts={} fact_superseded={} fact_unknown_topic={} fact_pending={}{}{}",
             self.link.own_id(),
             self.roster,
             self.sent,
@@ -194,7 +238,9 @@ impl<L: PeerLink> Channel<L> {
             self.facts.received,
             self.facts.duplicates,
             self.facts.conflicts,
-            self.facts.pending(),
+            self.facts.superseded,
+            self.unknown_topic,
+            self.facts.unacked(&self.roster),
             self.facts.last().map_or(String::new(), |f| format!(
                 " last_fact={}:{}:{}",
                 f.topic, f.key, f.value
@@ -299,5 +345,93 @@ mod tests {
         b.tick(Instant::now());
         assert!(b.take_received().is_empty());
         assert_eq!(b.from_strangers, 2, "the hello and the fact");
+    }
+
+    #[test]
+    fn an_unknown_topic_is_neither_recorded_nor_acked() {
+        let (la, mut lb) = FakeLink::pair(1, 2);
+        let mut a = Channel::new(la, 1);
+        a.set_roster(&[2].into_iter().collect());
+        lb.send(
+            1,
+            &Msg::Fact {
+                topic: 0x1234,
+                key: 1,
+                value: 1,
+            },
+        )
+        .unwrap();
+        a.tick(Instant::now());
+        assert!(a.take_received().is_empty());
+        assert!(
+            a.status().contains("fact_unknown_topic=1"),
+            "{}",
+            a.status()
+        );
+        // Only the hello went back, no Ack.
+        let mut out = Vec::new();
+        lb.poll(&mut out);
+        assert!(out.iter().all(|(_, m)| !matches!(m, Msg::Ack { .. })));
+    }
+
+    #[test]
+    fn keys_can_be_used_again_after_the_lobby_is_left() {
+        let (la, lb) = FakeLink::pair(1, 2);
+        let mut a = Channel::new(la, 1);
+        let mut b = Channel::new(lb, 1);
+        a.set_roster(&[2].into_iter().collect());
+        b.set_roster(&[1].into_iter().collect());
+        let t0 = Instant::now();
+        let run = |a: &mut Channel<_>, b: &mut Channel<_>, from_ms: u64| {
+            for i in 0..20u64 {
+                let now = t0 + Duration::from_millis(from_ms + 100 * i);
+                a.tick(now);
+                b.tick(now);
+            }
+        };
+        let fact = |value| Fact {
+            topic: 1,
+            key: 4012,
+            value,
+        };
+        assert!(a.publish(fact(1), t0));
+        run(&mut a, &mut b, 0);
+        assert_eq!(b.take_received().len(), 1);
+        // Next match: both sides reset, the same key carries a new value.
+        a.reset_facts();
+        b.reset_facts();
+        assert!(a.publish(fact(2), t0 + Duration::from_secs(10)));
+        run(&mut a, &mut b, 10_000);
+        let got = b.take_received();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].fact.value, 2);
+    }
+
+    #[test]
+    fn a_peer_who_joins_later_still_gets_the_fact() {
+        let (la, lb) = FakeLink::pair(1, 2);
+        let mut a = Channel::new(la, 1);
+        let mut b = Channel::new(lb, 1);
+        let t0 = Instant::now();
+        a.publish(
+            Fact {
+                topic: 1,
+                key: 7,
+                value: 3,
+            },
+            t0,
+        );
+        for i in 0..5u64 {
+            a.tick(t0 + Duration::from_millis(100 * i));
+        }
+        // b appears on a's roster only now.
+        a.set_roster(&[2].into_iter().collect());
+        b.set_roster(&[1].into_iter().collect());
+        for i in 5..30u64 {
+            let now = t0 + Duration::from_millis(100 * i);
+            a.tick(now);
+            b.tick(now);
+        }
+        assert_eq!(b.take_received().len(), 1);
     }
 }

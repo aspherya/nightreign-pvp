@@ -16,8 +16,9 @@ use crate::steam::export;
 
 /// Our private channel number (S4 §2.2: pick an unusual one and log it).
 pub(crate) const CHANNEL: i32 = 0x4E52;
-/// `k_nSteamNetworkingSend_Reliable`.
-const SEND_RELIABLE: i32 = 8;
+/// `k_nSteamNetworkingSend_Reliable` (8) | `k_nSteamNetworkingSend_AutoRestartBrokenSession` (32): a session that broke (peer started late,
+/// network blip) restarts on the next send, so we never need `CloseSessionWithUser` (which would also cut Seamless Co-op's traffic).
+const SEND_RELIABLE: i32 = 8 | 32;
 /// `k_EResultOK`.
 const RESULT_OK: i32 = 1;
 const BATCH: usize = 16;
