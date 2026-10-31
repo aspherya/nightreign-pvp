@@ -26,13 +26,17 @@ pub(crate) mod topic {
     /// be published by one machine only (the one that saw the kill), see NETWORKING.md §4.
     #[allow(dead_code)] // first user: RW-5 (console `net_verdict` is the test aid until then)
     pub(crate) const BOSS_VERDICT: u16 = 1;
+    /// RW-5: "the Dormant Power orb of boss `key` was claimed (its screen opened) by team `value - 1`". `key` = `orbclaim::key_of(boss
+    /// handle)`, equal on every machine; published by the machine whose player opened the screen first (a tie resolves by the lowest
+    /// publisher Steam id, see `facts`).
+    pub(crate) const ORB_CLAIM: u16 = 2;
     /// Dev tests (console `net_publish`).
     #[allow(dead_code)] // used by the dev console and tests
     pub(crate) const TEST: u16 = 0xF000;
 
     /// Topics this build understands: a fact of any other topic is dropped (not recorded, not acked). Add yours here too.
     pub(crate) fn known(t: u16) -> bool {
-        matches!(t, BOSS_VERDICT | TEST)
+        matches!(t, BOSS_VERDICT | ORB_CLAIM | TEST)
     }
 }
 

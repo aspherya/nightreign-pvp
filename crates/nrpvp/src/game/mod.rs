@@ -33,6 +33,7 @@ pub(crate) mod menugate;
 pub(crate) mod menutrace;
 pub(crate) mod multi_instance;
 pub(crate) mod multiplay;
+pub(crate) mod orbclaim;
 pub(crate) mod poswrite;
 pub(crate) mod puppet;
 #[cfg(feature = "dev")]
@@ -665,6 +666,16 @@ fn watch(
                 .as_ref()
                 .map(|c| c.rival_handles())
                 .unwrap_or_default(),
+            combat
+                .as_ref()
+                .and_then(|c| c.local_state())
+                .map(|(a, _)| a),
+        );
+        // RW-5 (both builds): a boss's Dormant Power orb belongs to the first team that opens it; the others lose it.
+        orbclaim::tick(
+            base,
+            in_match,
+            combat.as_ref().and_then(|c| c.local_team_no()),
             combat
                 .as_ref()
                 .and_then(|c| c.local_state())

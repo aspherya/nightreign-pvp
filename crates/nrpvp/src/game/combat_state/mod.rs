@@ -360,6 +360,11 @@ impl CombatCtl {
         Some((s.addr, self.mem.read_u8(s.addr + OFF_DOWNED)?))
     }
 
+    /// RW-5: LOCAL's roster team number, `None` until the rosters are known.
+    pub(crate) fn local_team_no(&self) -> Option<u8> {
+        self.subjects.iter().find(|s| s.local)?.team_no
+    }
+
     /// M5-5: every ChrSet player as the night match needs it (read-only): state byte, HP, bleed-out clock, team key.
     pub(crate) fn fighters(&self) -> Vec<Fighter> {
         if !self.rtti_ready {
