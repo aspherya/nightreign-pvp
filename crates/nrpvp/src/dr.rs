@@ -25,16 +25,26 @@ pub(crate) const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 /// Bit `WRITE_SHIFT + i` of a slot mask: slot `i` is a 4-byte write watch (data breakpoint) instead of an execute breakpoint.
 pub(crate) const WRITE_SHIFT: u32 = 4;
 
+/// Research (`trace_read`): the data watch also fires on reads (RW = 11) instead of writes only.
+pub(crate) static WATCH_READS: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// DR7 for the slots in `mask`: bits 0..3 enable slot `i` (local-enable bit `2*i`); an enabled slot is an execute breakpoint (RW and
 /// LEN fields 00) unless bit `4+i` is set, which makes it a 4-byte write watch (RW = 01 at bit `16+4i`, LEN = 11 at bit `18+4i`)
 /// (Intel SDM vol. 3, 17.2.4).
 pub(crate) fn dr7_for(mask: u8) -> u64 {
+    // RW = 01 (write) or, while the research command `trace_read` asked for it, 11 (read or write).
+    let rw: u64 = if WATCH_READS.load(std::sync::atomic::Ordering::Relaxed) {
+        0b11
+    } else {
+        0b01
+    };
     (0..TARGETS as u32)
         .filter(|i| mask & (1 << i) != 0)
         .fold(0u64, |acc, i| {
             let mut v = 1u64 << (2 * i);
             if mask & (1 << (WRITE_SHIFT + i)) != 0 {
-                v |= (0b01u64 << (16 + 4 * i)) | (0b11u64 << (18 + 4 * i));
+                v |= (rw << (16 + 4 * i)) | (0b11u64 << (18 + 4 * i));
             }
             acc | v
         })

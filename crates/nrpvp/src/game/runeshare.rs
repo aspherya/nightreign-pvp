@@ -200,6 +200,16 @@ unsafe extern "system" fn hook_message(local: usize, amount: f32, src: usize, fl
     unsafe { orig()(local, amount, src, flag) }
 }
 
+/// The `NpcParam` row of a character: `[ChrIns vf 0x1A0 result]` (the death credit `exe+0x3DE710` reads `+0x2C` of it, MEMORY_MAP §21).
+pub(crate) fn npc_row(chr: usize) -> Option<usize> {
+    let vt = super::mem::read::<usize>(chr).filter(|v| super::mem::is_ptr(*v))?;
+    let f = super::mem::read::<usize>(vt + 0x1A0).filter(|v| super::mem::is_ptr(*v))?;
+    // SAFETY: the game's own getter (`rcx` = the character, returns a pointer), the same call the death credit makes.
+    let get: unsafe extern "system" fn(usize) -> usize = unsafe { std::mem::transmute(f) };
+    let holder = unsafe { get(chr) };
+    super::mem::read::<usize>(holder).filter(|r| super::mem::is_ptr(*r))
+}
+
 fn install(base: usize) {
     if INSTALL_TRIED.swap(true, Ordering::Relaxed) {
         return;

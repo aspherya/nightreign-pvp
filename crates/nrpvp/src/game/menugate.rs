@@ -86,7 +86,6 @@ pub(crate) fn menu_open(base: usize) -> bool {
 }
 
 /// The raw `CSMenuMan+0x48` word (0 = no menu of the game open), for the orchestrator's `pos` line.
-#[cfg(feature = "dev")]
 pub(crate) fn menu_word(base: usize) -> Option<u32> {
     mem::read::<usize>(base + RVA_MENU_MAN)
         .filter(|m| *m != 0)
