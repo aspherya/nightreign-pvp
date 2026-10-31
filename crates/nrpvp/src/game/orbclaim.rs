@@ -277,7 +277,9 @@ fn scan(base: usize) -> Vec<(Rec, Option<[f32; 3]>)> {
     let Some(man) = mem::read::<usize>(base + RVA_MAP_ITEM_MAN).filter(|m| mem::is_ptr(*m)) else {
         return Vec::new();
     };
-    let mut out = Vec::new();
+    // Every boss-reward record (flags 0x48..): the lot record is the orb, but only its sibling, the weapon record of the same boss, has
+    // a position node (MEMORY_MAP §22), so the orb's position is the sibling's.
+    let mut all = Vec::new();
     for slot in (SLOT_FIRST..SLOT_END).step_by(8) {
         let Some(ptr) = mem::read::<usize>(man + slot).filter(|p| mem::is_ptr(*p)) else {
             continue;
@@ -290,7 +292,7 @@ fn scan(base: usize) -> Vec<(Rec, Option<[f32; 3]>)> {
         ) else {
             continue;
         };
-        if is_boss_orb(flags, id, lot) {
+        if flags >> 56 == 0x48 {
             let rec = Rec {
                 slot,
                 ptr,
@@ -298,10 +300,19 @@ fn scan(base: usize) -> Vec<(Rec, Option<[f32; 3]>)> {
                 lot,
                 handle,
             };
-            out.push((rec, read_node_pos(ptr)));
+            all.push((rec, is_boss_orb(flags, id, lot), read_node_pos(ptr)));
         }
     }
-    out
+    all.iter()
+        .filter(|(_, orb, _)| *orb)
+        .map(|(rec, _, pos)| {
+            let sibling = all
+                .iter()
+                .find(|(r, _, p)| p.is_some() && key_of(r.handle) == key_of(rec.handle))
+                .and_then(|(_, _, p)| *p);
+            (*rec, pos.or(sibling))
+        })
+        .collect()
 }
 
 fn slot_addr(st: &State, rec: &Rec) -> Option<usize> {
@@ -366,9 +377,12 @@ fn apply(st: &mut State) {
     }
 }
 
-/// The menu word (`CSMenuMan+0x48`) that says the Dormant Power screen is open. UNKNOWN until measured (MEMORY_MAP §22).
+/// `CSMenuMan+0x48` while the Dormant Power screen is open. `[VERIFIED: pos line on instance 1, 2026-10-31, MEMORY_MAP §22]` The same
+/// word reads 0 with nothing open, 0x11 in the Esc menu and 0x100 on the map.
+const MENU_DORMANT: u32 = 0x20_0004;
+
 fn dormant_screen_open(base: usize) -> bool {
-    super::menugate::menu_open(base)
+    super::menugate::menu_word(base) == Some(MENU_DORMANT)
 }
 
 fn local_phys(local: usize) -> Option<[f32; 3]> {
