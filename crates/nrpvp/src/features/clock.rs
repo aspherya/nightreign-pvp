@@ -4,7 +4,7 @@
 //! No game code is called and nothing is patched. The game's own clock update (`exe+0x698430`) reads a set-time mailbox on
 //! `WorldPlayAreaManager` every frame; when it holds a valid hour, minute and second it sets the clock with its own setter, empties
 //! the mailbox and, in a session, sends the time to the other players. This feature only fills that mailbox (through
-//! [`Ctx::clock`], [`crate::game::views::PlayArea::request_time`]). Engine facts: MEMORY_MAP §16, `research/M5-no-boss-nights.md`.
+//! [`Ctx::clock`], [`crate::game::views::PlayArea::request_time`]). Engine facts: MEMORY_MAP §16, `archive/research/M5-no-boss-nights.md`.
 //!
 //! The day runs 07:00 → 23:59:59; the game holds the clock at 23:59:59 for the night until "night boss defeated" (flags 7502 /
 //! 7507) brings the next morning. Event scripts compare the same clock (`1[6]`/`1[7]`), so a jump fires what that time fires.

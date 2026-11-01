@@ -1,8 +1,8 @@
-# Steam matchmaking: how it works (state 2026-10-19)
+# Steam matchmaking: how it works (state 2026-10-27)
 
 This explains the matchmaking that exists today: what happens when a player presses **Solo Battle Royale**, which parts are ours, which
 are the game's or Seamless Co-op's (SC), and how to read the logs when it goes wrong. The *why* behind each choice, and every test
-result, is in [research/S9-matchmaking-decision.md](research/S9-matchmaking-decision.md) (§5c–§5g). Task cards: `TASKS.md` M8 (MM-1 … MM-6).
+result, is in [archive/research/S9-matchmaking-decision.md](archive/research/S9-matchmaking-decision.md) (§5c–§5g). Open task cards: `TASKS.md` MM-3g, MM-6 … MM-9.
 
 Pins: game 1.03.3 (exe 1.3.3.0), SC v1.1.3, me3 0.11.0.
 
@@ -30,7 +30,7 @@ expedition, and our PvP rules apply. The game's anti-cheat (EAC) and Bandai's se
 
 Code: `crates/nrpvp/src/mm/` (`machine.rs` queue state machine, `machine/gate.rs` gate, `worker.rs` Steam thread, `proto.rs` lobby keys),
 `crates/nrpvp/src/steam/` (`queue.rs` Steam calls, `probe.rs` callbacks, `quietinvite.rs` window suppression), the table menu in
-`game/menuflow.rs` and the on-screen messages in `mm/ui_msg.rs`.
+`game/menuflow.rs` and the on-screen messages in `mm/ui_msg.rs`. Also in `mm/`: `guard.rs` (never-online guard), `join.rs`, `sccreate.rs`; `steam/callback.rs`; the data channel `net/` (NETWORKING.md) reads the SC lobby roster through `steam/probe.rs`.
 All Steam calls run on our own worker thread through the game's `steam_api64.dll`; nothing on the game loop waits for Steam.
 
 ## 3. What happens, step by step (Solo)
@@ -61,16 +61,17 @@ Step 9 needs nothing from our menu code: the host's start with the SC party logg
 |---|---|---|
 | `nrpvp` | creator | `1` (marks our lobbies) |
 | `mode` | creator | `solo` / `duo` / `squad` |
-| `proto` | creator | protocol version, `1`. Bump it when the lobby format changes, so old and new builds never meet |
+| `proto` | creator | protocol version, `2`. Bump it when the lobby format changes, so old and new builds never meet |
 | `game` | creator | `1.3.3.0` |
 | `sc` | creator | SC version, `1.1.3` |
 | `need` | creator | players per match (`mm_max_players`) |
+| `room` | creator | RW-6 private match: hash of `private_code` (`p-…`); absent = public. Part of the search filter, so different codes never meet |
 | `merge_to` | owner | lobby id this one dissolves into (step 3) |
 | `host`, `roster`, `state=go` | owner | host Steam id; `party:member` pairs; the match is on |
 | `sc_lobby`, `present`, `invited` | host | the SC lobby to join; `n/N` in it; who was invited |
 | member `nrpvp_party`, `nrpvp_size` | each member | party leader and size (Duo/Squad tickets) |
 
-Search filters = `nrpvp, mode, proto, game, sc, need` equal, free slots ≥ party size, worldwide. Players with different mod settings
+Search filters = `nrpvp, mode, proto, game, sc, need, room` equal, free slots ≥ party size, worldwide. Players with different mod settings
 (`mm_max_players`) or versions never see each other.
 
 The SC lobby carries `inviteParam = "0"` (written by the game) plus SC's `nrsc_lobby_type = "nrsc_ynx3_seamless_master_lobby"` and
@@ -141,4 +142,4 @@ start the real Steam client.
 - **MM-3g**: the host still presses Invite Members. Goal: the mod triggers that game action itself (call chain in `re/MEMORY_MAP.md` §12).
 - **MM-6**: Duo (3 teams of 2) and Squad (2 teams of 3) (parties queue together; Steam ID → expedition player mapping for teams). Built partly, dev only, not tested.
 - More than 2 players: only in automated tests. Boss choice: whatever the host picks.
-- Before any public release: ask SC's author (he does not want random matchmaking in SC; S9 §8).
+- Seamless Co-op's author is not contacted: we do not modify or redistribute SC (DECISIONS 2026-11-01).

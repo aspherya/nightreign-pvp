@@ -1,54 +1,61 @@
-# Status (updated 2026-10-24)
+# Status (updated 2026-11-01)
 
 **The only "now" doc.** Rules: keep it under ~8 KB; replace lines instead of appending history (results go to `testing-log/`, traps to
 [TRAPS.md](TRAPS.md), decisions to [DECISIONS.md](DECISIONS.md), tools to [TOOLS.md](TOOLS.md), live cards to [TASKS.md](TASKS.md)).
 
 ## 1. What the mod does today
 
+Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Arena (`MODE-02`) is wanted later, not for the first release.
+
 | Feature | State |
 |---|---|
-| PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 3` not run |
-| One-click install (`dist\NightreignPvP.zip`: launcher + mod + bundled me3 + game data), player build with no overlay | **Works on two PCs** (FS-UI2, 2026-10-21) |
-| Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu, status as the game's own messages | **Works with one host click**, 2 players (FS-MM3, FS-UI2); 6 players only in automated tests. **On one PC** between two emulated-Steam instances: queue → same expedition as rivals, `mi-queue` PASS 3/3 (2026-10-27, orchestrator/MULTI-INSTANCE §20) |
-| Downed rule: rival hits take 3 s off the bleed-out and never fill the bar; teammates revive; rivals cannot revive rivals (T-040/T-041) | **Works, clean** (Nucleus). Not yet over real two-PC lag |
-| Hawk crossing at the start (one line, dive, drop) | **Works solo**, on by default (HAWK-2, PR #2); not run in an FS |
-| **Match rules after the first real match (RW-1/2/4, 2026-10-24):** killed by a rival (hit log, 30 s) or the tide = **defeated for good** (body held, defeat screen after `defeat_exit_secs` = 20 s, then the Roundtable); killed by an enemy or a fall = vanilla respawn; the match ends the moment one team is left, on any day (a player is out after 30 s dead or 6 s gone); **free Day 1** (`day1_secs` = 1020: slowed clock to 11:50, no tide, no night, then the game's morning); Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-loss`). Not seen on two PCs: the hold after a bleed-out death, the other screen, real hits (FS-RW1, TESTING §6) |
-| **Spectating (RW-1 / M5-7):** a defeated player (`defeat_exit_secs = 0`, `spectate = true`) watches: the held, invisible body follows a living player once the hold hides it, mouse buttons / pad d-pad left-right switch player (not while a menu is open), F10 leaves | **Works in Nucleus (3 players, Leonardo 2026-10-25)**. Esc and pad Start open the menu for a dead player (`esc-defeated` PASS, pad confirmed on one PC; FS confirmation left, TASKS); camera smoothness open |
-| Enemy strength by team size (RW-10): `MultiPlayCorrectionParam` rewritten in memory (Solo = no co-op SpEffect, Duo / Trio = that size's) | Table found and rewritten on one PC (2 copies, 168 rows); the effect on enemy health is not measured |
-| Private match (RW-6): `private_code` in `nrpvp.toml` puts players with the same code in their own queue room (lobby tag `room`, hashed) | Unit-tested only (FakeSteam); needs two PCs |
-| Offline mode (`mode = "offline"`): Commence Solo runs the game's own solo expedition | **Works**; the test base of the orchestrator |
-| **Orchestrator `nro` + puppet players** (in this repo since 2026-10-24): offline launch through me3, AFK players the mod counts as rivals, keys/screenshots, scenarios | **Works**; `scripts\regress.ps1` runs `night1-count`, `night1-local-dies`, `night2-win`, `night2-loss`, `puppets-smoke` |
+| PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 2` was tested only for the downed / revive rule (Nucleus); **a Duo / Trio match with the RW features (team runes, HUD filter, team win) was never run by us**, `team_size = 3` not at all |
+| One-click install (`dist\NightreignPvP.zip`), player build with no overlay | **Works on two PCs** (FS-UI2, 2026-10-21) |
+| Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu | **Works with one host click**, 2 players (FS-MM3, FS-UI2). One PC, two emulated-Steam instances: `mi-queue` PASS 3/3 (2026-10-27). 6 players only in automated tests |
+| Downed rule: rival hits take 3 s off the bleed-out; teammates revive; rivals cannot revive rivals | **Works** (Nucleus). Not yet over real two-PC lag |
+| Hawk crossing at the start | **Works solo**, on by default; not run in an FS |
+| **Match rules (RW-1/2/4):** killed by a rival or the tide = **defeated for good** (body held, defeat screen after `defeat_exit_secs` = 20 s, then the Roundtable, nobody respawns); killed by a mob, boss or fall = the game's own respawn; the match ends the moment one team is left, on any day; **free Day 1** (`day1_secs` = 1020, no tide, no night), Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`). Not seen on two PCs (FS-RW1, TESTING §6) |
+| **Spectating:** a defeated player watches a living one (held body follows), mouse / d-pad switch player, F10 leaves, Esc / pad Start open the menu | **Works** (Nucleus 3 players; `spectate`, `esc-defeated` PASS). Camera smoothness open |
+| **RW-3 defeat drops:** a rival's kill drops the victim's weapons (level kept), talismans and picked-up consumables where they fell; the host makes the drop, everyone can pick it; **runes are discarded** | **Built, `mi-rw3-items` PASS (2026-11-01)**; the inventory part verified by hand; two-PC check left |
+| **RW-8 runes** shared only inside the own team | **Built and accepted on one PC** (`mi-rw8-runes` PASS 3/3, 2026-10-28). Open: Duo/Trio teammate, client-side kill |
+| **RW-9 HUD filter:** rivals and their map pins are off the map, compass, 3D world, party bars and name tags | **Built, seen with two instances** (`mi-rw9-rivals` PASS 2/2, `mi-rw9-markers`). Open: the pin toast, Duo/Trio teammates |
+| Enemy strength by team size (RW-10) | **Accepted: Leonardo found it balanced (2026-11-01)** |
+| Private match (RW-6): `private_code` in `nrpvp.toml` | Unit-tested only; needs two instances / PCs |
+| **RW-5 boss orbs** | **Parked, vanilla** (everyone can loot; DECISIONS 2026-10-31). A first-to-loot skeleton is in the code, off by default (`orb_auto 1`) |
+| Offline mode (`mode = "offline"`) | **Works**; the test base of the orchestrator |
+| **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
+| Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
-Built, one PC: **RW-3** defeat item drops, **weapons, talismans and picked-up consumables (not the starting flask)**, a rival's defeat drops them where the victim fell (the host makes the drop with the game's own drop function on the game thread; every player sees and picks it; `mi-rw3-items` PASS 2026-11-01; inventory part verified by hand only, the weapon level is kept; runes still open, TASKS). Not built yet: **RW-5** boss orbs stay **vanilla for now** (everyone can loot; decision 2026-10-31, DECISIONS): a first-to-loot skeleton is built but OFF by default (`orb_auto 1` turns it on; TASKS RW-5). **RW-8** runes shared only inside a team is **built and accepted on one PC** (2026-10-28: a rival's kill is not credited, the control pays; `mi-rw8-runes` PASS 2/2; open: Duo/Trio teammate case, the message credit, the two-PC runes photo — TASKS). **RW-9** built: rivals and the map pins they place are off the map, compass, 3D world, party bars and name tags, seen with two instances 2026-10-27; open: the pin toast, Duo / Trio teammate run (TASKS). RW-3, RW-5 and the two-PC halves need a second real client to observe; also open: final arena contraction and sudden death, Duo/Trio matchmaking (MM-6), host migration (MM-8/9, S10).
+**Not built yet** (scope in PROJECT_SCOPE): Sites of Grace blocked in PvP combat, a match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6), host migration (MM-8/9).
 
-**Known bug:** the game crashes on quit (0xC0000374, heap corruption) on every run since 2026-10-10; not proven to be Seamless Co-op's. The
-first quit on a post-R5 build did not crash (SMOKE-2), Alt-F4 on the older zip did. A player zip from `main` is the real check. Runs end
-with `nro stop` (kill) for this reason.
+**Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 
 ## 2. What is deployed where
 
 | Place | What |
 |---|---|
-| **Zip for FS-RW1, 2026-10-24:** `dist\NightreignPvP.zip` (main checkout, built from branch `rw-rules` commit 841d18b, clean), `nrpvp.dll` F8645865520E09CF, gamedata emevd 8B9459487BD2A5A3, hawk routes 5ACA00E4047EB8C2, `-MatchPlayers 2`, `team_size = 1` | Player build with the RW rules (defeat for good, free Day 1, scaling, private code). **Not** installed in Leonardo's game folder by an agent. Every older zip (the FS-M59 one, 1BA13128659811B7, too) and `dist\friend-kit.zip` are superseded: do not send them |
+| `dist\NightreignPvP.zip` in the main checkout | **Built 2026-10-24 from branch `rw-rules` (841d18b): older than RW-3, RW-8, RW-9. Rebuild from `main` before FS-RW1** (`release-zip` skill). Not installed in Leonardo's game folder by an agent. Every older zip and `dist\friend-kit.zip` are superseded |
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
-| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | Plain deploy (SC's launcher), secondary tool (TOOLS.md) |
+| Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | Plain deploy, parked (TOOLS.md) |
 
-## 3. Next, in order
+## 3. Next, in order (Leonardo, 2026-11-01)
 
-The list Leonardo gave on 2026-10-24 (fixes F1-F4, design changes D1-D7) is tracked in [TASKS.md](TASKS.md) ("Leonardo's list"), with state and test route per item.
+Cards in [TASKS.md](TASKS.md) ("Not built yet").
 
-1. **F2 / RW-8: runes shared only inside the own team** — built and accepted on one PC 2026-10-28 (`mi-rw8-runes` PASS 2/2; the two-PC rune photo is left, TESTING §6 step 7a). Then **D2 / RW-3** (defeat drops) and **D4 / RW-5** (boss drops to the last hitter): both need RE.
-2. **Two-instance checks** (orchestrator `mi-*` scenarios, one PC, no friend needed): respawn far (F1), enemy scaling measured (F4), the other screen of a defeat and spectating (D1), private match (D7), Duo/Trio teammates for RW-9.
-3. **RW-9 leftovers:** the pin toast "Ally is showing location" and the killfeed idea built on the same mechanism ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
-4. **Friend session FS-RW1** (TESTING §6) with a fresh zip: the real two-PC check of everything above (lag, the other screen, real Steam). Zip of §2 is older than the RW-9 work: rebuild first.
-5. Matchmaking: MM-3g + MM-7 (no Invite click, auto-start), MM-8, MM-9, S10; then MM-6 (Duo/Trio).
-6. Death rules still open: keep level, starting items, respawn protection (`research/S5-death-respawn.md`). Spectator camera smoothness.
+1. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
+2. **Duo and Trio first tests** (DUOTRIO-1): never run by us.
+3. **Revive item in Solo:** test whether the vanilla revive item already behaves as wanted (SOLO-REVIVE); the die-at-once rule and a **match time limit** are open ideas without schedule.
+4. Two-instance checks: respawn far (F1), the other screen of a defeat and spectating (D1), private match (D7).
+5. Friend session FS-RW1 (TESTING §6) with a fresh zip.
+6. Matchmaking: MM-3g + MM-7 (no Invite click), MM-8, MM-9, MM-6 (Duo/Trio); pin toast and killfeed idea ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)); spectator camera smoothness.
+
+Clean-up plan around the next features: docs 1:1 with the product (done in this pass), then a refactor so a new mode is an assembly of existing modules (ARCHITECTURE §6), then better orchestrator scenarios and tooling.
 
 ## 4. Repository state
 
-- `main` has everything above incl. M5-9, the puppets, `hp0` (console: LOCAL to 0 HP), the hold-slot fix, the orchestrator and the bot clean-up (PR of 2026-10-24).
-- Tests: `cargo test --workspace` → 464 nrpvp + 4 nrcon + 3 launcher + 16 nro-core + 2 nro (1 ignored); clippy `-D warnings` (dev and `--no-default-features`) and fmt clean; CI runs the same.
+- `main` has everything above (PRs up to #27).
+- Tests: `cargo test --workspace`, clippy `-D warnings` (dev and `--no-default-features`) and fmt; CI runs the same.
 - Pins: game 1.03.3 (exe 1.3.3.0), Seamless Co-op v1.1.3, bundled me3 0.11.0 (`TECHNICAL_NOTES.md` §1, `pins/nightreign.toml`).
 - Builds: `cargo build --release` = developer DLL (feature `dev`); `--no-default-features` = player DLL (refuses `dev_mode`). MSVC Build Tools needed (`D:\Programs\Microsoft Visual Studio`).
 - Friend-session logs are gitignored (`*.log`); they live in `.claude/experiments/<session>/` on Leonardo's PC.
-- `.mcp.json` registers the `nightreign` MCP server (`target\release\nro-mcp.exe` of the main checkout): build it with `cargo build --release -p nro -p nro-mcp`.
+- `.mcp.json` registers the `nightreign` MCP server (`target\release\nro-mcp.exe` of the main checkout): `cargo build --release -p nro -p nro-mcp`.

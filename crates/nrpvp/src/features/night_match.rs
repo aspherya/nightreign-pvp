@@ -6,7 +6,7 @@
 //!   in the last [`RIVAL_WINDOW_MS`] (the hit log of `game::combat_state`: the last-attacker handle is valid on the victim's own
 //!   game), or the tide (a hit with no attacker, from the circle's first closing on Day 2), is a **defeat**: the comeback's start
 //!   step is held ([`NightAct::DeathHold`], `game::deathhold`) so LOCAL stays dead; after `defeat_exit_secs` the defeat screen
-//!   plays ([`FLAG_LOSE`], then the Roundtable) unless the match ends first. There is no spectator camera yet (M5-7).
+//!   plays ([`FLAG_LOSE`], then the Roundtable) unless the match ends first. A defeated player may spectate instead (M5-7: the held body follows a living player; `spectate`).
 //! - **A mob's or a fall's death is the game's own (RW-2).** Nothing is held; the comeback respawns LOCAL with the items; the runes
 //!   wait where it died. Respawning far from the other players (RW-7) moves LOCAL to the farthest place of a pool recorded on Day 1.
 //! - **The match ends when one team is left (RW-1).** At any time of any day. A player is *out* when dead for [`OUT_DEAD_MS`]
@@ -35,7 +35,7 @@ use crate::game::world::{NightFlags, World};
 pub(crate) const FLAG_WIN: u32 = 10_007_411;
 /// This game's player lost (event 99100804: banner 4010, 10 s, 7001).
 pub(crate) const FLAG_LOSE: u32 = 10_007_412;
-/// Dev: LOCAL gets SpEffect 102130 (die at once) while this is ON (event 99100805; `research/M5-8-death.md` §R1). Set by hand
+/// Dev: LOCAL gets SpEffect 102130 (die at once) while this is ON (event 99100805; `archive/research/M5-8-death.md` §R1). Set by hand
 /// (console `flag`) to test a defeat in offline mode, where the offline revive effect would otherwise bring LOCAL back.
 pub(crate) const FLAG_DIE: u32 = 10_007_420;
 /// The game's own flags written when our event file is missing.

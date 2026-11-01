@@ -30,8 +30,11 @@ Project skills (`.claude/skills/`): `test-report` (turn a reported test run into
 (build, verify and record a player zip or Nucleus deploy) and `add-console-command` (every feature gets console access). Planned:
 "add a feature" (once the `Feature` trait exists, ARCHITECTURE §6 R3).
 
-Frozen history, read only when a card links it: `research/` (spike memos, orchestrator design `ORCH-plan.md`), `re/er-reference.md`
-(Elden Ring hints), `experiments/` (logs and scripts from test runs). They are not kept up to date.
+Frozen history, read only when a card links it: [archive/INDEX.md](archive/INDEX.md) lists it (spike memos, hand-overs, `archive/er-reference.md`,
+scripts and logs of finished runs, which doc owns each surviving fact). It is not kept up to date. `.claude/experiments/` is only the
+gitignored drop folder for friend-session logs.
+
+**Language:** code, comments and docs are English only (Leonardo, 2026-11-01); chat with him may be Portuguese.
 
 **How a feature is specified (spec-driven, light):** a card in TASKS.md is the spec: goal, rules (link `re/PROJECT_SCOPE.md`), build
 steps and an **acceptance that is a scenario** (`scenarios/<name>.toml`, run with `scripts\regress.ps1`) wherever one PC can show it;
@@ -69,7 +72,7 @@ TRAPS.md, new decisions to DECISIONS.md.
 
 ## Repo layout
 
-- Planning docs (this file, TASKS.md, …): `.claude/`. Research write-ups: `.claude/research/`.
+- Planning docs (this file, TASKS.md, …): `.claude/`. Frozen research and hand-overs: `.claude/archive/` (live RW-3 hand-over notes still in `.claude/research/`).
   Reverse-engineering notes and CE tables: `.claude/re/`.
 - Code at the repo root: `Cargo.toml`, `crates/nrpvp/` (the mod), `crates/nrcon`, `crates/nrpvp-launcher`, `crates/nro*` (orchestrator), `scenarios/`, `pins/`, `tools/`, `profiles/`, `scripts/`.
 - Rust lives in `%USERPROFILE%\.cargo\bin`. If `cargo` isn't on PATH in a shell, call

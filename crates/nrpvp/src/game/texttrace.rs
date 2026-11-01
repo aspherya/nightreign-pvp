@@ -6,7 +6,7 @@
 //! message repository (S7 1.1), so patching the lookup would be a second hook on code it may already hook; a debug register does not
 //! touch the bytes and still fires when the entry has been patched with a jump.
 //!
-//! Addresses (game 1.03.3, exe 1.3.3.0; UI-0 results log, step 5; found with `.claude/experiments/UI-0/msgrepo_xrefs.py`):
+//! Addresses (game 1.03.3, exe 1.3.3.0; UI-0 results log, step 5; found with `.claude/archive/experiments/UI-0/msgrepo_xrefs.py`):
 //! - DR0 `exe+0x27F4D20` `LookupEntry(repo, slot, category, id)`: rcx = `MsgRepository`, edx = slot, r8d = FMG file id in the msgbnd
 //!   (200 = CL_MenuText, 504 = CL_MenuText_dlc01, ...), r9d = text id. Same shape as ER's `MsgRepositoryImp::LookupEntry`.
 //! - DR1 `exe+0x27F5710` the FMG search it tail-jumps to: rcx = FMG, edx = text id. Some getters reach the text by another

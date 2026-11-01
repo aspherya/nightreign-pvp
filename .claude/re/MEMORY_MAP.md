@@ -90,7 +90,7 @@ Seen values: 240 full, 0 while downed, 120 right after a revive (half), full aga
 | Code: revive hit | `exe+0x66DEC0(victim, reviver, hit)` | bar -= max(1, trunc(hit+0x150 × downs factor × hit+0x258)); store at `exe+0x66DFC4`; bar 0 → `+0x728` = reviver handle; then pause `+0x71C` | runs on the victim's own game (main thread) | `[VERIFIED: trace RIP exe+0x66DFCC + disassembly, T-041]` |
 | Hook: cancel a rival's revive hit | breakpoint on the store `exe+0x66DFC4` (`movss [rdi+0x714], xmm1`, bytes `F3 0F 11 8F 14 07 00 00`); rdi = victim, `[rsi+8]` = reviver handle; xmm1 low 32 bits = current bar for a RIVAL reviver | The bar never drops, the player script never sees 0, no revival animation; teammates untouched | `[VERIFIED: Nucleus 2026-10-22, both directions + 2 v 1, T-041]` |
 | Code: who sets `+0x732` / `+0x731` | `exe+0x40D390` event dispatcher (163 types, jump table RVA `0x40E67C`, index = type−1): type **145** → `exe+0x40E5F1` `mov byte [rsi+0x732], 1`; type **144** → `exe+0x40E5E8` sets `+0x731`. The only other store is the PlayerIns constructor (`exe+0x66698B`). The revival animation emits type 145 every frame it plays | | `[VERIFIED: byte search + disassembly, T-041]` |
-| Script: what starts the revival | `c0000.hks` `NearDeathCommonFunction` / `NearDeathStart_onUpdate`: `env(GetNearDeathHealth) <= 0` (env id 372, very likely the bar `+0x714`) and no SpEffect **102455** → `W_NearDeathRevival` (the start state latches it until its EzState flag 0). SpEffect 102455 disables this revival | handoff `tasks/T-041-no-getup-handoff.md` | `[SOURCE: community decompile; env 372 = bar HYPOTHESIS]` |
+| Script: what starts the revival | `c0000.hks` `NearDeathCommonFunction` / `NearDeathStart_onUpdate`: `env(GetNearDeathHealth) <= 0` (env id 372, very likely the bar `+0x714`) and no SpEffect **102455** → `W_NearDeathRevival` (the start state latches it until its EzState flag 0). SpEffect 102455 disables this revival | handoff `archive/tasks/T-041-no-getup-handoff.md` | `[SOURCE: community decompile; env 372 = bar HYPOTHESIS]` |
 | Code: per-frame downed update | `exe+0x674EB0(chr, dt)` | state 1: pause countdown, bleed clock, bar regrows toward the max for this down (`exe+0x675141`, every frame), then the `+0x732` check; state 2 end → state 0 (`exe+0x67532E`) | | `[VERIFIED: trace RIP exe+0x675149 ×200/down + disassembly, T-041]` |
 | Code: the night freeze | `exe+0x674FCD` in `exe+0x674EB0`: `exe+0x509150([chr+0x190], 102120)` (SpEffect list walk, id at node `+8`, next `+0x38`); when the player has **SpEffect 102120** the clock is set to `GameSystemCommonParam` `+0x2F4` (`BossArenaNearDeathDuration` = 15) every frame instead of counting down. The vanilla night gives 102120 inside the circle (`common` 1301 / 1302, TECHNICAL_NOTES §4e) | | `[VERIFIED: disassembly + regulation + Nucleus run 2, 2026-10-22: 44 s down at night, no bleed-out]` |
 | `GameSystemCommonParam` row (param index `0x92`, fetched by `exe+0xE76D50`) | | `+0x380/+0x384/+0x388` the bar sizes 40 / 90 / 240, `+0x38C..+0x394` revive decay %, `+0x2CA` u16 the 180 s down-count cooldown, `+0x2F4` f32 15 (above) | | `[VERIFIED: disassembly + regulation values]` |
@@ -235,7 +235,7 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 | `LookupEntry(repo, slot, category, id)` | `exe+0x27F4D20` | Returns the text of FMG `category` (the FMG file id in the msgbnd: 200 CL_MenuText, 33 EventTextForTalk, 34 EventTextForMap, 500+ the `_dlc01` twins) entry `id`. Every lookup asks the `_dlc01` FMG first, then the base one. **Seamless Co-op hooks it** (first 5 bytes = `jmp` into memory outside any module) and swaps the Number of Players labels 130409/130417/130408 | `[VERIFIED: disassembly + UI-0 step 5 trace]`; which ids SC swaps `[HYPOTHESIS]` |
 | FMG search `(fmg, id)` | `exe+0x27F5710` | `LookupEntry` tail-jumps here; not hooked | `[VERIFIED: entry bytes]` |
 | `MsgRepository` table | `[exe+0x3C246A8]`: `+0x8` table, `+0x10` slot count, `+0x14` category count; FMG = `[[+8] + slot*8] + category*8` | Read by `game/texttrace.rs` to map FMG pointers back to categories | `[VERIFIED: LookupEntry bounds checks; trace mapped every FMG]` |
-| `CSEventFlagMan` | slot `exe+0x3C115A8` | ER layout holds: divisor 1000, a red-black map of group → block; 143 groups have storage (list in `research/UI-0-ingame-ui.md` step 5). Flag 6001 ON / 6000 OFF, 7500 ON at DAY I | `[VERIFIED: UI-0 step 5 probe]` |
+| `CSEventFlagMan` | slot `exe+0x3C115A8` | ER layout holds: divisor 1000, a red-black map of group → block; 143 groups have storage (list in `archive/research/UI-0-ingame-ui.md` step 5). Flag 6001 ON / 6000 OFF, 7500 ON at DAY I | `[VERIFIED: UI-0 step 5 probe]` |
 | Our flags | group **10007** (10007000..10007999), 10008 spare | Storage present, no use in any NR talk ESD or EMEVD. 10007000 set by our table list and read by the DLL | `[VERIFIED: UI-0 step 6]`; use by the exe or params UNKNOWN |
 | Commence checks | `exe+0x9EEBE0` (ordinary function, has `.pdata`), called once per Commence press from `exe+0x9E81AE` / `exe+0xA4246E` with `rcx` = the menu; our breakpoint sits at `exe+0x9EEBFB` (first instruction after the prologue, `r14` = menu) | Checks 506040 / 506070 / 506024 / 506023 in turn. Jumping to `exe+0x9EEC1D` runs the game's own 506040 notice dialog and leaves through the normal epilogue. **FS-UI2: the host's start of the expedition with a Seamless Co-op party (3 rounds) logged no press here** `[HYPOTHESIS: SC's party start takes another path, or the settings pointer was not readable]` | `[VERIFIED: UI-1 trace + C1 prototype 2026-10-19; FS-UI2 2026-10-21]` |
 | Number of Players byte | `[[menu+0xFC8]+0x49]` (the list `exe+0x9FB020` reaches the same object as `[rcx+0x3E08]`) | **2 = one player, 1 = two, 0 = three.** Commence with 0/1 offline = 506023 "Cannot start multiplayer session in offline mode"; with 2 = departure. Seen at 0 again on the friend's PC after a round as host (FS-UI2; cause UNKNOWN) | `[VERIFIED: UI-1 trace; 0x9EF3F0 picks 130304 / 130305 from it]` |
@@ -255,7 +255,7 @@ Not memory values but code and Steam facts the matchmaking depends on. How they 
 
 ## 15. NPC bots: `CSNpcBotMan` (OFF-3, game 1.03.3)
 
-Dormant in vanilla play (no shipped event script starts it). Story and params: `research/OFF-3-bots.md`.
+Dormant in vanilla play (no shipped event script starts it). Story and params: `archive/research/OFF-3-bots.md`.
 
 | What | Where | Behaviour | Proof |
 |---|---|---|---|
@@ -268,7 +268,7 @@ Dormant in vanilla play (no shipped event script starts it). Story and params: `
 ## 16. The play-area clock: `WorldPlayAreaManager` (M5-1, game 1.03.3)
 
 The expedition's day clock (07:00 → 23:59:59) that the circle and the night run on. Story and the event side:
-`research/M5-no-boss-nights.md`; script `experiments/M5-1/m5_clock.py`. Used by the console `clock` (`features/clock.rs`,
+`archive/research/M5-no-boss-nights.md`; script `archive/experiments/M5-1/m5_clock.py`. Used by the console `clock` (`features/clock.rs`,
 `game/views.rs` `PlayArea`).
 
 | What | Where | Behaviour | Proof |
@@ -282,7 +282,7 @@ The expedition's day clock (07:00 → 23:59:59) that the circle and the night ru
 
 ## 17. Death, the comeback and respawn points (M5-8, game 1.03.3)
 
-Story, evidence and the plan: `research/M5-8-death.md`. Dev tool: `game/deathtrace.rs` (console `death_trace`, `death_hold`,
+Story, evidence and the plan: `archive/research/M5-8-death.md`. Dev tool: `game/deathtrace.rs` (console `death_trace`, `death_hold`,
 `speffects`).
 
 | What | Where | Behaviour | Proof |
@@ -300,7 +300,7 @@ Story, evidence and the plan: `research/M5-8-death.md`. Dev tool: `game/deathtra
 
 ## 18. Puppet players: player-list characters without a client (ORCH-2, game 1.03.3)
 
-Full story and the static reading: `research/ORCH-R2-net-player-creation.md`. Code: `game/puppet.rs`.
+Full story and the static reading: `archive/research/ORCH-R2-net-player-creation.md`. Code: `game/puppet.rs`.
 
 | What | Where | Behaviour | Proof |
 |---|---|---|---|
@@ -514,6 +514,13 @@ Two instances, field boss "Erdtree Avatar" (npc 48100010, lot `rewardItemLot_2` 
   - **A pick on the client needs the host's copy of the orb** [VERIFIED, 3 orbs]: with the host's slot nulled (rival switch) a client that claimed the orb could not pick any item (screen opens, no reward); with `orb_auto 0` (host copy left on) the pick worked and the client's record vanished from its slot. So nulling the host's copy to block the host's player also blocks a client claimer. The nulling design only works when the claimer is the host or on non-host games' copies; a blocker that leaves the record alone (the interaction call site) is needed. UNKNOWN: whether the host needs a client's copy for the same reason (the host claiming worked with the client's orb nulled: `mi-rw5-orb`).
   - **A pick clears the record from its slot** [VERIFIED: `orb ... disappeared` right after the pick, slot empty]; a record parked in another slot by `orb_rescue` is NOT cleared (the orb stayed after a pick and could not be claimed again: the rescue is not a working option).
   - **Second kill overwrites slot +0x58** [VERIFIED, game 2]: the first unpicked orb vanishes from the list.
+
+## 23. A rival's victim and its runes (RW-3 first slice, 2026-10-31, game 1.03.3; the rune drop itself was dropped: runes are discarded, DECISIONS 2026-11-01)
+
+Two instances, `rival_hit` + `hp0` on game 2 (`flag 10007420 1` first), 1040 runes in hand.
+- **A held defeat leaves nothing to take** [VERIFIED: screenshots + `runeshare` 8 s after the defeat, both games]: with the defeat held (`deathhold`), the victim's rune count stays **1040** (HUD shows 1040 under "YOU DIED"); no bloodstain or body appears on the killer's game. The vanilla rune loss / bloodstain belong to the comeback step we hold (§17). UNKNOWN: what the bloodstain would be (`BloodStainMan` was not read).
+- **Rune count:** `[PlayerIns+0x5A0]+0x6C`; a plain `u32` store changes it and the HUD shows the "+N" popup `[VERIFIED: mi-rw3-runes on a branch that was deleted]`. The game's adder `exe+0x2098C0` also bumps `+0x70` / `+0x110` (total-earned counters).
+- Scenario trap: a mob picked by `mob_kill` can be worth 0 runes (npc 43810110): use `rune_give`.
 
 ## 24. RW-3 red phantom / item drop: live findings E0 and E1 (2026-11-01, game 1.03.3, two `nro` instances)
 

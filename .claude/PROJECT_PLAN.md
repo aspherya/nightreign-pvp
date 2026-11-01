@@ -34,7 +34,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 | F5 | Night 1: tide shrinks, **no boss** | The tide exists in vanilla | How to skip the night boss and still advance to Day 2 `[UNKNOWN]` (event scripts and flags) | High |
 | F6 | Day 2: map opens again, stronger enemies | Vanilla does this | Probably nothing | Low |
 | F7 | Night 2: all teams in one arena that shrinks, no boss | The tide and the circle exist | Remove the boss, control the circle's final size, keep everyone inside `[UNKNOWN]` | High |
-| F8 | Death drops the entire inventory as loot anyone can take | Nightreign lets players drop items for teammates `[LEAD]`; runes drop on death in vanilla | Read the inventory, drop every item on death, make the drops visible and lootable by rivals `[UNKNOWN]` | **Very high** |
+| F8 | Death drops the entire inventory as loot anyone can take | Nightreign lets players drop items for teammates `[LEAD]`; runes drop on death in vanilla (RW-3 built: items drop; runes are discarded by decision, 2026-11-01) | Read the inventory, drop every item on death, make the drops visible and lootable by rivals `[UNKNOWN]` | **Very high** |
 | F9 | Respawn with starting items, level kept, away from combat, brief protection | Vanilla respawns near a grace and removes a level | Stop the level loss, choose the respawn point, protection that ends on attack `[UNKNOWN]` | High |
 | F10 | Downed players can be revived by teammates only | Revive works in vanilla co-op; between hostile players it does not `[PROVEN]` | Should come for free once teammates are non-hostile `[LEAD]`; verify | Medium |
 | F11 | Sudden death: no respawns once the arena is fully closed; stall-breaker damage | The tide deals damage outside the circle | Detect "fully closed", block respawns, mark eliminated players, escalate damage `[UNKNOWN]` | High |
@@ -42,7 +42,10 @@ Each row says what the game or our tests already give us, and what has to be fou
 | ~~F13~~ | ~~Winner's choice: escape with loot or fight the Nightlord~~ | **Dropped** (Leonardo, 2026-10-24): there is no winner's choice; the match ends when the final fight is decided | - | - |
 | F14 | Balancing rules (no kill rewards, default gear, loot stays on the ground, final-arena supply) | Mostly follow from F8–F9 | Tuning, after the mechanics exist | Low |
 | F15 | Mode selection in Roundtable Hold | SC already edits that menu | Our own menu entry or a panel toggle; all clients agreeing on the mode | Medium |
-| F16 | Install and launch for normal players | Friend kit with a script | A launcher; permission from SC's author before any public release | Medium |
+| F17 | Sites of Grace blocked while a player is engaged in PvP (no HP / flask restore) | Grace behaviour is vanilla | Per-player combat state + a veto on the rest path (TASKS GRACE-1) | Medium |
+| F18 | Match time limit: past the maximum vanilla time everyone loses | - | Not built (TASKS TIMELIMIT-1, idea) | Low |
+| F19 | Arena mode (MODE-02), later | Nightlord arena exists | Decoupled modules first (refactor); not for the first release | - |
+| F16 | Install and launch for normal players | Friend kit with a script | A launcher | Medium |
 
 ## 3. Public queues and initial player cap
 
@@ -50,7 +53,7 @@ The product target is public solo/duo/trio matchmaking. Every match has **6 play
 
 SC and the engine currently constrain the session to six players. Do not spend effort on more than six without new evidence and an explicit scope decision. Public matchmaking is not implemented, and access to SC's lobby, queue discovery, party membership, and match start remains unresolved. Investigate these when the roadmap activates matchmaking; do not assume SC exposes a public API or that its lobby can be reused without permission.
 
-The detailed matchmaking/session-formation proposal and the Solo, Duo, and Squad queue formats are in [S8: Public matchmaking and party/session formation](research/S8-public-matchmaking.md). It is exploratory; the first exit condition is still proving how independently formed players can enter one shared SC session.
+The detailed matchmaking/session-formation proposal and the Solo, Duo, and Squad queue formats are in [S8: Public matchmaking and party/session formation](archive/research/S8-public-matchmaking.md). It is exploratory; the first exit condition is still proving how independently formed players can enter one shared SC session.
 
 ## 4. Two cross-cutting pieces
 
@@ -67,18 +70,18 @@ access, so it is fully unit-tested without launching anything. Game code feeds i
 Each milestone starts with a spike (find out, cheaply) and ends with a test on real clients. Order is by dependency and by how much each one
 de-risks the rest.
 
-| Milestone | Goal | Covers | Exit test |
-|---|---|---|---|
-| **M1 Stable free-for-all** | The automatic rule works for a whole expedition with 2 players, no keys; graces usable | F4 | Nucleus 2 instances + friend: full Day 1 → Night 1 with `pvpve = true`, no freeze, graces work |
-| **M2 Teams** | Allies are safe from each other and can revive; rivals are hostile; every client agrees on teams | F2, F10 | Nucleus 3–4 instances: 2v1 or 2v2, ally hits do nothing, ally revive works, rival hits land |
-| **M3 Death and respawn rules** | Level kept, starting items, respawn point chosen by us, protection window | F9 | Kill → respawn with the right state on both screens, repeated 10 times |
-| **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree |
-| **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights |
-| **M6 Finale** | Sudden death, eliminations, win detection | F11, F12 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable (winner and losers see the report, then the Roundtable) |
-| **M7 Scale and spawns** | Hawk crossing (§13); validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match |
-| **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players |
+| Milestone | Goal | Covers | Exit test | State 2026-11-01 |
+|---|---|---|---|---|
+| **M1 Stable free-for-all** | The automatic rule works for a whole expedition with 2 players, no keys; graces usable | F4 | Nucleus 2 instances + friend: full Day 1 → Night 1 with `pvpve = true`, no freeze, graces work | Done (Nucleus, then `nro`) |
+| **M2 Teams** | Allies are safe from each other and can revive; rivals are hostile; every client agrees on teams | F2, F10 | Nucleus 3–4 instances: 2v1 or 2v2, ally hits do nothing, ally revive works, rival hits land | Teams work; `team_size = 2` tested for the downed / revive rule only; a Duo / Trio match with the RW features never run by us |
+| **M3 Death and respawn rules** | Level kept, starting items, respawn point chosen by us, protection window | F9 | Kill → respawn with the right state on both screens, repeated 10 times | Reshaped by the RW rules: rival kills are final, only mob deaths respawn (DECISIONS 2026-11-01) |
+| **M4 Inventory drop** | A PvP death leaves the victim's items in the world; anyone can pick them up | F8, F14 | A kills B, A picks up B's weapon, both screens agree | Built on one PC (RW-3: weapons, talismans, consumables; runes discarded); two-PC check left |
+| **M5 Match flow** | Two days and two nights, no Night 1 boss, Night 2 arena without a boss | F5, F6, F7 | A full match timeline runs start to finish with no boss fights | Reshaped: free Day 1, no tide before Day 2, no boss at night; built |
+| **M6 Finale** | Sudden death, eliminations, win detection | F11, F12 | 2 teams: the arena closes, respawns stop, last team wins, both endings reachable (winner and losers see the report, then the Roundtable) | Match end and win / loss built; final contraction and sudden death not done |
+| **M7 Scale and spawns** | Hawk crossing (§13); validate intended formats up to 6 players | F1, F3 | The six-player configuration completes a match | Hawk crossing built; 6 players only in automated tests |
+| **M8 Product and public matchmaking** | Queue selection, random matching, party/team formation, release permissions, player install flow | F15, F16 | A player installs, queues solo/duo/trio, and completes a match with random players | Solo queue works over real Steam (2 players); Duo / Trio queues open (MM-6) |
 
-M1 and M2 are next. M3–M6 can only be ordered after their spikes, because each could turn out trivial (the game already does it) or very hard.
+Next steps are in STATUS §3 and TASKS (Sites of Grace in combat, Duo / Trio tests). M3–M6 can only be ordered after their spikes, because each could turn out trivial (the game already does it) or very hard.
 
 ## 6. Spikes (research before building)
 
@@ -95,7 +98,7 @@ Read-only research tasks for Sonnet researchers, each producing a short sourced 
 ## 7. How we work
 
 Unchanged: Opus plans and reviews, Sonnet executes one card at a time, humans run the game. New since Phase 0:
-- **Nucleus is the daily two-client bench.** Try 3–4 instances for M2 (the handler allows 6; the PC's limits are untested).
+- **`nro` (puppets, `mi-*` instances) is the daily bench; Nucleus is parked.** Try 3–4 instances for M2 (the handler allows 6; the PC's limits are untested).
 - **Friend sessions** confirm each milestone over a real connection, using the friend kit.
 - **Every milestone ships behind a config switch**, so a broken feature can be turned off without rebuilding.
 
@@ -107,13 +110,13 @@ Unchanged: Opus plans and reviews, Sonnet executes one card at a time, humans ru
 3. **Controlling the expedition's script (F5, F7, F13)** may need modified event files, which SC may check or overwrite. Mitigation: spike S3 and S4.
 4. **Agreement between clients** on match state. Mitigation: derive from synced game state first.
 5. **Game or SC updates** break offsets. Mitigation: discovery by names and patterns, version pins, a startup check.
-6. **Permission and public operation:** SC's terms and the author's stance may constrain a public PvP product; public play also introduces disconnect and abuse requirements. Resolve these before public launch; private development tests are unaffected.
+6. **Permission and public operation:** SC's terms may constrain a public PvP product (the author is not contacted, DECISIONS 2026-11-01); public play also introduces disconnect and abuse requirements. Resolve these before public launch; private development tests are unaffected.
 
 ---
 
 ## 9. After the spikes (2026-10-10): what changed
 
-Memos: `research/S1-player-cap.md` … `S5-death-respawn.md`. Everything below is from sources or Elden Ring hints unless marked `[PROVEN]`.
+Memos: `archive/research/S1-player-cap.md` … `S5-death-respawn.md`. Everything below is from sources or Elden Ring hints unless marked `[PROVEN]`.
 
 | Feature | Before | Now |
 |---|---|---|
@@ -126,7 +129,7 @@ Memos: `research/S1-player-cap.md` … `S5-death-respawn.md`. Everything below i
 | F12/F13 win and choice | Unknown | Flag 7000 = expedition won; an event can replay the ending. Mod-to-mod messages over Steam for agreement between clients |
 | New risks | | (1) Vanilla ends the run when **no player is alive at night** (flag 7001): must be neutralised. (2) Interactions (graces, maybe pickups) fail for a player on team 29: the "rivals only" scheme avoids it |
 
-## 10. Stable v1 (the first build worth a real play session)
+## 10. Stable v1 (2026-10-10; superseded by the RW rules of 2026-10-24, kept for history)
 
 1. **Teams, automatic:** rosters from the per-player id (`team_size` in the config; 1 = free-for-all); each client keeps its own team on the
    vanilla value and marks rivals hostile. No keys.
@@ -155,7 +158,7 @@ once), so a rival can never revive; the player dies when the bleed-out (≈15 s,
 
 **§11 status (2026-10-12, updated after FS-0 run 14).** The clock and the bar are located (PlayerIns+0x718 and +0x714, with the pause timer at +0x71C) and the clock is writable. Leonardo's target rule is buildable on the victim's own client: on a hit whose attacker is a RIVAL, restore the bar to its value before the hit, subtract a chunk from the clock, and clear the pause; hits by teammates are left alone.
 
-**§11 update 2 (2026-10-12, Leonardo): free-for-all has no downed state.** With `team_size = 1`, a player whose HP reaches 0 must die and
+**§11 update 2 (2026-10-12, Leonardo; superseded by DECISIONS 2026-10-24 "Downed always" and 2026-11-01): free-for-all has no downed state.** With `team_size = 1`, a player whose HP reaches 0 must die and
 respawn at once: no bleed-out, no revive. Route `[LEAD]`: set the game's own near-death duration to 0 in the in-memory param table
 (`GAME_SYSTEM_COMMON_PARAM_ST`: `near_death_grace_period_timer_default`, `boss_arena_near_death_duration`; validate the row by
 `required_revive_progress_level1/2/3` = 40/90/240) on every client. Team modes (team_size ≥ 2) keep the vanilla bleed-out; the "rival hits
@@ -209,11 +212,11 @@ fixed drop). The hawks from **Spectral Hawk Trees** let the player steer for a w
   release from any height over solid ground is safe, so route 1's biggest risk goes away, but the line must stay over the map (3; the
   void at the edges kills) `[HYPOTHESIS until HAWK-1 c]`.
 
-**Spectral Hawk Trees** (wiki extract `research/hawk/spectral-hawk-tree.md`): a tree summons a hawk that flies a **fixed route shown on the
+**Spectral Hawk Trees** (wiki extract `archive/research/hawk/spectral-hawk-tree.md`): a tree summons a hawk that flies a **fixed route shown on the
 map** ("spectral road"). The player can steer off the route, which makes the hawk descend; with no input it flies the whole route. The
 trees are at fixed places and the start hawk also has a route (`birdRouteEntityId`), so both very likely use the same route system
 (`CSBirdMovePointMan`, flag 8800 "Bird movement icon") `[HYPOTHESIS]`. A Nexus mod, **Spectral hawk anywhere** (Dhafer, 2026-10-03;
-`research/hawk/spectral-hawk-anywhere-mod.md`), summons a tree hawk anywhere, at any time, so summoning a hawk without a tree is
+`archive/research/hawk/spectral-hawk-anywhere-mod.md`), summons a tree hawk anywhere, at any time, so summoning a hawk without a tree is
 possible. The page does not say how it works. Its permissions forbid modifying or re-uploading the file, so we may only study it and
 write our own version (or ask the author).
 
@@ -239,7 +242,7 @@ that starts a tree-hawk ride whenever the player has SpEffect 707144, and the ga
 end) in `m60_00_00_99.msb`, about 200 m long. Limveld is about 1.5 km square in that file's frame.
 - B1 (data, preferred): ship a changed `m60_00_00_99.msb.dcx` in our game-data package. Keep each start route's start point and move
   its waypoint and end point along the same direction to 100 m before the map edge. That is an in-place float edit with the same file
-  size, so no MSB writer is needed. Extended lengths: 600–1,530 m, 36–90 s at the vanilla speed (`experiments/HAWK-0/`). The engine's
+  size, so no MSB writer is needed. Extended lengths: 600–1,530 m, 36–90 s at the vanilla speed (`archive/experiments/HAWK-0/`). The engine's
   own end-of-route signal then drops everyone left on the hawk at the far side, for free. Variant: also move the start point back to
   the near edge, so every ride is a full edge-to-edge crossing. Open: does the hawk keep its speed and height over a long leg (the
   vanilla routes sink about 80 m over 200 m; we can keep the end point high)? Does it clip through hills (keep points high)? Does a far

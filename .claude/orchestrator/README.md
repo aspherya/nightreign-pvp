@@ -6,7 +6,7 @@ profile, scenario model), `crates/nro` (CLI + desk), `crates/nro-mcp` (MCP serve
 `pins/nightreign.toml`, `tools/`. Runs go to `runs\<id>\` (gitignored): `report.json`, `watch.log`, `shots\`, a copy of the mod log.
 
 - **Puppet players** are real `PlayerIns` in the game's player list (dev build only, `game/puppet.rs`, MEMORY_MAP §18; how they were found:
-  `../research/ORCH-R2-net-player-creation.md`): the game and the mod treat them as rivals p2..p6; they stand still, take hits, go down
+  `../archive/research/ORCH-R2-net-player-creation.md`): the game and the mod treat them as rivals p2..p6; they stand still, take hits, go down
   (bar 40, bleed-out ~15 s) and die. Limits: offline mode and a loaded world only, an area change removes them, no AI, no network
   (the other screen's view and SC host/client stay friend-session checks).
 - Every launch passes a **preflight** (no "force"): the only route is `me3 launch -g nightreign -e <game>\nightreign.exe -p <run profile>`;
@@ -16,7 +16,7 @@ profile, scenario model), `crates/nro` (CLI + desk), `crates/nro-mcp` (MCP serve
   appears, logs every remote TCP endpoint and checks the vanilla saves at the end. This keeps the official servers and EAC out; it cannot
   promise there is no ban risk. Never go online with a modded game (CLAUDE.md hard rule 2).
 - **Several real instances on one PC (Nucleus replacement): plan only**, [MULTI-INSTANCE.md](MULTI-INSTANCE.md).
-- The contract with the mod (what `nro` reads from it): [CONTRACT.md](CONTRACT.md). Design history: `../research/ORCH-plan.md`.
+- The contract with the mod (what `nro` reads from it): [CONTRACT.md](CONTRACT.md). Design history: `../archive/research/ORCH-plan.md`.
 
 ## Setup (once)
 
@@ -29,7 +29,7 @@ profile, scenario model), `crates/nro` (CLI + desk), `crates/nro-mcp` (MCP serve
 
 ```text
 scripts\regress.ps1 [name ...]       run scenarios\*.toml (all by default) against dist\; one PASS/FAIL line each
-nro run scenarios\night1-count.toml  one scenario (about 3-4 min): stage, launch, steps, report.json, stop
+nro run scenarios\day1-free.toml  one scenario (about 3-4 min): stage, launch, steps, report.json, stop
 nro launch --world --set mode="offline"      launch and press through the title (default mod build: dist\ of this checkout)
 nro navigate expedition              Roundtable -> offline Solo expedition, off the hawk
 nro cmd "clock end"                  any mod console command (nro cmd help)

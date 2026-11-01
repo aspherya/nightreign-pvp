@@ -11,7 +11,7 @@ use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea};
 /// M5-5: players in a match (Seamless Co-op's limit).
 pub(crate) const MAX_FIGHTERS: usize = 6;
 
-/// M5-5: the event flags the night match reads (game 1.03.3, `research/M5-no-boss-nights.md` §1 and §6), filled by the main loop
+/// M5-5: the event flags the night match reads (game 1.03.3, `archive/research/M5-no-boss-nights.md` §1 and §6), filled by the main loop
 /// through `game::flags`. `None` in the [`World`] = the flag manager is not live.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct NightFlags {

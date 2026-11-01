@@ -1,5 +1,5 @@
 {
-  "_comment": "OFF-4: our bot events, appended to event/common.emevd.dcx (runs on every map) by scripts/build-gamedata.ps1. Each waits for its flag (our group 10007; 10007300..10007399 are bot flags), runs the game's own NPC bot instruction, clears the flag and restarts. bots: 2003:97 (i32 NPCBotTableParam table id: arms CSNpcBotMan, which spawns the table's Nightfarers; refused when the solo gate count is above 1). bots_clear: 2003:98 (removes every spawned bot). research/OFF-3-bots.md, TECHNICAL_NOTES 4d. crates/nrpvp/src/features/bots.rs uses the same flags (a unit test checks both files). One event per line.",
+  "_comment": "OFF-4: our bot events, appended to event/common.emevd.dcx (runs on every map) by scripts/build-gamedata.ps1. Each waits for its flag (our group 10007; 10007300..10007399 are bot flags), runs the game's own NPC bot instruction, clears the flag and restarts. bots: 2003:97 (i32 NPCBotTableParam table id: arms CSNpcBotMan, which spawns the table's Nightfarers; refused when the solo gate count is above 1). bots_clear: 2003:98 (removes every spawned bot). .claude/archive/research/OFF-3-bots.md, TECHNICAL_NOTES 4d. crates/nrpvp/src/features/bots.rs uses the same flags (a unit test checks both files). One event per line.",
   "file": "event/common.emevd.dcx",
   "events": [
     { "id": 99100700, "flag": 10007300, "bots": 10 },

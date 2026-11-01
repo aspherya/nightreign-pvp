@@ -1,5 +1,5 @@
 //! M5-9 (both builds): hold the comeback of a dead LOCAL player and let it go later. Game 1.03.3 / exe 1.3.3.0; the reading and the
-//! solo proof are in `research/M5-8-death.md` §R2 and MEMORY_MAP §17.
+//! solo proof are in `archive/research/M5-8-death.md` §R2 and MEMORY_MAP §17.
 //!
 //! The comeback is a chain of timed callbacks on the game's Lua event sequencer. Its first step after the death wait is
 //! `exe+0x5C4810(ctx, seq)` ([`P_START`], `void`), which queues the fade, the "begin respawn" step and the respawn at the nearest
@@ -34,7 +34,7 @@ const P_START: usize = 0;
 const P_GATE_A: usize = 1;
 const P_GATE_B: usize = 2;
 const POINTS: usize = 3;
-/// (RVA, first 6 bytes in exe 1.3.3.0, name). MEMORY_MAP §17 and research/M5-8-death.md §R2 (exe 1.3.3.0 = game 1.03.3). Fixed RVAs
+/// (RVA, first 6 bytes in exe 1.3.3.0, name). MEMORY_MAP §17 and archive/research/M5-8-death.md §R2 (exe 1.3.3.0 = game 1.03.3). Fixed RVAs
 /// with a byte check, as `reviveblock` does: no signature scan yet (a patched build fails the check and stays passive).
 const TABLE: [(usize, [u8; 6], &str); POINTS] = [
     // The comeback's first step after the death wait.

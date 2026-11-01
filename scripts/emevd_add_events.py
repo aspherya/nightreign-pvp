@@ -6,16 +6,16 @@ Usage: python emevd_add_events.py <file.emevd> <events.json>
 events.json: {"events": [{"id": 99100300, "flag": 10007100, "message": 99100200, "display": "dialog" | "blinking" | "status"}, ...]}
 Each event: IF Event Flag(MAIN, ON, flag) [3:0] -> display(message) [2007:1 | 2007:4 | 2007:3] -> Set Event Flag(flag, OFF) [2003:66] ->
 END Restart [1000:4]. Event 0 gets one Initialize Event(slot 0, id) [2000:0] per event.
-OFF-4: instead of a message, an event may carry "bots": <table id> (the game's NPC bot start, 2003:97 with one s32, research/OFF-3-bots.md)
+OFF-4: instead of a message, an event may carry "bots": <table id> (the game's NPC bot start, 2003:97 with one s32, archive/research/OFF-3-bots.md)
 or "bots_clear": true (2003:98, no arguments). Neither is in DarkScript3's NR EMEDF; the argument layout comes from the bank 2003
 dispatcher (case 97 reads one s32 at args+0; case 98 reads none).
-M5-3 (research/M5-no-boss-nights.md): an event may carry "night_end": 1 | 2 with "secs" and "flag": once the night is on (7515), it is
+M5-3 (archive/research/M5-no-boss-nights.md): an event may carry "night_end": 1 | 2 with "secs" and "flag": once the night is on (7515), it is
 night 1 (7505 off) or 2 (7505 on), that night is not done yet (7502 / 7507 off) and this game is the host (own world), it waits "secs"
 or our "flag", then sets the night-done flag network-wide (and 8020 when the special event 7700 / 7720 is on, as the boss-defeat
 handler 90065900 does), clears our flag, and ends (no restart). M5-5: no heal there any more (that event runs only in the host's game);
 it ends without setting anything when the night is already done (the DLL's fallback write got there first).
 M5-8 / M5-9: "speffect": <SpEffect id> with "flag": a per-game switch; while the flag is ON the local player holds that SpEffect,
-when it goes OFF the SpEffect is cleared (102130 = the player script's "die at once, no downed state", research/M5-8-death.md).
+when it goes OFF the SpEffect is cleared (102130 = the player script's "die at once, no downed state", archive/research/M5-8-death.md).
 M5-5 / M6-1: per-game events (Set Network Sync State Disabled first, as the game's own per-player events do), started by our flag,
 which they clear: "heal": true = Bonfire-like Recovery of the local player, then restart (the night winner); "ending": "win" | "lose"
 with "banner" (TextEffect param id: 4000 win, 4010 failure) and "secs" = banner, wait, then the local flag 7000 (win) / 7001 (failure),
@@ -24,7 +24,7 @@ as the Nightlord maps (x002590) and the wipe check (common 1180) do. It ends.
 existing event a new body: "end" = END; "disable_chr" = Change Character Enable State(X, Disabled), Set Character AI State(X, Disabled),
 END, with X substituted from the event's parameters like the game's own events do.
 
-Layout (SoulsFormats EMEVD, DS3/ER 64-bit; verified on NR 1.03.3 m10_00_00_00.emevd, see .claude/experiments/UI-0/emevd_dump.py):
+Layout (SoulsFormats EMEVD, DS3/ER 64-bit; verified on NR 1.03.3 m10_00_00_00.emevd, see .claude/archive/experiments/UI-0/emevd_dump.py):
 header 0x90 | events (0x30 each) | instructions (0x20 each: bank i32, id i32, argsLen i64, argsOff i64 rel. to args, layerOff i64 = -1)
 | args blob | parameters (0x20 each: instruction index i64 rel. to the event, target byte i64, source byte i64, byte count i32, 1 i32)
 | linked files (8 each) | strings. Event instruction offsets are relative to the instruction table, argument offsets to the args blob,

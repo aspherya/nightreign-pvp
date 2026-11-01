@@ -15,9 +15,9 @@ Think of it, coming from .NET, as a **hosted background service that runs inside
 So the useful patterns are the ones from backend services: ports and adapters, background workers, mailboxes, state machines.
 Patterns built for engines are not.
 
-## 2. As built (2026-10-20, after R0, R1, R5, R2-lite, R3-split)
+## 2. As built (2026-11-01; R0, R1, R5, R2-lite, R3-split done, the rest open: §6)
 
-Crates: `nrpvp` (the mod DLL, ~27 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nro-core` / `nro` /
+Crates: `nrpvp` (the mod DLL, ~45 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nro-core` / `nro` /
 `nro-mcp` (orchestrator, dev tooling; `orchestrator/README.md`). `nrscan` (external scanner) was deleted on 2026-10-24 (`git show cbbffa2:crates/nrscan`).
 
 ```
@@ -28,16 +28,18 @@ DllMain ─► nrpvp-main thread (startup::run, catch_unwind)
             │      ▲ mm::send(Cmd)   │ mm::status()                     │
             ├─ menuflow / ui_msg / quietinvite (one thread each)        │
             ├─ hwbp thread (owns debug registers DR0–DR3 of every game thread; primitives in dr.rs)
-            └─ game::run = main loop, 50 ms: singletons → ChrSet → TeamCtl.tick → CombatCtl.tick; console requests ◄┘
+            ├─ net worker (net/, both builds): net::bus facts ↔ Channel ↔ SteamLink (ISteamNetworkingMessages)
+            ├─ memscan thread (on demand, console `memscan`)
+            └─ game::run = main loop, 50 ms: singletons → ChrSet → TeamCtl.tick → CombatCtl.tick → Features.tick(World, Ctx); console requests ◄┘
 ```
 
 | Layer | Modules | State |
 |---|---|---|
 | Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
 | Game access | `game/mem`, `game/layout` (every object offset), `rtti`, `singletons`, `image`, `event_flags`, `fmg`, `dr` | Good |
-| Feature list (OFF-1, OFF-4/5) | `features/` (`Feature` trait, `Features`, `Ctx` outbox: matchmaking commands, event flags, bot writes; features `mode`, `bots` (dev console), `bot_match` (dev mode only)), `game/world` (`World` read model: place, bot manager, watched bots), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (`ChrIns`, `WorldChrMan`, `BotMan`, `ExpeditionMenu`) | New behaviour goes here; the older controllers below move in when a card touches them |
+| Feature list (OFF-1, OFF-4/5) | `features/` (`Feature` trait, `Features`, `Ctx` outbox: matchmaking commands, event flags, bot writes; features `mode`, `bots` (dev console), `clock`, `nights`, `night_match`), `game/world` (`World` read model: place, bot manager, watched bots), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (`ChrIns`, `WorldChrMan`, `BotMan`, `ExpeditionMenu`) | New behaviour goes here; the older controllers below move in when a card touches them. **Still outside the Feature list (R3 open):** `game/deathhold`, `menugate`, `hudfilter`, `maphide`, `runeshare`, `multiplay`, `itemdrop` / `defeatdrop`, `orbclaim`, `hawk/` |
 | Features | `game/team/` (player list, writes, PvP marking, persist, snapshot), `game/combat_state/` (tracker, downed rule), `game/menuflow`, `game/flags`, `mm/ui_msg`, `steam/quietinvite` | Split by job (R3); files under ~550 lines except tests |
-| Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev` except `poswrite` (runtime dev-only) |
+| Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev`: also `bartrace`, `deathtrace`, `rawcall`, `teleport`, `vpad` (`game/mod.rs`). Compiled in the player build too: `puppet`, `memscan`, `poswrite`, `steam/probe` (runtime dev-only) |
 
 ## 3. Current problems, ranked by how much they hurt
 
@@ -56,6 +58,7 @@ context, slows the agent, and makes two cards collide on the same file.
 | P8 | **Layering inversion** (`hwbp` used a dev tracer) | **Fixed (R1):** `dr.rs` |
 | P9 | **Ad-hoc globals** | Open (R6) |
 | P10 | `mm/machine/gate.rs` 2 634 + `mm/machine.rs` 2 186 (after `cargo fmt`) | Low priority: pure and tested |
+| P11 | Files over the 800-line budget without a header reason (2026-11-01): `config.rs` 1756, `features/night_match.rs` 1576, `console/mod.rs` 1332, `steam/queue.rs` 1325, `game/puppet.rs` 1116, `game/mod.rs` 1086, `rules/matchstate.rs` 1007, `steam/probe.rs` 948, `game/poswrite.rs` 939, `game/teleport.rs` 857 | Open; split when a card touches them |
 
 What is **not** a problem: Rust as a language, the thread-per-concern model, panic handling, the test suite, the pure rules core. Keep
 them.
@@ -117,15 +120,13 @@ Every R-card is **behaviour-preserving**: same log lines, same tests green, plus
 | R6 | Thread map + mailbox list in this file; one `core::threads` spawner that names and logs every thread | P9 | S |
 | (later) | Split `mm/machine/gate.rs` by state | P10 | M |
 
-Done in order R0 → R1 → CON-1/2 → R5 → R2-lite → R3-split (2026-10-20; SMOKE-2 PASS 2026-10-21). Next: FS-UI2, then the open halves of R2/R3
-(typed views + `GameMem`, `Feature` + `World`) **together with the first new feature** (separate spawns) so the new structure is
-shaped by a real user, then R4 sections and R6.
+Done in order R0 → R1 → CON-1/2 → R5 → R2-lite → R3-split (2026-10-20; SMOKE-2 PASS 2026-10-21). Open (2026-11-01): R2 rest (`PlayerIns` view, `RegionCache` / `CombatMem` users), R3 rest (`TeamCtl`, `CombatCtl`, hawk and the RW controllers into the Feature list), R4 sections, R6. This is the plan of the decoupling refactor (phase 2 of the docs-and-code clean-up): a new mode must be an assembly of existing modules.
 
 **Rules for refactor cards and every card after them:**
 - A file over ~800 lines needs a reason in its header; new files aim for under 600.
 - Offsets only in `game/layout.rs`, each with game version + MEMORY_MAP section.
 - New behaviour comes as a `Feature`, not as another field on an existing controller.
-- Dev-only code goes under `dev/` behind the feature flag.
+- Dev-only code is `#[cfg(feature = "dev")]`, per module or per item (no `dev/` folder exists).
 
 **Modding rules (every card that touches game memory or hooks):** what native mod communities (SKSE/CommonLib, fromsoftware-rs,
 Reloaded-II) converge on. DllMain, hook logging, saves and offline play are in `CLAUDE.md` and `agents/implementer.md`; not repeated here.

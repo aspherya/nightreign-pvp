@@ -1,7 +1,7 @@
 //! UI-1 A/B/C investigation (dev only, `ui_menu_trace = true`): what the stock expedition menu does when the player changes Number of
 //! Players, presses Commence, and cancels matchmaking, read from the live game with hardware breakpoints (no code is patched).
 //!
-//! Addresses (game 1.03.3, exe 1.3.3.0; found by `.claude/experiments/UI-0/imm_xrefs.py`, UI-1 card):
+//! Addresses (game 1.03.3, exe 1.3.3.0; found by `.claude/archive/experiments/UI-0/imm_xrefs.py`, UI-1 card):
 //! - DR0 `exe+0x9EEBE0`: the Commence check sequence (shows 506040 / 506070 / 506024 / 506023 "offline" dialogs); `rcx` = menu, settings
 //!   object at `[rcx+0xFC8]`, Number of Players byte at settings `+0x49` (`cmp byte [rax+49h], 2`).
 //! - DR1 `exe+0x9FB020`: builds the Number of Players list (text ids 130408/130417/130409); settings at `[rbx+0x3E08]`.

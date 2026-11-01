@@ -2,7 +2,7 @@
 //!
 //! Technique and pattern code: `from-singleton` v3.0.1 (Dasaav-dsv, MIT/Apache-2.0),
 //! `src/find.rs` (`derived_singletons`, `fd4_singletons`, `FD4SingletonPartialResult::finish`) and
-//! `src/lib.rs` (`map`), as summarised in `.claude/re/er-reference.md` section 1.2. We reuse the crate's
+//! `src/lib.rs` (`map`), as summarised in `.claude/archive/er-reference.md` section 1.2. We reuse the crate's
 //! public instruction-pattern iterators (`derived_singleton_pat_iter`, `fd4_singleton_pat_iter`) and
 //! replace only its driver, because the stock driver scans just the first section named `.text`
 //! (see `image.rs`) and NR has two.

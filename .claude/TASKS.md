@@ -39,7 +39,7 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 
 **Board cleaned 2026-10-20:** done, dropped and superseded cards were removed. Their full text is in git:
 `git show 339ee04:.claude/TASKS.md`. Findings from them live in `re/MEMORY_MAP.md`, `MATCHMAKING.md`, `TESTING.md` §3 and
-`research/`.
+`archive/research/`.
 
 ---
 
@@ -49,7 +49,7 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 cancelled inside the game (hardware breakpoint on the bar store `exe+0x66DFC4`): no stand-up, no gauge flicker, the bleed-out penalty
 stays; teammates revive normally (3-instance run, `team_size = 2`). Fallbacks still on: the revive-event block (`exe+0x675159`) and the
 T-040 re-down (data-module HP, 2 s retry). Cards removed; text in git (`git show 3384bca:.claude/TASKS.md`); full story and addresses in
-`tasks/T-041-no-getup-handoff.md` and MEMORY_MAP §6. Follow-ups (no card yet): a player zip with this build for the next FS (real
+`archive/tasks/T-041-no-getup-handoff.md` and MEMORY_MAP §6. Follow-ups (no card yet): a player zip with this build for the next FS (real
 two-PC lag); confirm in the player build that the hooks' two hardware slots (0/1, only while downed) never clash with the quiet invite (0/1, only at
 the Roundtable at match ready).
 
@@ -63,10 +63,8 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
 - **R0–R6 — Refactor plan.** Behaviour-preserving; scope, acceptance and rules in `ARCHITECTURE.md` §6–§7. Owner: SONNET/implementer →
   OPUS review → HUMAN solo smoke run.
 - **CON-1–CON-5 — Developer console.** Scope and acceptance in `CONSOLE.md` §6–§7. Owner: SONNET/implementer → HUMAN solo.
-- **VER-1 — Version gate.** `startup.rs` logs the exe FileVersion but never acts on it. Compare it with the pinned build
-  (`TECHNICAL_NOTES.md` §1); on a mismatch, log a warning and start no hooks, debug registers or memory writes. Reads and logging
-  still run. Rule source: ARCHITECTURE.md §6 "Modding rules". Owner: SONNET/implementer → HUMAN solo (normal launch must be
-  unchanged). Fits after R1.
+- **VER-1 — Version gate** (refined in the 2026-10-24 review). `startup.rs` only logs the exe FileVersion. Build a pure `version::gate(file_version, pinned) -> Open | Closed(reason)` in `startup::run`; `Closed` (also when unreadable): one log warning and **no** `hwbp::set`, VEH, memory write, event flag, `poswrite` or teleport; the Steam worker and read-only `World` may run. `deathhold` and `reviveblock` already byte-check their RVAs; `menuflow`, `quietinvite`, `hawk` and the flag writes do not, so the gate is what protects a patched exe. Acceptance: unit tests, a dev override env `NRPVP_FAKE_EXE_VERSION` and a scenario `version-mismatch` (gate line logged, no `hwbp:` lines). Owner: SONNET/implementer. Rule source: ARCHITECTURE §6 "Modding rules".
+- **HWBP-1 — Claim/release API for the debug registers** (2026-10-24 review; ties into the decoupling refactor). `hwbp::set` silently overwrites a slot's holder, `is_free` then `set` is not atomic, and features mix fixed slots (quiet invite 0/1, Commence 2, labels 3) with "first free" (deathhold, reviveblock, puppets, itemdrop). Build `hwbp::claim(owner, addr) -> Result<Slot, Busy>` (CAS per slot, owner beside the address), `release(Slot)` by the owner only, `holders()` for the log and `status`; a refused claim logs the holder. Write the peak budget table into ARCHITECTURE (player build worst case: menuflow 2 + reviveblock 2 = 4, so a death hold during a downed state has no slot). Acceptance: unit tests (double claim, release by a non-owner, budget exhausted), `defeat-rival` and `match-loss` PASS, `hwbp:` log shows owners. Owner: OPUS design, SONNET/implementer.
 
 ## Test tooling
 
@@ -76,10 +74,10 @@ work). Open ideas: `puppet_revive`, puppets that attack, scenarios that wait on 
 Every card whose acceptance can be a scenario names it (`scenarios/<name>.toml`) and is done when `scripts\regress.ps1 <name>` is PASS.
 
 ### NRO-MI — `nro` launches 2-3 real instances (Nucleus replacement)
-Owner: OPUS (plan) → SONNET/implementer | Status: todo, waits for Leonardo's go (spike S0 first) | Depends on: RW-9 merged
+Owner: OPUS (plan) → SONNET/implementer | Status: S0-S3 done; `mi-join` PASS 3/3 (2026-10-27); open: `mi-duo-sc` (team_size 2 teammate run), never written | Depends on: none
 Goal: Claude drives and sees every player's view (host/client, Duo/Trio) with no human and no Nucleus.
 Context: full design, spikes S0-S4, risks: [orchestrator/MULTI-INSTANCE.md](orchestrator/MULTI-INSTANCE.md).
-Acceptance: `scenarios/mi-join.toml` then `mi-duo-sc.toml` PASS (both consoles `players` = 2) + a `testing-log/` entry.
+Acceptance: `scenarios/mi-join.toml` (PASS) then `mi-duo-sc.toml` PASS (both consoles `players` = 2) + a `testing-log/` entry.
 Out of scope: real Steam lobbies, real lag, shipping an emulator.
 
 ## Matchmaking and in-game UI (M8)
@@ -90,11 +88,11 @@ text addresses they found are in `re/MEMORY_MAP.md` §13; the flow is in `MATCHM
 live count inside the searching box (UI-1 C3), and messages that never show because the next state arrives first (TESTING §3, FS-UI2 entry).
 
 ### MM-3g — No host click: trigger Invite Members from the mod
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
 UI-0 settled that **no talk command opens Matchmaking Settings or Invite Members** (all NR ESDs + esdtool's command list), so the data route
 is closed. The action is the game's menu code: S9 §5d has the chain (menu functor calls `+0x80D743` → `+0x80E32A` → `+0x213B4F`, session
 code `+0x258568B` / `+0x257F5DA`, the latter obfuscated with no `.pdata`).
-1. Spike (Opus, read-only): with the MM-3c trace and `experiments/UI-0/disfunc.py`, find the highest frame that is "Invite Members was
+1. Spike (Opus, read-only): with the MM-3c trace and `archive/experiments/UI-0/disfunc.py`, find the highest frame that is "Invite Members was
    chosen" and has `.pdata` (`+0x80D743` / `+0x80E32A` are candidates) and what its arguments are (menu object, item id). A hardware-breakpoint
    trace on it while Leonardo presses Invite Members gives the live registers (reuse `ui_text_trace`'s VEH pattern).
 2. If a callable entry exists: the host's mod calls it on the main thread at MATCH READY (dev flag first), with MM-3f's quiet invite armed.
@@ -111,7 +109,7 @@ invisible and chosen by the matchmaker; host leaving = match ends cleanly for no
 share one RE spike (both call game menu code from the mod); MM-8 and MM-9 are independent; S10 runs alongside as research.
 
 ### MM-7 — Auto-start: the expedition starts by itself once everyone is here
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `tasks/MM-3g-MM-7-zero-click-autostart.md`) | Settles: S9 U6
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Settles: S9 U6
 At `ALL PRESENT` (and every player loaded, `players` = roster), the host's mod starts the departure with no Commence press. Route A:
 call the Commence checks `exe+0x9EEBE0` (ordinary code, `re/MEMORY_MAP.md` §13) with a valid menu object, so find what builds that
 object without the menu open; route B: an EMEVD instruction that starts a departure (UNKNOWN whether one exists). Also check whether a
@@ -132,20 +130,16 @@ FS step: in an expedition the host quits (title screen, then Alt-F4 in a second 
 "The host left - match over" and return everyone to idle. Feeds S10 (host migration).
 
 ### S10 — Study Seamless Co-op: sessions, the 6-player cap, host loss (research, read-only)
-Owner: OPUS + SONNET/researcher | Status: done; merged into `main` 2026-10-22 (`research/S10-seamless-coop-internals.md`), OPUS review pending | Rule: hard rule 3 (study for interop only; never patch, copy or redistribute `nrsc.dll`)
+Owner: OPUS + SONNET/researcher | Status: done; merged into `main` 2026-10-22 (`archive/research/S10-seamless-coop-internals.md`); the review was never scheduled, so MM-3g / MM-7 no longer wait on it | Rule: hard rule 3 (study for interop only; never patch, copy or redistribute `nrsc.dll`)
 Questions: (1) how SC creates and joins a session (its Steam lobby wrapper, `MEMORY_MAP` §12, and what it hooks in the game's session
 code); (2) where the 6-player cap lives; (3) what happens on host loss and whether the game or SC has any host-migration path; (4) a
 sized estimate of our own session layer if SC ever blocks us. Static analysis of `nrsc.dll` exports/imports/strings and the game hooks it
-installs, plus runtime traces with our existing hardware-breakpoint tooling. Output: `research/S10-seamless-coop-internals.md` with
+installs, plus runtime traces with our existing hardware-breakpoint tooling. Output: `archive/research/S10-seamless-coop-internals.md` with
 evidence tags and a go/no-go on host migration.
 
 ## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
 
-Order: NET-1 is done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`; NET-2 is done too: facts, auto-roster, `mi-net-verdict`; only RW-5's boss id is open); NET-2 unblocks RW-5 and stands on its own; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
-
-### NET-2 — Facts on the data channel, roster from the SC lobby (DONE 2026-10-30); open: the cross-game boss id
-Done: `net::bus` (`publish` / `take`), exactly-once facts with ack and resend, roster from the SC lobby, `mi-net-verdict` PASS, see NETWORKING §4 and the testing-log entry. RW-5 can start on `bus::topic::BOSS_VERDICT`.
-Remaining (belongs to RW-5, needs a boss in a live session): find a boss identity that is **equal on both PCs** (map entity id, NpcParam id + map, or the boss-map flags `XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e) with `peek`/`memscan` on a spawned enemy; record it in MEMORY_MAP. The channel takes the key as an opaque `u32`; the machine that saw the kill is the only one that publishes it.
+Order: NET-1 and NET-2 are done (2026-10-30; scenarios `mi-net-ping`, `mi-net-join`, `mi-net-verdict`; facts on `net::bus`, NETWORKING §4); users today: RW-3 `ITEM_DROP` (topic 5, on) and the RW-5 skeleton (`ORB_CLAIM`, topic 2, off). NET-5 round 1 is done (NETWORKING §2b) and continues as NET-7; NET-3..5 are read-only studies that feed gate G1 (NET-6: replace SC's session layer, yes or no). Hard rule 3 holds for all of them (observe `nrsc.dll` at run time only).
 
 ### NET-3 — Study: the game's own P2P traffic (read-only)
 Owner: SONNET/researcher + OPUS review | Status: todo | Depends on: none (better after NET-1)
@@ -160,14 +154,6 @@ Goal: map the singleton at `exe+0x3C21EC8` (state, `players` vector, steam id of
 Steps: dump the object in a 2-instance session (`memscan`/`peek`), match each instance's Steam id (user getter), cross-check with ORCH-R2 (`[[exe+0x3C078D0]+0x10]+idx*0x8A0`) and the ER layout; answer whether `0x6001` is the engine's or SC's numbering.
 Acceptance: table in `re/MEMORY_MAP.md` with a `[VERIFIED]` tag per offset; console `session` dump command; scenario `mi-session-dump` logs both players with their Steam ids.
 Out of scope: writes.
-
-### NET-5 — Study: the game without SC (where does the session stack stop?)
-Owner: SONNET/researcher + OPUS | Status: **first round done 2026-10-30** (NETWORKING §2b); continues as NET-7 | Depends on: NET-4 helpful
-Goal: list the blockers for S1 (NETWORKING §5).
-Steps: dev me3 profile without `nrsc.dll` (offline or emulator only, never real Steam online), mod present; boot to the Roundtable; try the game's Invite Members/join between two instances; log `CSSessionManager` state and the first failing job (`JoinSessionJob`, server step, EAC peer path `EOS_AntiCheatClient_*`); run S10 runbook R1 (hook census) for the sites SC covers.
-Acceptance: written list of blockers with exe addresses (or "two instances in one lobby without SC") in NETWORKING §8; `mi-nosc-boot` scenario: both instances reach the title and the log shows the session classes; UNKNOWNs 5-6 answered.
-Safety: nro preflight must refuse a no-SC launch on real Steam (guard rebuilt for this profile).
-Result (2026-10-30): the game boots and loads the Roundtable without SC in two instances (`NRO_NO_SC=1`, `scenarios/mi-nosc-join.toml`, `nro` profile `text_no_sc`, savefile redirect); Invite Members is dead without SC because the sign-in state machine stays at "offline" (state 9, flag 0); SC runs sit at state 2, flag 1; `CSSessionManager+0x170` is the player limit (3 vs 6). Details and evidence: NETWORKING §2b. The scenario itself FAILS by design at Invite Members (the roadblock). New dev tool: console `rawcall <rva hex> [arg]`.
 
 ### NET-7 — Sign-in gate: make the game "signed in" without Bandai's server (the decider for replacing SC)
 Owner: OPUS + SONNET/researcher | Status: **on hold: needs the ban-risk decision (NETWORKING §7a)** | Depends on: NET-5 round 1 | Budget: 3 to 5 working days, then stop and decide (NET-6)
@@ -201,29 +187,16 @@ Royale or Offline?" when the player first walks to the table and sets `mode` thr
 
 **Bots are not a game feature** (Leonardo, 2026-10-24): OFF-3 (research, done), OFF-6, OFF-7 and OFF-8 are cancelled; the automatic
 offline rival bots (OFF-5) were removed from the code. The game's bot manager stays as the engine of the orchestrator's puppet players
-(`game/puppet.rs`, console `bots` / `bots_clear` / `puppet_*`); `research/OFF-3-bots.md` and MEMORY_MAP §15 / §18 keep the facts.
+(`game/puppet.rs`, console `bots` / `bots_clear` / `puppet_*`); `archive/research/OFF-3-bots.md` and MEMORY_MAP §15 / §18 keep the facts.
 
-## Match flow: nights with no boss (M5; research `research/M5-no-boss-nights.md`, `research/M5-8-death.md`)
+## Match flow: nights with no boss (M5; research `archive/research/M5-no-boss-nights.md`, `archive/research/M5-8-death.md`)
 
-**Built earlier (the rounds were replaced 2026-10-24, see RW below; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17):** M5-1..M5-4 (no boss,
-no minions, clock console, night freeze facts), **M5-5 / M5-6 / M6-1 nights are elimination rounds** (`features/night_match.rs`: one team
-left = night decided, only the winner healed, losers held down until the morning, night 2 win/loss endings; solo, Nucleus and
-orchestrator puppets PASS incl. night 2 by count, 2026-10-24), **M5-8** research (SpEffect 102130 = die at once; the comeback can be
-held and released), **M5-9 Solo real death** (`features/night_match.rs`, `game/deathhold.rs`: die-at-once at night, held until the
-morning, released through the gate, moved to a random day-1 place after the Day-2 clock; one-PC PASS 2026-10-24).
-Rule decisions (M5-D): `DECISIONS.md`.
+**Built earlier, since replaced by the RW rules (2026-10-24, below):** M5-1..M5-4 (no boss, no minions, clock console; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17), the elimination rounds M5-5 / M5-6 / M6-1, M5-8 research and M5-9 Solo real death. What stays: `features/night_match.rs` (match state), `game/deathhold.rs` (keeps a defeated player dead; SpEffect 102130 = die at once, the comeback can be held and released). Rule decisions: `DECISIONS.md`. A Solo die-at-once rule is open again: see "Solo night death" below.
 
 ### M5-9 / M5-5 — superseded
 The elimination rounds (night = a round, losers held until the morning, die-at-once in Solo nights) were replaced on 2026-10-24 by the RW
 rules (DECISIONS "After the first real match"; section "Rework after the first real match" below). The hold (`game/deathhold.rs`) stays: it
 keeps a defeated player dead. What FS-M59 left open (the hold in a real session, the other screen) is in the FS-RW1 runbook (TESTING §6).
-
-### M5-7 — Spectate a player still fighting (camera)
-Owner: OPUS (RE) | Status: todo (a defeated player (RW-1) is held dead and gets the defeat screen after `defeat_exit_secs`; with this camera they could watch instead)
-A defeated player watches a living player until the match ends or they choose to leave. Must let a dead
-player open the menu at least to quit (vanilla blocks Esc while dead; Leonardo 2026-10-23). Needs the engine's follow camera: find the
-camera's target (the local PlayerIns) and whether pointing it at another PlayerIns copy is safe. Static RE first (camera classes in
-RTTI / FD4 names), then a solo dev command that swaps the target to a bot (offline mode) as the proof.
 
 ## Hawk crossing (M7, replaces separate spawns; design in PROJECT_PLAN.md §13)
 
@@ -231,7 +204,7 @@ T-028 (teleport) is done: solo run 4 and the Nucleus two-screen check passed on 
 branch `t-028-snapback`. The F3 team-spawn rule built there is parked (`team_spawns = false`).
 
 HAWK-0 (questions and desk research) is done (2026-10-21): answers and design in PROJECT_PLAN §13, engine facts in TECHNICAL_NOTES §4b
-(hawk = player script state) and §4c (routes in `m60_00_00_99.msb`), tools in `experiments/HAWK-0/`.
+(hawk = player script state) and §4c (routes in `m60_00_00_99.msb`), tools in `archive/experiments/HAWK-0/`.
 
 HAWK-A2 / HAWK-3 are done (2026-10-22, TESTING §3 HAWK-3 run 1): the env switch is found and swapped safely, `r8` = PlayerIns,
 `hawk_drop` and `hawk_tree` work in the game (Leonardo). Design v1 that follows from it: PROJECT_PLAN §13 "v1 design". HAWK-1 (ride
@@ -241,22 +214,13 @@ animation cut; Leonardo: good enough). The line is built by `scripts\build-gamed
 
 ### HAWK-2 — Hawk crossing v1 (player feature)
 Owner: OPUS → SONNET/implementer → HUMAN | Status: **solo smoke PASS 2026-10-22** (TESTING §3; Leonardo: "how I wanted it").
-Merged (PR #2). Open: merge (Leonardo), the Spectral Hawk Tree check (step 4 below, not
-done yet), and the FS with two players; then remove this card.
+Merged (PR #2). Open: the Spectral Hawk Tree check (a tree ride must behave as in vanilla), and the FS with two players; then remove this card.
 Built: `game/hawk/` in both builds (`mod.rs` hook + swap + ride phases; `dev.rs` console and traces, dev build only). Settings
 `[hawk]` (`enabled`, `dive_hold`, `dive_secs`, `dive_boost`, `start_cut`; defaults = HAWK-4's accepted values, on) read at
 startup; the `hawk_*` commands are session overrides. Only LOCAL: once the main loop knows LOCAL's PlayerIns the hook acts on that
 character only (before that, the HAWK-3 rider rule). A native tree ride (Spectral Hawk Tree) ends the lock; the pass-through swap
 stays for the session (inert outside start rides). Route file: built by default (`-VanillaRoutes` to skip), required by
-`package-release.ps1` and checked by the launcher. **Not a `Feature` yet:** the trait exists on `main` (OFF-1)
-(`claude/offline-mode-ccabe0`); moving it there = `configure` → constructor, `tick` → `Feature::tick` with `local` from the `World`.
-Solo smoke (Leonardo, player terms): from the worktree folder run `scripts\launch.ps1` (its `dist\nrpvp.toml` is player mode with
-`matchmaking = false`, so there is no console and Commence starts a normal solo expedition). (1) Commence Solo; the hawk takes
-you without the grab animation and flies the long diagonal line; moving the stick briefly does nothing. (2) Hold the stick in any
-direction: the hawk leaves the line, goes faster and down; steer to a spot; after about 7 s it drops you. (3) Second run: hold
-action (or L3) during the cruise: you drop at once. (4) In the expedition, ride a Spectral Hawk Tree if one is near: it must
-behave as in vanilla (steerable, no lock). PASS = all of it with no nrcon command; `dist\nrpvp.log` shows `HAWK-2 hawk crossing
-ON`, `HAWK-3 swap ON`, `HAWK-4 phase none -> cruise` (and `-> dive`).
+`package-release.ps1` and checked by the launcher. **Not a `Feature` yet** (ARCHITECTURE R3 open); moving it there = `configure` → constructor, `tick` → `Feature::tick` with `local` from the `World`.
 What: PROJECT_PLAN §13 v1 as a player feature (cruise lock + dive + start cut with the accepted defaults; the console
 commands stay dev-only): `hawk.rs` leaves the dev-only build, `[hawk]` settings in `nrpvp.toml`, on by default
 in Battle Royale and offline mode, only LOCAL changed, swap removed when the expedition ends. The route file goes into the player
@@ -269,21 +233,41 @@ HUMAN: one solo smoke; then the next FS: both players cruise, dive and drop wher
 Test routes: **1 PC** = automated scenario (`nro`, one game), **2 inst** = two real emulated-Steam instances on one PC (`nro`, `mi-*` scenarios,
 [orchestrator/MULTI-INSTANCE.md](orchestrator/MULTI-INSTANCE.md)), **FS** = Friend Session on two PCs (TESTING §6).
 
-| # | Item | Card | State (2026-10-27) | Still to test |
+| # | Item | Card | State (2026-11-01) | Still to test |
 |---|---|---|---|---|
 | F1 | Respawn far from all players | RW-7 | Built, unit-tested | Two instances: where each one starts and respawns after a mob death (2 inst), then FS |
-| F2 | Runes shared only inside the own team (solo: himself) | RW-8 | **Not built** (engine split code UNKNOWN) | Needs the rune-count offset and the share path; test with 2 inst (a second player kills, watch both rune counts) |
+| F2 | Runes shared only inside the own team (solo: himself) | RW-8 | **Built, `mi-rw8-runes` PASS 3/3 (2026-10-28, PR #25)** | Duo / Trio teammate case, a client-side kill, FS photo of both rune counters |
 | F3 | No remote location (map, compass), name tags only on the target | RW-9 | **Built and seen with 2 inst**: map, compass, party bar, name tag, edge arrow, placed map pins and their 3D marker hidden for rivals (PRs #21, #22) | Pin toast "Ally is showing location" still leaks the area ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)); lock-on name tag; Duo/Trio teammates; FS photo |
-| F4 | Enemy difficulty by team size (Solo / Duo / Trio values) | RW-10 | Table found and rewritten on one PC (2 copies, 168 rows); effect not measured | Measure enemy HP / damage in Solo vs 2-player sessions (2 inst, console `peek`), then FS |
+| F4 | Enemy difficulty by team size (Solo / Duo / Trio values) | RW-10 | **Accepted: Leonardo found enemy strength balanced (2026-11-01).** Table rewritten on one PC (2 copies, 168 rows) | none beyond FS |
 | D1 | Defeat / loss when killed by a player or the tide, then spectate or quit to the Roundtable | RW-1, M5-7 | **Done on 1 PC** (`defeat-rival`, `match-loss`, `spectate`, `esc-defeated`); spectate seen in Nucleus | 2 inst: the other screen (held body, defeat screen, spectate), real hits; spectator camera smoothness |
-| D2 | Defeated players drop items (red phantom) and runes on the ground | RW-3 | **Weapons built** (`mi-rw3-items` PASS 2026-11-01); talismans, consumables, runes left | 2 inst |
+| D2 | Defeated players drop items (red phantom) on the ground; runes are discarded (DECISIONS) | RW-3 | **Weapons, talismans and picked-up consumables built** (`mi-rw3-items` PASS 2026-11-01; inventory part verified by hand, weapon level kept); runes discarded | 2 inst |
 | D3 | Death by mob / boss respawns normally with items | RW-2 | **Done on 1 PC** (`defeat-mob`) | none beyond FS |
 | D4 | Boss dormant powers / weapons only to the last hitter's team | RW-5 | **Parked 2026-10-31, vanilla (see RW-5)** (`disableMultiDropShare` param hint) | RE first, then 2 inst with a boss |
 | D5 | Day 1 / night 1 free of the tide, tide starts on Day 2 | RW-4 | **Done on 1 PC** (`day1-free`) | FS (real clock over the network) |
 | D6 | Match ends when one team is left, even on Day 1 | RW-1 | **Done on 1 PC** (`match-win`, `match-win-end`, `match-loss`) | 2 inst with real defeats; FS |
 | D7 | Private match by password, outside matchmaking | RW-6 | Unit-tested only (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
 
-Next in this list: **F2 / RW-8 (runes)**, then D2 / RW-3 and D4 / RW-5 (both need RE), then the 2-instance checks of F1, F4, D1, D7.
+Next, in order (Leonardo, 2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena comes after the first release.
+
+## Not built yet (Leonardo, 2026-11-01; rules in `re/PROJECT_SCOPE.md`)
+
+### GRACE-1 — Sites of Grace blocked during PvP combat (next)
+Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
+Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `night_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
+
+### DUOTRIO-1 — First Duo and Trio tests (next)
+Owner: HUMAN + OPUS | Status: todo | Depends on: none
+Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.
+
+### SOLO-REVIVE — Solo night death with a revive item (idea, test first)
+Owner: OPUS | Status: idea, no schedule (DECISIONS 2026-11-01)
+PROJECT_SCOPE §1 wants a Solo kill at night to be a real death at once unless the player carries a revive item (Wending Grace, goods `0x400002BC`) that then works as in vanilla. First step is only a test: with and without the item, does the current build already behave so? Only then a card for code.
+
+### TIMELIMIT-1 — Match time limit (idea)
+Owner: OPUS | Status: idea, no schedule. PROJECT_SCOPE §1: "if a match passes the maximum vanilla time everyone loses". Not built.
+
+### MODE-02 — Arena (later)
+Not for the first release (PROJECT_SCOPE). The refactor goal (phase 2 of the clean-up) is code decoupled enough that a new mode is an assembly of existing modules.
 
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)
 
@@ -293,11 +277,11 @@ testing-log): **RW-1** defeat for good + early win, **RW-2** a non-player death 
 enemy scaling. Their two-PC checks are in the FS-RW1 runbook (TESTING §6); the cards come off when FS-RW1 passes. Open, each waiting for
 what a second real client shows (research tools: console `memscan`, `peek`; findings so far below):
 
-- **RW-3 — Defeat drops.** **Slice 1 built, `mi-rw3-items` PASS on one PC (2026-11-01):** a rival-caused defeat drops the victim's equipped **weapons** at its spot; the host makes the drop with the game's own function on the game thread (`game/itemdrop.rs`, `game/defeatdrop.rs`, bus topic 5), the game shows it to every player and any can pick it. **Slice 2 (2026-11-01):** talismans and picked-up consumables are read from the inventory list and dropped with the weapons (not the flask); verified by hand on the host as victim, not in a scenario (key presses into the second window are unreliable). **Left:** a scenario for the inventory part, weapon art / Grief effect (the weapon LEVEL is kept: it is part of the id, verified 2026-11-01), item lifetime, the victim's inventory emptying, the client-initiated drop path, runes on top, the two-PC check (FS-RW1). The red phantom figure is optional polish. Research: `research/RW3-handover.md`, `RW3-red-phantom-*.md`, MEMORY_MAP §24.
+- **RW-3 — Defeat drops.** **Slice 1 built, `mi-rw3-items` PASS on one PC (2026-11-01):** a rival-caused defeat drops the victim's equipped **weapons** at its spot; the host makes the drop with the game's own function on the game thread (`game/itemdrop.rs`, `game/defeatdrop.rs`, bus topic 5), the game shows it to every player and any can pick it. **Slice 2 (2026-11-01):** talismans and picked-up consumables are read from the inventory list and dropped with the weapons (not the flask); verified by hand on the host as victim, not in a scenario (key presses into the second window are unreliable). **Left:** a scenario for the inventory part, weapon art / Grief effect (the weapon LEVEL is kept: it is part of the id, verified 2026-11-01), item lifetime, the victim's inventory emptying, the client-initiated drop path, the two-PC check (FS-RW1). Runes are discarded, not dropped (DECISIONS 2026-11-01). The red phantom figure is optional polish. Research: `research/RW3-handover.md`, `RW3-red-phantom-*.md`, MEMORY_MAP §24.
 - **RW-5 — Boss orb: first to loot — PARKED, vanilla ships** (Leonardo, 2026-10-31). Built and seen on two instances but **off by default**: `game/orbclaim.rs`, console `orb_auto 1` + `orb_list / orb_off / orb_on / orb_claim / orb_go / boss_orb`, topic `ORB_CLAIM`, scenario `mi-rw5-orb` (switches it on). **Why parked:** a client's pick needs the host's copy of the orb, so nulling the host's copy blocks a client claimer too (MEMORY_MAP §22); the fix is a hook at the game's interaction call site (static RE; a hardware read watch on the slot crashes the game, TRAPS). Also open: second kill overwrites slot +0x58 (an unpicked orb is lost, the rescue-by-moving experiment failed), orb lifetime, nulled slot at expiry, two real PCs. **If resumed:** time-box the call-site hook spike; if no clean block point, stay vanilla.
-- **RW-8 — Runes only inside the own team.** **Built and accepted on one PC** (branch `rw8-runes`, 2026-10-28): every game credits its own player for every death it processes (`exe+0x3DE710` → `exe+0x668380`, no killer check, MEMORY_MAP §21); the killer's game records the attacker (`ChrIns+0x1A0`), the other game reads `-1` (it applied no hit). `game/runeshare.rs` (both builds) passes amount 0 when the last attacker is a rival, or — with no teammate (Solo) — when none is recorded. Console `runeshare`, `runes_mark`, test aids `mobs`, `mob_go`, `mob_kill`. **Acceptance:** `scenarios/mi-rw8-runes.toml` **PASS 3/3** (runs `1793219963/-969`, `1793220173/-180`, `1793220436/-441`, 2026-10-28): player 1 `+1040` / `0 blocked`; player 2 `+0` / `1 blocked = 100 rune(s)` and `Unknown -> BLOCKED`; control `runeshare 0` pays player 2 (`+1040` / `+1560`). **Open:** Duo / Trio teammates (an unrecorded killer stays vanilla there — it may be a teammate's; needs the killer from the owner's sync, UNKNOWN); the message credit `exe+0x51DC0B` (enemy not loaded here) is counted, not filtered; FS-RW1 step 7(a) on two real PCs (photos of both rune counters). Remove the card when the FS check passes. **Review 2026-10-30 (code only, 494 unit tests pass):** hooks are checked before patching and fail safe; **untested risk:** in Solo a *client* who kills an enemy owned by the host sees no attacker recorded (`Unknown`) and gets no runes — the scenario only has the owner kill. Check with a client-side real kill (or find where the host's verdict reaches the client) before FS-RW1.
-- **RW-9 — No remote map / compass position, nametags only on the target.** **Built for Solo, Duo and Trio, seen with two real instances on one PC (2026-10-27, branch `test/rw9-multi`):** `game/hudfilter.rs` hooks three HUD lookups (MEMORY_MAP §20 "Rival filter") so a rival is on no map pin, compass mark, party bar or name tag (incl. the edge arrow); LOCAL's lock-on target keeps its name tag; teammates are not rivals and stay. `maphide` (Solo, whole list) is only the fallback. Console `rivalhud`, test aid `tp_player`. Life bars from lock-on / hits stay vanilla (DECISIONS). Seen: with the filter on, no party bar / name tag / edge arrow on both screens (run `1793065578`, `h1_hawk`, `h2_hawk`); compass and map pin gone with `maphide` (run `1793064664`). **Acceptance:** `scenarios/mi-rw9-rivals.toml` PASS twice (not run yet: Steam was running), incl. the lock-on step (`PlayerIns+0x768` not yet read live). **Map markers (2026-10-27, branch `rw9-markers`):** a pin a rival places arrived and showed on the map, compass and as a 3D marker; two more hooks (MEMORY_MAP §20 "Map markers") now keep a rival's pins off all three (own and teammates' stay), `scenarios/mi-rw9-markers.toml` PASS (testing-log 2026-10-27). Still shown: the "Ally is showing location" toast with a landmark icon (producer UNKNOWN). **Left after that:** the toast, Duo / Trio teammate case (needs `team_size = 2` over the queue or a 4-instance PC), FS photo on two PCs. Remove the card when the scenario passes and a teammate run shows the teammate still marked. **Open:** the toast "Ally is showing location" still reveals the area to a rival; notes and plan (and the killfeed idea built on the same mechanism): [re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md).
-- **Spectating (M5-7)**: built in v1 without camera RE (see STATUS): the held dead body, which other players do not see (Nucleus 2026-10-23), is moved next to a living player and the follow camera goes with it. F10 leaves. Not seen on two PCs.
+- **RW-8 — Runes only inside the own team.** **Built and accepted on one PC** (PR #25, 2026-10-28): every game credits its own player for every death it processes (`exe+0x3DE710` → `exe+0x668380`, no killer check, MEMORY_MAP §21); the killer's game records the attacker (`ChrIns+0x1A0`), the other game reads `-1` (it applied no hit). `game/runeshare.rs` (both builds) passes amount 0 when the last attacker is a rival, or — with no teammate (Solo) — when none is recorded. Console `runeshare`, `runes_mark`, test aids `mobs`, `mob_go`, `mob_kill`. **Acceptance:** `scenarios/mi-rw8-runes.toml` **PASS 3/3** (runs `1793219963/-969`, `1793220173/-180`, `1793220436/-441`, 2026-10-28): player 1 `+1040` / `0 blocked`; player 2 `+0` / `1 blocked = 100 rune(s)` and `Unknown -> BLOCKED`; control `runeshare 0` pays player 2 (`+1040` / `+1560`). **Open:** Duo / Trio teammates (an unrecorded killer stays vanilla there — it may be a teammate's; needs the killer from the owner's sync, UNKNOWN); the message credit `exe+0x51DC0B` (enemy not loaded here) is counted, not filtered; FS-RW1 step 7(a) on two real PCs (photos of both rune counters). Remove the card when the FS check passes. **Review 2026-10-30 (code only, 494 unit tests pass):** hooks are checked before patching and fail safe; **untested risk:** in Solo a *client* who kills an enemy owned by the host sees no attacker recorded (`Unknown`) and gets no runes — the scenario only has the owner kill. Check with a client-side real kill (or find where the host's verdict reaches the client) before FS-RW1.
+- **RW-9 — No remote map / compass position, nametags only on the target.** **Built for every team size (the Duo / Trio teammate case is still open), seen with two real instances on one PC (2026-10-27, branch `test/rw9-multi`):** `game/hudfilter.rs` hooks three HUD lookups (MEMORY_MAP §20 "Rival filter") so a rival is on no map pin, compass mark, party bar or name tag (incl. the edge arrow); LOCAL's lock-on target keeps its name tag; teammates are not rivals and stay. `maphide` (Solo, whole list) is only the fallback. Console `rivalhud`, test aid `tp_player`. Life bars from lock-on / hits stay vanilla (DECISIONS). Seen: with the filter on, no party bar / name tag / edge arrow on both screens (run `1793065578`, `h1_hawk`, `h2_hawk`); compass and map pin gone with `maphide` (run `1793064664`). **Acceptance:** `scenarios/mi-rw9-rivals.toml` PASS 2/2 (2026-10-27), incl. the lock-on step (`PlayerIns+0x768` not yet read live). **Map markers (2026-10-27, branch `rw9-markers`):** a pin a rival places arrived and showed on the map, compass and as a 3D marker; two more hooks (MEMORY_MAP §20 "Map markers") now keep a rival's pins off all three (own and teammates' stay), `scenarios/mi-rw9-markers.toml` PASS (testing-log 2026-10-27). Still shown: the "Ally is showing location" toast with a landmark icon (producer UNKNOWN). **Left after that:** the toast, Duo / Trio teammate case (needs `team_size = 2` over the queue or a 4-instance PC), FS photo on two PCs. Remove the card when a teammate run shows the teammate still marked. **Open:** the toast "Ally is showing location" still reveals the area to a rival; notes and plan (and the killfeed idea built on the same mechanism): [re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md).
+- **Spectating (M5-7) is built in v1** (STATUS; DECISIONS 2026-10-25): the held body is moved next to a living player. Camera smoothness and the two-PC view are the open items below.
 - **RW-6 follow-up:** the game's own Matchmaking Settings has a "Multiplayer Password" field; the text lives in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (input history, found with `memscan`) and in a second structure; which one the menu reads at Commence is UNKNOWN. Reading it would replace `private_code` in the toml (no config editing for players).
 - **Spectator camera smoothness (next):** the moved body makes the camera jump about 20 times a second. Idea: find what writes `ChrExFollowCam+0xA0..` (the followed position, newest entry; console `trace_write <addr>`) and feed it another player's position or target directly, leaving the body where it died. Fallback: keep the moved body (committed, 2026-10-25).
 - **ESC / pad while defeated (works on one PC, 2026-10-25; scenario `esc-defeated` PASS, pad confirmed by Leonardo).** `game/menugate.rs`: Esc or pad Start opens the game's menu for a defeated, held player (sets the open request, MEMORY_MAP §19); pad d-pad right / left switch the watched player (mouse buttons too; all off while a menu is open). The pad is read from the game's own input bits (XInput is blind inside the game). Quit through the menu while dead works (one PC, Leonardo). Left: a Nucleus / FS confirmation, other pad layouts (bits measured on a Steam Input Xbox pad). Remove this card after that.

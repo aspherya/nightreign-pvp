@@ -70,7 +70,7 @@ use mem::va_rva;
 use rtti::Rtti;
 use singletons::{Found, Scan};
 
-/// DLRF name of the singleton we are waiting for. [SOURCE: er-reference.md section 1.3 "Name caveat";
+/// DLRF name of the singleton we are waiting for. [SOURCE: .claude/archive/er-reference.md section 1.3 "Name caveat";
 /// fsrs cs/world_chr_man.rs#L15]. Whether NR uses the same name is exactly what this task finds out.
 const TARGET: &str = "WorldChrMan";
 

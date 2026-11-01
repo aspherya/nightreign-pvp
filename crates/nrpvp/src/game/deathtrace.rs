@@ -1,5 +1,5 @@
 //! M5-8 (dev only): what the game does after a player dies. Console `death_trace [0|1]`, `death_hold [0|1]`, `speffects` (CONSOLE §0).
-//! Game 1.03.3 / exe 1.3.3.0; the reading is in `research/M5-8-death.md`.
+//! Game 1.03.3 / exe 1.3.3.0; the reading is in `archive/research/M5-8-death.md`.
 //!
 //! M5-9: the hold and the release of the comeback (the start step `exe+0x5C4810` and the gate call) moved to
 //! [`super::deathhold`], which runs in both builds; `death_hold` here only drives that module by hand. What stays here is the
@@ -42,7 +42,7 @@ const STACK_QWORDS: usize = 8;
 
 /// Byte with bit 0x40 = "respawn begun" (`exe+0x3CD780`, set by `exe+0x66E4A0`): logged as evidence (MEMORY_MAP §17).
 const PLAYER_DEATH_BITS: usize = 0x1F4;
-/// SpEffects the death trace names when LOCAL holds them (research/M5-8-death.md §R1).
+/// SpEffects the death trace names when LOCAL holds them (archive/research/M5-8-death.md §R1).
 const WATCHED: [i32; 12] = [
     102120, 102121, 102130, 102140, 102145, 102455, 540155, 540157, 6999100, 6999500, 8970061,
     705001,

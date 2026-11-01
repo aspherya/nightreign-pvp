@@ -1,5 +1,5 @@
 # Runs every scenarios\*.toml (or the names given) through nro against dist\ and prints one verdict line each.
-# Needs `nro desk` running in a normal terminal and Steam running. Usage: scripts\regress.ps1 [night1-count night2-win ...]
+# Needs `nro desk` running in a normal terminal and Steam running. Usage: scripts\regress.ps1 [day1-free match-win ...]
 # Multi-instance scenarios (mi-*: emulated Steam, Steam closed) only run when named.
 param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Names)
 $repo = Split-Path $PSScriptRoot -Parent

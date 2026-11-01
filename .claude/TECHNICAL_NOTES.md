@@ -11,13 +11,13 @@ documentation or code, not yet checked here · `[HYPOTHESIS]` unproven, needs an
 |---|---|---|
 | Game | `nightreign.exe` FileVersion **1.3.3.0**, Steam buildid **22818764**, SHA256 prefix `9545E8732919BB6A` | [VERIFIED: PE version info, appmanifest_2622380.acf, Get-FileHash] |
 | regulation.bin | SHA256 prefix `876A3CA279A4561D`, dated 2026-04-01 | [VERIFIED] |
-| Seamless Co-op | `nrsc.dll` SHA256 prefix `243EEC929A97B71E`, installed 2026-10-09. No PE version resource; it is **SC 1.13** (Nexus upload 2026-07-02, "compatible with game 1.03.3"; sizes match the package and the DLL contains "1.13") | [VERIFIED: hash/size] [SOURCE: Nexus NR SC mod 3; T-003] |
+| Seamless Co-op | `nrsc.dll` SHA256 prefix `243EEC929A97B71E`, installed 2026-10-09. No PE version resource; it is **SC v1.1.3** (the Nexus label reads "1.13"; upload 2026-07-02, "compatible with game 1.03.3"; sizes match the package and the DLL contains "1.13") | [VERIFIED: hash/size] [SOURCE: Nexus NR SC mod 3; T-003] |
 | SC launcher | `nrsc_launcher.exe` SHA256 prefix `2726DEA099A54F00` | [VERIFIED] |
 | me3 | 0.11.0 (2026-02-28) at `Z:\Tools\me3` | [VERIFIED: `me3 --version`] |
 | Toolchains present | Rust stable 1.99.0 (rustup, MSVC), Python 3.12.10 (not on PATH; capstone, pefile), `gh`, VS 2022 Community 17.14, CMake, vcpkg (`C:\vcpkg`), .NET SDK, git, Node | [VERIFIED: 2026-10-20] |
 | RE and modding tools | Cheat Engine; WitchyBND 3.0.1 and the game 1.03.3 unpack in `Z:\Tools\`; Nucleus Co-op in `D:\Programs\Nucleus` | [VERIFIED] |
 | me3 loads our native DLL into NR 1.3.3.0 (no SC), no crash at startup, no `disable_arxan` needed for a passive DLL | [VERIFIED: T-001 HUMAN-solo run, dist/nrpvp.log 2026-10-09] |
-| Saves | `%APPDATA%\Nightreign\76561198342403479\NR0000.sl2`, no `.co2` yet (SC not run yet) | [VERIFIED] |
+| Saves | `%APPDATA%\Nightreign\76561198342403479\NR0000.sl2` (vanilla, never touched), SC's `NR0000.co2` next to it | [VERIFIED] |
 
 When the game or SC updates, re-hash, update this table, and re-run the regression tests in TESTING.md.
 
@@ -74,12 +74,12 @@ used from T-013 and removed by R5 when the console replaced the panel). `nrcon` 
 |---|---|---|
 | me3 0.11 | Launch the game with no EAC, load `nrsc.dll` and `nrpvp.dll`, Arxan handling | installed |
 | Seamless Co-op (NR) | Networking foundation: lobby, Steam P2P, up to 6 players | installed |
-| rustup (stable, msvc) | Build | **to install** (HUMAN) |
+| rustup (stable, msvc) | Build | installed |
 | Cheat Engine | Live memory inspection, finding offsets, quick write experiments | installed |
 | Ghidra 12.1.4 + REA MCP | Static analysis of `nightreign.exe` (decompiler, xrefs, call graph) | installed, see TOOLS.md "Ghidra / REA" |
 | ReClass.NET | Interactive struct mapping | optional |
 | Smithbox | Param, EMEVD and map viewing (NR support must be checked per release) | to install when needed |
-| WitchyBND | Unpack BND/DCX archives | to install when needed |
+| WitchyBND | Unpack BND/DCX archives | installed (3.0.1, `Z:\Tools\`) |
 | DarkScript3 | EMEVD event scripts (alternative team-type path) | to install when needed |
 
 ---
@@ -96,13 +96,13 @@ used from T-013 and removed by R5 when the console replaced the panel). `nrcon` 
 | SC is WinLicense-protected and finds game code by AOB. It hooks `WorldChrManImp` (incl. `_UpdateMultiDoping`) and has a param repository. In ER, SC reverts some runtime edits ("minimalist anticheat"). **Risk: SC may revert our team-type writes** | [VERIFIED: strings] [HYPOTHESIS: NR behaviour] |
 | SC fetches Everdark/Endless Night data and a VERSION file from GitHub (`yuiamoroll/NightreignSeamlessCoopRelease`) | [SOURCE: T-003] |
 | **Terms:** no redistribution, modification, or bundling without permission; the GitHub release repo has no license. Use as a dependency isn't addressed, but 47 Nexus mods declare SC as a requirement. Policy: never bundle, patch, or hook inside nrsc.dll; users install SC from Nexus; ask Yui before any public release | [SOURCE: Nexus permissions/FAQ; T-003] |
-| Networking uses **Steam** (`SteamNetworkingMessages002`, `SteamMatchMaking009`), not EOS | [VERIFIED: import strings in nrsc.dll] |
+| Networking uses **Steam** (`SteamNetworkingMessages002`, `SteamMatchMaking009`), not EOS for transport (EOS AntiCheatClient peer calls exist, NETWORKING §2) | [VERIFIED: import strings in nrsc.dll] |
 | Exports or expects `modengine_ext_init`, and says *"If you're using ModEngine, please make sure seamless co-op is loaded early"* | [VERIFIED: strings in nrsc.dll] |
 | Config keys are **not stored as plain text**, so hidden options can't be found statically (even `health_scaling` isn't a literal) | [VERIFIED: string search] |
-| Our DLL can use Steam's flat API in the SC process without initialising Steam, and can register its own listen-only callbacks. A Steam lobby (limit 6, locked, data `nrsc_lobby_type`, `nrsc_lobby_version`, `inviteParam`) appears some time after the Roundtable loads, and a second unlocked lobby (only `inviteParam`) shortly before the expedition loads. Details and open points: `research/S9-matchmaking-decision.md` §5a | [VERIFIED: MM-1 solo run 2026-10-12, `experiments/MM-1/`] |
+| Our DLL can use Steam's flat API in the SC process without initialising Steam, and can register its own listen-only callbacks. A Steam lobby (limit 6, locked, data `nrsc_lobby_type`, `nrsc_lobby_version`, `inviteParam`) appears some time after the Roundtable loads, and a second unlocked lobby (only `inviteParam`) shortly before the expedition loads. Details and open points: `archive/research/S9-matchmaking-decision.md` §5a | [VERIFIED: MM-1 solo run 2026-10-12, `archive/experiments/MM-1/`] |
 | nrsc.dll RTTI references game classes `EcTestTeamType`, `EcTestChrDead`, `EcTestPlayerNo`, `PlayerNetworkSession`, `PartyMemberInfo`, `CSQuickMatchLobbyContext`. SC touches team-type event checks and party membership | [VERIFIED: RTTI strings] |
 | ER SC had in-game PvP and friendly-fire toggles (Judicator's Rulebook, `allow_invaders`). **NR SC has no equivalent** | [SOURCE: T-003] |
-| me3 + SC: me3 v0.5.0 added "Support loading mods that rely on modengine_ext_init" / "Support Seamless Coop". An earlier NR-specific report (me3 discussion #118, 2025-06-09) was **unresolved**. Current behavior on 0.11 is UNKNOWN (T-004) | [SOURCE: me3 CHANGELOG; [discussion #118](https://github.com/garyttierney/me3/discussions/118)] |
+| me3 + SC: me3 v0.5.0 added "Support loading mods that rely on modengine_ext_init" / "Support Seamless Coop". An earlier NR-specific report (me3 discussion #118, 2025-06-09) was **unresolved**. | [SOURCE: me3 CHANGELOG; [discussion #118](https://github.com/garyttierney/me3/discussions/118)] |
 
 **Loading SC through me3 (T-004):** the Dec-2025 SC update requires early loading. Without it you get
 `Method "SignIn" is not available`. me3 v0.10+ provides `load_early = true` for this (issue #621, PR #624).
@@ -131,9 +131,9 @@ Facts that are not memory locations:
 | **H1 holds:** giving rivals a hostile team type on every client is enough for synced two-way PvP through SC's networking, with no networking changes. Hostility is decided per client from that client's own copies of `team_type` | [VERIFIED: FS-0 runs 2 and 4, FS-1 over real Steam, 2026-10-10] |
 | RTTI has `ChrTemporaryTeamTypeSlot`, `EcTestTeamType`, `CSSessionManagerImp`, `CSNetManImp`; `CSTeamType*` classes are absent, so the team-relation code may differ from ER | [VERIFIED: RTTI string scan] |
 | `team_relation.rs` (fromsoftware-rs) is not a hostility matrix; the team_type × team_type table is unmapped | [SOURCE: T-005] |
-| Param and event-script routes to hostility (`SP_EFFECT_PARAM_ST.change_team_type`, EMEDF `2004[2] SetCharacterTeamType`, `dmg_level_vs_player`, `is_hit_both_team` on bullets only) | [SOURCE: `research/T-011-alt-hostility.md`] |
+| Param and event-script routes to hostility (`SP_EFFECT_PARAM_ST.change_team_type`, EMEDF `2004[2] SetCharacterTeamType`, `dmg_level_vs_player`, `is_hit_both_team` on bullets only) | [SOURCE: `archive/research/T-011-alt-hostility.md`] |
 | The `eldenring` crate cannot run on NR (its RVA table checks ER versions and panics); its layouts are hints only | [SOURCE: T-005] |
-| SC binds F4 to its pause; our keys must avoid it | [VERIFIED: TC-004 run 1] |
+| SC binds F4 to its pause (our mod has no hotkeys since R5; `nro keys` should still avoid F4) | [VERIFIED: TC-004 run 1] |
 | Nightreign vanilla has no PvP; the director stated none was planned | [SOURCE: [gfinityesports](https://www.gfinityesports.com/article/no-pvp-messages-spirit-ashes-in-elden-ring-nightreign-according-to-director)] |
 
 ### 4b. The hawk ride is a player behavior state (HKS)
@@ -143,7 +143,7 @@ Sources: the player action script `action/script/c0000.hks` as plain Lua text, (
 decompile [El-Fonz0/EldenRingNightreignHKS](https://github.com/El-Fonz0/EldenRingNightreignHKS) at `b2ccd62` ("Update for 1.03.1") and
 `197b182` ("changes from 1.03.4"). The mod's file is that decompile (its "Version 11, 1.03.1") plus a whole mod pack's edits (Daybreak
 Team), not vanilla plus one line. **All 24 hawk functions are identical in the 1.03.1 and 1.03.4 decompiles and in the mod, except
-the one 707144 line** `[VERIFIED: function-by-function diff, 2026-10-21; scripts and route dump in experiments/HAWK-0/]`. So every row
+the one 707144 line** `[VERIFIED: function-by-function diff, 2026-10-21; scripts and route dump in archive/experiments/HAWK-0/]`. So every row
 below is vanilla behaviour, and the hawk code did not change between patches.
 **Warning:** that mod pack's script calls `os.execute(...)` to open web pages, so a mod's action script can run programs on the PC.
 Never install a script mod we have not read.
@@ -166,7 +166,7 @@ It only matters if we ship our own `c0000.hks`.
 
 ### 4c. Hawk routes in the map data
 
-`[VERIFIED: read from the 1.03.3 unpack, 2026-10-21; tools and full dump in experiments/HAWK-0/]`
+`[VERIFIED: read from the 1.03.3 unpack, 2026-10-21; tools and full dump in archive/experiments/HAWK-0/]`
 
 | Finding | Detail |
 |---|---|
@@ -178,15 +178,15 @@ It only matters if we ship our own `c0000.hks`.
 | A patched `m60_00_00_99.msb.dcx` in an me3 package **is loaded**: the start hawk flies the moved points in a straight line at 17.4 m/s, holds the point height exactly, and the engine's route end starts the drop | `[VERIFIED: HAWK-1b run 1, TESTING §3]` |
 | World frame (`Physics+0x70` + origin) vs this file: a ride runs in the **opposite** direction (180° about the vertical; 2 rides). The offset is **not** global: run 1 fit world = (647.5 − x, y, 1404 − z) and predicted run 2 ride A within 10 m (same route), but ride B (route 01_000) was off by (789, 261) m, so the origin is per area | `[VERIFIED: rotation, HAWK-1b; offset per area: HYPOTHESIS]` |
 | Each landing row also names a `spawnPointEntityId`: a POINT named `出撃ルートNN 復帰用ポイント①` ("return point") in the tile file `m60_XX_YY_00/10/20`, not the landing spot | tile MSBs |
-| **Tile frame → this file's frame** (Limveld base tiles `m60_XX_YY_00`, X 41..46, Y 35..39): **x = (X−42)·256 + 128 + local x, z = (Y−34)·256 + 128 + local z, y unchanged** | `[VERIFIED: static fit, 2026-10-22, experiments/HAWK-0/fit_frame2.py]`: 7 of the 9 start-route return points (`出撃ルートNN 復帰用ポイント①`) lie within 14 m of the predicted landing (route end + 52 m forward); heights agree (route end ≈ 39 m above its return point) |
+| **Tile frame → this file's frame** (Limveld base tiles `m60_XX_YY_00`, X 41..46, Y 35..39): **x = (X−42)·256 + 128 + local x, z = (Y−34)·256 + 128 + local z, y unchanged** | `[VERIFIED: static fit, 2026-10-22, archive/experiments/HAWK-0/fit_frame2.py]`: 7 of the 9 start-route return points (`出撃ルートNN 復帰用ポイント①`) lie within 14 m of the predicted landing (route end + 52 m forward); heights agree (route end ≈ 39 m above its return point) |
 | Ground and the playable island | Every part of the base tiles gives a height sample (`ground_map.py` → `ground_cells.json`, 16 m cells; `hawk_atlas.png` draws land, all routes, drops, falls). Land in tile rows Y 36..39: **x 16..1008, z 528..1520** (≈ 1 km square). Layers `_10.._50` are the Shifting Earth variants (the `_40` crater floor sits at y −668); clearance must use the highest variant (`diagonal.py`) |
 | **The crossing line** (HAWK-1b run 3) | Every start route set to (858, 210, 678) → (512, 250, 1024) → (166, 448, 1370), 979 m: the game spawns the player on the hawk at the moved start, flies the line the same way every time, and the drop from y 448 (≈ 250 m above the ground) does no damage | `[VERIFIED: HAWK-1b run 3, 3 rides, Leonardo]` |
 | HAWK-1b falls on the atlas | Run 1 (1052, 1134): open sea, the void. Run 2 ride B (650, 549): **over land** (ground y ≈ 78), about 20 m inside the island's bottom edge, yet the player fell to y −26: ground not solid there at that moment (not loaded, or a cliff lip) `[HYPOTHESIS]`. Keep route ends ≥ 150 m inside the land box | `[VERIFIED: static, atlas]` for the positions |
-| WitchyBND 3.0.1 decrypts `regulation.bin` and writes NR params as XML, but cannot serialize NR MSBs; `msb.py` walks them (sections: MODEL, EVENT, POINT, ROUTE, LAYER, PARTS, version 80) | `experiments/HAWK-0/` |
+| WitchyBND 3.0.1 decrypts `regulation.bin` and writes NR params as XML, but cannot serialize NR MSBs; `msb.py` walks them (sections: MODEL, EVENT, POINT, ROUTE, LAYER, PARTS, version 80) | `archive/experiments/HAWK-0/` |
 
 ### 4d. NPC bots: the game's own AI Nightfarers (OFF-3)
 
-`[VERIFIED: static, 1.03.3, 2026-10-22]` unless tagged. Full memo: `research/OFF-3-bots.md`; addresses: `re/MEMORY_MAP.md` §15.
+`[VERIFIED: static, 1.03.3, 2026-10-22]` unless tagged. Full memo: `archive/research/OFF-3-bots.md`; addresses: `re/MEMORY_MAP.md` §15.
 
 | Finding | Detail |
 |---|---|
@@ -200,7 +200,7 @@ It only matters if we ship our own `c0000.hks`.
 
 ### 4e. The night and its boss in the event scripts (M5-1)
 
-`[VERIFIED: static, the 278 real 1.03.3 event files decoded, 2026-10-22]`. Full memo: `research/M5-no-boss-nights.md`; the clock's
+`[VERIFIED: static, the 278 real 1.03.3 event files decoded, 2026-10-22]`. Full memo: `archive/research/M5-no-boss-nights.md`; the clock's
 memory: `re/MEMORY_MAP.md` §16.
 
 | Finding | Detail |
@@ -215,11 +215,11 @@ memory: `re/MEMORY_MAP.md` §16.
 | Alive flags and the wipe | 1182: each game keeps its own player's flag 7005–7007; at night it drops when the player is downed **or its team is not 1 / 2 / 20 / 29** (team 6 = out); 1180 (multiplayer) ends the expedition for all when all three are off. Our event file empties 1180 (M5-5) `[VERIFIED: static + Nucleus runs 1, 2, 4]` |
 | The morning reaches everyone from the host | A DLL write of 7502 in the host stays local, but the host's 1100 then sets **7503 / 7505 network-wide** and both games reach Day 2 `[VERIFIED: Nucleus run 2]` |
 | Endings are per game | 7000 / 7001 are plain local flags; set in two games at once, each played its own result (the 7000 game the first-win cutscene) and both were consumed within 5 s `[VERIFIED: Nucleus run 2]` |
-| Our decoder | `experiments/M5-1/emdec.py` (any NR `.emevd`; names and argument layouts from DarkScript3's `nr-common.emedf.json`) |
+| Our decoder | `archive/experiments/M5-1/emdec.py` (any NR `.emevd`; names and argument layouts from DarkScript3's `nr-common.emedf.json`) |
 
 ### 4f. Death in the player script and the comeback (M5-8)
 
-Full memo: `research/M5-8-death.md`; the engine addresses: `re/MEMORY_MAP.md` §17.
+Full memo: `archive/research/M5-8-death.md`; the engine addresses: `re/MEMORY_MAP.md` §17.
 
 | Finding | Detail |
 |---|---|
@@ -227,15 +227,15 @@ Full memo: `research/M5-8-death.md`; the engine addresses: `re/MEMORY_MAP.md` §
 | **SpEffect 102130 = die at once** | Permanent marker (category 20, no state); also ends an existing downed state. Vanilla uses it on `m31_90`. Overrides revive items in the script, so the mod gives it only to players without 540155 / 6999100 / 6999500 / 8970061. Our per-game event 99100805 holds it while flag 10007420 is ON `[VERIFIED: solo run 2026-10-23]` |
 | The comeback is a timed callback chain, not the event scripts | The local player's death handler queues it on the Lua event sequencer (~4.5 s to its start step, ~10 s to the respawn); holding the start step keeps a dead player dead with no fade, and calling it later replays the vanilla comeback `[VERIFIED: solo run 4]` |
 | Respawn point | Nearest `CSRespawnPointMan` point inside the play area `[VERIFIED: disassembly; 13–90 m in solo runs]` |
-| Nucleus with our package (R0) | `scripts\deploy-nucleus.ps1 -Me3`: Nucleus starts `nrpvp_launcher.exe` (me3 `-e`, `--skip-steam-init true` from `NightreignPvP\me3-args.txt`) instead of SC's launcher. **Window 1 works, window 2 fails** (ColdLoader "appid not found in coldloader.ini or steam_appid.txt", before me3 attaches) `[VERIFIED: Nucleus 2026-10-23, TESTING §3]`; cause UNKNOWN; use the plain deploy |
+| Nucleus with our package (R0; the `-Me3` mode was removed from `deploy-nucleus.ps1`) | `scripts\deploy-nucleus.ps1 -Me3`: Nucleus starts `nrpvp_launcher.exe` (me3 `-e`, `--skip-steam-init true` from `NightreignPvP\me3-args.txt`) instead of SC's launcher. **Window 1 works, window 2 fails** (ColdLoader "appid not found in coldloader.ini or steam_appid.txt", before me3 attaches) `[VERIFIED: Nucleus 2026-10-23, TESTING §3]`; cause UNKNOWN; use the plain deploy |
 | A held death in a session | Held 55 s and released through the game's comeback in a two-window session; the other window shows no body while the player is held `[VERIFIED: Nucleus 2026-10-23]` |
 
 ### 4g. Enemy scaling, the menu's password fields, rune and drop sharing (RW, 2026-10-24)
 
 | Finding | Detail |
 |---|---|
-| Enemy strength by session size is a param | `MultiPlayCorrectionParam` (regulation 1.03.3, 85 rows): per row `client1SpEffectId` (two players), `client2SpEffectId` (three), `client3SpEffectId` (always -1) and an override byte `[VERIFIED: regulation unpack with WitchyBND + Paramdex NR def, 2026-10-24]`. Which row an enemy uses, and how the game maps the session size to a client slot (4 to 6 players, SC), is UNKNOWN. The mod rewrites the table in memory by team size (`game/multiplay.rs`, MEMORY_MAP §19) `[HYPOTHESIS until enemy health is measured]` |
-| The reward params are not the sharing | `MultiSoulBonusRateParam` (rune multipliers by summon role), `MultiHPEstusFlaskBonusParam`; `disableMultiDropShare` on goods / protector / weapon rows. Kill runes are "split equally among teammates regardless of who killed" (Bandai's guide); the split itself is engine code UNKNOWN (RW-8) |
+| Enemy strength by session size is a param | `MultiPlayCorrectionParam` (regulation 1.03.3, 85 rows): per row `client1SpEffectId` (two players), `client2SpEffectId` (three), `client3SpEffectId` (always -1) and an override byte `[VERIFIED: regulation unpack with WitchyBND + Paramdex NR def, 2026-10-24]`. Which row an enemy uses, and how the game maps the session size to a client slot (4 to 6 players, SC), is UNKNOWN. The mod rewrites the table in memory by team size (`game/multiplay.rs`, MEMORY_MAP §19) `[VERIFIED: Leonardo in game, enemy strength balanced, 2026-11-01]` |
+| The reward params are not the sharing | `MultiSoulBonusRateParam` (rune multipliers by summon role), `MultiHPEstusFlaskBonusParam`; `disableMultiDropShare` on goods / protector / weapon rows. Kill runes are "split equally among teammates regardless of who killed" (Bandai's guide); the split itself is engine code, found: `exe+0x3DE710` → `exe+0x668380` (MEMORY_MAP §21, RW-8) |
 | The Matchmaking Settings menu already has a password | "Multiplayer Password" (match with players using the same password), "No. of Password Players", five "Group Password" fields (screenshot 2026-10-24). A typed text is kept in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (the save data's input history, which is why it survives restarts) and in a second structure `[VERIFIED: console memscan after typing a unique text]`; the field the Commence check reads is UNKNOWN |
 | Number of Players is a ring of three values | Solo Mission / (middle) / Up to 6 players, wraps in both directions, kept between launches `[VERIFIED: screenshots 2026-10-24]` |
 | Puppets are not network players | No nametag, map marker or party frame for a puppet 10 m away (screenshot 2026-10-24): HUD behaviour of other players needs a real second client |

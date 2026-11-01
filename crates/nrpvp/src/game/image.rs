@@ -3,7 +3,7 @@
 //!
 //! Why this exists: `from-singleton` 3.0.1 picks `.text` and `.data` with pelite's `by_name`, which
 //! returns the FIRST section with that name (pelite 0.10.0 `src/wrap/sections.rs#L93-L110`). NR's
-//! `nightreign.exe` has TWO sections named `.text` (er-reference.md section 1.3, [VERIFIED] PE headers
+//! `nightreign.exe` has TWO sections named `.text` (.claude/archive/er-reference.md section 1.3, [VERIFIED] PE headers
 //! of NR 1.3.3.0), so the stock finder only ever scans the first one. We scan every executable section.
 
 use std::ops::Range;
@@ -131,7 +131,7 @@ pub(crate) mod tests {
     const DATA_RW: u32 = 0xC000_0040; // INITIALIZED_DATA | READ | WRITE
     const RDATA_R: u32 = 0x4000_0040;
 
-    /// The section table of NR 1.3.3.0 as recorded in er-reference.md section 1.3 (sizes where the doc
+    /// The section table of NR 1.3.3.0 as recorded in .claude/archive/er-reference.md section 1.3 (sizes where the doc
     /// gives them; remaining characteristics are plausible values, only the executable ones matter).
     pub(crate) fn nr_like() -> Vec<(&'static str, u32, u32, u32)> {
         vec![

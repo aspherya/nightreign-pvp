@@ -1,8 +1,7 @@
 # Own networking instead of Seamless Co-op (design, 2026-10-30)
 
 **Owner doc for this topic.** Decision of Leonardo, 2026-10-30: replace Seamless Co-op (SC) with our own solution. First need: cross-game
-data, such as RW-5's last-hitter verdict (only the game that applied the hits knows who landed them, and our event flags do not sync
-between games). This doc is research and design, not a rewrite. Cards: [TASKS.md](TASKS.md) "Own networking (NET)".
+data (only the game that applied the hits knows who landed them, and our event flags do not sync between games). **Users today (2026-11-01):** RW-3 `ITEM_DROP` (topic 5, on); RW-5 `ORB_CLAIM` (topic 2, off, parked); `BOSS_VERDICT` (1) is test-only. This doc is research and design, not a rewrite. Cards: [TASKS.md](TASKS.md) "Own networking (NET)".
 Tags: `[VERIFIED: how]`, `[SOURCE: link]`, `[HYPOTHESIS]`, UNKNOWN. **ER** = Elden Ring fact, a hint only for NR.
 Raw agent report with all file/line citations: `side-session-notes/.../net-research-agent.md` (outside the repo); the facts that matter are copied below.
 Pins: game 1.03.3 (exe 1.3.3.0), SC 1.1.3, me3 0.11.0.
@@ -112,7 +111,7 @@ feature  <--take(topic)---------------  net::bus  <--  worker thread  <--  Chann
 
 - **What a feature touches:** only `net::bus` - `publish(topic, key, value)` and `take(topic) -> Vec<Received{from, fact}>`. A fact is three
   plain numbers. A new kind of message = a new `topic` constant in `bus.rs` (with what key and value mean); the wire format, the worker and
-  the tests do not change. `topic::BOSS_VERDICT` (1): key = boss id, value = team of the last hitter.
+  the tests do not change. Topics (`net/bus.rs`): `BOSS_VERDICT` (1, test-only now): key = boss id, value = team of the last hitter; `ORB_CLAIM` (2, RW-5, off): key = cross-game boss key, value = claiming team + 1; `ITEM_DROP` (5, RW-3, on): key = drop id << 8 | field (count, map id, x y z bits, item ids and counts), value = the field, published by the victim's machine once per defeat; `TEST` (0xF000): dev console `net_publish`.
 - **Guarantees (`net/facts.rs`, unit-tested with fake time):** a fact is resent every 0.5 s to each roster peer until it acks, and stays
   for peers who join later (up to 1 h or until the lobby is left); a receiver delivers it **once** however often it arrives and acks it
   (a fact refused because of a limit is *not* acked, so the sender keeps trying). If two machines publish the same key with different
@@ -132,7 +131,7 @@ feature  <--take(topic)---------------  net::bus  <--  worker thread  <--  Chann
   `matchmaking`. Console: `net_status`, `net_peer`, `net_ping`, `net_verdict`, `net_publish` (CONSOLE.md).
 - **Not covered:** two real PCs (relay, latency, Steam rate limits): next Friend Session. Messages larger than 256 bytes or streaming.
 
-**Open for RW-5:** a stable cross-game *boss id* (`key`). Handles/addresses differ per game; candidates are the map entity id of the boss
+**Answered for RW-5 (MEMORY_MAP §22; RW-5 is parked):** a stable cross-game *boss id* (`key`). Candidates that were considered: Handles/addresses differ per game; candidates are the map entity id of the boss
 (EMEVD entity), its NpcParam id plus map, or the boss-map flag (`XXXX0200`/`XXXX0800`, TECHNICAL_NOTES §4e). UNKNOWN which is readable
 from a live `ChrIns`; it needs a boss in a live session (`mob_kill` aids exist, RW-8). The channel treats the key as an opaque number.
 
@@ -140,7 +139,7 @@ from a live `ChrIns`; it needs a boss in a live session (`mob_kill` aids exist, 
 
 | # | Design | Effort | Verdict | Risk |
 |---|---|---|---|---|
-| S0 | **Keep SC** for the session, our channel for our data | days | **Default for the next months** | SC update can break our hooks (pins), no redistribution, author's permission still needed before a public release |
+| S0 | **Keep SC** for the session, our channel for our data | days | **Default for the next months** | SC update can break our hooks (pins), no redistribution; the author is not contacted (DECISIONS 2026-11-01) |
 | S1 | **Drive the game's session code without SC**: we create/join the Steam lobby through the game's own jobs (MM-3g style), neutralise the Bandai server path and the EAC peer path ourselves, widen the member table and the 6-slot container ourselves (the ~40 SC patches' effect, written by us from our own observations; no SC code copied) | S10 estimate 4-6+ months for the whole; first proof (two instances in one lobby, no SC) maybe 2-4 weeks of RE `[HYPOTHESIS]` | **The only real replacement.** Keeps all native sync (anims, hits, HP) | Server/EAC paths we do not understand yet (UNKNOWN 5), the remote-join handler and `CreateNetPlayer` limits, host-only world, an entire class of desyncs we meet for the first time; each game patch moves the sites |
 | S2 | **Our own replication** onto puppet `PlayerIns` (position, animation id, HP, hits, SpEffects, equipment, death) over T1 | 6+ months, never finished | Rejected | Re-implements the game's sync; animation and hit timing; the puppet infrastructure proves local creation, not remote fidelity |
 | S3 | Hybrid S0 now, S1 as an experiment branch behind gates | | **Recommended** | |
@@ -158,7 +157,7 @@ into a Friend Session (TESTING §6).
 | N1 | `Verdict` message and the boss id question; RW-5 can start | NET-2 | `mi-net-verdict` PASS |
 | N2 | Observe the game's own netcode: `SendP2PPacket` histogram (type, size, rate), NR `CSSessionManager` layout | NET-3, NET-4 | Logs from two instances with counts per type; layout table in MEMORY_MAP |
 | N3 | SC-less boot probe: me3 profile without `nrsc.dll`; where does the session stack stop (server step, EAC peer, member table)? | NET-5 | A written list of blockers, each with an exe address, or "two instances in one lobby" |
-| **G1** | **Decision: S1 yes/no**, with the NET-3..5 evidence, a size estimate, and the answer of SC's author on permission | NET-6 (HUMAN/OPUS) | Leonardo decides (DECISIONS) |
+| **G1** | **Decision: S1 yes/no**, with the NET-3..5 evidence, a size estimate | NET-6 (HUMAN/OPUS) | Leonardo decides (DECISIONS) |
 | N4+ | Only if G1 = yes: own lobby create/join through the game's jobs, member table widening, container, saves/ini, launcher; every step with an `mi-*` scenario | cards written then | |
 
 ## 7. Legal and safety
@@ -167,7 +166,7 @@ into a Friend Session (TESTING §6).
 |---|---|---|
 | Never online with a modded game | Unchanged (rule 2). Our transport is Steam P2P between players, not Bandai's servers; it must stay off when `nrsc.dll`-less and EAC-less runs could reach the official servers: the guard (`mm/guard.rs`) must be rebuilt as "no EAC module, official-server path blocked" when SC goes | `[VERIFIED: guard.rs]` |
 | Anti-cheat | NR ships EAC (kernel level, press); we launch only through me3/`nrpvp_launcher` without EAC, as SC does. Press reports bans (180 days) for modified files online; no official Bandai/FromSoftware statement on offline mods found; EULA names EAC. Official policy: UNKNOWN (fetch the NR EULA and Bandai support text before any public release) | `[SOURCE: wccftech EULA, 80.lv, PC Gamer]` secondary |
-| SC | No modification, patching, copying or redistribution of `nrsc.dll`; we may observe it at run time. Replacing it removes the dependency but not the duty: until S1 ships, ask the author before a public release (S9 §8). `BLOCKSYNC` in his release repo is a per-SC-version on/off table, not a flag list (corrects S4 §1) | `[SOURCE: Nexus terms; release repo]` |
+| SC | No modification, patching, copying or redistribution of `nrsc.dll`; we may observe it at run time. Replacing it removes the dependency but not the duty: the author is not contacted (DECISIONS 2026-11-01). `BLOCKSYNC` in his release repo is a per-SC-version on/off table, not a flag list (corrects S4 §1) | `[SOURCE: Nexus terms; release repo]` |
 | Valve | Steam P2P and lobbies are used inside the game's own app id 2622380; no Spacewar id | `[VERIFIED: join link]` |
 | Peers are untrusted | §3 Security | |
 | Saves | Back up `%APPDATA%\Nightreign\<steamid>\` before save-touching steps; S1 changes the save extension story (`.co2`) - a vanilla `.sl2` is never touched | CLAUDE.md |
@@ -191,8 +190,8 @@ Not shown: that any of this is safe under Bandai's rules. Decision: **NET-1 / NE
 |---|---|---|
 | 1 | NR `CSSessionManager` layout (state, players vector, steam id offset, send queue) | dump with two instances (NET-4) |
 | 2 | NR packet ids and what each syncs; SC's own channel numbers | `SendP2PPacket`/`ReadP2PPacket` and Messages breakpoints (NET-3) |
-| 3 | Does gbe_fork deliver `ISteamNetworkingMessages` between instances, and does SC mind our channel? | NET-1 |
-| 4 | Stable cross-game boss id | NET-2 |
+| 3 | ~~Does gbe_fork deliver `ISteamNetworkingMessages` between instances, and does SC mind our channel?~~ **Answered:** yes, both (`mi-net-ping` PASS 2026-10-30) | NET-1 |
+| 4 | ~~Stable cross-game boss id~~ **Answered** (MEMORY_MAP §22) | NET-2 |
 | 5 | What SC does about the Bandai server path and the EAC peer path | NET-5 |
 | 6 | Who writes 6 into `[request+0x68]`, how the member table beyond idx 1 is sized | S10 runbook R1 hook census, NET-5 |
 | 7 | Is session id `0x6001` the host from the engine or from SC? | after NET-4 |

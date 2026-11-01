@@ -1,6 +1,6 @@
 //! OFF-4 (bot spike): start and stop the game's own NPC bots (AI Nightfarers) and log what the bot manager does. Kept as the engine
 //! of the orchestrator's puppet players (`game/puppet.rs`, `tools/`); it is not a game feature (decided 2026-10-24). Research and the
-//! engine facts: `research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15.
+//! engine facts: `archive/research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15.
 //!
 //! No game code is called from here. Our events in `event/common.emevd.dcx` (`gamedata/emevd-bots.json`, built by
 //! `scripts/build-gamedata.ps1`) wait for our flags and run the game's instructions: `2003[97](table)` arms `CSNpcBotMan` with an

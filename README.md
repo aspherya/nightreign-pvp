@@ -17,14 +17,20 @@ Close the game first: the build cannot replace a DLL that is in use.
 powershell -NoProfile -File scripts\build.ps1
 ```
 
+1b. Build the game data (needs the 1.03.3 unpack and Python, `.claude/TOOLS.md`); the packaging script refuses to run without `dist\gamedata`:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1
+```
+
 2. Make the zip to send. Pick one:
 
 | Zip | Command | For |
 |---|---|---|
-| `dist\NightreignPvP.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1` | Normal player build: PvP always on, no queue |
+| `dist\NightreignPvP.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1` | Normal player build: PvP always on, Battle Royale Solo queue in the table menu (`matchmaking = true`). Options: `-MatchPlayers N`, `-TeamSize N` (pre-release match size) |
 
 The packaging script builds its own **player** `nrpvp.dll` (without the developer tooling) into `target\player\`, so step 1 is only
-needed for developer launches (`scripts\launch.ps1`, Nucleus). Developers drive a running developer game with `dist\nrcon.exe`
+needed for developer launches (`scripts\launch.ps1`, `nro`). Developers drive a running developer game with `dist\nrcon.exe`
 (see `.claude/CONSOLE.md`).
 `NightreignPvP\VERSION.txt` inside the zip says when and from which commit it was built.
 
@@ -47,12 +53,11 @@ Needs: ELDEN RING NIGHTREIGN on Steam and Seamless Co-op for Nightreign, the sam
 4. Drag `nrpvp_launcher.exe` and the whole `NightreignPvP` folder from the zip into the game folder.
 5. Start Steam, then double-click `nrpvp_launcher.exe`.
 
-The zip also contains `HOW TO INSTALL.txt` with the same steps for players, and the test zip adds `MATCHMAKING TEST.txt`
-with what to press during a matchmaking test.
+The zip also contains `HOW TO INSTALL.txt` with the same steps for players.
 
 Uninstall: delete `nrpvp_launcher.exe` and the `NightreignPvP` folder. Nothing else is changed.
 
 ## After a test
 
-Each player sends the folder `<game folder>\NightreignPvP\logs`. The matchmaking test steps and what to write down are in
+Each player sends the folder `<game folder>\NightreignPvP\logs`. The current friend-session steps and what to write down are in
 [.claude/TESTING.md](.claude/TESTING.md) §6 (the current friend-session runbook).

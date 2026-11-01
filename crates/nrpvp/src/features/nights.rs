@@ -1,4 +1,4 @@
-//! M5-3: nights with no boss and no minions (`research/M5-no-boss-nights.md`). The work is done by the game-data package:
+//! M5-3: nights with no boss and no minions (`archive/research/M5-no-boss-nights.md`). The work is done by the game-data package:
 //! `gamedata/emevd-nights-func.json` gives every common event that brings a night boss or its minions an empty body, and
 //! `gamedata/emevd-nights.json` adds two events to `common.emevd` that end night 1 / night 2 by setting the game's own "night done"
 //! flags (7502 / 7507), so the game's morning follows as after a boss.

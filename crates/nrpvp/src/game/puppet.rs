@@ -2,7 +2,7 @@
 //! `CSChrSet<PlayerIns>`), so everything that asks "who are the players" (the game's per-player code, our ChrSet readers, the team
 //! and downed rules, the night match) sees them as players, in one game, with no second client.
 //!
-//! How (game 1.03.3, exe 1.3.3.0; static reading in .claude/research/ORCH-R2-net-player-creation.md): the game's
+//! How (game 1.03.3, exe 1.3.3.0; static reading in .claude/archive/research/ORCH-R2-net-player-creation.md): the game's
 //! NPC bot manager (`CSNpcBotMan`, OFF-3/OFF-4) creates its Nightfarers with the generic ChrSet creator `exe+0x4ABC40(set, request)`,
 //! called at `exe+0x38F2B3` with `set = WorldChrMan+0x9AF0` (the bot set). That creator builds a full `CS::PlayerIns` (constructor
 //! `exe+0x6667F0`, the same class as every real player). While puppets are armed, an execute breakpoint on that call site swaps
@@ -40,7 +40,7 @@ const DEL_SPEFFECT_HEAD: [u8; 6] = [0x48, 0x89, 0x5C, 0x24, 0x18, 0x56];
 /// `PlayerIns+0x710`: 0 up, 1 downed, 2 getting up (MEMORY_MAP §6).
 const CHR_DOWNED: usize = 0x710;
 /// SpEffects every new puppet gets. 8970061: with it, the player script's solo "direct death" check is false, so a puppet at 0 HP
-/// goes into the downed state (purple bar, bleed-out) like a player in a session (research/M5-8-death.md, `IsDirectDeath`).
+/// goes into the downed state (purple bar, bleed-out) like a player in a session (archive/research/M5-8-death.md, `IsDirectDeath`).
 static SPEFFECTS: [AtomicI32; 4] = [
     AtomicI32::new(8_970_061),
     AtomicI32::new(0),

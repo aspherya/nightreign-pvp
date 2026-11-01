@@ -98,7 +98,7 @@ fn write(base: usize, flag: u32, on: bool) -> Result<bool, &'static str> {
 
 /// M5-4 research (dev console `flag`): the game's own flags a developer may write besides our group, for Nucleus runs where our
 /// event files are not loaded: 7000 game clear (win), 7001 game over (loss), 7502 / 7507 night 1 / night 2 done
-/// (`research/M5-no-boss-nights.md`). The game writes these bytes rarely (once per expedition each), so the read-modify-write is safe
+/// (`archive/research/M5-no-boss-nights.md`). The game writes these bytes rarely (once per expedition each), so the read-modify-write is safe
 /// enough for a test tool. Features use [`set_match_flag`].
 #[cfg(feature = "dev")]
 pub(crate) const RESEARCH_WRITABLE: [u32; 4] = [7000, 7001, 7502, 7507];

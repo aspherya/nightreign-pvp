@@ -89,7 +89,7 @@ pub(crate) const SPEFFECT_NEXT: usize = 0x38;
 /// The list walk stops after this many nodes.
 pub(crate) const SPEFFECT_MAX: usize = 256;
 /// SpEffects that make the player script's direct-death check pass: a revive item at work (540155 / 6999100 are the revival flags
-/// 7010-7012 of `common` 1183; MEMORY_MAP §17, research/M5-8-death.md §R1). The die-at-once SpEffect 102130 must not be given
+/// 7010-7012 of `common` 1183; MEMORY_MAP §17, archive/research/M5-8-death.md §R1). The die-at-once SpEffect 102130 must not be given
 /// to a player holding any of them.
 pub(crate) const SPEFFECTS_REVIVE_ITEM: [i32; 4] = [540_155, 6_999_100, 6_999_500, 8_970_061];
 

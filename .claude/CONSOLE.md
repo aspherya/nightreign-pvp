@@ -1,8 +1,7 @@
 # Developer console
 
-**Status (2026-10-20): CON-1, CON-2 and CON-4 done.** The console works against a live game (SMOKE-1); the ImGui panel and the F-key
-hotkeys are deleted (R5) and their remaining functions are console commands. CON-3 (`kill`, `down`, `bleed_clock`, flags, settings)
-and CON-5 (in-game line, autoexec) are planned. Developer builds only (`dev` feature + `dev_mode = true`): the player zip never has it.
+**Status (2026-11-01): CON-1, CON-2 and CON-4 done; CON-3 partly (`flag`, `hp0`, `god`).** The console works against a live game (SMOKE-1); the ImGui panel and the F-key
+hotkeys are deleted (R5) and their remaining functions are console commands. `kill`, `down`, `bleed_clock` and `msg_show` are not built; CON-5 (in-game line, autoexec) are planned. Developer builds only (`dev` feature + `dev_mode = true`): the player zip never has it.
 
 ## 0. Use it now
 
@@ -31,8 +30,7 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `log` | `[n]` | The last n log lines (default 20, at most 300), straight from the game |
 | `status` | | World loaded or not, local player and its team value, PvP mode, game mode (`mode: br` / `mode: offline`), matchmaking line, pid |
 | `mode` | `[br\|offline]` | OFF-1 game mode. `br`: Commence starts the queue. `offline`: Commence with Solo starts the game's own solo expedition at once (Duo/Trio say "solo only"); switching to it leaves the queue. Asked during an expedition, the change waits for the Roundtable. No argument shows the mode. Logs `mode: <mode>` |
-| `bots` | `[10\|30\|50\|10000]` | OFF-4, offline mode only: sets our flag so the game's own NPC bot instruction `2003[97]` runs with `NPCBotTableParam` table 10 / 30 / 50 (2 Nightfarers, level 1: heroes 1+2, 3+4, 5+6) or 10000 (2 of the 8 base Nightfarers, level 6; the game holds 2 bots). No argument: the last request, the bot manager's state and the OFF-5 match line (`bot_match: <stage>, n of 5 kept`). Logs `bots:`. Dev only |
-| `bots_hostile` | `[0\|1]` | Offline match bots attack you (1, default: team 29, they also fight each other) or fight on your side (0: the game's ally team 2). Takes effect at once for the bots already there and stays for the next expeditions until the game restarts. No argument shows the bot lines. Dev only |
+| `bots` | `[10\|30\|50\|10000]` | OFF-4, offline mode only: sets our flag so the game's own NPC bot instruction `2003[97]` runs with `NPCBotTableParam` table 10 / 30 / 50 (2 Nightfarers, level 1: heroes 1+2, 3+4, 5+6) or 10000 (2 of the 8 base Nightfarers, level 6; the game holds 2 bots). No argument: the last request and the bot manager's state. Logs `bots:`. Dev only |
 | `bots_clear` | | OFF-4 spike, offline mode only: runs `2003[98]`, which removes every bot the game spawned. Dev only |
 | `clock` | `[night\|circle\|end\|hh:mm[:ss]]` | M5: the expedition's play-area clock (`clock: 14:03:10 (running, speed …)`). With a time the game jumps its own clock there on its next frame (its set-time mailbox, MEMORY_MAP §16): `circle` = 20:20 (final circle starts 20:24), `night` = 22:55 (night events from 23:00), `end` = 23:58:30 (night flag at 23:59). Expedition only. Logs `clock:` (one line per game hour, and "the game applied …" after a jump). Dev only |
 | `night_end` | | M5-3: end the current night now. Sets our flag 10007400, which the night-end events (`gamedata/emevd-nights.json`) wait for besides their 10 min fallback; the game's own morning follows (flasks, grace, next day; no heal since M5-5). Acts only at night and only in the host's game; without our event file (Nucleus) the night match writes 7502 itself 1.5 s later (night 1 only). Logs `nights:`. Dev only |
@@ -56,6 +54,10 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `god` | `[0\|1]` | Test aid (2026-10-23): 1 = this game's player is refilled to full HP every tick while up (one hit bigger than full HP still downs). Team values are untouched. Off at launch. Dev only |
 | `flag` | `<id> [0\|1]` | M5-4 research: read any event flag (`flag 7005`); with a value, write one of ours (10007000..=10007999) or the game's 7000 (game clear), 7001 (game over), 7502 / 7507 (night 1 / 2 done), in this game only (for Nucleus runs, where our event files are not loaded). Logs `flag:`. Dev only |
 | `death_trace` | `[0\|1]` | M5-8 research: while this game's player is dead (HP 0, not downed), breakpoints on the later comeback steps (`exe+0x5C3F80` begin respawn, `exe+0x5C4360` respawn; the start step is `death_hold`, M5-9) log when each runs, its thread and arguments; LOCAL's HP, state, team, `+0x1F4`, SpEffects of interest and position every second. Logs `M5-8`. Dev only |
+| `hitkill` | `[0\|1]` | test aid: 1 = any enemy within 80 m of this game's player that lost HP dies at once with this player as the killer (works on the enemy's owner game, the host's). Dev only |
+| `menugate` | `[0\|1]` | RW-1 research: 1 = the Esc key asks the game to open the pause menu even while LOCAL is dead (sets `CSMenuMan` ctrl+0x179); 0 = left to the game (the night match does this by itself for a defeated player) |
+| `trace_write` | `<addr>\|0` | research: log which instruction writes the 4-byte aligned address (hardware write watch, slot 3) with registers and a stack excerpt as `T-041 bar_trace` lines; 0 stops. Heap addresses change every launch |
+| `trace_read` | `<0xaddr>\|0` | RW-5 research: like `trace_write` but the watch also fires on READS; 0 stops (and goes back to write-only) |
 | `death_hold` | `[0\|1]` | M5-9: manual switch of `game/deathhold.rs` (the module the Solo night match arms by itself; it is in the player build too). 1 = a dead player stays dead (the start step `exe+0x5C4810` returns at once; no fade). 0 = if a step is held, it is called now through gate A `exe+0x5BCE10` (gate B `exe+0x675480` armed too after 2 s) and the game's own comeback follows. No argument shows the state, the counts and the last thread. Logs `M5-9 deathhold`. Dev only |
 | `speffects` | | M5-8 research: this game's player's SpEffect ids, and the ones of interest (revive items 540155 / 6999100 / 6999500 / 8970061, die-at-once 102130, night 102120). Answered on the pipe thread. Dev only |
 | `players` | | Every player in this game's ChrSet: slot, `pN`, id, team value, relation (me / ally / rival) |
@@ -93,8 +95,14 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `puppet_near_death` | `[0\|1]` | ORCH-2: 1 (default) = a puppet holds SpEffect 8970061 while up (0 HP downs instead of killing) and loses it while downed (bleeds out instead of the solo auto-revive). Dev only |
 | `net_peer <steamid64>`, `net_ping [n]`, `net_status` | | NET-1 (config `net = true`): add a roster peer to the data channel, ping every peer n times, counters (sent, recv, pongs, rtt). Dev only |
 | `net_verdict <boss> <team>`, `net_publish <topic> <key> <value>` | | NET-2: publish a fact (topic BOSS_VERDICT=1 for `net_verdict`) to every other player; each machine records it once (first value per key wins), resent until acked. `net_status` shows `facts_out/acked/in`, `fact_conflicts`, `last_fact`. Dev only |
-| `orb_auto [0|1]`, `orb_list`, `orb_off [key]`, `orb_on [key]`, `orb_claim [key]`, `orb_go [key]` | | RW-5: boss reward orbs (Dormant Power) found in MapItemMan by content with the claim book; off nulls the orb slot (keeps the pointer), on restores it only if the slot is still 0 and the record unchanged, claim = LOCAL's team claims it and publishes ORB_CLAIM, go = stand 1.2 m from it (no distance limit). No key = the only orb. **`orb_auto 1` first**: the rule is off by default (vanilla). Dev only |
-| `boss_orb [go|hp]` | | RW-5 test aid: the strongest living Dormant Power boss (same on every game, never an expedition-ending one); go = stand next to it, hp = HP 1 (host game only) |
+| `orb_auto [0\|1]`, `orb_list`, `orb_off [key]`, `orb_on [key]`, `orb_claim [key]`, `orb_go [key]` | | RW-5: boss reward orbs (Dormant Power) found in MapItemMan by content with the claim book; off nulls the orb slot (keeps the pointer), on restores it only if the slot is still 0 and the record unchanged, claim = LOCAL's team claims it and publishes ORB_CLAIM, go = stand 1.2 m from it (no distance limit). No key = the only orb. **`orb_auto 1` first**: the rule is off by default (vanilla). Dev only |
+| `boss_orb [go\|hp]` | | RW-5 test aid: the strongest living Dormant Power boss (same on every game, never an expedition-ending one); go = stand next to it, hp = HP 1 (host game only) |
+| `boss_list` |  | RW-5 test aid: the living bosses (HP above 1000) with handle, npc id, HP, position and distance. `mobs` skips them. Dev only |
+| `boss_go` | `[skip]` | RW-5 test aid: put this game's player 1.5 m from the nearest (or skip-th nearest) boss, facing it. Dev only |
+| `boss_kill` | `[skip]` | RW-5 test aid: the nearest boss gets LOCAL as last attacker and HP 0, so this game runs the boss death as after a real kill (the other game sees no attacker, MEMORY_MAP §21). Dev only |
+| `boss_hp` | `<n\|0xhandle> <hp>` | RW-5 test aid: write a boss's HP on this game (1 = one real hit kills it; sticks on the owner game). Dev only |
+| `boss_info` | `[n]` | RW-5 test aid: boss n of `boss_list`: address, vtable and its NpcParam reward lot fields. Dev only |
+| `boss_lots` | `<n> <field> <value>` | RW-5 test aid: write one NpcParam reward field of boss n on this game. Dev only |
 | `drop_gear [dry]` | | RW-3 test aid: `dry` lists what a rival's defeat would drop (LOCAL's equipped weapons, talismans and consumables of the inventory, never the flask) and whether this game is the host; without `dry` it drops them now at LOCAL's spot without a defeat. Dev only |
 | `item_drop <id hex> [count] [dx dy dz]` | | RW-3 E1 research: drop one item with the game's own drop function `exe+0x576110` at LOCAL's position (+ offset), reply with the MapItemMan slots that changed. Dev only |
 | `rawcall <rva hex> [arg]` | | NET-5 research: call `exe+rva(arg)` once on the game thread (one integer argument), reply with rax. Dev only |
@@ -197,7 +205,7 @@ victim's own client (MEMORY_MAP §5–6); `team_type` is per client by design. S
 - `kill`, `down`, `bleed_clock` on someone else: **routed by `nrcon`**, not by the game. `nrcon kill p2` asks every running instance
   for its local player id and sends `kill` to the one whose `me` is `p2`. That covers Nucleus and anything else on this PC. Inside the
   game, `kill p2` answers "p2 is not this game's player; use `nrcon kill p2`".
-- Across two PCs it needs the mod-to-mod channel (S4), which does not exist yet. Until then, remote kills between PCs are out of scope.
+- Across two PCs it would go over the mod-to-mod data channel (`net::bus`, NETWORKING §4); remote kills between PCs are out of scope until a card asks for them.
 
 ## 4. Where it lives in the code
 
@@ -206,7 +214,8 @@ crates/nrpvp/src/console/        (behind the `dev` cargo feature, see ARCHITECTU
   mod.rs        registry: name → { help, args spec, executor, fn(args) -> Result<Cmd, Usage> }
   parse.rs      tokenizer (quotes, `;`); pure, unit-tested
   pipe.rs       named-pipe server thread; one line in, reply lines out
-  autoexec.rs   reads autoexec.cfg, queues lines on world load
+  target.rs     who a player command acts on
+  (autoexec.rs  planned with CON-5, does not exist)
 crates/nrcon/  the client
 ```
 
@@ -231,9 +240,7 @@ list in `config.rs` shrinks by about 20 keys).
 | CON-4 ✅ | Delete the ImGui panel buttons and the F-key hotkeys (done with R5, 2026-10-20) | Dev build has no hotkey thread |
 | CON-5 (optional) | In-game console line (ImGui) + `autoexec.cfg` | Solo |
 
-**Agents and skills:** no new agent; CON cards fit the existing `implementer`. Once CON-1 lands, a short **skill "add a console
-command"** (registry entry, executor, help text, test, log line) is worth writing, because every later feature will want one. Not
-before: it would describe code that does not exist yet.
+**Agents and skills:** no new agent; CON cards fit the existing `implementer`. The skill **`add-console-command`** (`.claude/skills/`) covers registry entry, executor, help text, test and log line.
 
 ## 7. Decisions (2026-10-20)
 

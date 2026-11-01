@@ -11,7 +11,7 @@ Run (one PC, Steam running, `nro desk` started in a normal terminal, dev build i
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\regress.ps1                           # every scenario, one PASS/FAIL line each
 powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 day1-free match-win   # some of them
-target\release\nro.exe run scenarios\night1-count.toml                                 # one, full JSON report (runs\<id>\report.json)
+target\release\nro.exe run scenarios\day1-free.toml                                    # one, full JSON report (runs\<id>\report.json)
 ```
 
 Each run launches its own game (about 2.5-4 min), so run only what the change touches; run all before a release zip. `PASS` = every
@@ -50,9 +50,10 @@ shell, not an agent's sandboxed Bash (it cannot open the game process, so the P-
 | `mi-net-ping` | **NET-1 data channel** (PASS 2026-10-30, also with `NRO_NO_SC=1`): two instances, `net = true`, `net_peer` each other, `net_ping 120` both ways over `ISteamNetworkingMessages` channel 0x4E52; `pongs=120`, no errors, no strangers, no undecodable | `net_peer`, `net_ping`, `net_status` | ~4 min |
 | `mi-net-join` | NET-1 **next to a live SC session** (PASS 2026-10-30): `mi-join`'s flow, then the same 120 pings each way; both still list 2 players | as `mi-join` + net steps | ~6 min |
 | `mi-net-verdict` | **NET-2 facts** next to a live SC session: the roster comes from the SC lobby (no `net_peer`), instance 1 publishes `boss 4012 team 1` three times, instance 2 records it once and acks it and cannot overwrite it | as `mi-join` + `net_verdict` | ~6 min |
-| `mi-rw3-items` | **RW-3 defeat drops, two real instances** (PASS 2026-11-01): `mi-queue`'s flow to one expedition as rivals, hawk drop to the ground; `drop_gear dry` shows each game's weapons and who is the host; the host drops its own gear (`drop_gear`: `itemdrop: on the game thread ... rax 0x1`, new `MapItemMan` slots); player 2 is defeated by a "rival" (`flag 10007420 1`, `rival_hit`, `hp0`): its game publishes the drop (topic 5), the host queues and makes it (`rax 0x1`) | `drop_gear`, `rival_hit`, `hp0`, `night_status`, screenshots | ~9 min |
-| `mi-rw8-runes` | **RW-8 runes only inside the team, two real instances** (PASS 2/2, 2026-10-28): `mi-queue`'s flow to one expedition as rivals, `runeshare` shows both credit hooks; player 1 `mob_kill` (test aid: LOCAL as the enemy's attacker + HP 0) with player 2 4 m away; player 1 `+N` / `0 blocked`, player 2 `+0` / `1 blocked = N rune(s)` and `Unknown -> BLOCKED` in its log; control `runeshare 0` on player 2 → the next kill pays it (`+N`) | `runes_mark`, `mob_kill`, `runeshare`, screenshots | ~8 min |
-| `mi-rw5-orb` | **RW-5 first-to-loot, two real instances** (PASS 2026-10-31): both kill the same Dormant Power boss (`boss_orb`, lock-on Q, hits); instance 1 `orb_go` + F opens the screen = claim; instance 2 logs `(rival) -> off`, its `orb_list` says OFF; `net_status` facts 1/1 | `boss_orb go/hp`, `keys`, `orb_go`, waits on `orb_list` / `log` | ~9 min |
+| `mi-rw3-items` | **RW-3 defeat drops, two real instances** (PASS 2026-11-01): `mi-queue`'s flow to one expedition as rivals, hawk drop to the ground; `drop_gear dry` shows each game's drop list (weapons and inventory items) and who is the host; the host drops its own gear (`drop_gear`: `itemdrop: on the game thread ... rax 0x1`, new `MapItemMan` slots); player 2 is defeated by a "rival" (`flag 10007420 1`, `rival_hit`, `hp0`): its game publishes the drop (topic 5), the host queues and makes it (`rax 0x1`) | `drop_gear`, `rival_hit`, `hp0`, `night_status`, screenshots | ~9 min |
+| `mi-rw3-drop` | **Lab, not a test** (RW-3 E1): `teardown = "keep"`, no asserts; two instances reach one expedition as rivals and stay open for `item_drop` by hand. Skipped by `regress.ps1` | as `mi-queue` | ~5 min |
+| `mi-rw8-runes` | **RW-8 runes only inside the team, two real instances** (PASS 3/3, 2026-10-28): `mi-queue`'s flow to one expedition as rivals, `runeshare` shows both credit hooks; player 1 `mob_kill` (test aid: LOCAL as the enemy's attacker + HP 0) with player 2 4 m away; player 1 `+N` / `0 blocked`, player 2 `+0` / `1 blocked = N rune(s)` and `Unknown -> BLOCKED` in its log; control `runeshare 0` on player 2 → the next kill pays it (`+N`) | `runes_mark`, `mob_kill`, `runeshare`, screenshots | ~8 min |
+| `mi-rw5-orb` | **Parked feature (RW-5 is off by default, the scenario sets `orb_auto 1`).** RW-5 first-to-loot, two real instances (PASS 2026-10-31): both kill the same Dormant Power boss (`boss_orb`, lock-on Q, hits); instance 1 `orb_go` + F opens the screen = claim; instance 2 logs `(rival) -> off`, its `orb_list` says OFF; `net_status` facts 1/1 | `boss_orb go/hp`, `keys`, `orb_go`, waits on `orb_list` / `log` | ~9 min |
 
 Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kill with real hits (the scenarios fake it with `rival_hit`; offline solo LOCAL carries SpEffect 6999500, so a death needs `flag 10007420 1`), what the other screen shows, Seamless Co-op host/client, banners of both screens, real latency.
 
@@ -66,10 +67,11 @@ Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kil
 | `wait = { console, contains, absent, timeout_s, every_ms }` | repeat a console line until the reply contains the text (all needles, case-insensitive) and none of `absent`; timeout = ABORT |
 | `expect = { console, contains, absent }` | one console line whose reply must match; a miss = FAIL, the run continues |
 | `keys = "ENTER; E*3; click 0.5 0.5; mclick 0.6 0.4; M 300ms; mousemove 200 0; wait 1500ms"` | keys and mouse for the game window (needs `nro desk`; `mclick` = middle button, `K 300ms` holds a key: the map needs `M 300ms`; `mousemove dx dy` = relative mouse-look in counts, turns the game camera) |
-| `navigate = "title_to_world"`, `"expedition"` or `"invite_members"` | built-in macros (`invite_members`: Roundtable host → Invite Members pressed, position-independent) |
+| `navigate = "title_to_world"`, `"expedition"`, `"invite_members"` or `"commence"` | built-in macros (`invite_members`: Roundtable host → Invite Members pressed, position-independent; `commence`: the Commence flow, used by `mi-queue`) |
 | `[[instance]]` `n`, `role`, `[instance.config]` | emulated instances 1..3, launched in file order; instance config goes over `[config]` |
 | `instance = N` (in any step) | the instance the step acts on (default: the first `[[instance]]`); report lines start with `[iN]` |
 | `puppets = n`, `puppet_ring = r`, `puppet_front = d` | make 1..5 puppets; place them around / in front of LOCAL (metres) |
+| top level: `name`, `about`, `teardown = "kill"` (default) or `"keep"` | the scenario's title and one-line purpose; `keep` leaves the games running after the last step (labs) |
 | `screenshot = "name"` | `runs\<id>\shots\name.png` (open it with the Read tool and look) |
 | `sleep_ms = n` | pause |
 
