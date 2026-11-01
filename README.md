@@ -23,7 +23,7 @@ powershell -NoProfile -File scripts\build.ps1
 powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1
 ```
 
-2. Make the zip to send. Pick one:
+2. Make the zip to send. The full guide (settings, friend test, more players): [.claude/RELEASE.md](.claude/RELEASE.md). Pick one:
 
 | Zip | Command | For |
 |---|---|---|

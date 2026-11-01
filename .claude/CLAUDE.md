@@ -22,7 +22,9 @@ column says when a doc is worth its tokens.
 | [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, logs, failures | Matchmaking work |
 | [TESTING.md](TESTING.md) | Test environment, cases, regression set, Friend Session runbooks (§6) | Planning or judging a test |
 | [testing-log/](testing-log/) | Results log, one entry per run, newest file last (append-only) | Looking up what a past run showed |
-| [orchestrator/README.md](orchestrator/README.md), [CONTRACT.md](orchestrator/CONTRACT.md) | `nro`, puppet players, safety checks | Running the orchestrator |
+| [orchestrator/GUIDE.md](orchestrator/GUIDE.md) | **How to use `nro`**: setup, commands, examples, scenarios, two instances | Testing with `nro` |
+| [orchestrator/README.md](orchestrator/README.md), [CONTRACT.md](orchestrator/CONTRACT.md) | `nro` design, puppet players, safety checks | Understanding `nro` |
+| [RELEASE.md](RELEASE.md) | **How to configure, build and release the player zip**, test with a friend, scale to more players | Releasing |
 | [orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md) | Catalog of automated one-PC scenarios, how to run, how to add one | **Before changing or adding a feature** (what to re-run, which test to write) |
 | [../README.md](../README.md) | Build, package, install (developers and players) | Releasing |
 

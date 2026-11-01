@@ -1,5 +1,7 @@
 # Orchestrator (`nro`): launch, drive and judge an offline game
 
+**How to use it, with examples: [GUIDE.md](GUIDE.md).** This page is the design and the safety model.
+
 Lets Claude Code (or you) launch an **offline** `nightreign-pvp` developer game through me3, drive it (console, keys, screenshots), fill it
 with **AFK puppet players** and run scenarios, with no second client and no Nucleus. Lives in this repo: `crates/nro-core` (preflight,
 profile, scenario model), `crates/nro` (CLI + desk), `crates/nro-mcp` (MCP server `nightreign`, registered by `.mcp.json`), `scenarios/`,
