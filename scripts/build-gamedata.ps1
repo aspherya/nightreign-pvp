@@ -14,7 +14,7 @@
 #   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only (the bots) are
 #   left out of a second copy written to dist\gamedata-player\, which package-release.ps1 puts into the player zip instead.
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
-#   (.claude\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
+#   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 # Game content stays out of git: dist\ is gitignored. The unpack must be game 1.03.3 (pinned hash below); after a game patch, re-unpack,
 # check the result in game, then update the pin.
 [CmdletBinding()]
@@ -174,7 +174,7 @@ if (-not $VanillaRoutes) {
     $dst = Join-Path $out 'map\mapstudio\m60_00_00_99.msb.dcx'
     $routeArgs = @($oodle, $msb, $dst)
     if ($HawkLine) { $routeArgs += @('--single', $HawkLine) }
-    & $py -I (Join-Path $repo '.claude\experiments\HAWK-0\patch_routes.py') @routeArgs
+    & $py -I (Join-Path $repo '.claude\archive\experiments\HAWK-0\patch_routes.py') @routeArgs
     if ($LASTEXITCODE -ne 0) { throw "patch_routes.py failed ($LASTEXITCODE)" }
     Write-Host "HAWK-2: start routes ($(if ($HawkLine) { "one line $HawkLine" } else { 'stretched' })) in $dst"
 }
