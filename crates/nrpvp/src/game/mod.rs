@@ -14,6 +14,7 @@ pub(crate) mod combat_state;
 pub(crate) mod deathhold;
 #[cfg(feature = "dev")]
 pub(crate) mod deathtrace;
+pub(crate) mod defeatdrop;
 pub(crate) mod event_flags;
 pub(crate) mod flags;
 #[cfg(feature = "dev")]
@@ -23,6 +24,7 @@ pub(crate) mod gamemem;
 pub(crate) mod hawk;
 pub(crate) mod hudfilter;
 pub(crate) mod image;
+pub(crate) mod itemdrop;
 pub(crate) mod layout;
 pub(crate) mod maphide;
 pub(crate) mod mem;
@@ -551,6 +553,10 @@ fn watch(
                 Command::Flag(f, v) => crate::game::flags::console_cmd(base, f, v),
                 #[cfg(feature = "dev")]
                 Command::RawCall(rva, arg) => rawcall::call(base, rva, arg),
+                #[cfg(feature = "dev")]
+                Command::ItemDrop(id, n, off) => itemdrop::aid(base, id, n, off),
+                #[cfg(feature = "dev")]
+                Command::DropGear(dry) => defeatdrop::aid(base, world.local, dry),
                 Command::Bots(b) => features.bots.request(
                     b,
                     "console",
@@ -671,6 +677,8 @@ fn watch(
                 .and_then(|c| c.local_state())
                 .map(|(a, _)| a),
         );
+        // RW-3 (both builds): the host makes the drops of defeated players' gear; the breakpoint that carries them to the game thread.
+        defeatdrop::tick(base, in_match);
         // RW-5 (both builds): a boss's Dormant Power orb belongs to the first team that opens it; the others lose it.
         orbclaim::tick(
             base,
@@ -800,6 +808,13 @@ fn night_acts(
                 Some(Err(e)) => Err(e),
                 None => Err("no local player"),
             },
+            NightAct::DropItems => match local {
+                Some(p) => {
+                    tracing::info!("{}", defeatdrop::drop_local(base, p));
+                    Ok(())
+                }
+                None => Err("no local player"),
+            },
             NightAct::MenuGate(on) => {
                 menugate::set_active(on);
                 Ok(())
@@ -878,6 +893,10 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         | Command::Flag(..) => {}
         #[cfg(feature = "dev")]
         Command::RawCall(..) => {}
+        #[cfg(feature = "dev")]
+        Command::ItemDrop(..) => {}
+        #[cfg(feature = "dev")]
+        Command::DropGear(..) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {

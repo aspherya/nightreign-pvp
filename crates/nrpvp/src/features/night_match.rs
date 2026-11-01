@@ -114,6 +114,8 @@ pub(crate) enum NightAct {
     ClockSpeed(f32),
     /// RW-1: let a defeated, held player's Esc menu open (`game::menugate`).
     MenuGate(bool),
+    /// RW-3: LOCAL was defeated by a rival: its gear drops where it stands (`game::defeatdrop`).
+    DropItems,
 }
 
 /// Who defeated LOCAL.
@@ -353,6 +355,9 @@ impl NightCore {
                         at_ms: now_ms,
                         exit_sent: false,
                     });
+                    if cause == Cause::Rival {
+                        acts.push(NightAct::DropItems);
+                    }
                     lines.push(format!(
                         "night_match: LOCAL defeated by {}: stays dead until the match ends{}",
                         cause.text(),
@@ -1033,6 +1038,11 @@ mod tests {
         rival_hit(&mut w, 2_000);
         let (acts, flags, lines) = run_dead(&mut c, 100, &w);
         assert!(acts.contains(&NightAct::DeathHold(true)));
+        assert_eq!(
+            acts.iter().filter(|a| **a == NightAct::DropItems).count(),
+            1,
+            "RW-3: the gear drops once, at the defeat"
+        );
         assert!(flags.is_empty());
         assert!(lines.iter().any(|l| l.contains("defeated by a rival")));
         // The defeat screen follows after defeat_exit_secs, once.
@@ -1289,6 +1299,10 @@ mod tests {
         dead_w.local_hits = env(1_000);
         let (acts, _, lines) = run_dead(&mut c, 100, &dead_w);
         assert!(acts.contains(&NightAct::DeathHold(true)), "{lines:?}");
+        assert!(
+            !acts.contains(&NightAct::DropItems),
+            "the tide drops no items (Leonardo 2026-10-31: rival kills only)"
+        );
         assert!(lines.iter().any(|l| l.contains("defeated by the tide")));
         // The same death on Day 1, or before 12:30, is a fall: vanilla.
         for (day2, h) in [(false, 14), (true, 9)] {

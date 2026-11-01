@@ -67,6 +67,10 @@ pub(crate) enum MainReq {
     Flag(u32, Option<bool>),
     /// NET-5 research: `rawcall <rva hex> [arg]`.
     RawCall(u32, u32),
+    /// RW-3 E1: `item_drop <id hex> [count] [dx dy dz]`.
+    ItemDrop(u32, u16, [i32; 3]),
+    /// RW-3: `drop_gear [dry]`.
+    DropGear(bool),
 }
 
 /// What a command does.
@@ -157,6 +161,8 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "net_verdict", args: "<boss> <team>", help: "NET-2: publish `boss <boss> was won by team <team>` (topic BOSS_VERDICT) to every other player; each machine records it once", run: net_verdict },
     Spec { name: "net_publish", args: "<topic> <key> <value>", help: "NET-2: publish any fact (numbers); same rules as net_verdict", run: net_publish },
     Spec { name: "net_status", args: "", help: "NET-1: data channel counters (sent, received, pongs, last round trip)", run: net_status },
+    Spec { name: "item_drop", args: "<id hex> [count] [dx dy dz]", help: "RW-3 E1 research: drop ONE item on the ground with the game's own drop function exe+0x576110 (the red phantom's open) at LOCAL's position (+ optional offset in metres) on the game thread; reply = result and the MapItemMan slots that changed. Ids: weapon = plain id, accessory = 0x20000000|id, goods = 0x40000000|id", run: item_drop },
+    Spec { name: "drop_gear", args: "[dry]", help: "RW-3 test aid: what a rival's defeat drops (LOCAL's equipped weapons) and whether this game is the host; without `dry` it drops it NOW at LOCAL's spot (the host makes the drop, the game shows it to everyone) without a defeat", run: drop_gear },
     Spec { name: "rawcall", args: "<rva hex> [arg]", help: "NET-5 research: call exe+rva(arg) once on the game thread (one integer argument), reply with rax. Example: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0)", run: rawcall },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },
@@ -728,6 +734,35 @@ fn net_status(args: &[String]) -> Result<Act, String> {
     Ok(Act::Reply(crate::net::status()))
 }
 
+fn item_drop(args: &[String]) -> Result<Act, String> {
+    let id = args
+        .first()
+        .and_then(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok())
+        .ok_or("id must be hex")?;
+    let count = match args.get(1) {
+        None => 1,
+        Some(a) => a.parse::<u16>().map_err(|_| "count must be a number")?,
+    };
+    let mut off = [0i32; 3];
+    if args.len() > 2 {
+        if args.len() != 5 {
+            return Err("give all three offsets: dx dy dz".into());
+        }
+        for (o, a) in off.iter_mut().zip(&args[2..]) {
+            *o = (a.parse::<f32>().map_err(|_| "offsets must be numbers")? * 100.0).round() as i32;
+        }
+    }
+    Ok(Act::Main(MainReq::ItemDrop(id, count, off)))
+}
+
+fn drop_gear(args: &[String]) -> Result<Act, String> {
+    match args {
+        [] => Ok(Act::Main(MainReq::DropGear(false))),
+        [a] if a == "dry" => Ok(Act::Main(MainReq::DropGear(true))),
+        _ => Err("usage: drop_gear [dry]".into()),
+    }
+}
+
 fn rawcall(args: &[String]) -> Result<Act, String> {
     let rva = args
         .first()
@@ -886,6 +921,14 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
         MainReq::NightEnd => {
             run(Command::NightEnd);
             crate::features::nights::status_line()
+        }
+        MainReq::ItemDrop(id, n, off) => {
+            run(Command::ItemDrop(id, n, off));
+            crate::game::itemdrop::reply()
+        }
+        MainReq::DropGear(dry) => {
+            run(Command::DropGear(dry));
+            crate::game::defeatdrop::reply()
         }
         MainReq::RawCall(rva, arg) => {
             run(Command::RawCall(rva, arg));

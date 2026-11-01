@@ -57,3 +57,13 @@ rcon.exe` locks it.
 
 - **`trace_read` on a `MapItemMan` slot kills the game** (RW-5 spike, 2026-10-31): a hardware READ watch on `MapItemMan+0x58` froze/crashed the game within a second (the engine reads the slot array constantly; the exception handler cannot keep up). Do not read-watch hot engine arrays; find the readers statically (REA on the exe) or with a write watch.
 - **Never `tp` in hops across unloaded terrain** (2026-10-31): the player fell through the world (y -650). Only jump to a place the game has loaded (next to a boss: `boss_go`, `boss_orb go`, or `orb_go` after a kill).
+
+- **`hp0` is refused after `god 1`** (RW-3, 2026-10-31): `gate failed (hp 524287, max 1000000 ...)`; the god mode leaves the data module's max HP inflated and `god 0` does not fix it. The victim of a defeat scenario never uses god mode.
+- **Scenario `contains` matching is case-insensitive** (RW-3): `TAKEN` matched `taken here`. Match whole phrases.
+- **A `mob_kill` target can be worth 0 runes** (npc 43810110); use a deterministic aid.
+- **`dist\nrpvp.toml` must be copied with `dist\gamedata`** into a worktree (RW-3): without it PvP stays OFF (`pvpve=OFF`, the rival never becomes team 29); lost an hour.
+- **Game functions that allocate must run on the game thread, not on `nrpvp-main`** (RW-3 E1, 2026-11-01): `item_drop` -> `exe+0x576110` from our thread crashed the host 3 times (null per-thread allocator via `gs:[0x58]`); fixed by running it inside a hardware-breakpoint handler on a per-frame game function (`game/itemdrop.rs`). Also: a hardware breakpoint's address must stay known to the handler until the register is cleared (~100 ms later) or the late single-step kills the game. **Calling an exe function from a console aid can kill the host, and the client dies with it**: the first symptom was `0xC0000409`. Before such a call: arm the aid's own exception handler (`game/itemdrop.rs`: first-chance AV is logged with the faulting `exe+` address, the fastfail itself cannot be caught) and expect to relaunch the lab (~5 min). A `0xC0000409` at `exe+0x269106D` is only the unwinder's stack-cookie check; the real fault is the earlier exception.
+- **`nro cmd` hangs for the full 120 s when the game dies during the command** (RW-3): the reply never comes; check `tasklist` and the log instead of waiting.
+
+- **The PC reboots/Steam autostarts between sessions** (RW-3, 2026-11-01): `nro run` is REFUSED (`P6 Steam: steam.exe is running`) and the `nro desk` is gone; close Steam (`steam.exe -shutdown`) and restart the desk first.
+- **Equipment id lists mix categories** (RW-3): `PGD+0x1D8+0x138` holds weapon ids (shield, weapon) but `+0x170` is ARMOUR (5000000..5000300), not talismans; use `0x10000000|id` for armour, check the card on screen.

@@ -1,0 +1,124 @@
+name = "mi-rw3-drop"
+about = "RW-3 E1 lab: two emulated instances reach the same expedition as rivals and stay open (teardown keep) for the item_drop experiment"
+teardown = "keep"
+# Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
+# instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
+# Run: nro run scenarios\mi-rw8-runes.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING Â§8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_match_ready"
+
+# The host opens its Seamless Co-op lobby the player's way (Matchmaking Settings > Invite Members); the quiet invite swallows the
+# invite window, the host's mod invites the roster, gbe auto-accepts on the joiner.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "joiner"
+
+# The expedition: every party member readies at the table (the party list counts n/2), the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+screenshot = "e1_host_ready"

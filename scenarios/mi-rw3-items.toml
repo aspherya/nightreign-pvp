@@ -1,0 +1,240 @@
+name = "mi-rw3-items"
+about = "RW-3 E2 on one PC: two emulated instances in the same expedition as rivals; the host drops its gear without a defeat (drop_gear), then player 2 (the client) is defeated by a rival (rival_hit + hp0): its game publishes the gear, the host makes the drop on the game thread, the game replicates it to the client"
+# Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
+# instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
+# Run: nro run scenarios\mi-rw8-runes.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING Â§8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_match_ready"
+
+# The host opens its Seamless Co-op lobby the player's way (Matchmaking Settings > Invite Members); the quiet invite swallows the
+# invite window, the host's mod invites the roster, gbe auto-accepts on the joiner.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "joiner"
+
+# The expedition: every party member readies at the table (the party list counts n/2), the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 14000
+
+# Safe landing: kill the enemies near both players (wolves killed a player mid-test once).
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+# Talismans and consumables are NOT given here: picking them up needs `F` presses, and `keys` into one of two game windows is
+# unreliable (the first key after a focus change is lost; three runs picked nothing, MEMORY_MAP 24). The reading of the inventory
+# (talisman + Fire Pot, without the flask) and the drop of all of it were checked by hand on 2026-11-01 (testing-log). To repeat:
+# `item_drop 4000012C 3`, F, `item_drop 2000047E`, F on the victim, then `drop_gear dry` must list both and not 0x400003E9.
+# Who is the host: the game's own session object says it (drop_gear dry).
+[[step]]
+instance = 1
+expect = { console = "drop_gear dry", contains = ["host yes", "item(s): ["], absent = ["0 item(s)", "panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "drop_gear dry", contains = ["host no", "item(s): ["], absent = ["0 item(s)", "panic"] }
+
+# --- Part 1: the host drops its own gear on the spot (no defeat, no channel).
+[[step]]
+instance = 1
+console = "drop_gear"
+
+[[step]]
+instance = 1
+wait = { console = "log 300", contains = ["itemdrop: on the game thread", "rax 0x1", "MapItemMan slots changed: +0x78"], timeout_s = 20 }
+
+[[step]]
+instance = 1
+screenshot = "host_own_drop"
+
+# --- Part 2: the client is defeated by a "rival": it publishes, the host makes the drop.
+[[step]]
+instance = 2
+console = "tp_player 1 0 -9"
+
+[[step]]
+instance = 2
+sleep_ms = 2000
+
+[[step]]
+instance = 2
+console = "flag 10007420 1"
+
+[[step]]
+instance = 2
+console = "rival_hit"
+
+[[step]]
+instance = 2
+sleep_ms = 1000
+
+[[step]]
+instance = 2
+console = "hp0"
+
+[[step]]
+instance = 2
+wait = { console = "night_status", contains = "defeated by a rival", timeout_s = 40 }
+
+[[step]]
+instance = 2
+wait = { console = "log 300", contains = ["defeatdrop: published drop 0x", "for the host to make"], timeout_s = 20 }
+
+[[step]]
+instance = 1
+wait = { console = "log 400", contains = ["itemdrop: queued", "for drop 0x"], timeout_s = 30 }
+
+[[step]]
+instance = 1
+wait = { console = "log 400", contains = ["item(s) for drop 0x", "-> rax 0x1"], timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_after_defeat_drop"
+
+[[step]]
+instance = 2
+screenshot = "victim_dead"
+
+[[step]]
+instance = 1
+expect = { console = "log 400", absent = ["panic", "EXCEPTION"] }

@@ -30,13 +30,18 @@ pub(crate) mod topic {
     /// handle)`, equal on every machine; published by the machine whose player opened the screen first (a tie resolves by the lowest
     /// publisher Steam id, see `facts`).
     pub(crate) const ORB_CLAIM: u16 = 2;
+    /// RW-3: one field of the gear a defeated player drops (the host makes the drop). `key` = `defeatdrop::key_of(drop id, field)`
+    /// (`drop id << 8 | field`; field 0 = item count, 1 = map id, 2..4 = block-local x, y, z as f32 bit patterns, `0x10 + i` = item
+    /// id `i`, `0x80 + i` = its count), `value` the field; published by the victim's machine only, once per defeat. (Topics 3 and 4
+    /// belong to the rejected rune-record slice on another branch.)
+    pub(crate) const ITEM_DROP: u16 = 5;
     /// Dev tests (console `net_publish`).
     #[allow(dead_code)] // used by the dev console and tests
     pub(crate) const TEST: u16 = 0xF000;
 
     /// Topics this build understands: a fact of any other topic is dropped (not recorded, not acked). Add yours here too.
     pub(crate) fn known(t: u16) -> bool {
-        matches!(t, BOSS_VERDICT | ORB_CLAIM | TEST)
+        matches!(t, BOSS_VERDICT | ORB_CLAIM | ITEM_DROP | TEST)
     }
 }
 
