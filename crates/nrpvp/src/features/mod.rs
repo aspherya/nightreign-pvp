@@ -17,6 +17,8 @@ pub(crate) mod nights;
 #[cfg(test)]
 mod golden_timelines;
 #[cfg(test)]
+mod sim_tests;
+#[cfg(test)]
 mod testkit;
 
 use crate::game::world::World;

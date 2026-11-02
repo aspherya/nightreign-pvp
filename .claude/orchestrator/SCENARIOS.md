@@ -55,6 +55,19 @@ shell, not an agent's sandboxed Bash (it cannot open the game process, so the P-
 | `mi-rw8-runes` | **RW-8 runes only inside the team, two real instances** (PASS 3/3, 2026-10-28): `mi-queue`'s flow to one expedition as rivals, `runeshare` shows both credit hooks; player 1 `mob_kill` (test aid: LOCAL as the enemy's attacker + HP 0) with player 2 4 m away; player 1 `+N` / `0 blocked`, player 2 `+0` / `1 blocked = N rune(s)` and `Unknown -> BLOCKED` in its log; control `runeshare 0` on player 2 → the next kill pays it (`+N`) | `runes_mark`, `mob_kill`, `runeshare`, screenshots | ~8 min |
 | `mi-rw5-orb` | **Parked feature (RW-5 is off by default, the scenario sets `orb_auto 1`).** RW-5 first-to-loot, two real instances (PASS 2026-10-31): both kill the same Dormant Power boss (`boss_orb`, lock-on Q, hits); instance 1 `orb_go` + F opens the screen = claim; instance 2 logs `(rival) -> off`, its `orb_list` says OFF; `net_status` facts 1/1 | `boss_orb go/hp`, `keys`, `orb_go`, waits on `orb_list` / `log` | ~9 min |
 
+**Headless twins (N6):** each single-game rules scenario has a unit test that drives the real match rules on a fake clock with the same events and asserts the same `night_status` / log strings (`crates/nrpvp/src/features/sim_tests.rs`, `cargo test -p nrpvp sim_`; milliseconds, no game). Run them first; the scenario stays the proof for what the game does (comeback hold, respawn, defeat screen, end flow, camera, Esc menu) and for real timings. Each test's doc comment says what it does not model.
+
+| Scenario | Twin test |
+|---|---|
+| `day1-free` | `sim_day1_free` |
+| `defeat-mob` | `sim_defeat_mob` |
+| `defeat-rival` | `sim_defeat_rival` |
+| `match-win` | `sim_match_win` |
+| `match-win-end` (rules part) | `sim_match_win_end` |
+| `match-loss` | `sim_match_loss` |
+| `spectate` | `sim_spectate` |
+| `esc-defeated` (rules part) | `sim_esc_defeated` |
+
 Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kill with real hits (the scenarios fake it with `rival_hit`; offline solo LOCAL carries SpEffect 6999500, so a death needs `flag 10007420 1`), what the other screen shows, Seamless Co-op host/client, banners of both screens, real latency.
 
 ## Step vocabulary (`crates/nro-core/src/scenario.rs`)

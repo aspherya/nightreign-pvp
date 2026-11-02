@@ -25,7 +25,7 @@ Owner doc for build, deploy, test tooling and logs. What the mod does is in STAT
 | By hand | `nro launch --world`, `nro navigate expedition`, `nro cmd "<console line>"`, `nro puppets 3`, `nro shot name`, `nro log 50 filter`, `nro stop` | `nro` with no argument lists them; default mod build = `dist\` of this checkout |
 | Console of any dev game | `dist\nrcon.exe list / status / players / log 30 / -i N <cmd> / --all <cmd>` | commands: CONSOLE.md §0 |
 | Player zip | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 [-MatchPlayers N] [-TeamSize N]` | `release-zip` skill; builds the player DLL itself |
-| Tests | `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo clippy -p nrpvp --no-default-features --all-targets -- -D warnings`, `cargo fmt --all --check` | the same checks run in GitHub Actions |
+| Tests | `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo clippy -p nrpvp --no-default-features --all-targets -- -D warnings`, `cargo fmt --all --check` | the same checks run in GitHub Actions. `cargo test -p nrpvp sim_` = the headless twins of the rules scenarios (orchestrator/SCENARIOS.md), run before a scenario |
 
 ## Ghidra / REA (static analysis of nightreign.exe)
 
