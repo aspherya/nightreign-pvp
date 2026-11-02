@@ -4,11 +4,12 @@
 
 use super::gamemem::GameMem;
 use super::layout::{
-    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, CHR_HANDLE,
-    CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE, DATA_MODULE_HP,
-    MENU_SETTINGS, MENU_SETTINGS_PLAYERS, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
-    PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED,
-    PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
+    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, BR_CARD_KIND,
+    BR_CARD_SLOT, CHR_HANDLE, CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE,
+    DATA_MODULE_HP, MENU_CARD_KIND, MENU_CARD_SLOT, MENU_SETTINGS, MENU_SETTINGS_PLAYERS,
+    PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING, PLAYAREA_SET_HOUR,
+    PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED, PLAYER_MODULES,
+    PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -101,6 +102,14 @@ pub(crate) struct ExpeditionMenu<'m> {
 impl<'m> ExpeditionMenu<'m> {
     pub(crate) fn new(mem: &'m dyn GameMem, addr: usize) -> Self {
         ExpeditionMenu { mem, addr }
+    }
+
+    /// True when the selected card of the expedition list is our Battle Royale card, false for any other card, `None` when the menu
+    /// cannot be read (`layout::MENU_CARD_KIND`).
+    pub(crate) fn is_battle_royale_card(&self) -> Option<bool> {
+        let kind = self.mem.read_u32(self.addr.checked_add(MENU_CARD_KIND)?)?;
+        let slot = self.mem.read_u32(self.addr.checked_add(MENU_CARD_SLOT)?)?;
+        Some(kind == BR_CARD_KIND && slot == BR_CARD_SLOT)
     }
 
     /// Its matchmaking settings object, when the pointer is plausible.
@@ -439,6 +448,33 @@ mod tests {
         assert_eq!(s.players(), Some(2));
         s.set_players(1).expect("write");
         assert_eq!(s.players(), Some(1));
+    }
+
+    #[test]
+    fn only_our_card_reads_as_battle_royale() {
+        let m = FakeMem::default();
+        let menu = 0x10_0000;
+        m.put_u32(menu + MENU_CARD_KIND, BR_CARD_KIND);
+        m.put_u32(menu + MENU_CARD_SLOT, BR_CARD_SLOT);
+        assert_eq!(
+            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
+            Some(true)
+        );
+        m.put_u32(menu + MENU_CARD_KIND, 4); // the Everdark Tricephalos
+        assert_eq!(
+            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
+            Some(false)
+        );
+        m.put_u32(menu + MENU_CARD_KIND, BR_CARD_KIND);
+        m.put_u32(menu + MENU_CARD_SLOT, 1);
+        assert_eq!(
+            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
+            Some(false)
+        );
+        assert_eq!(
+            ExpeditionMenu::new(&m, 0x50_0000).is_battle_royale_card(),
+            None
+        );
     }
 
     #[test]

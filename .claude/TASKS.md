@@ -87,6 +87,11 @@ Out of scope: real Steam lobbies, real lag, shipping an emulator.
 text addresses they found are in `re/MEMORY_MAP.md` §13; the flow is in `MATCHMAKING.md` §3. Left over as polish (not cards yet): the
 live count inside the searching box (UI-1 C3), and messages that never show because the next state arrives first (TESTING §3, FS-UI2 entry).
 
+### MODE-SCOPE — Mod rules only in the Battle Royale expedition (Leonardo, 2026-11-02, not urgent)
+Owner: OPUS (design) | Status: idea, not scheduled
+The normal expeditions started from the other cards are vanilla in every checked way, except that the hawk crossing at the start (and maybe other rules: free Day 1, PvP team writes, HUD filter) also runs in them although it is meant for Battle Royale. Decide which
+rules follow "this expedition came from our card" and which stay always on; the card signal exists (`menuflow::decide_for_card`), the expedition itself would need a flag set at Commence. First check what really changes in a normal expedition (one short run).
+
 ### MM-3g — No host click: trigger Invite Members from the mod
 Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
 UI-0 settled that **no talk command opens Matchmaking Settings or Invite Members** (all NR ESDs + esdtool's command list), so the data route

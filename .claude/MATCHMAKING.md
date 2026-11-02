@@ -37,7 +37,7 @@ All Steam calls run on our own worker thread through the game's `steam_api64.dll
 
 | # | Who | What happens | Status line (player build) |
 |---|---|---|---|
-| 1 | each player | At the Roundtable table: boss menu → Matchmaking Settings → Number of Players **Solo** → **Commence** (UI-1). Refused at the title screen or in an expedition | `Searching for players...` |
+| 1 | each player | At the Roundtable table: boss menu → pick the **Battle Royale** card (last in the list, UI-3) and Matchmaking Settings → Number of Players **Solo** → **Commence** (UI-1; any other card starts the normal expedition). Refused at the title screen or in an expedition | `Searching for players...` |
 | 2 | each mod | Searches Steam for queue lobbies with the same tags (§4) and room. Joins the **lowest** lobby id found, else creates one | `Searching for players... 1/2` |
 | 3 | lobby owners | If two lobbies exist, the owner of the higher id writes `merge_to`, everyone in it leaves and joins the lower one | |
 | 4 | queue owner | Lobby full (6 in the final game; a test setting can start earlier, §5): closes the lobby and writes `host` (itself), `roster`, `state=go` | `Match found!` |

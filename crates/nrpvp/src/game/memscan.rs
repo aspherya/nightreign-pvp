@@ -51,6 +51,22 @@ pub(crate) fn find_all(hay: &[u8], needle: &[u8]) -> Vec<usize> {
     out
 }
 
+/// Offsets of `needle` in `hay` that are multiples of `align` (1, or 4 for data the game stores as `s32` fields: one `u32` compare per
+/// 4 bytes instead of a byte scan; several GiB per second against about one).
+pub(crate) fn find_all_aligned(hay: &[u8], needle: &[u8], align: usize) -> Vec<usize> {
+    if align != 4 || needle.len() < 4 {
+        return find_all(hay, needle);
+    }
+    let head = u32::from_le_bytes([needle[0], needle[1], needle[2], needle[3]]);
+    let mut out = Vec::new();
+    for (i, w) in hay.as_chunks::<4>().0.iter().enumerate() {
+        if u32::from_le_bytes(*w) == head && hay[i * 4..].starts_with(needle) {
+            out.push(i * 4);
+        }
+    }
+    out
+}
+
 /// `text` as UTF-16LE bytes (what the game's strings are).
 pub(crate) fn utf16_bytes(text: &str) -> Vec<u8> {
     text.encode_utf16().flat_map(u16::to_le_bytes).collect()
@@ -59,9 +75,20 @@ pub(crate) fn utf16_bytes(text: &str) -> Vec<u8> {
 /// Scan the process for `needle`. `min_region` skips regions smaller than that. Our own read buffers are never reported (the heap
 /// reuses them, so a match inside one is a copy of a copy).
 pub(crate) fn scan(needle: &[u8], min_region: usize, max_hits: usize) -> Scan {
+    scan_aligned(needle, min_region, max_hits, 1)
+}
+
+/// [`scan`] for a pattern that starts at a multiple of `align` (1 or 4) in memory; one read buffer is reused for every chunk.
+pub(crate) fn scan_aligned(
+    needle: &[u8],
+    min_region: usize,
+    max_hits: usize,
+    align: usize,
+) -> Scan {
     let started = Instant::now();
     let mut out = Scan::default();
-    let mut own: Vec<(usize, usize)> = Vec::new();
+    let mut buf = vec![0u8; CHUNK];
+    let own: Vec<(usize, usize)> = vec![(buf.as_ptr() as usize, CHUNK)];
     let mut found: Vec<usize> = Vec::new();
     let mut addr: usize = 0x1_0000;
     loop {
@@ -91,11 +118,13 @@ pub(crate) fn scan(needle: &[u8], min_region: usize, max_hits: usize) -> Scan {
             let mut p = base;
             while p < end {
                 let len = CHUNK.min(end - p);
-                let mut buf = vec![0u8; len];
-                own.push((buf.as_ptr() as usize, len));
-                if mem::copy_out(p, &mut buf) {
+                if mem::copy_out(p, &mut buf[..len]) {
                     out.bytes += len;
-                    found.extend(find_all(&buf, needle).into_iter().map(|o| p + o));
+                    found.extend(
+                        find_all_aligned(&buf[..len], needle, align)
+                            .into_iter()
+                            .map(|o| p + o),
+                    );
                 }
                 // Overlap the next chunk a little so a match across a chunk border is seen.
                 p += if end - p > CHUNK { CHUNK - 64 } else { len };
@@ -193,5 +222,20 @@ mod tests {
     #[test]
     fn text_becomes_utf16_little_endian() {
         assert_eq!(utf16_bytes("Ab"), vec![0x41, 0, 0x62, 0]);
+    }
+
+    #[test]
+    fn aligned_search_finds_only_multiples_of_four() {
+        let mut hay = vec![0xAAu8; 64];
+        hay[8..12].copy_from_slice(&[1, 2, 3, 4]); // aligned
+        hay[21..25].copy_from_slice(&[1, 2, 3, 4]); // not aligned: skipped
+        hay[40..46].copy_from_slice(&[1, 2, 3, 4, 5, 6]);
+        assert_eq!(find_all_aligned(&hay, &[1, 2, 3, 4], 4), vec![8, 40]);
+        assert_eq!(find_all_aligned(&hay, &[1, 2, 3, 4, 5, 6], 4), vec![40]);
+        assert_eq!(
+            find_all_aligned(&hay, &[1, 2, 3, 4], 1),
+            find_all(&hay, &[1, 2, 3, 4]),
+            "align 1 is the byte scan"
+        );
     }
 }

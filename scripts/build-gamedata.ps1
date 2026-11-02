@@ -15,12 +15,19 @@
 #   left out of a second copy written to dist\gamedata-player\, which package-release.ps1 puts into the player zip instead.
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
+#   regulation.bin (UI-3, the Battle Royale card in the expedition list): the pinned regulation.bin with the param rows of
+#   gamedata\nightbossmenu-rows.json (NightBossMenuParam row 9 replaced), written by tools\regulation (sbwriter: Smithbox's own
+#   SoulsFormats writer; needs the .NET 10 SDK and a Smithbox 2.2.6 folder, -Smithbox). Only Smithbox's writer is verified to make a
+#   file the game loads: WitchyBND's regulation repack and our earlier Python writer both make the game close (TRAPS.md).
+#   Sits at the package root, where me3 picks it up; in the player zip too.
 # Game content stays out of git: dist\ is gitignored. The unpack must be game 1.03.3 (pinned hash below); after a game patch, re-unpack,
 # check the result in game, then update the pin.
 [CmdletBinding()]
 param(
     [string]$Unpacked = 'Z:\Tools\nr-unpacked\1.03.3',
     [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
+    # UI-3: Smithbox install whose SoulsFormats DLLs build regulation.bin (referenced at build time, never copied into the repo).
+    [string]$Smithbox = 'Z:\Tools\Smithbox-2.2.6',
     # HAWK-2: the crossing line is built by default (it is part of the game). -VanillaRoutes leaves map\ out (vanilla 200 m start
     # routes; dev comparisons only: package-release.ps1 refuses such a package).
     [switch]$VanillaRoutes,
@@ -178,3 +185,28 @@ if (-not $VanillaRoutes) {
     if ($LASTEXITCODE -ne 0) { throw "patch_routes.py failed ($LASTEXITCODE)" }
     Write-Host "HAWK-2: start routes ($(if ($HawkLine) { "one line $HawkLine" } else { 'stretched' })) in $dst"
 }
+
+# UI-3: regulation.bin with our param rows, written by Smithbox's own writer (tools\regulation, sbwriter; it checks the pinned hash too).
+$reg = Join-Path $Unpacked 'regulation.bin'
+# regulation.bin of game 1.03.3 (UI-3).
+$hh = (Get-FileHash $reg).Hash
+if ($hh -ne '876A3CA279A4561D0C69F81FE5E510C75C59AB9A8A201694F8CF4A42C91E0268') { throw "regulation.bin hash $hh is not the pinned 1.03.3 hash" }
+$dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source
+if (-not $dotnet) { throw 'dotnet not found: regulation.bin needs the .NET 10 SDK (https://dotnet.microsoft.com/download/dotnet/10.0)' }
+if (-not (& $dotnet --list-sdks | Where-Object { $_ -match '^10\.' })) { throw 'No .NET 10 SDK installed (dotnet --list-sdks): sbwriter targets net10.0 like Smithbox 2.2.6' }
+foreach ($dll in 'Andre.SoulsFormats.dll', 'Andre.Core.dll', 'Andre.IO.dll', 'DotNext.dll', 'DotNext.IO.dll', 'DotNext.Unsafe.dll', 'CommunityToolkit.HighPerformance.dll', 'ZstdNet.dll', 'libzstd.dll', 'oo2core_9_win64.dll') {
+    if (-not (Test-Path (Join-Path $Smithbox $dll))) { throw "Smithbox DLL missing: $Smithbox\$dll (install Smithbox 2.2.6 or pass -Smithbox <folder>)" }
+}
+# Build in the work folder (no bin\obj in the repo).
+$sbSrc = Join-Path $work 'sbwriter'
+New-Item -ItemType Directory -Force $sbSrc | Out-Null
+Copy-Item (Join-Path $repo 'tools\regulation\sbwriter.csproj'), (Join-Path $repo 'tools\regulation\Program.cs') $sbSrc
+$sbBin = Join-Path $sbSrc 'bin'
+$prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+$buildLog = & $dotnet build (Join-Path $sbSrc 'sbwriter.csproj') -c Release -o $sbBin "-p:SmithboxDir=$Smithbox" -nologo 2>&1
+$code = $LASTEXITCODE; $ErrorActionPreference = $prev
+if ($code -ne 0) { $buildLog | Out-Host; throw "dotnet build of tools\regulation\sbwriter failed ($code)" }
+$regOut = Join-Path $out 'regulation.bin'
+& (Join-Path $sbBin 'sbwriter.exe') $reg (Join-Path $repo 'gamedata\nightbossmenu-rows.json') $regOut
+if ($LASTEXITCODE -ne 0) { throw "sbwriter failed ($LASTEXITCODE)" }
+Write-Host ("UI-3: regulation.bin  {0}  {1}" -f (Get-Item $regOut).Length, (Get-FileHash $regOut).Hash.Substring(0, 16))

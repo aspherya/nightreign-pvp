@@ -10,6 +10,12 @@ Read when you touch the area named in a bullet, or before debugging something od
   (2026-10-23, cause UNKNOWN). Use the plain deploy. Event-script features are tested with `nro` (offline mode, puppets, `mi-*` instances; TOOLS.md); under Nucleus use the dev console
   (`flag`, `clock`) instead.
 - **Never run the scanner or any tool against the normal game.** Steam launch = vanilla with anti-cheat. Mods only through Nucleus, `nrpvp_launcher.exe`, `scripts\launch.ps1` or `nro` (me3 profile with its preflight).
+- **Only Smithbox's writer makes a `regulation.bin` the game loads** (2026-11-02, in game). WitchyBND 3.0.1.0 (SoulsFormatsNEXT
+  `EncryptERNRRegulation`) encrypts a Nightreign regulation with the Elden Ring AES key: the game closes ~10 s after start, no crash
+  dump (Witchy reads with the ER key first, so re-unpacking its own output looks fine). Our own Python writer (NR key, identical BND4,
+  zstd 22, zero padding) closed the game the same way; cause UNKNOWN (zstd framing or padding). `scripts\build-gamedata.ps1` uses
+  `tools\regulation` (sbwriter = Smithbox's SoulsFormats, `EncryptNightreignRegulation` with a zero IV). A NEW param row id does not
+  show in the expedition list: replace an existing row (`gamedata\nightbossmenu-rows.json`).
 - **Never touch the vanilla saves** (`%APPDATA%\Nightreign\<id>\NR0000.sl2*`).
 - **Player ids change between the lobby and the expedition** (run 21: joiners were `0x6003`/`0x6004` in the lobby, `0x6002`/`0x6003` in
   the expedition). Teams are only meaningful once the expedition has loaded; do not decide or show teams from lobby ids.

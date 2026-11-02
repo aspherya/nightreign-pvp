@@ -239,7 +239,7 @@ fn scan() {
     let n = needle();
     // Row 7700 is the second row: its data starts FIELDS_AT before the needle, row 0 one row earlier.
     let back = FIELDS_AT + ROW_SIZE;
-    let r = memscan::scan(&n, ROWS.len() * ROW_SIZE, usize::MAX);
+    let r = memscan::scan_aligned(&n, ROWS.len() * ROW_SIZE, usize::MAX, 4);
     // Keep only whole 85-row blocks of vanilla values (also drops any stray byte match).
     let mut copies = Vec::new();
     for h in r.hits {

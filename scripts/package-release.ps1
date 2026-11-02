@@ -4,7 +4,8 @@
 #   NightreignPvP\nrpvp.dll       the mod
 #   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4), mm_max_players = -MatchPlayers (default 2 until release); PvP is always on, no dev_mode)
 #   NightreignPvP\gamedata\...    our game-data package (dist\gamedata from scripts\build-gamedata.ps1: Battle Royale texts + Roundtable
-#                                 messages, UI-1/UI-2; the hawk crossing line, HAWK-2); the launcher loads it as an me3 [[packages]] entry
+#                                 messages, UI-1/UI-2; the hawk crossing line, HAWK-2; regulation.bin with the Battle Royale card
+#                                 row, UI-3); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
 #   HOW TO INSTALL.txt
 # R1: the zip gets a PLAYER nrpvp.dll, built here with `--no-default-features` (no developer tooling) into target\player\. The script
@@ -33,8 +34,10 @@ $gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
 # OFF-4 / M5-3: dist\gamedata\event\common.emevd.dcx holds the bot events (dev only); the player zip gets the copy without them from
 # dist\gamedata-player (the no-boss nights only). event\common_func.emevd.dcx: the no-boss nights (M5-3).
 $playerCommon = Join-Path $dist 'gamedata-player\event\common.emevd.dcx'
-if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\common.emevd.dcx')) -or -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\common_func.emevd.dcx')) -or -not (Test-Path -LiteralPath $playerCommon) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 19) {
-    throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + event\common.emevd.dcx + event\common_func.emevd.dcx + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx + the hawk route file, and dist\gamedata-player\event\common.emevd.dcx). Run scripts\build-gamedata.ps1 first."
+# UI-3: regulation.bin (the Battle Royale card row) at the package root; it goes into the zip with the rest of dist\gamedata.
+$regulation = Join-Path $gamedata 'regulation.bin'
+if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx')) -or -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\common.emevd.dcx')) -or -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\common_func.emevd.dcx')) -or -not (Test-Path -LiteralPath $regulation) -or -not (Test-Path -LiteralPath $playerCommon) -or $gdMsg.Count -ne 15 -or $gdFiles.Count -ne 20) {
+    throw "dist\gamedata incomplete ($($gdFiles.Count) files, $($gdMsg.Count) languages; want event\m10_00_00_00.emevd.dcx + event\common.emevd.dcx + event\common_func.emevd.dcx + regulation.bin + 15 x msg\<lang>\menu_dlc01.msgbnd.dcx + the hawk route file, and dist\gamedata-player\event\common.emevd.dcx). Run scripts\build-gamedata.ps1 first."
 }
 foreach ($f in 'bin\me3.exe', 'bin\me3-launcher.exe', 'bin\me3_mod_host.dll', 'LICENSE-MIT', 'LICENSE-APACHE') {
     if (-not (Test-Path -LiteralPath (Join-Path $Me3Dir $f))) { throw "me3 file missing: $Me3Dir\$f" }

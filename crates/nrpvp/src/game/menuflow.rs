@@ -107,6 +107,24 @@ pub(crate) enum Decision {
     Dialog { text: usize, request: u8 },
 }
 
+/// UI-3: the decision for a Commence press given the selected card. Only the Battle Royale card uses our queue; any other card is the
+/// game's (and Seamless Co-op's) own expedition, untouched. While our queue is searching or a match is ready the card does not matter
+/// (a player who changed card still stops the search or starts the match). `br_card` is `None` when the menu cannot be read: left to the
+/// game.
+pub(crate) fn decide_for_card(
+    br_card: Option<bool>,
+    players: u8,
+    phase: u8,
+    mm_on: bool,
+    mode: GameMode,
+) -> Decision {
+    let queue_active = phase == PHASE_SEARCHING || phase == PHASE_MATCHED;
+    if br_card != Some(true) && !queue_active {
+        return Decision::Pass;
+    }
+    decide(players, phase, mm_on, mode)
+}
+
 /// The decision for a Commence press (pure; unit tested).
 pub(crate) fn decide(players: u8, phase: u8, mm_on: bool, mode: GameMode) -> Decision {
     // OFF-1: Offline runs the game's own solo Commence whatever the queue is doing (switching to Offline leaves the queue).
@@ -223,11 +241,12 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         let mem = RealMem;
         let settings = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).settings();
         let players = settings.as_ref().and_then(|s| s.players());
+        let br_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).is_battle_royale_card();
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
             let mode = crate::features::mode::current();
-            let d = decide(players, phase, crate::mm::enabled(), mode);
+            let d = decide_for_card(br_card, players, phase, crate::mm::enabled(), mode);
             PRESSES.fetch_add(1, Ordering::Relaxed);
             LAST.store(
                 (u64::from(mode == GameMode::Offline) << 40)
@@ -506,5 +525,51 @@ mod tests {
         for t in texts() {
             assert!(t.encode_utf16().count() < TEXT_UNITS);
         }
+    }
+
+    /// UI-3: the card row (`gamedata/nightbossmenu-rows.json`, written into regulation.bin) names texts that the game-data package must hold.
+    #[test]
+    fn only_the_battle_royale_card_starts_our_queue() {
+        use GameMode::BattleRoyale as BR;
+        let br = Some(true);
+        let other = Some(false);
+        // Idle: our card queues, any other card (or an unreadable menu) is the game's own Commence.
+        assert_eq!(
+            decide_for_card(br, PLAYERS_ONE, PHASE_IDLE, true, BR),
+            decide(PLAYERS_ONE, PHASE_IDLE, true, BR)
+        );
+        for card in [other, None] {
+            assert_eq!(
+                decide_for_card(card, PLAYERS_ONE, PHASE_IDLE, true, BR),
+                Decision::Pass
+            );
+            assert_eq!(
+                decide_for_card(card, PLAYERS_TWO, PHASE_IDLE, true, BR),
+                Decision::Pass
+            );
+            assert_eq!(
+                decide_for_card(card, PLAYERS_ONE, PHASE_IDLE, true, GameMode::Offline),
+                Decision::Pass
+            );
+        }
+        // Queue active: the card does not matter.
+        for card in [br, other, None] {
+            for phase in [PHASE_SEARCHING, PHASE_MATCHED] {
+                assert_eq!(
+                    decide_for_card(card, PLAYERS_ONE, phase, true, BR),
+                    decide(PLAYERS_ONE, phase, true, BR)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_battle_royale_card_texts_are_in_the_package() {
+        let rows = include_str!("../../../../gamedata/nightbossmenu-rows.json");
+        let texts = include_str!("../../../../gamedata/fmg-entries.json");
+        assert!(rows.contains("\"expeditionNameId\": 131152"));
+        assert!(rows.contains("\"descriptionId\": 131153"));
+        assert!(texts.contains("\"131152\": \"Battle Royale\""));
+        assert!(texts.contains("\"131153\": "));
     }
 }

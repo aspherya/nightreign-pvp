@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<!-- sbwriter (UI-3): see Program.cs. Built by scripts\build-gamedata.ps1 in a temp folder; references the DLLs of a Smithbox install
+     (-p:SmithboxDir=..., default Z:\Tools\Smithbox-2.2.6). No DLL of Smithbox is copied into the repo. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- .NET 10: what Smithbox 2.2.6 targets (its DLLs need it); SDK 10.0.403 is installed on the dev PC. -->
+    <AssemblyName>sbwriter</AssemblyName>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <SmithboxDir Condition="'$(SmithboxDir)'==''">Z:\Tools\Smithbox-2.2.6</SmithboxDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Andre.SoulsFormats"><HintPath>$(SmithboxDir)\Andre.SoulsFormats.dll</HintPath></Reference>
+    <Reference Include="Andre.Core"><HintPath>$(SmithboxDir)\Andre.Core.dll</HintPath></Reference>
+    <Reference Include="Andre.IO"><HintPath>$(SmithboxDir)\Andre.IO.dll</HintPath></Reference>
+    <Reference Include="DotNext"><HintPath>$(SmithboxDir)\DotNext.dll</HintPath></Reference>
+    <Reference Include="DotNext.IO"><HintPath>$(SmithboxDir)\DotNext.IO.dll</HintPath></Reference>
+    <Reference Include="DotNext.Unsafe"><HintPath>$(SmithboxDir)\DotNext.Unsafe.dll</HintPath></Reference>
+    <Reference Include="CommunityToolkit.HighPerformance"><HintPath>$(SmithboxDir)\CommunityToolkit.HighPerformance.dll</HintPath></Reference>
+    <Reference Include="ZstdNet"><HintPath>$(SmithboxDir)\ZstdNet.dll</HintPath></Reference>
+    <None Include="$(SmithboxDir)\libzstd.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(SmithboxDir)\oo2core_9_win64.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

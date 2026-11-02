@@ -4,7 +4,9 @@
     "99100100": "Solo",
     "99100101": "Duo",
     "99100102": "Trio",
-    "99100103": "Stop Searching"
+    "99100103": "Stop Searching",
+    "131152": "Battle Royale",
+    "131153": "Rival players are enemies. Defeat them, loot what they drop and outlast every other team; the last team standing wins. Day 1 is free of the tide and the night."
   },
   "EventTextForMap_dlc01": {
     "99100200": "Battle Royale test 1 of 3 (dialog)",

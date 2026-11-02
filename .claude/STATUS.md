@@ -1,4 +1,4 @@
-# Status (updated 2026-11-01)
+# Status (updated 2026-11-02)
 
 **The only "now" doc.** Rules: keep it under ~8 KB; replace lines instead of appending history (results go to `testing-log/`, traps to
 [TRAPS.md](TRAPS.md), decisions to [DECISIONS.md](DECISIONS.md), tools to [TOOLS.md](TOOLS.md), live cards to [TASKS.md](TASKS.md)).
@@ -12,6 +12,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 2` was tested only for the downed / revive rule (Nucleus); **a Duo / Trio match with the RW features (team runes, HUD filter, team win) was never run by us**, `team_size = 3` not at all |
 | One-click install (`dist\NightreignPvP.zip`), player build with no overlay | **Works on two PCs** (FS-UI2, 2026-10-21) |
 | Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu | **Works with one host click**, 2 players (FS-MM3, FS-UI2). One PC, two emulated-Steam instances: `mi-queue` PASS 3/3 (2026-10-27). 6 players only in automated tests |
+| **Battle Royale card in the Roundtable expedition list** (UI-3): the last card, always available; Commence on it starts our queue, any other card is a normal vanilla expedition | **Works on one PC** (2026-11-02, `testing-log/2026-10-20_on.md`). Built into `regulation.bin` (instant). The Deep of Night checked (vanilla Commence). Open: the hawk crossing and other rules also run in normal expeditions (TASKS MODE-SCOPE); not seen on two PCs |
 | Downed rule: rival hits take 3 s off the bleed-out; teammates revive; rivals cannot revive rivals | **Works** (Nucleus). Not yet over real two-PC lag |
 | Hawk crossing at the start | **Works solo**, on by default; not run in an FS |
 | **Match rules (RW-1/2/4):** killed by a rival or the tide = **defeated for good** (body held; default `defeat_exit_secs = 0` = watch until the match ends, F10 leaves; a value above 0 shows the defeat screen after that many seconds; nobody respawns); killed by a mob, boss or fall = the game's own respawn; the match ends the moment one team is left, on any day; **free Day 1** (`day1_secs` = 1020, no tide, no night), Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`). Not seen on two PCs (FS-RW1, TESTING §6) |
