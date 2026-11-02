@@ -9,7 +9,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 | Feature | State |
 |---|---|
-| PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 2` was tested only for the downed / revive rule (Nucleus); **a Duo / Trio match with the RW features (team runes, HUD filter, team win) was never run by us**, `team_size = 3` not at all |
+| PvP between players, PvE alongside; rivals marked hostile automatically; teams from player IDs (`team_size` 1/2) | **Works** (Nucleus, real Steam). `team_size = 2` was tested only for the downed / revive rule (Nucleus); **a Duo party now queues and starts a match as teammates on one PC (`mi-duo-party`, 2026-11-02)**; the RW features between teammates (runes, HUD filter, revive, team win) and `team_size = 3` are still unseen |
 | One-click install (`dist\NightreignPvP.zip`), player build with no overlay | **Works on two PCs** (FS-UI2, 2026-10-21) |
 | Solo matchmaking over real Steam (queue → match → same Roundtable → expedition as rivals); Battle Royale in the stock table menu | **Works with one host click**, 2 players (FS-MM3, FS-UI2). One PC, two emulated-Steam instances: `mi-queue` PASS 3/3 (2026-10-27). 6 players only in automated tests |
 | **Battle Royale card in the Roundtable expedition list** (UI-3): the last card, always available; Commence on it starts our queue, any other card is a normal vanilla expedition | **Works on one PC** (2026-11-02, `testing-log/2026-10-20_on.md`). Built into `regulation.bin` (instant). The Deep of Night checked (vanilla Commence). Open: the hawk crossing and other rules also run in normal expeditions (TASKS MODE-SCOPE); not seen on two PCs |

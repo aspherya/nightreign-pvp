@@ -98,16 +98,20 @@ pub(crate) const PLAYERS_THREE: u8 = 0;
 /// Our dialog texts (index into [`TEXTS`]).
 pub(crate) const T_SEARCHING: usize = 0;
 pub(crate) const T_STOPPED: usize = 1;
-pub(crate) const T_SOON: usize = 2;
+pub(crate) const T_SEARCHING_DUO: usize = 2;
 pub(crate) const T_OFF: usize = 3;
 pub(crate) const T_OFFLINE_SOLO: usize = 4;
-const N_TEXTS: usize = 5;
+pub(crate) const T_SEARCHING_TRIO: usize = 5;
+const N_TEXTS: usize = 6;
 const TEXT_UNITS: usize = 256;
 
 /// Requests from the handler to the thread.
 pub(crate) const REQ_NONE: u8 = 0;
 pub(crate) const REQ_QUEUE_SOLO: u8 = 1;
 pub(crate) const REQ_LEAVE: u8 = 2;
+/// Duo / Trio (the matchmaker's `Mode::Duo` / `Mode::Squad`): the Seamless Co-op party queues, led by the owner of its lobby.
+pub(crate) const REQ_QUEUE_DUO: u8 = 3;
+pub(crate) const REQ_QUEUE_TRIO: u8 = 4;
 
 /// What a Commence press does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,9 +178,13 @@ pub(crate) fn decide(players: u8, phase: u8, mm_on: bool, mode: GameMode) -> Dec
                 text: T_SEARCHING,
                 request: REQ_QUEUE_SOLO,
             },
+            PLAYERS_TWO => Decision::Dialog {
+                text: T_SEARCHING_DUO,
+                request: REQ_QUEUE_DUO,
+            },
             _ => Decision::Dialog {
-                text: T_SOON,
-                request: REQ_NONE,
+                text: T_SEARCHING_TRIO,
+                request: REQ_QUEUE_TRIO,
             },
         },
     }
@@ -186,10 +194,11 @@ pub(crate) fn texts() -> [String; N_TEXTS] {
     [
         "Battle Royale: searching for players (Solo).\nYou will be told when the match is found.\nTo stop, press Stop Searching.".to_string(),
         "Battle Royale: stopped searching for players.".to_string(),
-        "Duo and Trio Battle Royale are coming soon.\nChoose Solo in Matchmaking Settings > Number of Players.".to_string(),
+        "Battle Royale: searching for players (Duo).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
         "Battle Royale matchmaking is turned off (matchmaking = false).".to_string(),
         "Offline mode is solo only.
 Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
+        "Battle Royale: searching for players (Trio).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
     ]
 }
 
@@ -400,6 +409,23 @@ fn run(base: usize) {
                     }
                 );
             }
+            r @ (REQ_QUEUE_DUO | REQ_QUEUE_TRIO) => {
+                let mode = if r == REQ_QUEUE_DUO {
+                    crate::mm::Mode::Duo
+                } else {
+                    crate::mm::Mode::Squad
+                };
+                let ok = crate::mm::send(crate::mm::Cmd::Queue(mode));
+                tracing::info!(
+                    "br_menu: Commence -> queue {} ({})",
+                    mode.label(),
+                    if ok {
+                        "sent"
+                    } else {
+                        "NOT sent: queue off or full"
+                    }
+                );
+            }
             REQ_LEAVE => {
                 let ok = crate::mm::send(crate::mm::Cmd::Leave);
                 tracing::info!(
@@ -430,26 +456,27 @@ mod tests {
     use crate::mm::PHASE_IDLE;
 
     #[test]
-    fn idle_solo_queues_and_duo_trio_are_coming_soon() {
+    fn idle_queues_the_mode_of_the_number_of_players() {
+        let idle = |p| decide(p, PHASE_IDLE, true, GameMode::BattleRoyale);
         assert_eq!(
-            decide(PLAYERS_ONE, PHASE_IDLE, true, GameMode::BattleRoyale),
+            idle(PLAYERS_ONE),
             Decision::Dialog {
                 text: T_SEARCHING,
                 request: REQ_QUEUE_SOLO
             }
         );
         assert_eq!(
-            decide(PLAYERS_TWO, PHASE_IDLE, true, GameMode::BattleRoyale),
+            idle(PLAYERS_TWO),
             Decision::Dialog {
-                text: T_SOON,
-                request: REQ_NONE
+                text: T_SEARCHING_DUO,
+                request: REQ_QUEUE_DUO
             }
         );
         assert_eq!(
-            decide(PLAYERS_THREE, PHASE_IDLE, true, GameMode::BattleRoyale),
+            idle(PLAYERS_THREE),
             Decision::Dialog {
-                text: T_SOON,
-                request: REQ_NONE
+                text: T_SEARCHING_TRIO,
+                request: REQ_QUEUE_TRIO
             }
         );
     }

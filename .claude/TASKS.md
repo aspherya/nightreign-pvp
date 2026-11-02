@@ -105,7 +105,7 @@ code `+0x258568B` / `+0x257F5DA`, the latter obfuscated with no `.pdata`).
 Acceptance (HUMAN, solo): dev button "invite now (test)" makes the game's lobby (`inviteParam`) with no menu and no Steam window.
 
 ### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
-Owner: OPUS to card in detail | Status: later | Settles: S9 U7
+Owner: OPUS to card in detail | Status: **started 2026-11-02**: the menu queues Duo / Trio (`br_menu`), a Duo party of 2 reaches an expedition as teammates (`mi-duo-party`); open: the 6-player 3-team match, Trio, messages for a party member / no party, the roster → team mapping with several teams | Settles: S9 U7
 Match sizes (Leonardo, 2026-10-19): Duo = 3 teams of 2, Squad = 2 teams of 3, always 6 players; complete parties only.
 With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapped to expedition players on every client.
 
@@ -260,8 +260,8 @@ Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements c
 Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
 Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `features/br_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
 
-### DUOTRIO-1 — First Duo and Trio tests (BACKLOG, Leonardo 2026-11-02)
-Owner: HUMAN + OPUS | Status: todo | Depends on: none
+### DUOTRIO-1 — First Duo and Trio tests (Leonardo 2026-11-02; now the official Duo / Trio work)
+Owner: HUMAN + OPUS | Status: **in progress**: `mi-duo-party` (party, queue, expedition as `ally`) PASS 2026-11-02; next scenarios on that base (two teammates): runes shared, revive, HUD / pins of a teammate, a teammate's defeat; then a puppet team scenario for 2 vs 2 / win by team | Depends on: none
 Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.
 
 ### SOLO-REVIVE — Solo night death with a revive item (BACKLOG, Leonardo 2026-11-02)

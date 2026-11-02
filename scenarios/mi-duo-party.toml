@@ -1,0 +1,95 @@
+﻿name = "mi-duo-party"
+about = "Duo from the menu's matchmaker with a real party on one PC: instance 2 joins instance 1's Seamless Co-op session (Invite Members), the party leader (instance 1) queues Duo, the match is ready, both Commence and reach the expedition as teammates (relation ally, team size 2 from the queue mode). One team only (mm_match_players = 2): it shows the party flow and the teammate side, not the rivals"
+tags = ["mi", "slow"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running.
+# Run: nro run scenarios\mi-duo-party.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING Â§8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# The party: instance 1 opens its Seamless Co-op session the player's way (Invite Members), instance 2 joins it (as in mi-join).
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "party_host"
+
+# The leader (owner of the Seamless Co-op lobby) queues Duo for the party; the member does nothing.
+[[step]]
+instance = 1
+console = "mm_queue_duo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 1
+screenshot = "party_match_ready"
+
+# The expedition: every party member readies at the table, the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+# Teammates: the other player is an ally, not a rival.
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "ally"], absent = ["rival", "panic"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "ally"], absent = ["rival", "panic"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+screenshot = "host_expedition"
+
+[[step]]
+instance = 2
+screenshot = "joiner_expedition"
