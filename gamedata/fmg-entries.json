@@ -5,8 +5,9 @@
     "99100101": "Duo",
     "99100102": "Trio",
     "99100103": "Stop Searching",
+    "99100104": "Find a Battle Royale Match",
     "131152": "Battle Royale",
-    "131153": "Rival players are enemies. Defeat them, loot what they drop and outlast every other team; the last team standing wins. Day 1 is free of the tide and the night."
+    "131153": "Rival teams. One victor.\n\nDefeat the other teams, take what they drop and outlast them all: the last team standing wins. Day 1 is free of the Night's Tide, so make it count; from Day 2 the Tide closes in."
   },
   "EventTextForMap_dlc01": {
     "99100200": "Battle Royale test 1 of 3 (dialog)",

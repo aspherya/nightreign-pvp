@@ -60,6 +60,8 @@ pub(crate) const LABEL_DUO: u32 = 99_100_101;
 pub(crate) const LABEL_TRIO: u32 = 99_100_102;
 /// "Stop Searching": the Commence button while our queue is searching.
 pub(crate) const LABEL_STOP: u32 = 99_100_103;
+/// UI-3: the Commence button's label while the Battle Royale card is selected and no queue is running.
+pub(crate) const LABEL_FIND: u32 = 99_100_104;
 /// The Commence button's labels (`0x9EF3F0`): 130300 / 130302 "Commence Expedition", 130304 "Commence Solo Expedition", 130305
 /// "Commence Two-Player Expedition" (130301 / 130303 "Cancel" belong to the game's own standby and are left alone).
 pub(crate) const COMMENCE_LABELS: [u32; 4] = [130_300, 130_302, 130_304, 130_305];
@@ -74,6 +76,17 @@ pub(crate) fn label_swap(id: u32, phase: u8) -> Option<u32> {
         _ if phase == PHASE_SEARCHING && COMMENCE_LABELS.contains(&id) => Some(LABEL_STOP),
         _ => None,
     }
+}
+
+/// UI-3: [`label_swap`] plus the Battle Royale card's own button label. `br_card` is only asked for a Commence label (it reads the menu).
+pub(crate) fn label_for_card(
+    id: u32,
+    phase: u8,
+    br_card: impl FnOnce() -> Option<bool>,
+) -> Option<u32> {
+    label_swap(id, phase).or_else(|| {
+        (COMMENCE_LABELS.contains(&id) && br_card() == Some(true)).then_some(LABEL_FIND)
+    })
 }
 
 /// Number of Players byte values (`0x9EF3F0`: 2 → 130304 "Commence Solo Expedition", 1 → 130305 "Two-Player", else three).
@@ -227,7 +240,12 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         }
         let rip = (*ctx).Rip as usize;
         if rip != 0 && rip == LABEL_ADDR.load(Ordering::Relaxed) {
-            if let Some(ours) = label_swap((*ctx).Rdx as u32, crate::mm::phase()) {
+            // `rbx` still holds the expedition menu at the call that asks for the Commence button's text (`exe+0x9EF45E`, 1.03.3).
+            let menu = (*ctx).Rbx as usize;
+            let ours = label_for_card((*ctx).Rdx as u32, crate::mm::phase(), || {
+                ExpeditionMenu::new(&RealMem, menu).is_battle_royale_card()
+            });
+            if let Some(ours) = ours {
                 (*ctx).Rdx = u64::from(ours);
                 LABEL_SWAPS.fetch_add(1, Ordering::Relaxed);
             }
@@ -354,7 +372,7 @@ fn run(base: usize) {
         // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
         if labels_ok && !labels_armed && resolve_tick {
             if let Some(f) = super::fmg::fmg_for(base, CAT_MENUTEXT_DLC) {
-                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP]
+                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP, LABEL_FIND]
                     .iter()
                     .all(|id| offset_slot(f, *id).is_some())
                 {
@@ -528,6 +546,32 @@ mod tests {
     }
 
     /// UI-3: the card row (`gamedata/nightbossmenu-rows.json`, written into regulation.bin) names texts that the game-data package must hold.
+    #[test]
+    fn the_battle_royale_card_gets_its_own_button_label() {
+        for id in COMMENCE_LABELS {
+            assert_eq!(
+                label_for_card(id, PHASE_IDLE, || Some(true)),
+                Some(LABEL_FIND)
+            );
+            assert_eq!(label_for_card(id, PHASE_IDLE, || Some(false)), None);
+            assert_eq!(label_for_card(id, PHASE_IDLE, || None), None);
+            // A running queue shows Stop Searching whatever the card.
+            assert_eq!(
+                label_for_card(id, PHASE_SEARCHING, || Some(false)),
+                Some(LABEL_STOP)
+            );
+        }
+        // Other texts never read the menu.
+        assert_eq!(
+            label_for_card(130_200, PHASE_IDLE, || panic!("read the menu")),
+            None
+        );
+        assert_eq!(
+            label_for_card(130_409, PHASE_IDLE, || panic!("read the menu")),
+            Some(LABEL_SOLO)
+        );
+    }
+
     #[test]
     fn only_the_battle_royale_card_starts_our_queue() {
         use GameMode::BattleRoyale as BR;
