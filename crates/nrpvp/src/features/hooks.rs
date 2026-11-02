@@ -18,6 +18,7 @@ use super::{Ctx, Feature, Phase};
 use crate::game::world::World;
 use crate::game::{
     deathhold, defeatdrop, hawk, hudfilter, maphide, menugate, multiplay, orbclaim, runeshare,
+    toastfilter,
 };
 
 /// The calls into the hook modules, and the two facts they depend on besides the world.
@@ -48,6 +49,7 @@ pub(crate) trait Hooks {
     fn defeatdrop(&mut self, base: usize, in_match: bool);
     fn orbclaim(&mut self, base: usize, in_match: bool, my_team: Option<u8>, local: Option<usize>);
     fn maphide(&mut self, base: usize, solo_match: bool);
+    fn toastfilter(&mut self, in_match: bool);
     fn hawk(&mut self, base: usize, size: usize, local: Option<usize>);
 }
 
@@ -99,6 +101,9 @@ impl Hooks for Real {
     fn maphide(&mut self, base: usize, solo_match: bool) {
         maphide::tick(base, solo_match);
     }
+    fn toastfilter(&mut self, in_match: bool) {
+        toastfilter::tick(in_match);
+    }
     fn hawk(&mut self, base: usize, size: usize, local: Option<usize>) {
         hawk::tick(base, size, local);
     }
@@ -129,6 +134,27 @@ impl Multiplay {
 impl Feature for Multiplay {
     fn name(&self) -> &'static str {
         "multiplay"
+    }
+    fn tick(&mut self, w: &World, _ctx: &mut Ctx) {
+        self.run(w, &mut Real);
+    }
+}
+
+/// UI-5: no "Ally is showing location" toast in a match (a rival's pin must not tell where it is).
+pub(crate) struct ToastFilter;
+
+impl ToastFilter {
+    fn run(&self, w: &World, h: &mut dyn Hooks) {
+        h.toastfilter(w.in_match);
+    }
+}
+
+impl Feature for ToastFilter {
+    fn name(&self) -> &'static str {
+        "toastfilter"
+    }
+    fn phase(&self) -> Phase {
+        Phase::AfterCombat
     }
     fn tick(&mut self, w: &World, _ctx: &mut Ctx) {
         self.run(w, &mut Real);
@@ -370,6 +396,9 @@ mod tests {
         fn defeatdrop(&mut self, b: usize, m: bool) {
             self.calls.push(format!("defeatdrop({b},{m})"));
         }
+        fn toastfilter(&mut self, m: bool) {
+            self.calls.push(format!("toastfilter({m})"));
+        }
         fn orbclaim(&mut self, b: usize, m: bool, t: Option<u8>, l: Option<usize>) {
             self.calls.push(format!("orbclaim({b},{m},{t:?},{l:?})"));
         }
@@ -408,6 +437,7 @@ mod tests {
         DefeatDrop.run(&w, &mut h);
         OrbClaim.run(&w, &mut h);
         MapHide::new(3).run(&w, &mut h);
+        ToastFilter.run(&w, &mut h);
         Hawk.run(&w, &mut h);
         assert_eq!(
             h.calls,
@@ -420,6 +450,7 @@ mod tests {
                 "defeatdrop(4096,true)",
                 "orbclaim(4096,true,Some(3),Some(16))",
                 "maphide(4096,false)",
+                "toastfilter(true)",
                 "hawk(4096,8192,Some(16))",
             ]
         );
@@ -435,12 +466,14 @@ mod tests {
         Multiplay::new(3).run(&w, &mut h);
         RuneShare::new(3).run(&w, &mut h);
         MapHide::new(3).run(&w, &mut h);
+        ToastFilter.run(&w, &mut h);
         assert_eq!(
             h.calls,
             [
                 "multiplay(1)",
                 "runeshare(4096,true,true,[7, 8],Some(16))",
-                "maphide(4096,true)"
+                "maphide(4096,true)",
+                "toastfilter(true)"
             ]
         );
     }

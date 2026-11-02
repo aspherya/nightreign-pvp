@@ -177,6 +177,7 @@ mod tests {
                 "defeatdrop",
                 "orbclaim",
                 "maphide",
+                "toastfilter",
                 "hawk"
             ]
         );

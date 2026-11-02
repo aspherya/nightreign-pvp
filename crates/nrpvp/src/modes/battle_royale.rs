@@ -23,6 +23,7 @@ pub(crate) fn list(cfg: &Config) -> Vec<Box<dyn Feature>> {
         Box::new(hooks::OrbClaim),
         // After HudFilter: it reads `hudfilter::map_hooked()`.
         Box::new(hooks::MapHide::new(team)),
+        Box::new(hooks::ToastFilter),
         Box::new(hooks::Hawk),
     ]
 }

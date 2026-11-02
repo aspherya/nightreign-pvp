@@ -10,10 +10,19 @@ Memory facts go to [MEMORY_MAP.md](MEMORY_MAP.md) once verified; this file is th
   with the **icon of the landmark nearest the pin** `[VERIFIED: two-instance screenshots, 2026-10-27, scenario mi-rw9-markers, testing-log]`.
   It reveals the area, not the pin's exact position. It still appears for a **rival** after the marker filter (RW-9, PR #22), which hides the
   pin itself on the map, compass and in the 3D world.
-- Who produces it and how it is triggered is **UNKNOWN**. Candidates: the message-id code at `exe+0x7C67E0` (it reads the marker manager
-  `[exe+0x3C17BE0]`), a net message handled when a pin record arrives or changes (the record sync loop: add path `exe+0x911B13`), or the
-  pin record handlers `exe+0x90A6B0` / `exe+0x90AC50` `[HYPOTHESIS]`. The marker record names its placer (u16 at `+2` = the placer's map id
-  `[PlayerIns+0x5A0]+8`), so a suppression for rivals only is possible once the producer is found (MEMORY_MAP §20 "Map markers").
+- **How it works `[VERIFIED: static reading of exe 1.3.3.0 + two-instance trace, scenario `mi-toast-solo`, 2026-11-02]`:** the toasts are rows of
+  `UserDispLogParam` (32 bytes: the first field is a CL_MenuText id). Row 6120 = text 337750 "Ally is showing location", row 6130 = 337720
+  "Ally is also showing location", rows 6100 / 6110 = the placer's own "Location shown" / "You also showed location"; rows 60xx = the
+  equipment pings. One function (`exe+0x86833F`, no direct callers) shows a toast from its row id and does nothing when the row's text id is
+  negative (`exe+0x86844F`: `cmp dword [row], 0; jl <exit>`). The text ids 3377xx are computed (CL_MenuText category 200 via the getter
+  `exe+0x7AC800`), which is why searching the exe for the number found nothing. The pin's owner is not an argument we know of.
+- **The fix (UI-5, `game/toastfilter.rs`):** while a Battle Royale match runs (`in_match`, any team size) both rows' text ids are written -1 in memory (found by
+  scanning for rows 6100 / 6110); outside a match (normal expedition, Roundtable, offline) they stay the game's own. A teammate's toast goes too
+  (Leonardo, 2026-11-02: simplest rule, the pin itself still shows on the map). **Telling a rival's pin from a teammate's was tried and failed:** switching the
+  rows off from `hudfilter`'s map sync hook (`exe+0x9040E0`, which judges a new or changed rival record) comes too late, the toast function had already read its
+  row (player 2 still asked text 337750 although the hook had fired for that pin). The toast function (`exe+0x86833F`: row id, an object with a vtable, two small
+  values) has no direct callers and no obvious owner argument; the way left would be an entry detour on it that skips rival-owned pins (hardware slots are too scarce,
+  TRAPS). Dev tool: `toast_trace = true` logs who asks for toast texts (`game/toasttrace.rs`).
 - Requirement (RW-9): a rival must not be locatable by a notification either. Teammates keep the toast.
 
 ## 2. What we already know about showing text on screen (reusable for a killfeed)

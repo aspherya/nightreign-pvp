@@ -132,6 +132,11 @@ ui_text_trace = false
 # 50 ms) as \"ui_flag_watch: flag <id>: off -> ON\". Read-only. Flags that flip more than 20 times in 10 s are muted.
 ui_flag_watch = false
 
+# UI-5 research (dev mode only; the player build forces it off): log who asks the game for the text of a toast (\"Ally is showing
+# location\" and its relatives, text ids 337700..337799) as \"toast_trace:\" with the stack's code addresses. One hardware breakpoint
+# (the Commence slot), so it excludes br_menu.
+toast_trace = false
+
 # UI-1 A/B/C (dev mode only; the player build forces it off): hardware breakpoints on the stock expedition menu (Commence checks,
 # Number of Players list, Cancel matchmaking) and on the text lookup for the matchmaking ids; logs registers, stack return candidates
 # and changes of the menu's settings object as \"ui_menu_trace:\". No code is patched. Turns ui_text_trace, mm_quiet_invite and
@@ -277,6 +282,8 @@ pub(crate) struct Config {
     pub ui_text_trace: bool,
     /// UI-1 step 0: fast all-groups flag-change logger (developer mode only; forced off in the player build).
     pub ui_flag_watch: bool,
+    /// UI-5 research: who asks for a toast's text (developer mode only; forced off in the player build; takes the Commence debug register).
+    pub toast_trace: bool,
     /// UI-1 A/B/C: expedition-menu tracer (developer mode only; forced off in the player build; takes the debug registers).
     pub ui_menu_trace: bool,
     /// UI-1 option 1: Commence Expedition drives the Battle Royale queue (developer mode + `mm_queue`; the player build turns it on with `matchmaking`;
@@ -387,6 +394,7 @@ impl Default for Config {
             mm_lobby_trace: false,
             ui_text_trace: false,
             ui_flag_watch: false,
+            toast_trace: false,
             ui_menu_trace: false,
             br_menu: false,
             mode: "br".to_string(),
@@ -542,6 +550,7 @@ fn enforce_player_mode(
     // UI-0: and the text-id tracer.
     cfg.ui_text_trace = false;
     cfg.ui_flag_watch = false;
+    cfg.toast_trace = false;
     cfg.ui_menu_trace = false;
     // UI-1 option 1: Battle Royale from the stock expedition menu comes with matchmaking (it needs the queue; the debug registers are
     // shared with the quiet invite through crate::hwbp: slots 0/1 quiet invite, 2 Commence, 3 labels). UI-2 `ui_messages` stays as written.
@@ -1295,6 +1304,10 @@ mm_match_players = 9
         assert!(cfg.ui_flag_watch && w.is_empty(), "{w:?}");
         let (cfg, _) = parse("ui_flag_watch = true\n").expect("ok");
         assert!(!cfg.ui_flag_watch);
+        let (cfg, _) = parse_dev("toast_trace = true\n").expect("ok");
+        assert!(cfg.toast_trace);
+        let (cfg, _) = parse("toast_trace = true\n").expect("ok");
+        assert!(!cfg.toast_trace);
         let (cfg, w) = parse_dev("ui_text_trace = true\nui_menu_trace = true\n").expect("ok");
         assert!(
             cfg.ui_menu_trace && !cfg.ui_text_trace && w.len() == 1,

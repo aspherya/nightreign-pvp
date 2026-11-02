@@ -97,6 +97,11 @@ pub(crate) fn run() {
             if cfg.dev_mode && cfg.ui_text_trace {
                 game::texttrace::spawn(m.base, m.size);
             }
+            // UI-5 research: who asks for a toast's text (hardware breakpoint, no patching).
+            #[cfg(feature = "dev")]
+            if cfg.dev_mode && cfg.toast_trace {
+                game::toasttrace::spawn(m.base, m.size);
+            }
             // UI-1 step 0: dev-only fast flag-change logger (read-only).
             #[cfg(feature = "dev")]
             if cfg.dev_mode && cfg.ui_flag_watch {

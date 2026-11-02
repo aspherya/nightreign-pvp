@@ -51,6 +51,9 @@ pub(crate) mod team;
 pub(crate) mod teleport;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
+pub(crate) mod toastfilter;
+#[cfg(feature = "dev")]
+pub(crate) mod toasttrace;
 pub(crate) mod views;
 #[cfg(feature = "dev")]
 pub(crate) mod vpad;
