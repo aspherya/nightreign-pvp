@@ -390,7 +390,9 @@ pub fn invite_members(st: &State, tries: u32) -> Result<String, String> {
 /// opens the expedition menu (the first key into a window that was in the back is sometimes lost: the menu word is checked and F
 /// retried), then F until the menu closes (the host: target, then Commence; a joiner: Commence, the host's target is already set).
 /// The party list then shows the player ready; the expedition loads when every member is. Success = the menu closed after F.
-pub fn commence(st: &State, tries: u32) -> Result<String, String> {
+/// `br_card`: select the Battle Royale card first (UI-3): it is the last card of the list and `Up` from the first card wraps to it
+/// (checked on screen 2026-11-02), so the F that sets the target picks it.
+pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
     let keys =
         |seq: &str| crate::desk::request(serde_json::json!({"op": "keys", "pid": pid, "seq": seq}));
@@ -433,6 +435,9 @@ pub fn commence(st: &State, tries: u32) -> Result<String, String> {
         if !open {
             last = format!("attempt {attempt}: F did not open the expedition menu");
             continue;
+        }
+        if br_card {
+            keys("Up; wait 800ms")?;
         }
         for n in 1..=3 {
             keys("F; wait 2s")?;
@@ -595,9 +600,10 @@ fn step_plain(st: &State, s: &Step, god: bool) -> Result<(bool, String), String>
             "title_to_world" => title_to_world(st, Duration::from_secs(300)).map(|r| (true, r)),
             "expedition" => to_expedition(st, Duration::from_secs(240), god).map(|r| (true, r)),
             "invite_members" => invite_members(st, 3).map(|r| (true, r)),
-            "commence" => commence(st, 3).map(|r| (true, r)),
+            "commence" => commence(st, 3, false).map(|r| (true, r)),
+            "commence_br" => commence(st, 3, true).map(|r| (true, r)),
             other => Err(format!(
-                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence)"
+                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence, commence_br)"
             )),
         },
         Step::SleepMs(m) => {
