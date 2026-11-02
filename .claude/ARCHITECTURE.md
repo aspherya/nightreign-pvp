@@ -106,6 +106,8 @@ crates/nrpvp/src/
 
 ## 6. Refactor plan (proposal)
 
+**2026-11-01: the open half (R2 rest, R3 rest, R4, R6) is replaced by [REFACTOR_PLAN.md](REFACTOR_PLAN.md)** (phase 2 = 13 small PRs for plug-and-play modes, phase 3 = orchestrator and scenarios). Differences: `TeamCtl` / `CombatCtl` stay core services in the loop; config stays one flat file with typed slices in code (this changes decision 4 below; DECISIONS 2026-11-01).
+
 Every R-card is **behaviour-preserving**: same log lines, same tests green, plus one solo smoke run (Roundtable → expedition → down
 → rule fires). No feature work mixed in.
 

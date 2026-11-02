@@ -38,7 +38,11 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
 | Nucleus handler `D:\Programs\Nucleus\handlers\ELDEN RING NIGHTREIGN` | Plain deploy, parked (TOOLS.md) |
 
+**Release candidate (2026-11-01):** the build of `main` at the audit PRs was tested with a friend in a 2-player Solo match; Leonardo accepted it as the release candidate, core gameplay frozen (DECISIONS). Three checks left for a finished Battle Royale: Grace in combat, Duo/Trio, the revive item.
+
 ## 3. Next, in order (Leonardo, 2026-11-01)
+
+**Now:** refactor for decoupled, plug-and-play modules and better test tooling (plan: TASKS "Clean-up phases 2 and 3"), then the three checks below.
 
 Cards in [TASKS.md](TASKS.md) ("Not built yet").
 

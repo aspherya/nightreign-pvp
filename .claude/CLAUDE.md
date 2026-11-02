@@ -14,7 +14,8 @@ column says when a doc is worth its tokens.
 | [DECISIONS.md](DECISIONS.md) | Decisions with date and who decided | Before re-arguing or changing a direction |
 | [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md) | Product intent and scope boundaries (Leonardo's spec) | Designing a feature |
 | [PROJECT_PLAN.md](PROJECT_PLAN.md) | Feasibility, milestones, parked ideas (§12) | Planning a milestone |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Code structure, threads, module boundaries, coding rules, refactor plan | Writing or moving code |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Code structure, threads, module boundaries, coding rules | Writing or moving code |
+| [REFACTOR_PLAN.md](REFACTOR_PLAN.md) | Phase 2 (plug-and-play modes, 13 PRs) and phase 3 (orchestrator, scenarios) plan with acceptance per PR | Doing or reviewing the refactor |
 | [CONSOLE.md](CONSOLE.md) | Developer console design and command table | Adding or using a console command |
 | [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we found**, behaviour, how it was confirmed | Touching game memory |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Version pins, stack, Seamless Co-op facts, non-memory engine facts, ADRs | Version or engine questions |
