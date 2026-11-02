@@ -285,3 +285,9 @@ what a second real client shows (research tools: console `memscan`, `peek`; find
 - **RW-6 follow-up:** the game's own Matchmaking Settings has a "Multiplayer Password" field; the text lives in a `CS::CSMenuSimpleSaveDataChunk<3, MENU_INPUT_HISTORY>` object (input history, found with `memscan`) and in a second structure; which one the menu reads at Commence is UNKNOWN. Reading it would replace `private_code` in the toml (no config editing for players).
 - **Spectator camera smoothness (next):** the moved body makes the camera jump about 20 times a second. Idea: find what writes `ChrExFollowCam+0xA0..` (the followed position, newest entry; console `trace_write <addr>`) and feed it another player's position or target directly, leaving the body where it died. Fallback: keep the moved body (committed, 2026-10-25).
 - **ESC / pad while defeated (works on one PC, 2026-10-25; scenario `esc-defeated` PASS, pad confirmed by Leonardo).** `game/menugate.rs`: Esc or pad Start opens the game's menu for a defeated, held player (sets the open request, MEMORY_MAP §19); pad d-pad right / left switch the watched player (mouse buttons too; all off while a menu is open). The pad is read from the game's own input bits (XInput is blind inside the game). Quit through the menu while dead works (one PC, Leonardo). Left: a Nucleus / FS confirmation, other pad layouts (bits measured on a Steam Input Xbox pad). Remove this card after that.
+
+## Ideas from FS-RC1 (2026-11-01, testing-log; none scheduled)
+- **Decide the win at once:** publish a `DEFEAT` fact on `net::bus` from the victim's game so the winner does not wait the 30 s `OUT_DEAD_MS` after a rival kill (needs a topic, key = team, a test in the golden traces).
+- **Quiet the `mm_join: gate:` log** after the expedition has started (about 150 identical lines per match).
+- **Double press of Commence** cancels the search (toggle); consider ignoring a second press within a second.
+
