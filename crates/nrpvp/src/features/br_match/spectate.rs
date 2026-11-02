@@ -3,7 +3,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use super::{dist, Act, MatchBook, MatchOut, MatchRule, Tick, FLAG_LOSE};
+use super::{dist, Act, MatchBook, MatchOut, MatchRule, Tick, FLAG_LOSE, FLAG_SPECTATE_HINT};
 use crate::game::combat_state::Fighter;
 
 /// RW-1: how long a defeated body waits for the hold before it follows anyway (ms).
@@ -11,6 +11,10 @@ pub(crate) const SPECTATE_WAIT_MS: u64 = 12_000;
 /// RW-1: the spectating body is moved every tick and this far above the watched player's feet (metres). Zero: a body above the floor
 /// falls between two moves and the camera bobs up and down at the move rate (user, 2026-10-25).
 pub(crate) const SPECTATE_HEIGHT: f32 = 0.0;
+
+/// UI-4: the spectator hint (controls, how to leave) is shown when the watching starts and again this often (ms), so it is not missed
+/// and not a nuisance (about one blinking message per 45 s).
+pub(crate) const HINT_EVERY_MS: u64 = 45_000;
 
 /// Dev console `spectate 0|1`: overrides the config value live (`2` = the config's).
 /// The config's `spectate`, kept for the console.
@@ -26,6 +30,8 @@ pub(super) fn set_cfg(on: bool) {
 pub(crate) struct Spectate {
     /// RW-1: the player being watched (session id).
     spec_target: Option<u64>,
+    /// UI-4: when the spectator hint was last raised.
+    hint_at_ms: Option<u64>,
 }
 
 impl MatchRule for Spectate {
@@ -122,6 +128,13 @@ impl MatchRule for Spectate {
             out.lines
                 .push(format!("night_match: spectating player {:#X}", f.id));
         }
+        if self
+            .hint_at_ms
+            .is_none_or(|at| now_ms.saturating_sub(at) >= HINT_EVERY_MS)
+        {
+            self.hint_at_ms = Some(now_ms);
+            out.flags.push((FLAG_SPECTATE_HINT, true));
+        }
         // Next to the watched player (the held body is invisible to the others); the follow camera goes with it.
         out.acts
             .push(Act::Follow([p[0], p[1] + SPECTATE_HEIGHT, p[2]]));
@@ -212,6 +225,42 @@ mod tests {
             flags4.is_empty() && acts4.is_empty(),
             "no more moves after leaving"
         );
+    }
+
+    #[test]
+    fn the_spectator_hint_comes_at_the_start_and_then_every_45_seconds() {
+        let nf = NightFlags::default();
+        let mut c = Match::battle_royale(1020, 0, true);
+        run(
+            &mut c,
+            0,
+            &world(&[up(ME, true), up(P2, false), up(P3, false)], nf),
+        );
+        let mut w = world(&[dead(ME, true), up(P2, false), up(P3, false)], nf);
+        rival_hit(&mut w, 100);
+        w.death_held = true;
+        w.positions[1] = Some([50.0, 12.0, 5.0]);
+        w.positions[2] = Some([500.0, 10.0, 0.0]);
+        let count = |flags: &[(u32, bool)]| {
+            flags
+                .iter()
+                .filter(|(f, on)| *f == FLAG_SPECTATE_HINT && *on)
+                .count()
+        };
+        let (_, first, _) = run_dead(&mut c, 100, &w);
+        assert_eq!(count(&first), 1, "when the watching starts");
+        // One tick a second (a player not seen for a while counts as gone, so the time cannot jump).
+        let mut hints_at = Vec::new();
+        for k in 1..=(2 * HINT_EVERY_MS / 1_000 + 2) {
+            let ms = 100 + k * 1_000;
+            if count(&run(&mut c, ms, &w).1) > 0 {
+                hints_at.push(ms);
+            }
+        }
+        // `first` was the start of the watching; the next two are one interval apart each (the tick after the previous one is due).
+        assert_eq!(hints_at.len(), 2, "{hints_at:?}");
+        assert!(hints_at[0] <= 100 + HINT_EVERY_MS + 1_000, "{hints_at:?}");
+        assert_eq!(hints_at[1] - hints_at[0], HINT_EVERY_MS, "{hints_at:?}");
     }
 
     #[test]

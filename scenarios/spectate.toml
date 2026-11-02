@@ -50,4 +50,4 @@ wait_log = { contains = "the leave key was pressed", timeout_s = 20, since = "ru
 [[step]]
 wait_log = { contains = "out of the expedition", timeout_s = 60, since = "run" }
 [[step]]
-expect_log = { contains = ["spectating player", "the leave key was pressed"], absent = ["panicked at", "no free hardware slot"], since = "run" }
+expect_log = { contains = ["spectating player", "flag 10007413 ON", "the leave key was pressed"], absent = ["panicked at", "no free hardware slot"], since = "run" }

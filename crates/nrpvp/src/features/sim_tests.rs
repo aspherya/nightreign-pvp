@@ -11,7 +11,7 @@
 //! The scenario console commands map to events like this: `hp0` = LOCAL at 0 HP, `rival_hit` = `rival_hit(age)`, `puppet_hp n 0`
 //! = that rival at 0 HP, `flag 10007420 1` = `NightFlags::our_die` (kept for fidelity), `sleep_ms` = the next tick's time.
 
-use super::br_match::{Match, FLAG_LOSE, FLAG_WIN};
+use super::br_match::{Match, FLAG_LOSE, FLAG_SPECTATE_HINT, FLAG_WIN};
 use super::testkit::*;
 use super::Act;
 
@@ -254,7 +254,8 @@ fn sim_spectate() {
         &["spectating player", "the leave key was pressed"],
         &["panicked at", "no free hardware slot"],
     );
-    assert_eq!(t.flags, vec![(FLAG_LOSE, true)]);
+    // The spectator hint (UI-4) comes first, when the watching starts; the leave key then asks for the defeat screen.
+    assert_eq!(t.flags, vec![(FLAG_SPECTATE_HINT, true), (FLAG_LOSE, true)]);
 }
 
 /// Twin of the rules part of `scenarios/esc-defeated.toml` (`defeat_exit_secs = 0`): as `spectate`, and 9 s after the defeat the

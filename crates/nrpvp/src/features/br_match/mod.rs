@@ -60,6 +60,8 @@ use status::StatusParts;
 pub(crate) const FLAG_WIN: u32 = 10_007_411;
 /// This game's player lost (event 99100804: banner 4010, 10 s, 7001).
 pub(crate) const FLAG_LOSE: u32 = 10_007_412;
+/// UI-4: shows the spectator hint (event 99100806: blinking message 99100600), raised while a defeated player watches.
+pub(crate) const FLAG_SPECTATE_HINT: u32 = 10_007_413;
 /// Dev: LOCAL gets SpEffect 102130 (die at once) while this is ON (event 99100805; `archive/research/M5-8-death.md` §R1). Set by hand
 /// (console `flag`) to test a defeat in offline mode, where the offline revive effect would otherwise bring LOCAL back.
 pub(crate) const FLAG_DIE: u32 = 10_007_420;
@@ -326,6 +328,7 @@ mod tests {
             (99_100_803, FLAG_WIN),
             (99_100_804, FLAG_LOSE),
             (99_100_805, FLAG_DIE),
+            (99_100_806, FLAG_SPECTATE_HINT),
         ] {
             assert!(
                 nights.contains(&format!("\"id\": {id},"))

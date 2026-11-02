@@ -16,6 +16,7 @@ t=012899 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 
           .
 t=012900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | hits last Some((Rival, 100)) rival_age Some(100) | at #1(500,10,0) #2(50,12,5)
           acts: Follow([50.0, 12.0, 5.0])
+          flags: 10007413=ON
           log: night_match: spectating player 0x6003FFFFFFFF
           status: free day 1; 3 player(s), 3 team(s) seen, 0 out; LOCAL defeated by a rival, watching 0x6003FFFFFFFF; mob deaths 0; places 0
 t=013000 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | hits last Some((Rival, 100)) rival_age Some(100) | at #1(500,10,0) #2(50,12,5)
@@ -28,6 +29,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | hits last Some((Rival, 100)) rival_age Some(100) | held | at #1(500,10,0) #2(50,12,5)
           acts: DropItems, DeathHold(true), Follow([50.0, 12.0, 5.0])
+          flags: 10007413=ON
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends
           log: night_match: spectating player 0x6003FFFFFFFF
           status: free day 1; 3 player(s), 3 team(s) seen, 0 out; LOCAL defeated by a rival, watching 0x6003FFFFFFFF; mob deaths 0; places 0
@@ -114,6 +116,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | hits last Some((Rival, 100)) rival_age Some(100) | held | at #1(500,10,0) #2(50,12,5)
           acts: DropItems, DeathHold(true), Follow([50.0, 12.0, 5.0])
+          flags: 10007413=ON
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends
           log: night_match: spectating player 0x6003FFFFFFFF
           status: free day 1; 3 player(s), 3 team(s) seen, 0 out; LOCAL defeated by a rival, watching 0x6003FFFFFFFF; mob deaths 0; places 0
@@ -128,6 +131,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | hits last Some((Rival, 100)) rival_age Some(100) | held | at #1(500,10,0) #2(50,12,5)
           acts: DropItems, DeathHold(true), Follow([50.0, 12.0, 5.0])
+          flags: 10007413=ON
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends
           log: night_match: spectating player 0x6003FFFFFFFF
           status: free day 1; 3 player(s), 3 team(s) seen, 0 out; LOCAL defeated by a rival, watching 0x6003FFFFFFFF; mob deaths 0; places 0
