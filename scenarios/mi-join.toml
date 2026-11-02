@@ -1,5 +1,6 @@
 name = "mi-join"
 about = "S3 on one PC: emulated instance 2 joins instance 1 as a Seamless Co-op client (host presses Invite Members; gbe auto-accepts); both consoles see 2 players"
+tags = ["mi"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md): Steam closed, `nro desk` running, about 7 GB of free RAM per game.
 # Run: nro run scenarios\mi-join.toml --mod-dist <dev dist>
 
@@ -54,7 +55,7 @@ wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type
 # Both Steam ids are members of the host's Seamless Co-op lobby (the mod's lobby probe).
 [[step]]
 instance = 1
-wait = { console = "log 300", contains = ["nrsc_ynx3_seamless_master_lobby", "members=[76561199023125438, 76561199023125439]"], timeout_s = 30, every_ms = 2000 }
+wait_log = { contains = ["nrsc_ynx3_seamless_master_lobby", "members=[76561199023125438, 76561199023125439]"], timeout_s = 30, since = "run" }
 
 [[step]]
 instance = 1

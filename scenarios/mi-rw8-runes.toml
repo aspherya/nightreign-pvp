@@ -1,5 +1,6 @@
 name = "mi-rw8-runes"
 about = "RW-8 on one PC: two emulated instances queue Solo and reach the same expedition as rivals; player 1 kills an enemy next to player 2 (test aid `mob_kill`: LOCAL as the enemy's attacker + HP 0, the fields a real hit fills); with runeshare on (auto) player 1 is credited while player 2 gets no runes (no attacker recorded there -> blocked); with runeshare forced off (control) player 2 gets the vanilla share"
+tags = ["mi", "slow"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
 # Run: nro run scenarios\mi-rw8-runes.toml --mod-dist <dev dist>
@@ -83,7 +84,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1
@@ -189,7 +190,7 @@ wait = { console = "runeshare", contains = ["(+0 since mark)"], absent = [", 0 b
 
 [[step]]
 instance = 2
-expect = { console = "log 300", contains = ["runeshare: death credit", "-> BLOCKED"] }
+expect_log = { contains = ["runeshare: death credit", "-> BLOCKED"], since = "run" }
 
 [[step]]
 instance = 1

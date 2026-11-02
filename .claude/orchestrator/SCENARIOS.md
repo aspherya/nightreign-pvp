@@ -66,22 +66,25 @@ Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kil
 | `console = "<line>"` | one mod console command (CONSOLE.md §0); the reply is recorded |
 | `wait = { console, contains, absent, timeout_s, every_ms }` | repeat a console line until the reply contains the text (all needles, case-insensitive) and none of `absent`; timeout = ABORT |
 | `expect = { console, contains, absent }` | one console line whose reply must match; a miss = FAIL, the run continues |
+| `mark = "<name>"` | remember the byte length of this instance's `runs\<id>\mod\nrpvp.log` now (marks are per instance) |
+| `wait_log = { contains, absent, timeout_s, since }` | poll the mod log FILE (not the console tail) until the text after `since` has all `contains` (case-insensitive, complete lines only); `absent` text after `since` aborts at once; timeout = ABORT. `since` = `"step"` (default: the log length when the previous step finished), `"run"` (whole log) or `"mark:<name>"` |
+| `expect_log = { contains, absent, since }` | the same, one look, no timeout; a miss = FAIL, the run continues. `contains` may be empty (only `absent`) |
 | `keys = "ENTER; E*3; click 0.5 0.5; mclick 0.6 0.4; M 300ms; mousemove 200 0; wait 1500ms"` | keys and mouse for the game window (needs `nro desk`; `mclick` = middle button, `K 300ms` holds a key: the map needs `M 300ms`; `mousemove dx dy` = relative mouse-look in counts, turns the game camera) |
-| `navigate = "title_to_world"`, `"expedition"`, `"invite_members"` or `"commence"` | built-in macros (`invite_members`: Roundtable host → Invite Members pressed, position-independent; `commence`: the Commence flow, used by `mi-queue`) |
+| `navigate = "title_to_world"`, `"expedition"`, `"invite_members"` or `"commence"` | built-in macros (`expedition` ends by sending the console `god 1` so no wolf kills the character; `god = false` on that step skips it, for scenarios where a mob should kill: `defeat-mob`; `hp0` turns god off by itself; `invite_members`: Roundtable host → Invite Members pressed, position-independent; `commence`: the Commence flow, used by `mi-queue`) |
 | `[[instance]]` `n`, `role`, `[instance.config]` | emulated instances 1..3, launched in file order; instance config goes over `[config]` |
 | `instance = N` (in any step) | the instance the step acts on (default: the first `[[instance]]`); report lines start with `[iN]` |
 | `puppets = n`, `puppet_ring = r`, `puppet_front = d` | make 1..5 puppets; place them around / in front of LOCAL (metres) |
-| top level: `name`, `about`, `teardown = "kill"` (default) or `"keep"` | the scenario's title and one-line purpose; `keep` leaves the games running after the last step (labs) |
+| top level: `name`, `about`, `tags = ["smoke", "rules", "hud", "mi", "slow", "lab"]` (filter with `nro scenarios --tag X` / `regress.ps1 -Tag X`; the default run skips `mi` and `lab`), `teardown = "kill"` (default) or `"keep"` | the scenario's title and one-line purpose; `keep` leaves the games running after the last step (labs) |
 | `screenshot = "name"` | `runs\<id>\shots\name.png` (open it with the Read tool and look) |
 | `sleep_ms = n` | pause |
 
 ## Writing a new scenario
 
-1. Copy the closest scenario above; keep the three `[config]` lines and `ui_flag_watch = false` (its event bursts flood `log 300`).
+1. Copy the closest scenario above; keep the three `[config]` lines and `ui_flag_watch = false` (its event bursts flood the log).
 2. Reach the state with **commands, not keys** where you can: `clock end` / `clock circle`, `night_end`, `god 1`, `hp0`, `puppet_hp <slot> 0`
    (a sword swing does not reach every puppet), `flag <id> [0|1]`. Keys are for the title screen and for what has no command.
-3. Assert on **state commands** (`night_status`, `clock`, `puppet_list`, `players`, `status`) first, and on `log 300` text only for a
-   line that must have been written (`night 1 decided`, `RELEASED`); the 300-line tail can lose a line during event bursts.
+3. Assert on **state commands** (`night_status`, `clock`, `puppet_list`, `players`, `status`) first, and on log text (`wait_log` / `expect_log`, which read the log file) only for a
+   line that must have been written (`night 1 decided`, `RELEASED`); the console's 300-line tail can lose a line during event bursts, the file does not.
 4. Add a negative check (`absent = [...]`) for the failure you fear (`no free hardware slot`, `panic`).
 5. Run it twice; a step that is flaky after two attempts goes to the friend-session list instead (TESTING §6), not into the set.
 6. Add a row to the catalog above (what it proves, key steps, time), name the scenario in the card, and log the run (`testing-log/`).

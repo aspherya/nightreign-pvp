@@ -103,7 +103,7 @@ fn call(name: &str, a: &Map<String, Value>) -> Result<Value, String> {
             s(a, "filter").as_deref(),
         ),
         "stop" => ops::stop(),
-        "scenarios" => ops::scenarios(),
+        "scenarios" => ops::scenarios(None),
         "run_scenario" => {
             ops::run_scenario(&s(a, "file").ok_or("file is required")?, s(a, "mod_dist"))
         }

@@ -4,21 +4,44 @@
 //! without the game or Steam (ARCHITECTURE §4 "Feature modules", §6).
 //!
 //! New behaviour comes as a new `Feature` here, not as another field on an existing controller. The older controllers (`TeamCtl`,
-//! `CombatCtl`, the hawk swap) are still ticked by `game::watch` directly; they move here when a card touches them.
+//! `CombatCtl`) are still ticked by `game::watch` directly; they move here when a card touches them.
 
 pub(crate) mod bots;
+pub(crate) mod br_match;
 pub(crate) mod clock;
+pub(crate) mod effects;
+pub(crate) mod hooks;
 pub(crate) mod mode;
-pub(crate) mod night_match;
 pub(crate) mod nights;
 
-use crate::config::Config;
+#[cfg(test)]
+mod golden_timelines;
+#[cfg(test)]
+mod testkit;
+
 use crate::game::world::World;
 
-/// One feature of the mod, ticked once per main-loop pass (50 ms in a world, 500 ms outside one).
-pub(crate) trait Feature {
+pub(crate) use effects::Act;
+
+/// R7-5: where in the main loop's pass a feature is ticked. The order is behaviour: the world is read before `combat.tick`, so the
+/// `Rules` features see the fighters of the previous tick; `AfterCombat` is for the features that need the current tick's rivals.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Phase {
+    /// After the world is read, before the team and combat controllers tick (today's only place).
+    Rules,
+    /// After `combat.tick` and [`World::after_combat`]: the hook modules (`hooks`), which need the current tick's rivals.
+    AfterCombat,
+}
+
+/// One feature of the mod, ticked once per main-loop pass (50 ms in a world, 500 ms outside one). `Any` lets the console find a
+/// feature by type ([`Features::get_mut`]).
+pub(crate) trait Feature: std::any::Any {
     /// Short name for logs.
     fn name(&self) -> &'static str;
+    /// Where the main loop ticks this feature.
+    fn phase(&self) -> Phase {
+        Phase::Rules
+    }
     /// Decide from this tick's world; ask for side effects through `ctx`. Never blocks.
     fn tick(&mut self, world: &World, ctx: &mut Ctx);
 }
@@ -32,8 +55,8 @@ pub(crate) struct Ctx {
     pub flags: Vec<(u32, bool)>,
     /// M5: a time for the play-area clock (the game's set-time mailbox, written in [`Ctx::flush`]).
     pub clock: Option<crate::game::views::ClockTime>,
-    /// The match rules' requests on LOCAL, the clock and the game's flags (carried out by the main loop, which owns them).
-    pub night: Vec<night_match::NightAct>,
+    /// The match rules' requests on LOCAL, the clock and the game's flags (carried out first in [`Ctx::flush`], see `effects`).
+    pub acts: Vec<Act>,
 }
 
 /// Where the main loop's bot writes go.
@@ -43,12 +66,16 @@ pub(crate) struct Targets {
     pub base: usize,
     /// `WorldPlayAreaManager` instance, 0 = none.
     pub play_area: usize,
+    /// R7-4: the local PlayerIns (the target of the match rules' [`Act`]s), `None` = no local player.
+    pub local: Option<usize>,
 }
 
 impl Ctx {
-    /// Carry out the requests (main loop, after every feature ticked).
+    /// Carry out the requests (main loop, after every feature ticked): the acts, then the matchmaking commands, our flags and the
+    /// clock time.
     pub(crate) fn flush(&mut self, t: Targets, mem: &dyn crate::game::gamemem::GameMem) {
         let base = t.base;
+        effects::run_acts(std::mem::take(&mut self.acts), t, mem);
         for c in self.mm.drain(..) {
             if !crate::mm::send(c) {
                 tracing::info!("features: {c:?} not sent to matchmaking (queue off or full)");
@@ -87,43 +114,80 @@ fn on_off(on: bool) -> &'static str {
 }
 
 /// Every feature, in tick order. Built once at startup from the config.
-pub(crate) struct Features {
-    pub mode: mode::ModeFeature,
-    pub bots: bots::BotsFeature,
-    pub clock: clock::ClockFeature,
-    pub nights: nights::NightsFeature,
-    pub night_match: night_match::NightMatch,
-}
+pub(crate) struct Features(Vec<Box<dyn Feature>>);
 
 impl Features {
-    pub(crate) fn new(cfg: &Config) -> Self {
-        Features {
-            mode: mode::ModeFeature::new(cfg.game_mode(), "nrpvp.toml"),
-            bots: bots::BotsFeature::default(),
-            clock: clock::ClockFeature::default(),
-            nights: nights::NightsFeature,
-            night_match: night_match::NightMatch::new(cfg),
-        }
+    /// Wrap an assembled list (`crate::modes::assemble` builds it, in tick order).
+    pub(crate) fn from_list(list: Vec<Box<dyn Feature>>) -> Self {
+        Features(list)
     }
 
-    fn all(&mut self) -> [&mut dyn Feature; 5] {
-        [
-            &mut self.mode,
-            &mut self.bots,
-            &mut self.clock,
-            &mut self.nights,
-            &mut self.night_match,
-        ]
-    }
-
-    pub(crate) fn tick(&mut self, world: &World, ctx: &mut Ctx) {
-        for f in self.all() {
+    /// Tick the features of one phase, in list order.
+    pub(crate) fn tick(&mut self, phase: Phase, world: &World, ctx: &mut Ctx) {
+        for f in self.0.iter_mut().filter(|f| f.phase() == phase) {
             f.tick(world, ctx);
         }
     }
 
     /// Names of the features, for the startup log.
-    pub(crate) fn names(&mut self) -> Vec<&'static str> {
-        self.all().iter().map(|f| f.name()).collect()
+    pub(crate) fn names(&self) -> Vec<&'static str> {
+        self.0.iter().map(|f| f.name()).collect()
+    }
+
+    /// The feature of type `T`, for the console's commands. A miss is logged (it means the list was assembled without it) and
+    /// the command does nothing.
+    pub(crate) fn get_mut<T: Feature>(&mut self) -> Option<&mut T> {
+        let found = self
+            .0
+            .iter_mut()
+            .find_map(|f| (f.as_mut() as &mut dyn std::any::Any).downcast_mut::<T>());
+        if found.is_none() {
+            tracing::warn!(
+                "features: no {} in the list; the request is dropped",
+                std::any::type_name::<T>()
+            );
+        }
+        found
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+
+    #[test]
+    fn the_list_has_the_same_features_in_the_same_order() {
+        let mut f = crate::modes::assemble(&Config::default());
+        assert_eq!(
+            f.names(),
+            [
+                "mode",
+                "bots",
+                "clock",
+                "nights",
+                "night_match",
+                "multiplay",
+                "deathhold",
+                "menugate",
+                "hudfilter",
+                "runeshare",
+                "defeatdrop",
+                "orbclaim",
+                "maphide",
+                "hawk"
+            ]
+        );
+        let phases: Vec<Phase> = f.0.iter().map(|f| f.phase()).collect();
+        assert!(phases[..6].iter().all(|p| *p == Phase::Rules));
+        assert!(phases[6..].iter().all(|p| *p == Phase::AfterCombat));
+        assert!(f.get_mut::<mode::ModeFeature>().is_some());
+        assert!(f.get_mut::<bots::BotsFeature>().is_some());
+        assert!(f.get_mut::<clock::ClockFeature>().is_some());
+        assert!(f.get_mut::<nights::NightsFeature>().is_some());
+        assert!(f.get_mut::<br_match::MatchFeature>().is_some());
+        // A list without the feature: a miss, not a panic.
+        let mut empty = Features(Vec::new());
+        assert!(empty.get_mut::<clock::ClockFeature>().is_none());
     }
 }

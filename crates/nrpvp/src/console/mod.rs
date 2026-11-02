@@ -100,7 +100,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
-    Spec { name: "night_status", args: "", help: "the match rules: free day 1 / day 2 / night, players, teams seen, how many are out, whether LOCAL is defeated, the winner, mob deaths, places recorded, death held", run: |_| Ok(Act::Reply(crate::features::night_match::status_line())) },
+    Spec { name: "night_status", args: "", help: "the match rules: free day 1 / day 2 / night, players, teams seen, how many are out, whether LOCAL is defeated, the winner, mob deaths, places recorded, death held", run: |_| Ok(Act::Reply(crate::features::br_match::status::status_line())) },
     Spec { name: "mutex", args: "", help: "multi-instance (orchestrator): close this game's handle to the engine's single-instance mutex now (what `allow_multi_instance = true` does at load) so another game instance can start; the reply lists the named mutexes seen", run: |_| Ok(Act::Reply(crate::game::multi_instance::command())) },
     Spec { name: "hp0", args: "", help: "test aid: put this game's player at 0 HP on the next tick (turns god off). In a session it downs the player; with `flag 10007420 1` (die at once) it is a real death even offline", run: hp0 },
     Spec { name: "spectate", args: "[0|1]", help: "RW-1: 1 = a defeated player's held body follows a living player (the mod's spectator), 0 = it stays where it fell (shows what the game itself does for a dead player); no argument shows it", run: spectate },
@@ -395,7 +395,9 @@ fn spectate(args: &[String]) -> Result<Act, String> {
         Some("1") => Some(true),
         Some(_) => return Err("expected 0 or 1".into()),
     };
-    Ok(Act::Reply(crate::features::night_match::spectate_cmd(on)))
+    Ok(Act::Reply(
+        crate::features::br_match::spectate::spectate_cmd(on),
+    ))
 }
 
 fn trace_write(args: &[String]) -> Result<Act, String> {
@@ -624,7 +626,9 @@ fn night_count(args: &[String]) -> Result<Act, String> {
         Some("1") if args.len() == 1 => Some(true),
         _ => return Err("usage: night_count [0|1]".into()),
     };
-    Ok(Act::Reply(crate::features::night_match::count_cmd(on)))
+    Ok(Act::Reply(
+        crate::features::br_match::elimination::count_cmd(on),
+    ))
 }
 
 fn switch_arg(args: &[String], usage: &str) -> Result<Option<bool>, String> {

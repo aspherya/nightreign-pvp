@@ -66,18 +66,38 @@ nro stop
 ## 3. Scenarios (the normal way to test)
 
 A scenario is a `.toml` in `scenarios\`: `[config]` keys written over the staged `nrpvp.toml`, then steps (`console`, `wait`, `expect`,
-`keys`, `navigate`, `puppets`, `screenshot`, `sleep_ms`). The run verdict is **PASS** (every `expect` / `wait` held), **FAIL** (an `expect`
-missed) or **ABORT** (a `wait` timed out). One run takes about 3-6 minutes.
+`wait_log`, `expect_log`, `mark`, `keys`, `navigate`, `puppets`, `screenshot`, `sleep_ms`). The run verdict is **PASS** (every `expect` /
+`wait` held), **FAIL** (an `expect` missed) or **ABORT** (a `wait` timed out). One run takes about 3-6 minutes.
 
 ```powershell
-nro scenarios                                              # list them
+nro scenarios                                              # list them (with their tags)
+nro scenarios --tag smoke                                  # only the tagged ones
 target\release\nro.exe run scenarios\day1-free.toml        # one scenario, full JSON report (runs\<id>\report.json)
-powershell -ExecutionPolicy Bypass -File scripts\regress.ps1               # every single-game scenario, one PASS/FAIL line each
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1               # every scenario except tags mi and lab; seconds per scenario and a total
 powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 day1-free match-win   # only these
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 -Tag smoke    # only the scenarios with that tag
 ```
 
-`regress.ps1` skips the `mi-*` scenarios unless you name them. Run only what your change can break; run all before a release
-([../RELEASE.md](../RELEASE.md)). Which scenario proves which rule: [SCENARIOS.md](SCENARIOS.md).
+`regress.ps1` skips the `mi` and `lab` tagged scenarios unless you name them (or pass `-Tag mi` / `-Tag lab`). Tags (`tags = [...]` at the
+top of a file): `smoke` (the quick sanity pair), `rules`, `hud`, `mi` (two instances), `slow`, `lab` (not a test). Run only what your change
+can break; run all before a release ([../RELEASE.md](../RELEASE.md)). Which scenario proves which rule: [SCENARIOS.md](SCENARIOS.md).
+
+**Reading the mod log in a scenario.** `wait_log` / `expect_log` read the mod's log FILE (`runs\<id>\mod\nrpvp.log`, the instance's own
+in a multi-instance run), not the console's `log 300` tail, which can lose lines in event bursts (TRAPS.md "console tails"):
+```toml
+[[step]]
+mark = "before"                      # remember the log's byte length now (per instance)
+[[step]]
+console = "hp0"
+[[step]]
+wait_log = { contains = ["defeated by a rival"], absent = ["panic"], timeout_s = 40, since = "mark:before" }
+[[step]]
+expect_log = { contains = ["start step HELD"], absent = ["RELEASED"], since = "run" }
+```
+`since` is `"step"` (default: from where the previous step ended, so a line the previous step itself logged is NOT seen: use `mark` before
+the triggering command), `"run"` (the whole log) or `"mark:<name>"`. `absent` text appearing after the offset fails the step; in a
+`wait_log` it aborts at once. `navigate = "expedition"` ends with the console `god 1` (no wolf deaths); add `god = false` to that step
+when a mob should be able to kill the character (`hp0` turns god mode off by itself).
 
 ### Writing a scenario (copy the nearest one)
 ```toml

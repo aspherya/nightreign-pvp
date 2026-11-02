@@ -1,5 +1,6 @@
 name = "day1-free"
 about = "RW-4: Day 1 runs on a slowed clock with no night and no tide, the host ends it at 11:50, the game's morning brings Day 2 at 07:00 with the clock speed back"
+tags = ["smoke", "rules"]
 
 [config]
 mode = "offline"
@@ -13,15 +14,13 @@ navigate = "title_to_world"
 [[step]]
 navigate = "expedition"
 [[step]]
-console = "god 1"
-[[step]]
 wait = { console = "night_status", contains = "free day 1", timeout_s = 60 }
 [[step]]
 console = "clock"
 [[step]]
 screenshot = "day1"
 [[step]]
-wait = { console = "log 300", contains = "Day 1 is over", timeout_s = 200 }
+wait_log = { contains = "Day 1 is over", timeout_s = 200, since = "run" }
 [[step]]
 wait = { console = "clock", contains = "07:", timeout_s = 120 }
 [[step]]
@@ -33,4 +32,4 @@ screenshot = "day2"
 [[step]]
 console = "clock"
 [[step]]
-expect = { console = "log 300", contains = ["free Day 1: clock speed", "Day 1 is over", "Day 2 has begun; clock speed back"], absent = ["night 1 begins", "panic", "no free hardware slot"] }
+expect_log = { contains = ["free Day 1: clock speed", "Day 1 is over", "Day 2 has begun; clock speed back"], absent = ["night 1 begins", "panicked at", "no free hardware slot"], since = "run" }

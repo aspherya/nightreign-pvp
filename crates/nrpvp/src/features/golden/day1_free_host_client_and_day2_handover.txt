@@ -1,0 +1,133 @@
+# RW-4: the free Day 1, host vs client, and the Day 2 handover
+# columns: t = fake clock in ms; in = the tick's input; then what came out
+
+== host: slow the clock, set night-1-done at 11:50, restore on Day 2 (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:01 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:49:59 x17.06 | pos (10,20,30)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:50:00 x17.06 | pos (10,20,30)
+          acts: GameFlag(7502, true)
+          log: night_match: Day 1 is over at 11:50:00: night-1-done flag 7502 set, Day 2 follows
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:50:01 x17.06 | pos (10,20,30)
+          .
+-- the game's night-1-done flag is up (Day 2 not yet)
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:50:02 x17.06 | n1done | pos (10,20,30)
+          .
+-- Day 2 begins, the clock is still 11:51: the slow speed stays
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:51:00 x17.06 | day2+n1done | pos (10,20,30)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 12:19:59 x17.06 | day2+n1done | pos (10,20,30)
+          .
+-- the game's morning reset: the clock is back at 07:00
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x17.06 | day2+n1done | pos (10,20,30)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+t=009000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:05 x72.90 | day2+n1done | pos (10,20,30)
+          .
+
+== client: slows the clock, never sets 7502, restores at the 12:20 guard (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 07:00:01 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 11:50:00 x17.06 | pos (10,20,30)
+          .
+t=003000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 11:55:00 x17.06 | pos (10,20,30)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 11:56:00 x17.06 | day2+n1done | pos (10,20,30)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=005000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 12:19:59 x17.06 | day2+n1done | pos (10,20,30)
+          .
+t=006000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 12:20:00 x17.06 | day2+n1done | pos (10,20,30)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+t=007000 in: [6002*:hp240/s0 6001:hp240/s0] | clock 12:20:01 x72.90 | day2+n1done | pos (10,20,30)
+          .
+
+== Day 2 handover edges: 10:00:00 does not restore, 09:59:59 does (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:01 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 10:00:00 x17.06 | day2+n1done | pos (10,20,30)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:59:59 x17.06 | day2+n1done | pos (10,20,30)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:59:59 x72.90 | day2+n1done | pos (10,20,30)
+          .
+
+== joined after the slowdown (no vanilla speed seen): restores 72.9 (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:30:00 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x17.06 | day2+n1done | pos (10,20,30)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+
+== the speed drifts: asked again without a new line (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:01 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:02 x40.00 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:03 x17.10 | pos (10,20,30)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+
+== the night flag on Day 1 with the clock past 11:50: Day 1 ends at once (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 23:59:59 x17.06 | night | pos (10,20,30)
+          acts: GameFlag(7502, true)
+          log: night_match: Day 1 is over at 23:59:59: night-1-done flag 7502 set, Day 2 follows
+          status: night 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+
+== day1_secs 0: the free day is off (day1_secs 0, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          status: day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 11:50:00 x72.90 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | day2+n1done | pos (10,20,30)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+
+== no clock reading: nothing to do (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock - | pos (10,20,30)
+          status: day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+
+== the match is decided: Day 1 is left alone (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 07:00:00 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          log: night_match: free Day 1: clock speed 72.9 -> 17.1 (1020 s until 11:50:00)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0] | clock 08:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 1 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=002000 in: [6001*:hp240/s0] | clock 08:00:01 x17.06 | pos (10,20,30)
+          .
+t=007000 in: [6001*:hp240/s0] | clock 08:00:02 x72.90 | pos (10,20,30)
+          acts: ClockSpeed(17.058823)
+          status: free day 1; 1 player(s), 2 team(s) seen, 1 out; LOCAL in; mob deaths 0; places 1
+t=008000 in: [6001*:hp240/s0] | clock 08:00:03 x72.90 | pos (10,20,30)
+          flags: 10007411=ON
+          log: night_match: match decided: team 0x6001FFFFFFFF is the last one standing (this game's player won, host)
+          status: match over, decided (winner 0x6001FFFFFFFF); 1 player(s), 2 team(s) seen, 1 out; LOCAL in; mob deaths 0; places 1
+t=009000 in: [6001*:hp240/s0] | clock 08:00:04 x72.90 | pos (10,20,30)
+          .

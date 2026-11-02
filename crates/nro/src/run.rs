@@ -1,7 +1,8 @@
 //! The scenario runner: stage → preflight → launch → steps → report.json → teardown. One normal game, or several emulated-Steam
 //! instances (`[[instance]]`, MULTI-INSTANCE.md) launched one after another, each step acting on its `instance = N`.
 
-use nro_core::scenario::{Scenario, Step};
+use nro_core::logscan;
+use nro_core::scenario::{Scenario, Since, Step};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -125,6 +126,11 @@ pub fn title_to_world(st: &State, timeout: Duration) -> Result<String, String> {
                 return Ok(s);
             }
         }
+        // The window of a game that was just launched does not exist for the first seconds: wait for it instead of failing.
+        if crate::sys::main_window(pid).is_none() {
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
+        }
         if let Some((w, h)) = restore_dialog()? {
             let (ox, gw, oy, gh) = game_rect(w, h);
             let fx = (ox as f32 + RESTORE_CANCEL_AT.0 * gw as f32) / w as f32;
@@ -154,10 +160,15 @@ pub fn title_to_world(st: &State, timeout: Duration) -> Result<String, String> {
     Err(format!("no world after {} s", timeout.as_secs()))
 }
 
-/// Roundtable → expedition (offline mode: Commence Solo starts at once), then off the start hawk. From the Roundtable spawn point
-/// (facing the table, 1.03.3): walk 5 s, F (interact: the expedition menu), F (target), F (Commence Solo Expedition); wait for the
-/// local team value 2 (expedition, MEMORY_MAP §12); then Alt (disembark) and a few seconds to land.
-pub fn to_expedition(st: &State, timeout: Duration) -> Result<String, String> {
+/// Roundtable → expedition (offline mode: Commence Solo starts at once), then off the start hawk. Position-independent like
+/// [`invite_members`]: the mod's `tp` stands the player at [`TABLE_SPOT`] facing the table (the spawn spot and the Roundtable's look change
+/// with the save and the Shifting Earth, so the old blind 5 s walk could run past the table), F opens the expedition menu (checked by
+/// the menu word), then F2 / F1 / F (target) / F (Commence Solo Expedition); wait for the local team value 2 (expedition, MEMORY_MAP §12);
+/// then Alt (disembark) and a few seconds to land.
+///
+/// With `god` (the default of a scenario step) the mod console `god 1` is sent last, so a wolf cannot kill the character while the
+/// scenario runs; `hp0` turns it off again, and a scenario about a mob killing the character passes `god = false`.
+pub fn to_expedition(st: &State, timeout: Duration, god: bool) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
     let keys =
         |seq: &str| crate::desk::request(serde_json::json!({"op": "keys", "pid": pid, "seq": seq}));
@@ -171,14 +182,69 @@ pub fn to_expedition(st: &State, timeout: Duration) -> Result<String, String> {
         // dismisses the dialog and steps the ring once, so all three values are tried (Matchmaking Settings tab = F2, Target = F1).
         let t = Instant::now();
         let mut started = false;
-        for attempt in 0..3 {
+        for attempt in 0..4 {
+            // Back to a known state: dismiss the "Matchmaking failed" dialog of the previous attempt, close any menu, stand at the table.
+            if attempt > 0 {
+                // F is the game's "OK" ("F:OK Q:Close" in every menu); ENTER did not dismiss the dialog.
+                keys("F; wait 1s")?;
+            }
+            for _ in 0..5 {
+                if session::cmd(st, "pos")
+                    .ok()
+                    .and_then(|r| parse_pos(&r))
+                    .and_then(|p| p.1)
+                    == Some(0)
+                {
+                    break;
+                }
+                keys("Q; wait 1s")?;
+            }
+            // Stand at the table and stay there: for the first seconds after the world loads the game puts the player back at the
+            // spawn spot, so `tp` is repeated until the position holds for 2 s (2026-11-01).
+            let mut held = false;
+            for _ in 0..15 {
+                let r = session::cmd(
+                    st,
+                    &format!(
+                        "tp {} {} {} {}",
+                        TABLE_SPOT[0], TABLE_SPOT[1], TABLE_SPOT[2], TABLE_YAW
+                    ),
+                )?;
+                if !r.starts_with("tp:") {
+                    return Err(format!("tp refused: {r}"));
+                }
+                std::thread::sleep(Duration::from_millis(2000));
+                let at = session::cmd(st, "pos")
+                    .ok()
+                    .and_then(|r| parse_pos(&r))
+                    .map(|p| p.0);
+                if at.is_some_and(|a| dist(a, TABLE_SPOT) <= SPOT_TOLERANCE) {
+                    held = true;
+                    break;
+                }
+            }
+            if !held {
+                return Err("the player does not stay at the table spot".into());
+            }
+            // F opens the expedition menu; the first key into a window that was in the back is sometimes lost, so retry.
+            for _ in 0..4 {
+                keys("F; wait 2500ms")?;
+                let menu = session::cmd(st, "pos")
+                    .ok()
+                    .and_then(|r| parse_pos(&r))
+                    .and_then(|p| p.1);
+                if menu == Some(MENU_EXPEDITION) {
+                    break;
+                }
+            }
             let step = if attempt == 0 {
-                "W 5000ms; wait 1s; F; wait 2s; F2; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
+                "F2; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
             } else {
-                "ENTER; wait 1s; F; wait 2s; F2; wait 1s; RIGHT; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
+                "F2; wait 1s; RIGHT; wait 1s; F1; wait 1s; F; wait 2s; F; wait 3s"
             };
             keys(step)?;
-            let try_until = Instant::now() + Duration::from_secs(25);
+            // The expedition takes 30 s or more to load (seen 2026-11-01): wait long enough that a started load is not taken for a failure.
+            let try_until = Instant::now() + Duration::from_secs(70);
             while Instant::now() < try_until {
                 if session::cmd(st, "status").is_ok_and(|s| s.contains("team_type 2")) {
                     started = true;
@@ -196,7 +262,11 @@ pub fn to_expedition(st: &State, timeout: Duration) -> Result<String, String> {
         std::thread::sleep(Duration::from_secs(6));
         keys("ALT; wait 10s")?;
     }
-    session::cmd(st, "status")
+    let status = session::cmd(st, "status")?;
+    if god {
+        session::cmd(st, "god 1")?;
+    }
+    Ok(status)
 }
 
 /// Where the host stands to get the table's "F: Commence expedition" prompt, and the heading that faces the table (Roundtable, world
@@ -389,12 +459,108 @@ fn step_name(s: &Step) -> String {
         Step::Puppets(n) => format!("puppets {n}"),
         Step::PuppetRing(r) => format!("puppet_ring {r}"),
         Step::PuppetFront(d) => format!("puppet_front {d}"),
+        Step::Mark(n) => format!("mark {n}"),
+        Step::WaitLog(w) => format!("wait_log ~ {:?}", w.contains.needles()),
+        Step::ExpectLog(e) => format!("expect_log ~ {:?}", e.contains.needles()),
     }
 }
 
-/// Run one step. `Err` = the run cannot go on; `Ok((false, ..))` = an expectation failed (the run goes on, verdict FAIL).
+/// What the log steps of one game remember: the marks and the log length when the previous step finished.
+#[derive(Debug, Default, Clone)]
+pub struct LogCtx {
+    marks: BTreeMap<String, usize>,
+    step_end: usize,
+}
+
+impl LogCtx {
+    fn offset(&self, since: &Since) -> Result<usize, String> {
+        match since {
+            Since::Step => Ok(self.step_end),
+            Since::Run => Ok(0),
+            Since::Mark(n) => self
+                .marks
+                .get(n)
+                .copied()
+                .ok_or_else(|| format!("no mark {n:?} was set on this game")),
+        }
+    }
+}
+
+fn log_path(st: &State) -> PathBuf {
+    st.dir().join("mod").join("nrpvp.log")
+}
+
+/// The game's mod log file as bytes (empty when it does not exist yet).
+fn read_log(st: &State) -> Vec<u8> {
+    std::fs::read(log_path(st)).unwrap_or_default()
+}
+
+/// Run one step with no log memory (`nro navigate`, `nro keys`). `Err` = the run cannot go on; `Ok((false, ..))` = an expectation failed.
 pub fn step(st: &State, s: &Step) -> Result<(bool, String), String> {
+    step_with(st, s, true, &mut LogCtx::default())
+}
+
+/// Run one step of a scenario. `god`: whether `navigate = "expedition"` ends with `god 1`; `ctx`: this game's log marks.
+pub fn step_with(
+    st: &State,
+    s: &Step,
+    god: bool,
+    ctx: &mut LogCtx,
+) -> Result<(bool, String), String> {
     match s {
+        Step::Mark(n) => {
+            let at = read_log(st).len();
+            ctx.marks.insert(n.clone(), at);
+            Ok((true, format!("mark {n} at byte {at}")))
+        }
+        Step::WaitLog(w) => {
+            let off = ctx.offset(&w.since)?;
+            let t = Instant::now();
+            loop {
+                let log = read_log(st);
+                let sc = logscan::scan(&log, off, &w.contains, &w.absent);
+                if let Some(f) = &sc.forbidden {
+                    return Err(format!(
+                        "forbidden text {f:?} in the log; tail: {}",
+                        logscan::excerpt(&log, off, 300)
+                    ));
+                }
+                if sc.found {
+                    return Ok((true, logscan::excerpt(&log, off, 300)));
+                }
+                if st.live_pid().is_none() {
+                    return Err("the game exited".into());
+                }
+                if t.elapsed() >= Duration::from_secs(w.timeout_s) {
+                    return Err(format!(
+                        "timed out after {} s waiting for {:?} in the log; tail: {}",
+                        w.timeout_s,
+                        w.contains.needles(),
+                        logscan::excerpt(&log, off, 300)
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(250));
+            }
+        }
+        Step::ExpectLog(e) => {
+            let off = ctx.offset(&e.since)?;
+            let log = read_log(st);
+            let sc = logscan::scan(&log, off, &e.contains, &e.absent);
+            let detail = match &sc.forbidden {
+                Some(f) => format!("forbidden text {f:?} in the log"),
+                None => logscan::excerpt(&log, off, 300),
+            };
+            Ok((sc.ok(), detail))
+        }
+        other => step_plain(st, other, god),
+    }
+}
+
+fn step_plain(st: &State, s: &Step, god: bool) -> Result<(bool, String), String> {
+    match s {
+        Step::Mark(_) | Step::WaitLog(_) | Step::ExpectLog(_) => {
+            Err("log steps need a scenario run".into())
+        }
         Step::Console(l) => session::cmd(st, l).map(|r| (true, r)),
         Step::Wait(w) => {
             let t = Instant::now();
@@ -427,7 +593,7 @@ pub fn step(st: &State, s: &Step) -> Result<(bool, String), String> {
         }
         Step::Navigate(n) => match n.as_str() {
             "title_to_world" => title_to_world(st, Duration::from_secs(300)).map(|r| (true, r)),
-            "expedition" => to_expedition(st, Duration::from_secs(240)).map(|r| (true, r)),
+            "expedition" => to_expedition(st, Duration::from_secs(240), god).map(|r| (true, r)),
             "invite_members" => invite_members(st, 3).map(|r| (true, r)),
             "commence" => commence(st, 3).map(|r| (true, r)),
             other => Err(format!(
@@ -460,6 +626,7 @@ fn run_steps(
     rep: &mut Report,
 ) -> (bool, Option<String>) {
     let mut failed = false;
+    let mut ctxs: BTreeMap<Option<u32>, LogCtx> = BTreeMap::new();
     for s in &sc.steps {
         let n = sc.instance_of(s);
         let name = match n {
@@ -468,10 +635,14 @@ fn run_steps(
         };
         let t = Instant::now();
         let r = match games.get(&n) {
-            Some(st) => step(st, &s.step),
+            Some(st) => step_with(st, &s.step, s.god(), ctxs.entry(n).or_default()),
             None => Err(format!("no game for instance {n:?}")),
         };
         let secs = t.elapsed().as_secs_f64();
+        // `since = "step"` of the next step starts here, in every game's log.
+        for (k, st) in games {
+            ctxs.entry(*k).or_default().step_end = read_log(st).len();
+        }
         match r {
             Ok((ok, detail)) => {
                 failed |= !ok;

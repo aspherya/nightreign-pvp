@@ -449,6 +449,14 @@ pub fn occluders(hwnd: HWND) -> Vec<String> {
     out
 }
 
+/// One tap of a key the game ignores (Scroll Lock): the first key sent to a window that has just been brought to the front is lost, so
+/// this "primer" takes that loss instead of the real key.
+pub fn primer_tap() {
+    key_event(0x91, false);
+    std::thread::sleep(Duration::from_millis(40));
+    key_event(0x91, true);
+}
+
 pub fn focus(hwnd: HWND) -> bool {
     // SAFETY: window calls on a live handle. An ALT tap first lifts the foreground lock Windows puts on background processes.
     unsafe {

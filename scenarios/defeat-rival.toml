@@ -1,5 +1,6 @@
 name = "defeat-rival"
 about = "RW-1: a rival's hit then 0 HP = defeat for good: the comeback is held, LOCAL stays dead, the defeat screen follows after defeat_exit_secs, then the Roundtable"
+tags = ["rules", "slow"]
 
 [config]
 mode = "offline"
@@ -13,8 +14,6 @@ navigate = "title_to_world"
 [[step]]
 navigate = "expedition"
 [[step]]
-console = "god 1"
-[[step]]
 puppets = 3
 [[step]]
 puppet_ring = 6
@@ -27,15 +26,15 @@ sleep_ms = 1000
 [[step]]
 console = "hp0"
 [[step]]
-wait = { console = "log 300", contains = "defeated by a rival", timeout_s = 40 }
+wait_log = { contains = "defeated by a rival", timeout_s = 40, since = "run" }
 [[step]]
-wait = { console = "log 300", contains = "start step HELD", timeout_s = 40 }
+wait_log = { contains = "start step HELD", timeout_s = 40, since = "run" }
 [[step]]
 screenshot = "dead"
 [[step]]
 expect = { console = "night_status", contains = ["defeated by a rival", "death held"], absent = ["panic", "no free hardware slot"] }
 [[step]]
-wait = { console = "log 300", contains = "the defeat screen is asked for", timeout_s = 40 }
+wait_log = { contains = "the defeat screen is asked for", timeout_s = 40, since = "run" }
 [[step]]
 sleep_ms = 4000
 [[step]]
@@ -67,4 +66,4 @@ screenshot = "roundtable"
 [[step]]
 console = "status"
 [[step]]
-expect = { console = "log 300", contains = ["defeated by a rival", "start step HELD"], absent = ["RELEASED", "panic", "no free hardware slot"] }
+expect_log = { contains = ["defeated by a rival", "start step HELD"], absent = ["RELEASED", "panicked at", "no free hardware slot"], since = "run" }

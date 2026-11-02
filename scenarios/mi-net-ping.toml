@@ -1,5 +1,6 @@
 name = "mi-net-ping"
 about = "NET-1 on one PC: two emulated instances open our private ISteamNetworkingMessages channel (net = true), add each other as roster peers, and ping/pong 120 times in both directions; the channel never touches Seamless Co-op's session (no lobby is made)"
+tags = ["mi"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md): Steam closed, `nro desk` running. Instance 1 = Steam id 76561199023125438, instance 2 = ...439.
 # Run: nro run scenarios\mi-net-ping.toml --mod-dist <dev dist>      (add env NRO_NO_SC=1 to run it without Seamless Co-op)
 

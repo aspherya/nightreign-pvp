@@ -1,0 +1,139 @@
+# Who killed LOCAL: the rival window, the tide, a mob
+# columns: t = fake clock in ms; in = the tick's input; then what came out
+
+== rival hit 30000 ms ago = a rival (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30000)) rival_age Some(30000)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30000)) rival_age Some(30000)
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30000)) rival_age Some(30000)
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30000)) rival_age Some(30000)
+          acts: DropItems, DeathHold(true)
+          log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+
+== rival hit 30001 ms ago = a mob's or a fall's death (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Rival, 30001)), last rival hit Some(30001) ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== no hit at all = a mob's or a fall's death (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== a mob's hit = a mob's death (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Mob, 500)), last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== Day 1, hit with no attacker (not the tide) (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== Day 2 at 12:29:59, hit with no attacker (the circle has not started) (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== Day 2 at 12:30:00, hit with no attacker 10000 ms ago = the tide (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 12:30:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10000)) rival_age None
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:30:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10000)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:30:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10000)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:30:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10000)) rival_age None
+          acts: DeathHold(true)
+          log: night_match: LOCAL defeated by the tide: stays dead until the match ends, the defeat screen follows in 20 s
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL defeated by the tide; mob deaths 0; places 0
+
+== Day 2 at 13:00:00, hit with no attacker 10001 ms ago = not the tide (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 10001)), last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== Day 2 at 13:00:00, no clock reading is not the tide (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+
+== a rival hit wins over the tide (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 14:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Rival, 29000)) rival_age Some(29000)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 14:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Rival, 29000)) rival_age Some(29000)
+          .
+t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 14:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Rival, 29000)) rival_age Some(29000)
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 14:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Rival, 29000)) rival_age Some(29000)
+          acts: DropItems, DeathHold(true)
+          log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+
+== tide defeat on Day 2: hold, menu, defeat screen, no item drop (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30)
+          status: day 2; 3 player(s), 3 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=005000 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None
+          .
+t=005799 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None
+          .
+t=005800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None
+          acts: DeathHold(true)
+          log: night_match: LOCAL defeated by the tide: stays dead until the match ends, the defeat screen follows in 20 s
+          status: day 2; 3 player(s), 3 team(s) seen, 0 out; LOCAL defeated by the tide; mob deaths 0; places 0
+t=006000 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          .
+t=014799 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          .
+t=014800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          acts: MenuGate(true)
+          log: night_match: the Esc menu is unlocked for the defeated player
+t=025799 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          .
+t=025800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          flags: 10007412=ON
+          log: night_match: the defeat screen is asked for (back to the Roundtable)

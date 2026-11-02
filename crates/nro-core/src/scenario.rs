@@ -33,7 +33,13 @@ pub struct Scenario {
     /// How to end: "kill" (default; the game's quit crashes on every run, mod STATUS §1) or "keep" (leave the game running).
     #[serde(default)]
     pub teardown: Option<String>,
+    /// Selection tags (`smoke`, `rules`, `hud`, `mi`, `slow`, `lab`); `nro scenarios --tag X` and `regress.ps1 -Tag X` filter on them.
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
+
+/// The allowed values of `tags`.
+pub const TAGS: [&str; 6] = ["smoke", "rules", "hud", "mi", "slow", "lab"];
 
 /// One `[[instance]]`: emulated instance `n` (1..=3), launched in file order.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -53,8 +59,19 @@ pub struct Instance {
 pub struct StepAt {
     #[serde(default)]
     pub instance: Option<u32>,
+    /// Only for `navigate = "expedition"`: `false` skips the `god 1` it sends when it ends (default `true`). A scenario whose
+    /// point is a mob or boss killing the character sets `god = false`.
+    #[serde(default)]
+    pub god: Option<bool>,
     #[serde(flatten)]
     pub step: Step,
+}
+
+impl StepAt {
+    /// Whether `navigate = "expedition"` ends with the console `god 1`.
+    pub fn god(&self) -> bool {
+        self.god.unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -79,6 +96,65 @@ pub enum Step {
     PuppetRing(f32),
     /// Put the puppets this many metres in front of the player (facing from a short step forward).
     PuppetFront(f32),
+    /// Remember the byte length of this game's mod log under a name (`since = "mark:<name>"`).
+    Mark(String),
+    /// Poll the mod's log FILE until the text after `since` has all `contains` and none of `absent`; timeout = ABORT.
+    WaitLog(WaitLog),
+    /// One look at the mod's log FILE after `since`; a miss = FAIL, the run continues.
+    ExpectLog(ExpectLog),
+}
+
+/// Where a log step starts reading the mod log (`nrpvp.log`, truncated by the mod at start).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum Since {
+    /// The byte offset at the moment the previous step finished (this instance's log).
+    #[default]
+    Step,
+    /// The start of the log.
+    Run,
+    /// The offset a `mark = "<name>"` step recorded earlier.
+    Mark(String),
+}
+
+impl<'de> Deserialize<'de> for Since {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        match s.as_str() {
+            "step" => Ok(Since::Step),
+            "run" => Ok(Since::Run),
+            m => match m.strip_prefix("mark:") {
+                Some(n) if !n.is_empty() => Ok(Since::Mark(n.to_string())),
+                _ => Err(serde::de::Error::custom(format!(
+                    "since = {m:?} (step, run or mark:<name>)"
+                ))),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct WaitLog {
+    #[serde(default)]
+    pub contains: Contains,
+    /// None of these may appear after the offset: one that does fails the wait at once (a log only grows).
+    #[serde(default)]
+    pub absent: Contains,
+    #[serde(default = "default_timeout")]
+    pub timeout_s: u64,
+    #[serde(default)]
+    pub since: Since,
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectLog {
+    #[serde(default)]
+    pub contains: Contains,
+    #[serde(default)]
+    pub absent: Contains,
+    #[serde(default)]
+    pub since: Since,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
@@ -172,6 +248,44 @@ impl Scenario {
             }
             seen.push(i.n);
         }
+        for t in &self.tags {
+            if !TAGS.contains(&t.as_str()) {
+                return Err(format!("scenario: tag {t:?} (one of {TAGS:?})"));
+            }
+        }
+        // A `since = "mark:x"` needs an earlier `mark = "x"` on the same instance's log.
+        let mut marks: Vec<(Option<u32>, &str)> = Vec::new();
+        for (k, s) in self.steps.iter().enumerate() {
+            let at = self.instance_of(s);
+            let since = match &s.step {
+                Step::Mark(n) => {
+                    marks.push((at, n.as_str()));
+                    None
+                }
+                Step::WaitLog(w) => {
+                    if w.contains.needles().is_empty() {
+                        return Err(format!("scenario: step {} wait_log needs contains", k + 1));
+                    }
+                    Some(&w.since)
+                }
+                Step::ExpectLog(e) => Some(&e.since),
+                _ => None,
+            };
+            if let Some(Since::Mark(n)) = since {
+                if !marks.contains(&(at, n.as_str())) {
+                    return Err(format!(
+                        "scenario: step {} reads mark {n:?}, which no earlier step set on that instance",
+                        k + 1
+                    ));
+                }
+            }
+            if s.god.is_some() && s.step != Step::Navigate("expedition".into()) {
+                return Err(format!(
+                    "scenario: step {} has god = ..., only allowed on navigate = \"expedition\"",
+                    k + 1
+                ));
+            }
+        }
         for (k, s) in self.steps.iter().enumerate() {
             if let Some(n) = s.instance {
                 if !seen.contains(&n) {
@@ -183,6 +297,11 @@ impl Scenario {
             }
         }
         Ok(())
+    }
+
+    /// Has this tag (scenarios without tags have none).
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|t| t == tag)
     }
 
     /// The instance a step acts on: its own `instance`, else the first declared one; `None` = the single normal game.
@@ -349,6 +468,93 @@ navigate = "invite_members"
             }
         }
         assert!(n >= 9, "only {n} scenario files");
+    }
+
+    #[test]
+    fn every_scenario_is_tagged_consistently() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scenarios");
+        for e in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = e.path();
+            if p.extension().is_none_or(|x| x != "toml") {
+                continue;
+            }
+            let s = Scenario::parse(&std::fs::read_to_string(&p).unwrap()).unwrap();
+            let f = p.file_stem().unwrap().to_string_lossy().to_string();
+            assert!(!s.tags.is_empty(), "{f}: no tags");
+            assert_eq!(s.has_tag("mi"), f.starts_with("mi-"), "{f}: mi tag");
+            if s.teardown.as_deref() == Some("keep") {
+                assert!(s.has_tag("lab"), "{f}: keep = lab");
+            }
+            // Raw `log N` console polling is gone: log steps read the file.
+            for st in &s.steps {
+                match &st.step {
+                    Step::Wait(w) => assert!(!w.console.starts_with("log "), "{f}: {}", w.console),
+                    Step::Expect(x) => {
+                        assert!(!x.console.starts_with("log "), "{f}: {}", x.console)
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn parses_tags_god_and_log_steps() {
+        let s = Scenario::parse(
+            r#"
+name = "x"
+tags = ["smoke", "rules"]
+[[step]]
+navigate = "expedition"
+god = false
+[[step]]
+mark = "before"
+[[step]]
+console = "hp0"
+[[step]]
+wait_log = { contains = ["a", "b"], absent = "panic", timeout_s = 7, since = "mark:before" }
+[[step]]
+expect_log = { absent = ["panic"], since = "run" }
+[[step]]
+expect_log = { contains = "ok" }
+"#,
+        )
+        .unwrap();
+        assert!(s.has_tag("smoke") && !s.has_tag("mi"));
+        assert!(!s.steps[0].god());
+        assert!(s.steps[2].god());
+        assert_eq!(s.steps[1].step, Step::Mark("before".into()));
+        let Step::WaitLog(w) = &s.steps[3].step else {
+            panic!()
+        };
+        assert_eq!(w.timeout_s, 7);
+        assert_eq!(w.since, Since::Mark("before".into()));
+        let Step::ExpectLog(e) = &s.steps[4].step else {
+            panic!()
+        };
+        assert_eq!(e.since, Since::Run);
+        let Step::ExpectLog(e) = &s.steps[5].step else {
+            panic!()
+        };
+        assert_eq!(e.since, Since::Step, "default");
+    }
+
+    #[test]
+    fn refuses_bad_tags_marks_and_god() {
+        let bad = |t: &str| Scenario::parse(t).unwrap_err();
+        assert!(bad("name = \"x\"\ntags = [\"fast\"]\n").contains("tag"));
+        assert!(bad(
+            "name = \"x\"\n[[step]]\nexpect_log = { contains = \"a\", since = \"mark:nope\" }\n"
+        )
+        .contains("mark"));
+        assert!(
+            bad("name = \"x\"\n[[step]]\nexpect_log = { since = \"later\" }\n").contains("since")
+        );
+        assert!(bad("name = \"x\"\n[[step]]\nwait_log = { timeout_s = 3 }\n").contains("contains"));
+        assert!(bad("name = \"x\"\n[[step]]\nconsole = \"god 1\"\ngod = false\n").contains("god"));
+        // A mark is per instance: a mark on instance 1 is not readable from instance 2.
+        let two = "name = \"x\"\n[[instance]]\nn = 1\n[[instance]]\nn = 2\n[[step]]\ninstance = 1\nmark = \"m\"\n[[step]]\ninstance = 2\nexpect_log = { since = \"mark:m\" }\n";
+        assert!(bad(two).contains("mark"));
     }
 
     #[test]

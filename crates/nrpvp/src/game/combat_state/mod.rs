@@ -63,7 +63,7 @@ use crate::game::layout::{DATA_MODULE_HP as DM_HP_OFF, DATA_MODULE_MAX_HP as DM_
 
 /// Dev console `god 0|1` (off at launch; only the console sets it).
 /// `god` raises the maximum HP to this (RW-5 boss test: a boss's single hit is bigger than the normal maximum).
-const GOD_MAX_HP: u32 = 1_000_000;
+pub(super) const GOD_MAX_HP: u32 = 1_000_000;
 pub(crate) static GOD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Dev console `hp0` (2026-10-24, M5-9 tests): the next tick writes 0 to LOCAL's HP, see [`zero_hp`].

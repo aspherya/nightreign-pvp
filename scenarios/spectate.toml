@@ -1,5 +1,6 @@
 name = "spectate"
 about = "RW-1: a defeated player's invisible body is moved to the nearest living player every tick so the follow camera shows them; F10 leaves (the defeat screen). One PC: puppets are the watched players"
+tags = ["rules"]
 
 [config]
 mode = "offline"
@@ -12,8 +13,6 @@ defeat_exit_secs = 0
 navigate = "title_to_world"
 [[step]]
 navigate = "expedition"
-[[step]]
-console = "god 1"
 [[step]]
 puppets = 3
 [[step]]
@@ -37,7 +36,7 @@ screenshot = "watching1"
 [[step]]
 console = "puppet_list"
 [[step]]
-wait = { console = "log 300", contains = "start step HELD", timeout_s = 40 }
+wait_log = { contains = "start step HELD", timeout_s = 40, since = "run" }
 [[step]]
 sleep_ms = 3000
 [[step]]
@@ -47,8 +46,8 @@ expect = { console = "night_status", contains = ["defeated by a rival", "watchin
 [[step]]
 keys = "F10"
 [[step]]
-wait = { console = "log 300", contains = "the leave key was pressed", timeout_s = 20 }
+wait_log = { contains = "the leave key was pressed", timeout_s = 20, since = "run" }
 [[step]]
-wait = { console = "log 300", contains = "out of the expedition", timeout_s = 60 }
+wait_log = { contains = "out of the expedition", timeout_s = 60, since = "run" }
 [[step]]
-expect = { console = "log 300", contains = ["spectating player", "the leave key was pressed"], absent = ["panic", "no free hardware slot"] }
+expect_log = { contains = ["spectating player", "the leave key was pressed"], absent = ["panicked at", "no free hardware slot"], since = "run" }

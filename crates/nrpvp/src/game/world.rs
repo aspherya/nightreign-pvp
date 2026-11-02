@@ -3,9 +3,11 @@
 //! (ARCHITECTURE §4 "Read model per tick"). It grows with the features that need more; the team and downed-rule controllers still
 //! read their own data (they move onto it when a card touches them).
 
+use super::combat_state::CombatCtl;
 use super::gamemem::GameMem;
 use super::layout;
 use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea};
+use super::{deathhold, flags, input, menugate, spawn};
 
 /// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
 /// M5-5: players in a match (Seamless Co-op's limit).
@@ -56,6 +58,15 @@ impl NightFlags {
     }
 }
 
+/// M5-5: the night flags, all or nothing (`None` while the flag manager is not live).
+fn night_flags(base: usize) -> Option<NightFlags> {
+    let mut v = [false; 13];
+    for (o, id) in v.iter_mut().zip(NightFlags::IDS) {
+        *o = flags::get(base, id).ok()?;
+    }
+    Some(NightFlags::from_values(v))
+}
+
 /// What the main loop knows before it reads the world.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct Inputs {
@@ -68,10 +79,20 @@ pub(crate) struct Inputs {
     pub bot_man: usize,
     /// M5: `WorldPlayAreaManager` instance, 0 = none.
     pub play_area: usize,
+    /// R7-3: the exe base (for the readers that need it).
+    pub base: usize,
+    /// R7-6: the exe image size (the hawk adapter's `size` argument).
+    pub size: usize,
+    /// R7-3: [`World::local_state`] as the downed rule resolved it (the same call that gave `local`; no extra read).
+    pub local_state: Option<(usize, u8)>,
+    /// R7-3: [`World::local_team_no`] (no memory read).
+    pub local_team_no: Option<u8>,
+    /// R7-3: the mod's PvP mode is on (`TeamCtl::pvpve_state` = On) at the start of the tick.
+    pub pvpve_on: bool,
 }
 
 /// One tick's view of the game.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct World {
     /// WorldChrMan instance, 0 = no world (title, menu or a load screen).
     pub wcm_instance: usize,
@@ -106,6 +127,28 @@ pub(crate) struct World {
     pub leave_pressed: bool,
     /// RW-7: each fighter's world position, same order as [`World::fighters`] (filled by the main loop).
     pub positions: [Option<[f32; 3]>; MAX_FIGHTERS],
+    /// R7-3: the exe base.
+    pub base: usize,
+    /// R7-6: the exe image size.
+    pub size: usize,
+    /// R7-3: a match is running: in an expedition with the mod's PvP mode on. [`World::read`] sets the value at the START of the
+    /// tick; [`World::after_combat`] refreshes it after `combat.tick`, which is the value the hook modules always used.
+    pub in_match: bool,
+    /// R7-6: the rivals' handles and addresses (`CombatCtl::rival_handles` / `rival_addrs`). Empty until [`World::after_combat`]
+    /// fills them (those calls read game memory, so they run once per tick, after `combat.tick`).
+    pub rivals: Rivals,
+    /// R7-3: the local player and its downed byte, from the same `CombatCtl::local_state` call as `local`. [`World::after_combat`]
+    /// replaces it with the call's result after `combat.tick` (unfiltered, as the hook modules always read it).
+    pub local_state: Option<(usize, u8)>,
+    /// R7-3: LOCAL's roster team number (refreshed by [`World::after_combat`]).
+    pub local_team_no: Option<u8>,
+}
+
+/// R7-3: the players this game marks as RIVAL (see [`World::rivals`]).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Rivals {
+    pub handles: Vec<u64>,
+    pub addrs: Vec<usize>,
 }
 
 impl World {
@@ -139,7 +182,83 @@ impl World {
             spec_prev: false,
             death_held: false,
             positions: [None; MAX_FIGHTERS],
+            base: i.base,
+            size: i.size,
+            in_match: place == Some(Place::Expedition) && i.pvpve_on,
+            rivals: Rivals::default(),
+            local_state: local.and(i.local_state),
+            local_team_no: i.local_team_no,
         }
+    }
+
+    /// R7-3: what the night match reads besides the read model, filled in one place (it was a block in the main loop). Only in an
+    /// expedition. The order of the reads is the order the loop always had: flags, every player's downed state, LOCAL's position and
+    /// hits, the F10 and spectate edges (read every tick so their state stays current, but dropped while a menu is open), the death
+    /// hold, each fighter's position, the team size.
+    pub(crate) fn fill_expedition(
+        &mut self,
+        combat: Option<&CombatCtl>,
+        base: usize,
+        team_size: usize,
+    ) {
+        if !self.in_expedition() {
+            return;
+        }
+        self.night = night_flags(base);
+        if let Some(c) = combat {
+            for (o, f) in self.fighters.iter_mut().zip(c.fighters()) {
+                *o = Some(f);
+            }
+        }
+        self.local_pos = self.local.and_then(|p| spawn::world_position(p, base));
+        if let Some(c) = combat {
+            self.local_hits = c.local_hits();
+        }
+        self.leave_pressed = input::leave_key_edge();
+        let (sn, sp) = input::spectate_switch_edges();
+        let in_menu = menugate::menu_open(base);
+        (self.spec_next, self.spec_prev) = (sn && !in_menu, sp && !in_menu);
+        self.death_held = deathhold::held();
+        if let Some(local) = self.local {
+            for (o, f) in self.positions.iter_mut().zip(self.fighters.iter()) {
+                *o = f.and_then(|f| {
+                    if f.local {
+                        spawn::world_position(f.addr, base).map(|p| p.0)
+                    } else {
+                        spawn::world_position_of(f.addr, local, base)
+                    }
+                });
+            }
+        }
+        self.team_size = team_size;
+    }
+
+    /// R7-6: the facts the hook modules read, refreshed right after `combat.tick` (the world itself was read before it, so
+    /// the rivals are the current tick's, as they always were for these modules). `pvpve_on` is `TeamCtl::pvpve_state` NOW.
+    pub(crate) fn after_combat(&mut self, combat: Option<&CombatCtl>, pvpve_on: bool) {
+        let (handles, addrs) = combat
+            .map(|c| (c.rival_handles(), c.rival_addrs()))
+            .unwrap_or_default();
+        self.apply_after_combat(
+            pvpve_on,
+            combat.and_then(|c| c.local_state()),
+            combat.and_then(|c| c.local_team_no()),
+            Rivals { handles, addrs },
+        );
+    }
+
+    /// The pure half of [`World::after_combat`].
+    pub(crate) fn apply_after_combat(
+        &mut self,
+        pvpve_on: bool,
+        local_state: Option<(usize, u8)>,
+        local_team_no: Option<u8>,
+        rivals: Rivals,
+    ) {
+        self.in_match = self.in_expedition() && pvpve_on;
+        self.local_state = local_state;
+        self.local_team_no = local_team_no;
+        self.rivals = rivals;
     }
 
     /// True while the local player is on an expedition (not the Roundtable, not a load screen).
@@ -160,8 +279,8 @@ mod tests {
         let f = NightFlags::from_values(v);
         assert!(f.night1_done && f.reviving && !f.night && !f.night2_done);
         assert_eq!(NightFlags::IDS[9], crate::features::nights::FLAG_NIGHT_END);
-        assert_eq!(NightFlags::IDS[10], crate::features::night_match::FLAG_WIN);
-        assert_eq!(NightFlags::IDS[11], crate::features::night_match::FLAG_LOSE);
+        assert_eq!(NightFlags::IDS[10], crate::features::br_match::FLAG_WIN);
+        assert_eq!(NightFlags::IDS[11], crate::features::br_match::FLAG_LOSE);
     }
     use crate::game::gamemem::FakeMem;
     use crate::game::layout::CHR_TYPE;
@@ -193,5 +312,64 @@ mod tests {
         let w = World::read(&m, &inputs(0, Some(0x10_0000)));
         assert_eq!(w.local, None);
         assert!(!w.in_expedition());
+    }
+
+    #[test]
+    fn after_combat_refreshes_what_the_hook_modules_read() {
+        let m = FakeMem::default();
+        m.put_u32(0x10_0000 + CHR_TYPE, 13);
+        let mut w = World::read(&m, &inputs(0x5_0000, Some(0x10_0000)));
+        assert!(!w.in_match, "PvP mode was off at the start of the tick");
+        let r = Rivals {
+            handles: vec![7],
+            addrs: vec![0x20_0000],
+        };
+        w.apply_after_combat(true, Some((0x10_0000, 0)), Some(3), r.clone());
+        assert!(w.in_match);
+        assert_eq!(w.rivals, r);
+        assert_eq!(w.local_state, Some((0x10_0000, 0)));
+        assert_eq!(w.local_team_no, Some(3));
+        // Off again, or not in an expedition: no match; no combat controller: no rivals.
+        w.apply_after_combat(false, None, None, Rivals::default());
+        assert!(!w.in_match && w.rivals == Rivals::default() && w.local_state.is_none());
+        w.after_combat(None, true);
+        assert!(w.in_match && w.rivals == Rivals::default());
+        w.place = Some(Place::Roundtable);
+        w.after_combat(None, true);
+        assert!(!w.in_match);
+    }
+
+    #[test]
+    fn read_fills_the_loop_facts_without_reading_more() {
+        let m = FakeMem::default();
+        m.put_u32(0x10_0000 + CHR_TYPE, 13);
+        let i = Inputs {
+            base: 0x1000,
+            local_state: Some((0x10_0000, 1)),
+            local_team_no: Some(2),
+            pvpve_on: true,
+            ..inputs(0x5_0000, Some(0x10_0000))
+        };
+        let w = World::read(&m, &i);
+        assert_eq!(w.base, 0x1000);
+        assert_eq!(w.local_state, Some((0x10_0000, 1)));
+        assert_eq!(w.local_team_no, Some(2));
+        assert!(w.in_match);
+        assert_eq!(w.rivals, Rivals::default());
+        // Not in an expedition, or the PvP mode off: no match.
+        m.put_u32(0x10_0000 + CHR_TYPE, 0);
+        assert!(!World::read(&m, &i).in_match);
+        m.put_u32(0x10_0000 + CHR_TYPE, 13);
+        let off = Inputs {
+            pvpve_on: false,
+            ..i
+        };
+        assert!(!World::read(&m, &off).in_match);
+        // No world: no local player, so no local state either.
+        let none = Inputs {
+            wcm_instance: 0,
+            ..i
+        };
+        assert_eq!(World::read(&m, &none).local_state, None);
     }
 }

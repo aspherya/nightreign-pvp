@@ -1,5 +1,6 @@
 name = "mi-queue"
 about = "Our own Solo matchmaking queue between two emulated instances on one PC: both queue (mm_queue_solo), they find each other through gbe's LAN lobbies, MATCH READY, the host opens Invite Members, the joiner joins by the host's invite (ALL PRESENT), both commence and load into the same expedition as rivals"
+tags = ["mi"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
 # Run: nro run scenarios\mi-queue.toml --mod-dist <dev dist>
@@ -83,7 +84,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1

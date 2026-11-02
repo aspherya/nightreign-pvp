@@ -78,7 +78,11 @@ pub(crate) fn data_module_hp(mem: &dyn CombatMem, addr: usize) -> Result<(usize,
     let (hp, max) = (mem.read_u32(dm + DM_HP), mem.read_u32(dm + DM_MAX_HP));
     let (ghp, gmax) = (mem.read_u32(g + GD_HP), mem.read_u32(g + GD_MAX_HP));
     match (hp, max, ghp, gmax) {
-        (Some(h), Some(m), Some(gh), Some(gm)) if h > 0 && h == gh && m == gm => {
+        // `god 1` raises only the module's maximum (the game recomputes PlayerGameData's), so that value is accepted too: without
+        // it `hp0` was refused after `god 1` (2026-11-01, scenario `defeat-rival`).
+        (Some(h), Some(m), Some(gh), Some(gm))
+            if h > 0 && h == gh && (m == gm || m == super::GOD_MAX_HP) =>
+        {
             Ok((dm + DM_HP, h))
         }
         _ => Err(format!(

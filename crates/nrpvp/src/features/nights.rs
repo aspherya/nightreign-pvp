@@ -4,7 +4,7 @@
 //! flags (7502 / 7507), so the game's morning follows as after a boss.
 //!
 //! Those events wait for our flag [`FLAG_NIGHT_END`]: the night match sets it in the host's game when one team is left standing
-//! (M5-5, `night_match.rs`), the console `night_end` here; a 10 min timer in the event is the fallback so a night never hangs. The
+//! (M5-5, `br_match/`), the console `night_end` here; a 10 min timer in the event is the fallback so a night never hangs. The
 //! events run only in the host's game. Log lines start with `nights:`.
 
 use std::sync::{Mutex, PoisonError};

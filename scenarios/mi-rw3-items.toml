@@ -1,5 +1,6 @@
 name = "mi-rw3-items"
 about = "RW-3 E2 on one PC: two emulated instances in the same expedition as rivals; the host drops its gear without a defeat (drop_gear), then player 2 (the client) is defeated by a rival (rival_hit + hp0): its game publishes the gear, the host makes the drop on the game thread, the game replicates it to the client"
+tags = ["mi", "slow"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
 # Run: nro run scenarios\mi-rw8-runes.toml --mod-dist <dev dist>
@@ -83,7 +84,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1
@@ -180,7 +181,7 @@ console = "drop_gear"
 
 [[step]]
 instance = 1
-wait = { console = "log 300", contains = ["itemdrop: on the game thread", "rax 0x1", "MapItemMan slots changed: +0x78"], timeout_s = 20 }
+wait_log = { contains = ["itemdrop: on the game thread", "rax 0x1", "MapItemMan slots changed: +0x78"], timeout_s = 20, since = "run" }
 
 [[step]]
 instance = 1
@@ -217,15 +218,15 @@ wait = { console = "night_status", contains = "defeated by a rival", timeout_s =
 
 [[step]]
 instance = 2
-wait = { console = "log 300", contains = ["defeatdrop: published drop 0x", "for the host to make"], timeout_s = 20 }
+wait_log = { contains = ["defeatdrop: published drop 0x", "for the host to make"], timeout_s = 20, since = "run" }
 
 [[step]]
 instance = 1
-wait = { console = "log 400", contains = ["itemdrop: queued", "for drop 0x"], timeout_s = 30 }
+wait_log = { contains = ["itemdrop: queued", "for drop 0x"], timeout_s = 30, since = "run" }
 
 [[step]]
 instance = 1
-wait = { console = "log 400", contains = ["item(s) for drop 0x", "-> rax 0x1"], timeout_s = 30 }
+wait_log = { contains = ["item(s) for drop 0x", "-> rax 0x1"], timeout_s = 30, since = "run" }
 
 [[step]]
 instance = 1
@@ -237,4 +238,4 @@ screenshot = "victim_dead"
 
 [[step]]
 instance = 1
-expect = { console = "log 400", absent = ["panic", "EXCEPTION"] }
+expect_log = { absent = ["panicked at", "EXCEPTION"], since = "run" }

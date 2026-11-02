@@ -24,6 +24,7 @@ pub(crate) mod gamemem;
 pub(crate) mod hawk;
 pub(crate) mod hudfilter;
 pub(crate) mod image;
+pub(crate) mod input;
 pub(crate) mod itemdrop;
 pub(crate) mod layout;
 pub(crate) mod maphide;
@@ -38,7 +39,6 @@ pub(crate) mod multiplay;
 pub(crate) mod orbclaim;
 pub(crate) mod poswrite;
 pub(crate) mod puppet;
-#[cfg(feature = "dev")]
 #[cfg(feature = "dev")]
 pub(crate) mod rawcall;
 pub(crate) mod reviveblock;
@@ -61,6 +61,14 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+#[cfg(feature = "dev")]
+use crate::features::bots::BotsFeature;
+#[cfg(feature = "dev")]
+use crate::features::clock::ClockFeature;
+#[cfg(feature = "dev")]
+use crate::features::mode::ModeFeature;
+#[cfg(feature = "dev")]
+use crate::features::nights::NightsFeature;
 use crate::features::{Ctx, Features};
 use crate::overlay::shared::Command;
 #[cfg(feature = "dev")]
@@ -469,50 +477,29 @@ fn watch(
         // R3 / OFF-1: this tick's read model (the local player as the downed rule last resolved it) and the features' outbox.
         let bot_man = botman_slot.and_then(instance_of).unwrap_or(0);
         let play_area = playarea_slot.and_then(instance_of).unwrap_or(0);
+        let local_state = combat.as_ref().and_then(|c| c.local_state());
         let mut world = world::World::read(
             &mem,
             &world::Inputs {
                 wcm_instance: wcm_inst,
-                local: combat
-                    .as_ref()
-                    .and_then(|c| c.local_state())
-                    .map(|(a, _)| a),
+                local: local_state.map(|(a, _)| a),
                 mm_phase: crate::mm::phase(),
                 bot_man,
                 play_area,
+                base,
+                size,
+                local_state,
+                local_team_no: combat.as_ref().and_then(|c| c.local_team_no()),
+                pvpve_on: team.pvpve_state() == crate::overlay::shared::PvpveState::On,
             },
         );
-        // M5-5: what the night match reads besides the read model (flags, every player's downed state, LOCAL's position).
-        if world.in_expedition() {
-            world.night = night_flags(base);
-            if let Some(c) = combat.as_ref() {
-                for (o, f) in world.fighters.iter_mut().zip(c.fighters()) {
-                    *o = Some(f);
-                }
-            }
-            world.local_pos = world.local.and_then(|p| spawn::world_position(p, base));
-            if let Some(c) = combat.as_ref() {
-                world.local_hits = c.local_hits();
-            }
-            world.leave_pressed = leave_key_edge();
-            // The edges are read every tick (their state stays current) but dropped while a menu is open.
-            let (sn, sp) = spectate_switch_edges();
-            let in_menu = menugate::menu_open(base);
-            (world.spec_next, world.spec_prev) = (sn && !in_menu, sp && !in_menu);
-            world.death_held = deathhold::held();
-            if let Some(local) = world.local {
-                for (o, f) in world.positions.iter_mut().zip(world.fighters.iter()) {
-                    *o = f.and_then(|f| {
-                        if f.local {
-                            spawn::world_position(f.addr, base).map(|p| p.0)
-                        } else {
-                            spawn::world_position_of(f.addr, local, base)
-                        }
-                    });
-                }
-            }
-            world.team_size = crate::mm::effective_team_size(cfg.team_size_usize());
-        }
+        // M5-5 / R7-3: what the night match reads besides the read model (flags, every player's downed state, LOCAL's position,
+        // the input edges), filled in one place.
+        world.fill_expedition(
+            combat.as_ref(),
+            base,
+            crate::mm::effective_team_size(cfg.team_size_usize()),
+        );
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
@@ -547,9 +534,21 @@ fn watch(
                 // HAWK-3: module-level state like the trace.
                 Command::Hawk(h) => hawk::command(h, base, size),
                 // OFF-1: features get their commands with this tick's world.
-                Command::Mode(m) => features.mode.request(m, "console", &world, &mut fctx),
-                Command::Clock(c) => features.clock.request(c, "console", &world, &mut fctx),
-                Command::NightEnd => features.nights.request_end("console", &world, &mut fctx),
+                Command::Mode(m) => {
+                    if let Some(f) = features.get_mut::<ModeFeature>() {
+                        f.request(m, "console", &world, &mut fctx);
+                    }
+                }
+                Command::Clock(c) => {
+                    if let Some(f) = features.get_mut::<ClockFeature>() {
+                        f.request(c, "console", &world, &mut fctx);
+                    }
+                }
+                Command::NightEnd => {
+                    if let Some(f) = features.get_mut::<NightsFeature>() {
+                        f.request_end("console", &world, &mut fctx);
+                    }
+                }
                 Command::Flag(f, v) => crate::game::flags::console_cmd(base, f, v),
                 #[cfg(feature = "dev")]
                 Command::RawCall(rva, arg) => rawcall::call(base, rva, arg),
@@ -557,27 +556,30 @@ fn watch(
                 Command::ItemDrop(id, n, off) => itemdrop::aid(base, id, n, off),
                 #[cfg(feature = "dev")]
                 Command::DropGear(dry) => defeatdrop::aid(base, world.local, dry),
-                Command::Bots(b) => features.bots.request(
-                    b,
-                    "console",
-                    crate::features::mode::current(),
-                    &world,
-                    &mut fctx,
-                ),
+                Command::Bots(b) => {
+                    if let Some(f) = features.get_mut::<BotsFeature>() {
+                        f.request(
+                            b,
+                            "console",
+                            crate::features::mode::current(),
+                            &world,
+                            &mut fctx,
+                        );
+                    }
+                }
                 c => run_command(c, "console", &mut team),
             });
             let _ = reply.send(text);
         }
-        // RW-10: enemy scaling follows the team size (the scan starts on the first pass).
-        multiplay::tick(crate::mm::effective_team_size(cfg.team_size_usize()));
-        features.tick(&world, &mut fctx);
-        night_acts(
-            std::mem::take(&mut fctx.night),
-            world.local,
-            base,
-            play_area,
+        features.tick(crate::features::Phase::Rules, &world, &mut fctx);
+        fctx.flush(
+            crate::features::Targets {
+                base,
+                play_area,
+                local: world.local,
+            },
+            &mem,
         );
-        fctx.flush(crate::features::Targets { base, play_area }, &mem);
         team.tick();
         let team_spent = team_started.elapsed();
 
@@ -626,84 +628,24 @@ fn watch(
             base,
             size,
         );
-        // M5-9 (both builds): hold a dead LOCAL's comeback at night in Solo, release it at the morning.
-        deathhold::tick(
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-            base,
+        // R7-6: the hook modules (deathhold, menugate, hudfilter, runeshare, defeatdrop, orbclaim, maphide, hawk; `features/hooks.rs`)
+        // read the world as it is after the tick's combat: this tick's rivals, `in_match` with the PvP mode as it is now.
+        world.after_combat(
+            combat.as_ref(),
+            team.pvpve_state() == crate::overlay::shared::PvpveState::On,
         );
-        // RW-1 (both builds): the Esc menu of a defeated player (the breakpoint is armed only while the night match asks for it).
-        menugate::tick(
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-            base,
-        );
-        // RW-9 (both builds): rivals are not on the map, the compass, the party bars or (unless locked on) the name tags while a
-        // match runs (the mod's PvP mode on, in an expedition); teammates stay. `maphide` (Solo: the whole map / compass list
-        // emptied) is the fallback for when the map site could not be hooked. Map markers (pins) a rival places are kept off the
-        // map, the compass and the 3D world too.
-        let in_match =
-            world.in_expedition() && team.pvpve_state() == crate::overlay::shared::PvpveState::On;
-        hudfilter::tick(
-            base,
-            in_match,
-            &combat
-                .as_ref()
-                .map(|c| c.rival_handles())
-                .unwrap_or_default(),
-            &combat.as_ref().map(|c| c.rival_addrs()).unwrap_or_default(),
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
+        features.tick(crate::features::Phase::AfterCombat, &world, &mut fctx);
+        // The adapters ask for nothing today; a later AfterCombat feature's requests are carried out here.
+        fctx.flush(
+            crate::features::Targets {
+                base,
+                play_area,
+                local: world.local,
+            },
+            &mem,
         );
         #[cfg(feature = "dev")]
         teleport::hitkill_tick();
-        // RW-8 (both builds): a rival's kill credits no runes to LOCAL; teammates' and LOCAL's own kills stay vanilla.
-        runeshare::tick(
-            base,
-            in_match,
-            crate::mm::effective_team_size(cfg.team_size_usize()) == 1,
-            &combat
-                .as_ref()
-                .map(|c| c.rival_handles())
-                .unwrap_or_default(),
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-        );
-        // RW-3 (both builds): the host makes the drops of defeated players' gear; the breakpoint that carries them to the game thread.
-        defeatdrop::tick(base, in_match);
-        // RW-5 (both builds): a boss's Dormant Power orb belongs to the first team that opens it; the others lose it.
-        orbclaim::tick(
-            base,
-            in_match,
-            combat.as_ref().and_then(|c| c.local_team_no()),
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-        );
-        maphide::tick(
-            base,
-            in_match
-                && !hudfilter::map_hooked()
-                && crate::mm::effective_team_size(cfg.team_size_usize()) == 1,
-        );
-        // HAWK-2 (both builds): keep the env swap in place, run the hawk crossing's ride phases, log the hawk answers.
-        hawk::tick(
-            base,
-            size,
-            combat
-                .as_ref()
-                .and_then(|c| c.local_state())
-                .map(|(a, _)| a),
-        );
         // T-041: drop a rival's revive event before the game starts the get-up (both builds, always on).
         if let Some(c) = combat.as_mut() {
             reviveblock::tick(c, base);
@@ -734,122 +676,6 @@ fn watch(
 
 /// T-019: `heartbeat: tick N, wcm=0x..., players=N, pvpve=ON (team 29, 3 writes), slowest tick ... ms`. If these
 /// lines stop while the game is frozen, the main loop is what is stuck; if they continue, it is not.
-/// M5-5: the night flags, all or nothing (`None` while the flag manager is not live).
-fn night_flags(base: usize) -> Option<world::NightFlags> {
-    let mut v = [false; 13];
-    for (o, id) in v.iter_mut().zip(world::NightFlags::IDS) {
-        *o = flags::get(base, id).ok()?;
-    }
-    Some(world::NightFlags::from_values(v))
-}
-
-/// RW-1: the spectator's switch inputs went down since the last call: next = left mouse button or the pad's d-pad right, previous = right
-/// mouse button or the d-pad left (edges, so holding a button switches once). The pad is read from the game's own input
-/// (`menugate::pad_spectate_edges`): XInput shows no pad inside the game.
-fn spectate_switch_edges() -> (bool, bool) {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
-    static WAS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
-    // SAFETY: GetAsyncKeyState only reads the keyboard / mouse state.
-    let (next, prev) = unsafe {
-        (
-            GetAsyncKeyState(i32::from(VK_LBUTTON.0)) < 0,
-            GetAsyncKeyState(i32::from(VK_RBUTTON.0)) < 0,
-        )
-    };
-    let edge = |i: usize, down: bool| down && !WAS[i].swap(down, Ordering::Relaxed);
-    let n = edge(0, next);
-    let p = edge(1, prev);
-    if !next {
-        WAS[0].store(false, Ordering::Relaxed);
-    }
-    if !prev {
-        WAS[1].store(false, Ordering::Relaxed);
-    }
-    let (pn, pp) = menugate::pad_spectate_edges();
-    (n || pn, p || pp)
-}
-
-/// RW-1: the leave key (F10) went down since the last call (an edge, so holding it asks once).
-fn leave_key_edge() -> bool {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_F10};
-    static WAS_DOWN: AtomicBool = AtomicBool::new(false);
-    // SAFETY: GetAsyncKeyState only reads the keyboard state.
-    let down = unsafe { GetAsyncKeyState(i32::from(VK_F10.0)) } < 0;
-    let edge = down && !WAS_DOWN.load(Ordering::Relaxed);
-    WAS_DOWN.store(down, Ordering::Relaxed);
-    edge
-}
-
-/// Carry out the match rules' requests (the hold of a defeated player, a move, the game's flags, the clock's speed).
-fn night_acts(
-    acts: Vec<crate::features::night_match::NightAct>,
-    local: Option<usize>,
-    base: usize,
-    play_area: usize,
-) {
-    use crate::features::night_match::NightAct;
-    for a in acts {
-        let r: Result<(), &'static str> = match a {
-            NightAct::Teleport(to) => match local.map(|p| spawn::teleport(p, base, to)) {
-                Some(Ok(from)) => {
-                    tracing::info!(
-                        "night_match: moved LOCAL from world ({:.1}, {:.1}, {:.1}) to ({:.1}, {:.1}, {:.1})",
-                        from[0], from[1], from[2], to[0], to[1], to[2]
-                    );
-                    Ok(())
-                }
-                Some(Err(e)) => Err(e),
-                None => Err("no local player"),
-            },
-            NightAct::Follow(to) => match local.map(|p| spawn::teleport(p, base, to)) {
-                Some(Ok(_)) => Ok(()),
-                Some(Err(e)) => Err(e),
-                None => Err("no local player"),
-            },
-            NightAct::DropItems => match local {
-                Some(p) => {
-                    tracing::info!("{}", defeatdrop::drop_local(base, p));
-                    Ok(())
-                }
-                None => Err("no local player"),
-            },
-            NightAct::MenuGate(on) => {
-                menugate::set_active(on);
-                Ok(())
-            }
-            NightAct::DeathHold(on) => {
-                deathhold::set_armed(on);
-                Ok(())
-            }
-            NightAct::ClockSpeed(speed) => {
-                if play_area == 0 {
-                    Err("no play-area manager")
-                } else {
-                    views::PlayArea::new(&gamemem::RealMem, play_area).set_speed(speed)
-                }
-            }
-            NightAct::GameFlag(f, on) => flags::set_match_flag(base, f, on).map(|prev| {
-                tracing::info!(
-                    "night_match: game flag {f} set {} (was {prev})",
-                    if on { "ON" } else { "off" }
-                );
-            }),
-        };
-        if let Err(e) = r {
-            // A failing spectator move repeats 10 times a second: say it once.
-            static FOLLOW_WARNED: std::sync::atomic::AtomicBool =
-                std::sync::atomic::AtomicBool::new(false);
-            if !matches!(a, NightAct::Follow(_))
-                || !FOLLOW_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed)
-            {
-                tracing::warn!("night_match: {a:?} failed: {e}");
-            }
-        }
-    }
-}
-
 fn heartbeat_line(
     ticks: u64,
     wcm_inst: usize,

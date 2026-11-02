@@ -65,6 +65,7 @@ pub fn local(req: &Value) -> Result<Value, String> {
             // The PC is the user's: keys only when the game window is in front and nothing of another program covers it. Else wait
             // 30 s and look again, 5 times, then give up (the user may be working in that window).
             let mut tries = 0;
+            let was_front = sys::is_foreground(h);
             loop {
                 let focused = sys::focus(h);
                 let cover = sys::occluders(h);
@@ -84,6 +85,12 @@ pub fn local(req: &Value) -> Result<Value, String> {
                     cover.join(" | ")
                 );
                 std::thread::sleep(Duration::from_secs(30));
+            }
+            if !was_front {
+                // The first key into a window that was just brought forward is lost: let a harmless one take it.
+                std::thread::sleep(Duration::from_millis(400));
+                sys::primer_tap();
+                std::thread::sleep(Duration::from_millis(200));
             }
             sys::keys_in(
                 Some(h),

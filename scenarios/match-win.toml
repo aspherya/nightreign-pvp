@@ -1,5 +1,6 @@
 name = "match-win"
 about = "RW-1: the match ends at any time when one team is left: LOCAL is the last standing on Day 1 (puppets down for 15 s) and wins"
+tags = ["rules"]
 
 [config]
 mode = "offline"
@@ -12,8 +13,6 @@ navigate = "title_to_world"
 [[step]]
 navigate = "expedition"
 [[step]]
-console = "god 1"
-[[step]]
 puppets = 3
 [[step]]
 puppet_front = 1.2
@@ -24,7 +23,7 @@ console = "puppet_hp 2 0"
 [[step]]
 console = "puppet_hp 3 0"
 [[step]]
-wait = { console = "log 300", contains = "match decided", timeout_s = 60 }
+wait_log = { contains = "match decided", timeout_s = 60, since = "run" }
 [[step]]
 sleep_ms = 4000
 [[step]]
@@ -34,4 +33,4 @@ sleep_ms = 8000
 [[step]]
 screenshot = "win2"
 [[step]]
-expect = { console = "log 300", contains = ["match decided", "won"], absent = ["panic", "no free hardware slot"] }
+expect_log = { contains = ["match decided", "won"], absent = ["panicked at", "no free hardware slot"], since = "run" }

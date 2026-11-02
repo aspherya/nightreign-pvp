@@ -113,7 +113,7 @@ pub(crate) fn run() {
                 crate::console::spawn(dll_dir.display().to_string());
             }
             // R3 / OFF-1: the feature list (the game mode is published here, before any menu can be pressed).
-            let features = crate::features::Features::new(&cfg);
+            let features = crate::modes::assemble(&cfg);
             // T-006 singleton discovery, T-007a RTTI + character discovery and the T-008 controls. Never
             // returns.
             game::run(&m, &cfg, features);

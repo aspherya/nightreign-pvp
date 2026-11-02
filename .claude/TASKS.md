@@ -191,7 +191,7 @@ offline rival bots (OFF-5) were removed from the code. The game's bot manager st
 
 ## Match flow: nights with no boss (M5; research `archive/research/M5-no-boss-nights.md`, `archive/research/M5-8-death.md`)
 
-**Built earlier, since replaced by the RW rules (2026-10-24, below):** M5-1..M5-4 (no boss, no minions, clock console; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17), the elimination rounds M5-5 / M5-6 / M6-1, M5-8 research and M5-9 Solo real death. What stays: `features/night_match.rs` (match state), `game/deathhold.rs` (keeps a defeated player dead; SpEffect 102130 = die at once, the comeback can be held and released). Rule decisions: `DECISIONS.md`. A Solo die-at-once rule is open again: see "Solo night death" below.
+**Built earlier, since replaced by the RW rules (2026-10-24, below):** M5-1..M5-4 (no boss, no minions, clock console; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17), the elimination rounds M5-5 / M5-6 / M6-1, M5-8 research and M5-9 Solo real death. What stays: `features/br_match/` (match state), `game/deathhold.rs` (keeps a defeated player dead; SpEffect 102130 = die at once, the comeback can be held and released). Rule decisions: `DECISIONS.md`. A Solo die-at-once rule is open again: see "Solo night death" below.
 
 ### M5-9 / M5-5 — superseded
 The elimination rounds (night = a round, losers held until the morning, die-at-once in Solo nights) were replaced on 2026-10-24 by the RW
@@ -253,7 +253,7 @@ Next, in order (Leonardo, 2026-11-01): **Sites of Grace blocked in PvP combat**,
 
 ### GRACE-1 — Sites of Grace blocked during PvP combat (next)
 Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
-Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `night_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
+Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `features/br_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
 
 ### DUOTRIO-1 — First Duo and Trio tests (next)
 Owner: HUMAN + OPUS | Status: todo | Depends on: none
@@ -273,7 +273,7 @@ Not for the first release (PROJECT_SCOPE). The refactor goal (phase 2 of the cle
 
 Built and tested on one PC 2026-10-24 (scenarios `day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`;
 testing-log): **RW-1** defeat for good + early win, **RW-2** a non-player death is vanilla, **RW-4** free Day 1 (the code is in
-`features/night_match.rs`, header comment). Built, unit-tested, not yet seen on two PCs: **RW-6** private match, **RW-7** respawn far, **RW-10**
+`features/br_match/mod.rs`, header comment). Built, unit-tested, not yet seen on two PCs: **RW-6** private match, **RW-7** respawn far, **RW-10**
 enemy scaling. Their two-PC checks are in the FS-RW1 runbook (TESTING §6); the cards come off when FS-RW1 passes. Open, each waiting for
 what a second real client shows (research tools: console `memscan`, `peek`; findings so far below):
 
@@ -291,3 +291,14 @@ what a second real client shows (research tools: console `memscan`, `peek`; find
 - **Quiet the `mm_join: gate:` log** after the expedition has started (about 150 identical lines per match).
 - **Double press of Commence** cancels the search (toggle); consider ignoring a second press within a second.
 
+
+## Oddities recorded by the golden traces (R7-1, 2026-11-01; behaviour kept as-is, decide later whether any is a bug)
+
+1. The event-file fallback re-fires `GameFlag(7000/7001)` every 1500 ms while our flag stays ON in the world.
+2. With no positions known, the spectator logs "spectator switched to player..." but sends no `Follow`.
+3. A mob-death respawn with no positions of others logs "respawned inf m from the nearest player; no move".
+4. The mob-death log prints "last rival hit None ms ago" when there was none.
+5. Night flag ON on Day 1 with the clock past 11:50 makes the host set 7502 at once.
+6. A LOCAL dead (HP 0, not downed) for 30 s counts as *out* even when a mob's death would respawn it (`OUT_DEAD_MS`, by design).
+7. After the expedition-leave reset `status` is empty until the next in-expedition tick.
+8. `DeathHold(false)` and `MenuGate(false)` are emitted on every leave, even when neither was on.

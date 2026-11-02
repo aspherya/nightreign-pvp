@@ -1,0 +1,242 @@
+# A mob's death: the game's respawn, then RW-7 moves LOCAL far from the others
+# columns: t = fake clock in ms; in = the tick's input; then what came out
+
+== two Day-1 places, respawn next to a rival: moved to the farthest (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+-- a mob kills LOCAL at B; P2 stands 20 m away
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=009799 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=015000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+-- the game's own respawn (about 14 s): HP back at 24000
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (590,0,0) | at #1(620,0,0)
+          .
+t=026999 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (590,0,0) | at #1(620,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (590,0,0) | at #1(620,0,0)
+          acts: Teleport([0.0, 0.0, 0.0])
+          log: night_match: respawn moved to (0.0, 0.0, 0.0), 620 m from the nearest player (was 30 m)
+t=028000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (590,0,0) | at #1(620,0,0)
+          .
+
+== respawned already 300 m or more from every player: no move (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          log: night_match: respawned 4400 m from the nearest player; no move
+
+== respawned 299 m from the nearest player: moved when a place is better (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
+          .
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
+          acts: Teleport([0.0, 0.0, 0.0])
+          log: night_match: respawn moved to (0.0, 0.0, 0.0), 899 m from the nearest player (was 299 m)
+
+== no place recorded (died right away): the game's point stays (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=001800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+t=015000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=018000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: respawn stays where the game put it (no better place recorded)
+
+== Day 2 after the circle starts: respawn left to the game (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: respawn left to the game (the circle is closing)
+
+== Day 2 morning (08:00): the circle is not open, moved as on Day 1 (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: ClockSpeed(72.9)
+          log: night_match: Day 2 has begun; clock speed back to 72.9
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: Teleport([0.0, 0.0, 0.0])
+          log: night_match: respawn moved to (0.0, 0.0, 0.0), 620 m from the nearest player (was 20 m)
+
+== Day 2 without a clock reading counts as an open circle (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=027000 in: [6001*:hp240/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: respawn left to the game (the circle is closing)
+
+== standing up resets the 3 s wait (a second death in between) (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          .
+t=003000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (0,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=004000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=005000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=006000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=007000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          .
+t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
+t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
+t=020000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=022000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=023000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=025999 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          .
+t=026000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          acts: Teleport([0.0, 0.0, 0.0])
+          log: night_match: respawn moved to (0.0, 0.0, 0.0), 620 m from the nearest player (was 20 m)

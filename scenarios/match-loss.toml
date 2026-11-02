@@ -1,5 +1,6 @@
 name = "match-loss"
 about = "RW-1: LOCAL is defeated by a rival while two of three puppets are also down: the last puppet wins, LOCAL lost; no defeat screen twice"
+tags = ["smoke", "rules"]
 
 [config]
 mode = "offline"
@@ -12,8 +13,6 @@ defeat_exit_secs = 60
 navigate = "title_to_world"
 [[step]]
 navigate = "expedition"
-[[step]]
-console = "god 1"
 [[step]]
 puppets = 3
 [[step]]
@@ -31,10 +30,10 @@ sleep_ms = 1000
 [[step]]
 console = "hp0"
 [[step]]
-wait = { console = "log 300", contains = "match decided", timeout_s = 80 }
+wait_log = { contains = "match decided", timeout_s = 80, since = "run" }
 [[step]]
 sleep_ms = 4000
 [[step]]
 screenshot = "loss"
 [[step]]
-expect = { console = "log 300", contains = ["defeated by a rival", "match decided", "lost", "start step HELD"], absent = ["the defeat screen is asked for", "RELEASED", "panic"] }
+expect_log = { contains = ["defeated by a rival", "match decided", "lost", "start step HELD"], absent = ["the defeat screen is asked for", "RELEASED", "panicked at"], since = "run" }

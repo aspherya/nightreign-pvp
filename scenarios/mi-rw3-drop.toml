@@ -1,5 +1,6 @@
 name = "mi-rw3-drop"
 about = "RW-3 E1 lab: two emulated instances reach the same expedition as rivals and stay open (teardown keep) for the item_drop experiment"
+tags = ["mi", "lab"]
 teardown = "keep"
 # Two emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
@@ -84,7 +85,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1

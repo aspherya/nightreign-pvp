@@ -1,5 +1,6 @@
 name = "mi-rw9-markers"
 about = "RW-9 map markers on one PC: two emulated instances queue Solo and reach the same expedition as rivals; each places a map pin (map open, middle mouse button); the owner keeps it, the rival's game receives the record but shows it on no map, compass or 3D marker (two marker hooks); forcing the filter off on one side brings the rival's pin back (contrast screenshots); a moved pin is hidden again"
+tags = ["mi", "hud", "slow"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running (it needs the `mclick` key item).
 # Run: nro run scenarios\mi-rw9-markers.toml --mod-dist <dev dist>
 [config]            # every instance
@@ -81,7 +82,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1

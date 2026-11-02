@@ -2,6 +2,7 @@
 //! things; this crate decides (preflight policy, the me3 profile we write, what me3's log must say, the scenario model).
 //! Everything here is unit tested without the game.
 
+pub mod logscan;
 pub mod me3log;
 pub mod pins;
 pub mod preflight;

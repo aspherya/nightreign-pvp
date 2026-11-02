@@ -31,7 +31,7 @@ Pins: game 1.03.3 (exe 1.3.3.0), SC 1.1.3, me3 0.11.0.
 | Bandai servers | Cut out: no `RequestCreateSession`/QuickMatch; EAC not running | Required (rule: never online) | `[SOURCE: S10 §2]` |
 | Player slots | Builds the 6-slot `CSChrSet<PlayerIns>` (`WorldChrMan+0x9A40`) itself; sweeps slots 1..5 every frame and destroys a PlayerIns whose `[chr+0x5D0]+8` matches no active member (`nrsc.dll+0x62AB4`) | all of `game/team/*`, `rules/teams.rs` (teams = sorted session ids `0x600N`), puppets (`game/puppet.rs` must dodge the sweep) | `[VERIFIED: MEMORY_MAP §2, §18]` |
 | Remote players and sync | Remote `PlayerIns` come from the game: pending `CSSessionManager` entry -> `exe+0xC43B94` -> `exe+0xC445A0` -> `WorldChrMan::CreateNetPlayer exe+0x518280` -> `ChrSet<PlayerIns>::CreateNetPlayer exe+0x4AC240`. The member table `[[exe+0x3C078D0]+0x10] + idx*0x8A0` has room for idx <= 1 (vanilla = 3 players); SC widens it | PvP (hits, HP, death, positions) works only because the game syncs these players; H1 | `[SOURCE: ORCH-R2 L11-15]` `[VERIFIED: FS-0/FS-1 PvP]` |
-| Host authority | Host runs world and enemies, sends EMEVD event sync (flag 7502 reaches clients); no host migration anywhere in the exe | `night_match.rs` relies on it; MM-9 is "end the match" | `[SOURCE: S10 §4]` `[VERIFIED: Nucleus run 2]` |
+| Host authority | Host runs world and enemies, sends EMEVD event sync (flag 7502 reaches clients); no host migration anywhere in the exe | `features/br_match` relies on it; MM-9 is "end the match" | `[SOURCE: S10 §4]` `[VERIFIED: Nucleus run 2]` |
 | Saves and settings | `.co2` save extension, `nrsc_settings.ini` (scaling keys, save ext), "Up to 6 players" menu ring, 4-6 slot data fixes | profiles (no me3 `savefile`), `nro` copies an ini per instance | `[VERIFIED: grep profiles/, emu.rs]` |
 | Load order | `nrsc.dll` `load_early`; `nrpvp.dll` loads after it | `nrpvp-launcher`, `pins/nightreign.toml` | `[VERIFIED]` |
 | Not used | SC password, SC chat | the game's own Password menu fields exist, nothing reads them | `[VERIFIED: grep]` |
@@ -40,7 +40,7 @@ How hostile it is to read: SC is Themida-virtualised; none of its Steam interfac
 `[VERIFIED: S10 §1]`. Only run-time observation (our hardware breakpoints) works, and hard rule 3 forbids patching or copying it.
 
 **Everything cross-client in our mod works without messages today**: each game reads its own copies of the player list; teams, host and
-match end are computed per game (`rules/teams.rs`, `features/night_match.rs`) `[VERIFIED: B1 of the agent report]`. RW-5 is the first
+match end are computed per game (`rules/teams.rs`, `features/br_match/`) `[VERIFIED: B1 of the agent report]`. RW-5 is the first
 feature that cannot: the hit is applied in one game only (RW-8 found the same: the other game reads attacker `-1`).
 
 ## 2. How the game's own netcode works underneath

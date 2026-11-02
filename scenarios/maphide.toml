@@ -1,5 +1,6 @@
 name = "maphide"
 about = "RW-9 (Solo): in a Solo match the map / compass list of other players is emptied (maphide, MEMORY_MAP section 20): automatic hiding, console forcing off and on, the list put back; screenshots before / after (a pin needs a puppet forced into remote slot 0, heap addresses: by hand, TESTING-LOG)"
+tags = ["hud"]
 
 [config]
 mode = "offline"
@@ -19,9 +20,9 @@ puppet_ring = 12
 # the game's vanilla list is 2 pins, the constant function says 2 too (B8 02 00 00 00 C3)
 [[step]]
 expect = { console = "peek exe+0x1FE4C0 8", contains = "8348C300000002B8" }
-# automatic mode: Solo + PvP on + expedition = the list is emptied by itself
+# automatic mode: the RW-9 map hook (hudfilter) filters rivals, so this fallback leaves the list alone; forcing it on below tests the fallback
 [[step]]
-wait = { console = "maphide", contains = "0 item(s), hidden by us", timeout_s = 20 }
+wait = { console = "maphide", contains = "left to the game", timeout_s = 20 }
 [[step]]
 console = "maphide 0"
 [[step]]
@@ -29,7 +30,7 @@ wait = { console = "maphide", contains = "2 item(s), left to the game", timeout_
 [[step]]
 screenshot = "compass_free"
 [[step]]
-console = "maphide auto"
+console = "maphide 1"
 [[step]]
 wait = { console = "maphide", contains = "0 item(s), hidden by us", timeout_s = 10 }
 [[step]]

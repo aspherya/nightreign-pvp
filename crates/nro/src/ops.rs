@@ -191,7 +191,8 @@ pub fn run_scenario(file: &str, mod_dist: Option<String>) -> R {
     Ok(serde_json::to_value(run::run(&p, mod_dist.map(PathBuf::from))?).unwrap())
 }
 
-pub fn scenarios() -> R {
+/// List `scenarios/*.toml`, only those with `tag` when given. Sorted by file name.
+pub fn scenarios(tag: Option<&str>) -> R {
     let dir = session::home().join("scenarios");
     let mut out = Vec::new();
     for e in std::fs::read_dir(&dir)
@@ -200,10 +201,14 @@ pub fn scenarios() -> R {
     {
         if let Ok(t) = std::fs::read_to_string(e.path()) {
             if let Ok(s) = nro_core::scenario::Scenario::parse(&t) {
-                out.push(json!({"file": format!("scenarios/{}", e.file_name().to_string_lossy()), "name": s.name, "about": s.about}));
+                if tag.is_some_and(|x| !s.has_tag(x)) {
+                    continue;
+                }
+                out.push(json!({"file": format!("scenarios/{}", e.file_name().to_string_lossy()), "name": s.name, "about": s.about, "tags": s.tags}));
             }
         }
     }
+    out.sort_by_key(|v| v["file"].as_str().unwrap_or_default().to_string());
     Ok(json!(out))
 }
 

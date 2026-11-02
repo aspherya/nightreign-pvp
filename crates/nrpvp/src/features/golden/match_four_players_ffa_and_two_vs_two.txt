@@ -1,0 +1,117 @@
+# 4 players: free for all and 2 v 2
+# columns: t = fake clock in ms; in = the tick's input; then what came out
+
+== FFA win: P2 dies, P3 leaves, P4 is dead (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp240/s0 6002:hp0/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=002000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=003000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 1
+t=008000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 4 team(s) seen, 1 out; LOCAL in; mob deaths 0; places 1
+t=031000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 4 team(s) seen, 2 out; LOCAL in; mob deaths 0; places 1
+t=033000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 4 team(s) seen, 3 out; LOCAL in; mob deaths 0; places 1
+t=033999 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=034000 in: [6001*:hp240/s0 6002:hp0/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          flags: 10007411=ON
+          log: night_match: match decided: team 0x6001FFFFFFFF is the last one standing (this game's player won, host)
+          status: match over, decided (winner 0x6001FFFFFFFF); 3 player(s), 4 team(s) seen, 3 out; LOCAL in; mob deaths 0; places 1
+
+== FFA loss: LOCAL defeated, the defeat screen first, P2 wins later (no second flag) (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=000900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          acts: DropItems, DeathHold(true)
+          log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
+          status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=002000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          status: free day 1; 3 player(s), 4 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=003000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=008000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          status: free day 1; 3 player(s), 4 team(s) seen, 1 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=020900 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          flags: 10007412=ON
+          log: night_match: the defeat screen is asked for (back to the Roundtable)
+t=033000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          status: free day 1; 3 player(s), 4 team(s) seen, 3 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=034000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          log: night_match: match decided: team 0x6002FFFFFFFF is the last one standing (this game's player lost, host)
+          status: match over, decided (winner 0x6002FFFFFFFF); 3 player(s), 4 team(s) seen, 3 out; LOCAL defeated by a rival; mob deaths 0; places 0
+
+== FFA: LOCAL dies to a mob and comes back; the others still count it (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=001800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
+          status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
+t=015000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=060000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          log: night_match: respawned inf m from the nearest player; no move
+
+== 2 v 2 win: the other team is out (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=001000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=001500 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=007500 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 2 team(s) seen, 1 out; LOCAL in; mob deaths 0; places 1
+t=030999 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=031000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 3 player(s), 2 team(s) seen, 2 out; LOCAL in; mob deaths 0; places 1
+t=031999 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          .
+t=032000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp0/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          flags: 10007411=ON
+          log: night_match: match decided: team 0x8000000000000001 is the last one standing (this game's player won, host)
+          status: match over, decided (winner 0x8000000000000001); 3 player(s), 2 team(s) seen, 2 out; LOCAL in; mob deaths 0; places 1
+
+== 2 v 2 loss: LOCAL defeated, the downed mate keeps team A in, then dies (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=000900 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          acts: DropItems, DeathHold(true)
+          log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
+          status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=020900 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          flags: 10007412=ON
+          log: night_match: the defeat screen is asked for (back to the Roundtable)
+t=030000 in: [6001*@1:hp0/s0 6002@1:hp0/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=059999 in: [6001*@1:hp0/s0 6002@1:hp0/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          status: free day 1; 4 player(s), 2 team(s) seen, 1 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=060000 in: [6001*@1:hp0/s0 6002@1:hp0/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          status: free day 1; 4 player(s), 2 team(s) seen, 2 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=060999 in: [6001*@1:hp0/s0 6002@1:hp0/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=061000 in: [6001*@1:hp0/s0 6002@1:hp0/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          log: night_match: match decided: team 0x8000000000000002 is the last one standing (this game's player lost, host)
+          status: match over, decided (winner 0x8000000000000002); 4 player(s), 2 team(s) seen, 2 out; LOCAL defeated by a rival; mob deaths 0; places 0
+
+== 2 v 2: LOCAL's mate is still standing when LOCAL is defeated: no decision (day1_secs 1020, defeat_exit_secs 20, spectate false)
+t=000000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 0
+t=000100 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .
+t=000900 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          acts: DropItems, DeathHold(true)
+          log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
+          status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
+t=005000 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
+          .

@@ -18,7 +18,7 @@ const HELP: &str = "nro - launch and drive an offline nightreign-pvp developer g
   nro stop [--all]                       kill the session's game and me3 (--all: every emulated instance)
   nro launch --emulated N                emulated-Steam instance N (1..3), Steam closed; any command takes --i N
   nro run <scenario.toml> [--mod-dist DIR]  full scenario: stage, launch, steps, report.json
-  nro scenarios                          list scenarios/*.toml
+  nro scenarios [--tag X]                list scenarios/*.toml (tags: smoke rules hud mi slow lab)
   nro puppets <n>                        n AFK puppet players (1..5) in the running session (offline mode, in a world)
   nro puppet_ring [radius]               put the puppets on a circle around the player (default 1.3 m)
   nro puppet_front [dist]                put the puppets side by side in front of the player (default 1.2 m)
@@ -102,7 +102,7 @@ fn dispatch(a: &[String]) -> ops::R {
             a.get(1).ok_or("nro run <scenario.toml>")?,
             flag(a, "--mod-dist"),
         ),
-        Some("scenarios") => ops::scenarios(),
+        Some("scenarios") => ops::scenarios(flag(a, "--tag").as_deref()),
         Some("puppets") => ops::puppets(a.get(1).and_then(|n| n.parse().ok()).unwrap_or(2)),
         Some("puppet_front") => {
             ops::puppet_front(a.get(1).and_then(|n| n.parse().ok()).unwrap_or(1.2))

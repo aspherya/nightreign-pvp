@@ -30,14 +30,14 @@ DllMain ─► nrpvp-main thread (startup::run, catch_unwind)
             ├─ hwbp thread (owns debug registers DR0–DR3 of every game thread; primitives in dr.rs)
             ├─ net worker (net/, both builds): net::bus facts ↔ Channel ↔ SteamLink (ISteamNetworkingMessages)
             ├─ memscan thread (on demand, console `memscan`)
-            └─ game::run = main loop, 50 ms: singletons → ChrSet → TeamCtl.tick → CombatCtl.tick → Features.tick(World, Ctx); console requests ◄┘
+            └─ game::run = main loop, 50 ms: singletons → ChrSet → Features.tick(Rules) → TeamCtl.tick → CombatCtl.tick → World.after_combat → Features.tick(AfterCombat); console requests ◄┘
 ```
 
 | Layer | Modules | State |
 |---|---|---|
-| Pure rules | `rules/teams`, `rules/matchstate`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
+| Pure rules | `rules/teams`, `mm/machine` (+`gate`), `mm/proto`, `game/team/roster` | Good: no memory access, tested with fakes |
 | Game access | `game/mem`, `game/layout` (every object offset), `rtti`, `singletons`, `image`, `event_flags`, `fmg`, `dr` | Good |
-| Feature list (OFF-1, OFF-4/5) | `features/` (`Feature` trait, `Features`, `Ctx` outbox: matchmaking commands, event flags, bot writes; features `mode`, `bots` (dev console), `clock`, `nights`, `night_match`), `game/world` (`World` read model: place, bot manager, watched bots), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (`ChrIns`, `WorldChrMan`, `BotMan`, `ExpeditionMenu`) | New behaviour goes here; the older controllers below move in when a card touches them. **Still outside the Feature list (R3 open):** `game/deathhold`, `menugate`, `hudfilter`, `maphide`, `runeshare`, `multiplay`, `itemdrop` / `defeatdrop`, `orbclaim`, `hawk/` |
+| Feature list (OFF-1, OFF-4/5) | `features/` (`Feature` trait with a `Phase` (`Rules` and `AfterCombat`), `Features` = `Vec<Box<dyn Feature>>` with `get_mut::<T>()` (R7-5; the console finds its feature by type, a miss is logged), `Ctx` outbox: matchmaking commands, event flags, bot writes, and the match rules' `Act`s, all carried out by `Ctx::flush` (executor in `features/effects.rs`, R7-4: acts first, then mm, flags, clock); the list is assembled by `modes::assemble` from `modes/battle_royale.rs` (P2-7: the only place that names which features make Battle Royale; a new mode = a new file there plus one line in `modes/mod.rs`); features `mode`, `bots` (dev console), `clock`, `nights`, `night_match` (= `features/br_match/`, P2-8: `Match` = a `MatchBook` of shared facts + an ordered list of `MatchRule`s `defeat`, `elimination`, `spectate`, `respawn_far`, `free_day1`, `fallback`, plus `status`; the feature is `MatchFeature`, its `name()` stays `night_match`; one writer per book field, named on the field; each file under 400 lines with its own tests), `features/hooks` (R7-6: thin adapters over the hook modules behind a `Hooks` port: `multiplay` as a `Rules` feature after the five, then `AfterCombat` in today's order deathhold, menugate, hudfilter, runeshare, defeatdrop, orbclaim, maphide, hawk; the modules keep their statics and install code; `reviveblock`, `bartrace`, `deathtrace` and `hitkill` stay in the loop beside `combat`), `game/world` (`World` read model: place, bot manager, watched bots; `World::fill_expedition` fills the night match's inputs in one place, R7-3; also carries `base`, `size`, `in_match`, `local_state`, `local_team_no` and `rivals`; `World::after_combat` refreshes them right after `combat.tick`, R7-6), `game/input` (F10 and spectate-switch edges), `game/gamemem` (`GameMem` port + `RealMem`/`FakeMem`), `game/views` (`ChrIns`, `WorldChrMan`, `BotMan`, `ExpeditionMenu`) | New behaviour goes here; the older controllers below move in when a card touches them. **Still outside the Feature list (R3 open):** `reviveblock`, `bartrace`, `deathtrace`, `hitkill` (ticked by the loop beside `combat`), `itemdrop` |
 | Features | `game/team/` (player list, writes, PvP marking, persist, snapshot), `game/combat_state/` (tracker, downed rule), `game/menuflow`, `game/flags`, `mm/ui_msg`, `steam/quietinvite` | Split by job (R3); files under ~550 lines except tests |
 | Dev tooling | `console/`, `steam/lobtrace`, `game/{menutrace,texttrace,flagwatch}`, `game/poswrite` (Task D) | Behind `--features dev`: also `bartrace`, `deathtrace`, `rawcall`, `teleport`, `vpad` (`game/mod.rs`). Compiled in the player build too: `puppet`, `memscan`, `poswrite`, `steam/probe` (runtime dev-only) |
 
@@ -58,7 +58,7 @@ context, slows the agent, and makes two cards collide on the same file.
 | P8 | **Layering inversion** (`hwbp` used a dev tracer) | **Fixed (R1):** `dr.rs` |
 | P9 | **Ad-hoc globals** | Open (R6) |
 | P10 | `mm/machine/gate.rs` 2 634 + `mm/machine.rs` 2 186 (after `cargo fmt`) | Low priority: pure and tested |
-| P11 | Files over the 800-line budget without a header reason (2026-11-01): `config.rs` 1756, `features/night_match.rs` 1576, `console/mod.rs` 1332, `steam/queue.rs` 1325, `game/puppet.rs` 1116, `game/mod.rs` 1086, `rules/matchstate.rs` 1007, `steam/probe.rs` 948, `game/poswrite.rs` 939, `game/teleport.rs` 857 | Open; split when a card touches them |
+| P11 | Files over the 800-line budget without a header reason (2026-11-01): `config.rs` 1756, `console/mod.rs` 1332, `steam/queue.rs` 1325, `game/puppet.rs` 1116, `game/mod.rs` 1086, `steam/probe.rs` 948, `game/poswrite.rs` 939, `game/teleport.rs` 857 | Open; split when a card touches them |
 
 What is **not** a problem: Rust as a language, the thread-per-concern model, panic handling, the test suite, the pure rules core. Keep
 them.
@@ -74,7 +74,7 @@ Mapped to what you know from .NET. The rule: a pattern goes in only where it rem
 | **Feature modules** | `IHostedService` + DI registration | `trait Feature { fn name(); fn enabled(&Config) -> bool; fn tick(&mut self, &World, &mut Ctx) }`, a list in one place. Startup becomes a loop | P4, P1 (split TeamCtl into features) |
 | **Read model per tick** | CQRS read side | Main loop reads the world **once** per tick into `World` (players, states, ids, roster); features read that and emit writes | P3, perf trap |
 | **Command / mediator** | MediatR | Already exists: `Command` enum + main-loop queue. The console (`CONSOLE.md`) makes it the only input | P4, P9 |
-| **State machine** | Stateless library, sagas | Already the core of matchmaking. Next: match flow (`rules/matchstate`) | — |
+| **State machine** | Stateless library, sagas | Already the core of matchmaking. Match flow: `features/br_match` (`Match`, `MatchBook`, `MatchRule`) | — |
 | **Strategy** | `IStrategy` + DI | Only where there are real variants, and as a Rust `enum` + `match`, not a trait hierarchy: team scheme, revive policy. Already done | — |
 
 **Avoid:** DI containers, inheritance trees, generic repositories, an async runtime (tokio) in the DLL, ECS, event buses with
@@ -98,7 +98,7 @@ crates/nrpvp/src/
     roster.rs                   who is ally or rival (rules/teams glue)
     menuflow.rs, ui_msg.rs      in-game UI
     matchmaking.rs              bridge to the Steam thread
-  rules/                        pure: teams, matchstate (unchanged)
+  rules/                        pure: teams (unchanged)
   mm/                           pure machine + Steam worker (gate split by state, later)
   steam/                        FFI adapters
   dev/            #[cfg(feature = "dev")]   console, probes, tracers, dumps, overlay, pos test

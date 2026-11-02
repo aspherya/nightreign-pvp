@@ -1,5 +1,6 @@
 name = "mi-rw9-rivals"
 about = "RW-9 on one PC: two emulated instances queue Solo, reach the same expedition as rivals and, from each own screen, the rival is on no map pin, compass mark, party bar or name tag (rivalhud hooks); forcing the filter off brings them all back (contrast screenshots); a lock-on brings back the name tag of the target only"
+tags = ["mi", "hud", "slow"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
 # Run: nro run scenarios\mi-rw9-rivals.toml --mod-dist <dev dist>
@@ -83,7 +84,7 @@ expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
 
 [[step]]
 instance = 1
-expect = { console = "log 400", contains = ["mm_join: ALL PRESENT 2/2"] }
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
 
 [[step]]
 instance = 1
