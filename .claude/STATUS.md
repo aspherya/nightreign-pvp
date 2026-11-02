@@ -40,7 +40,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Release candidate (2026-11-01):** the build of `main` at the audit PRs was tested with a friend in a 2-player Solo match; Leonardo accepted it as the release candidate, core gameplay frozen (DECISIONS). Three checks left for a finished Battle Royale: Grace in combat, Duo/Trio, the revive item.
 
-## 3. Next, in order (Leonardo, 2026-11-01)
+## 3. Next (Leonardo, 2026-11-02: UI improvements first; items 1-3 below are BACKLOG, only simple work with a valid result)
 
 **Now:** refactor for decoupled, plug-and-play modules and better test tooling (plan: TASKS "Clean-up phases 2 and 3"), then the three checks below.
 

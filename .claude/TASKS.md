@@ -247,19 +247,19 @@ Test routes: **1 PC** = automated scenario (`nro`, one game), **2 inst** = two r
 | D6 | Match ends when one team is left, even on Day 1 | RW-1 | **Done on 1 PC** (`match-win`, `match-win-end`, `match-loss`) | 2 inst with real defeats; FS |
 | D7 | Private match by password, outside matchmaking | RW-6 | Unit-tested only (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
 
-Next, in order (Leonardo, 2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena comes after the first release.
+Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements come first, only simple work with a valid result). Order when picked up again (2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena comes after the first release.
 
 ## Not built yet (Leonardo, 2026-11-01; rules in `re/PROJECT_SCOPE.md`)
 
-### GRACE-1 — Sites of Grace blocked during PvP combat (next)
+### GRACE-1 — Sites of Grace blocked during PvP combat (BACKLOG, Leonardo 2026-11-02)
 Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
 Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `features/br_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
 
-### DUOTRIO-1 — First Duo and Trio tests (next)
+### DUOTRIO-1 — First Duo and Trio tests (BACKLOG, Leonardo 2026-11-02)
 Owner: HUMAN + OPUS | Status: todo | Depends on: none
 Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.
 
-### SOLO-REVIVE — Solo night death with a revive item (idea, test first)
+### SOLO-REVIVE — Solo night death with a revive item (BACKLOG, Leonardo 2026-11-02)
 Owner: OPUS | Status: idea, no schedule (DECISIONS 2026-11-01)
 PROJECT_SCOPE §1 wants a Solo kill at night to be a real death at once unless the player carries a revive item (Wending Grace, goods `0x400002BC`) that then works as in vanilla. First step is only a test: with and without the item, does the current build already behave so? Only then a card for code.
 
