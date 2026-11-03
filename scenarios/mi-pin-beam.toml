@@ -1,0 +1,204 @@
+name = "mi-pin-beam"
+about = "RW-9 pin beam: two emulated instances reach the same Battle Royale expedition as rivals. During the start hawk flight (open view, the pin ahead) player 2 places a map pin: player 1 has no green beam, no 3D marker and no compass mark. Filter forced off on player 1, the pin moved: all three are there (contrast). Back to automatic, the pin moved: gone. Player 2 keeps its own beam"
+tags = ["mi", "hud", "slow"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running (it needs the `mclick` key item).
+# The verdict covers the hook and its counters; the beam itself is judged on the screenshots beam_*.
+# The photos are taken on the hawks because the ground spawn can be walled in by rocks and fog, where no beam shows even without a filter.
+# The ride needs some seconds to begin and the map cannot open before; then the hawks cross the island in about 20 s, so no pause
+# after that: the map stays open on player 2 between the pins.
+# Run: nro run scenarios\mi-pin-beam.toml
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_match_ready"
+
+# The host opens its Seamless Co-op lobby the player's way (Matchmaking Settings > Invite Members); the quiet invite swallows the
+# invite window, the host's mod invites the roster, gbe auto-accepts on the joiner.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "joiner"
+
+# The expedition: every party member readies at the table (the party list counts n/2), the host first.
+[[step]]
+instance = 1
+navigate = "commence_br"
+
+[[step]]
+instance = 2
+navigate = "commence_br"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+# Filter on: the first pin, ahead of the flight. Player 1 got the record, every marker hook refused it.
+[[step]]
+instance = 1
+sleep_ms = 10000
+
+[[step]]
+instance = 2
+keys = "wait 800ms; M 300ms; wait 2000ms"
+
+[[step]]
+instance = 2
+wait = { console = "pos", contains = ["menu 0x100"], timeout_s = 3 }
+
+[[step]]
+instance = 2
+keys = "wait 300ms; mclick 0.690 0.470; wait 1200ms"
+
+[[step]]
+instance = 1
+screenshot = "beam_on_p1"
+
+[[step]]
+instance = 1
+expect = { console = "rivalhud", contains = ["hiding rivals", "rival map ids [2]", "marker beams hooked", "records [2]", "map list []"], absent = ["NOT hooked", "marker beams hooked, no rival hidden in the last second (0 hidden"] }
+
+# Contrast: the filter forced off on player 1, the pin moves (the sync runs only when a record changes): beam, 3D marker and compass mark.
+[[step]]
+instance = 1
+console = "rivalhud 0"
+
+[[step]]
+instance = 2
+keys = "wait 500ms; mclick 0.672 0.440; wait 1200ms"
+
+[[step]]
+instance = 1
+screenshot = "beam_off_p1"
+
+# Back to automatic, the pin moves again, off the flight line (the old pin was on it). The old beam fades over some seconds, so a first
+# photo may still show it there; 6 s later player 1 has nothing while player 2 (next photo) has the new beam to the right of the flight.
+[[step]]
+instance = 1
+console = "rivalhud auto"
+
+[[step]]
+instance = 2
+keys = "wait 500ms; mclick 0.663 0.319; wait 1200ms"
+
+[[step]]
+instance = 1
+screenshot = "beam_auto_fading_p1"
+
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+screenshot = "beam_auto_p1"
+
+[[step]]
+instance = 1
+expect = { console = "rivalhud", contains = ["hiding rivals", "records [2]", "map list []", "marker beams hooked"], absent = ["NOT hooked"] }
+
+# The owner keeps its own beam (map closed for the photo).
+[[step]]
+instance = 2
+keys = "wait 500ms; Q; wait 600ms"
+
+[[step]]
+instance = 2
+screenshot = "beam_own_p2"
+
+[[step]]
+instance = 1
+expect_log = { absent = ["panicked at"], since = "run" }
+
+[[step]]
+instance = 2
+expect_log = { absent = ["panicked at"], since = "run" }

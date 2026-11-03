@@ -18,12 +18,13 @@
 //!
 //! **Map markers (pins a player places, MEMORY_MAP §20 "Map markers").** Every player's pins are records in the marker manager
 //! (`[exe+0x3C17BE0]`, list at `+0x10`, node `+0x10` = record); record `+0` is the key, its u16 at `+2` the placer's map id
-//! (`[PlayerIns+0x5A0]+8`). Two per-frame loops copy the records out, and both are hooked the same way (rival's record → skipped):
+//! (`[PlayerIns+0x5A0]+8`). Three loops copy the records out, and all are hooked the same way (rival's record → skipped):
 //!
 //! | Site | Call | Shows | Our answer for a rival's record |
 //! |---|---|---|---|
 //! | `exe+0x911B13` | `exe+0x9040E0(.., .., &record+4, ..)` in the view model's pin sync (false → the pin is not added) | the pin on the map and the compass | false |
 //! | `exe+0x7D9908` | `exe+0x7D7030(&list, record)` in the 3D marker producer `exe+0x7D9560` | the marker in the world | not called |
+//! | `exe+0xEE220B` | `exe+0xEDBBD0(&ctx, index, record)` in the marker sfx sync (a pin not seen by the loop loses its entry) | the green beam of light in the world | not called |
 
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
@@ -40,6 +41,8 @@ const SITE_TAG: (usize, usize) = (0x7D_A1F9, 0x51_8F30);
 /// two instances 2026-10-27, MEMORY_MAP §20 "Map markers"]`
 const SITE_PIN_MAP: (usize, usize) = (0x91_1B13, 0x90_40E0);
 const SITE_PIN_WORLD: (usize, usize) = (0x7D_9908, 0x7D_7030);
+/// Map markers: the sync of the pin's beam of light. `[VERIFIED: static disassembly of exe 1.3.3.0, MEMORY_MAP §20 "Map markers"]`
+const SITE_PIN_BEAM: (usize, usize) = (0xEE_220B, 0xED_BBD0);
 /// `PlayerIns+0x5A0` -> player data; its u32 at `+8` is the map id a marker record names at `+2`.
 const PLAYER_DATA: usize = 0x5A0;
 const DATA_MAP_ID: usize = 0x8;
@@ -77,8 +80,10 @@ static PARTY: Counters = Counters::new();
 static TAG: Counters = Counters::new();
 static PIN_MAP: Counters = Counters::new();
 static PIN_WORLD: Counters = Counters::new();
+static PIN_BEAM: Counters = Counters::new();
 static ORIG_PIN_MAP: AtomicUsize = AtomicUsize::new(0);
 static ORIG_PIN_WORLD: AtomicUsize = AtomicUsize::new(0);
+static ORIG_PIN_BEAM: AtomicUsize = AtomicUsize::new(0);
 static INSTALL_TRIED: AtomicBool = AtomicBool::new(false);
 
 impl Counters {
@@ -250,6 +255,7 @@ fn judge_marker(c: &Counters, owner_at: usize) -> bool {
 
 type PinMap = unsafe extern "system" fn(usize, usize, usize, usize) -> usize;
 type PinWorld = unsafe extern "system" fn(usize, usize) -> usize;
+type PinBeam = unsafe extern "system" fn(usize, u32, usize) -> usize;
 
 /// View model pin sync (map + compass; game thread, every frame): `rec4` = record + 4. False (al = 0) = "do not add this pin".
 unsafe extern "system" fn hook_pin_map(
@@ -276,6 +282,17 @@ unsafe extern "system" fn hook_pin_world(list: usize, record: usize) -> usize {
     let orig: PinWorld =
         unsafe { std::mem::transmute::<usize, PinWorld>(ORIG_PIN_WORLD.load(Ordering::Relaxed)) };
     unsafe { orig(list, record) }
+}
+
+/// Marker sfx sync (game thread, when the records change): a record the loop does not hand over has no beam, and an entry it had loses it.
+unsafe extern "system" fn hook_pin_beam(ctx: usize, index: u32, record: usize) -> usize {
+    if record != 0 && judge_marker(&PIN_BEAM, record + RECORD_OWNER) {
+        return 0;
+    }
+    // SAFETY: ORIG_PIN_BEAM holds the game's function `exe+0xEDBBD0`; same arguments.
+    let orig: PinBeam =
+        unsafe { std::mem::transmute::<usize, PinBeam>(ORIG_PIN_BEAM.load(Ordering::Relaxed)) };
+    unsafe { orig(ctx, index, record) }
 }
 
 /// The rel32 a `call` at `site` needs to reach `dest` (None when farther than ±2 GB). Pure, tested.
@@ -355,7 +372,7 @@ pub(crate) fn patch(site: usize, callee: usize, tramp: usize) -> Result<(), Stri
     Ok(())
 }
 
-/// Install the three hooks once (main loop, both builds).
+/// Install the hooks once (main loop, both builds).
 fn install(base: usize) {
     if INSTALL_TRIED.swap(true, Ordering::Relaxed) {
         return;
@@ -364,13 +381,14 @@ fn install(base: usize) {
     ORIG_BY_HANDLE.store(base + SITE_PARTY.1, Ordering::Relaxed);
     ORIG_PIN_MAP.store(base + SITE_PIN_MAP.1, Ordering::Relaxed);
     ORIG_PIN_WORLD.store(base + SITE_PIN_WORLD.1, Ordering::Relaxed);
+    ORIG_PIN_BEAM.store(base + SITE_PIN_BEAM.1, Ordering::Relaxed);
     let Some(page) = alloc_near(base) else {
         tracing::warn!(
             "hudfilter: no page near the exe for the trampolines; rivals stay on the HUD"
         );
         return;
     };
-    let hooks: [(&Counters, &str, (usize, usize), usize); 5] = [
+    let hooks: [(&Counters, &str, (usize, usize), usize); 6] = [
         (&MAP, "map / compass", SITE_MAP, hook_map as ById as usize),
         (
             &PARTY,
@@ -391,11 +409,17 @@ fn install(base: usize) {
             SITE_PIN_WORLD,
             hook_pin_world as PinWorld as usize,
         ),
+        (
+            &PIN_BEAM,
+            "marker beams",
+            SITE_PIN_BEAM,
+            hook_pin_beam as PinBeam as usize,
+        ),
     ];
     for (i, (c, name, (site, callee), hook)) in hooks.into_iter().enumerate() {
         let tramp = page + i * 16;
         let code = trampoline(hook);
-        // SAFETY: `page` is our own fresh RWX page of 0x1000 bytes; 5 × 16 bytes fit.
+        // SAFETY: `page` is our own fresh RWX page of 0x1000 bytes; 6 × 16 bytes fit.
         unsafe { std::ptr::copy_nonoverlapping(code.as_ptr(), tramp as *mut u8, code.len()) };
         match patch(base + site, base + callee, tramp) {
             Ok(()) => {
@@ -481,7 +505,7 @@ pub(crate) fn describe() -> String {
         .map(|i| i.load(Ordering::Relaxed).to_string())
         .collect();
     format!(
-        "rivalhud: {} ({}); rivals [{}]; rival map ids [{}]; lock-on target {}; {}; {}; {}; {}; {}",
+        "rivalhud: {} ({}); rivals [{}]; rival map ids [{}]; lock-on target {}; {}; {}; {}; {}; {}; {}",
         if ACTIVE.load(Ordering::Relaxed) {
             "hiding rivals"
         } else {
@@ -501,6 +525,7 @@ pub(crate) fn describe() -> String {
         TAG.line("name tag"),
         PIN_MAP.line("markers on map"),
         PIN_WORLD.line("markers in 3D"),
+        PIN_BEAM.line("marker beams"),
     ) + &markers_line()
 }
 
@@ -588,12 +613,25 @@ mod tests {
             rel32(SITE_PIN_WORLD.0, SITE_PIN_WORLD.1),
             Some(0xFFFF_D723u32 as i32)
         );
+        // The marker beams: E8 C0 99 FF FF in the file.
+        assert_eq!(SITE_PIN_BEAM, (0xEE220B, 0xEDBBD0));
+        assert_eq!(
+            rel32(SITE_PIN_BEAM.0, SITE_PIN_BEAM.1),
+            Some(0xFFFF_99C0u32 as i32)
+        );
         assert_eq!(
             (PLAYER_DATA, DATA_MAP_ID, RECORD_OWNER, MAP_ARG_OFFSET),
             (0x5A0, 8, 2, 4)
         );
         // Each displacement (site+1 .. site+5) stays inside one 64-byte cache line.
-        for (s, _) in [SITE_MAP, SITE_PARTY, SITE_TAG, SITE_PIN_MAP, SITE_PIN_WORLD] {
+        for (s, _) in [
+            SITE_MAP,
+            SITE_PARTY,
+            SITE_TAG,
+            SITE_PIN_MAP,
+            SITE_PIN_WORLD,
+            SITE_PIN_BEAM,
+        ] {
             assert_eq!((s + 1) / 64, (s + 4) / 64);
         }
     }

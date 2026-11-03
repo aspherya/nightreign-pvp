@@ -2,6 +2,8 @@
 
 Read when you touch the area named in a bullet, or before debugging something odd. One owner doc for traps; add new ones here (date + what + the rule), not in STATUS.
 
+- **An idle match ends by itself (2026-11-03).** The toast "If you continue to remain inactive you will be removed from session" came first; 12 minutes after the expedition started both instances left the session, the world was torn down and both crashed with 0xC0000374 (runs `1793716947` / `953`). Camera movement by `mousemove` did not stop it; which input counts, and whether the game or Seamless Co-op does this, is UNKNOWN. Keep a `teardown = "keep"` lab under 12 minutes, or end the lab and start again.
+- **Pin beam photos (2026-11-03):** the ground after `hawk_drop` can be walled in by rocks and fog, where no beam shows even with the filter off: a PASS from there proves nothing. Take them during the hawk flight with the pin ahead (`mi-pin-beam`); the map does not open in about the first 10 s of the ride. A removed beam fades for some seconds, so a photo right after a pin moves can still show the old one.
 - **Nucleus `dlllist.txt` must not end with a newline.** It makes Nucleus fail with "WaitForSingleObject failed 258". The deploy script writes it correctly; never edit it by hand.
 - **Under Nucleus, keys reach a window only when it has focus** (END unlocks input). Use the console instead: `nrcon --all <cmd>` reaches every instance.
 - **Nucleus deletes its instance folders on close.** Logs go to `dist\nucleus-logs\` for that reason.

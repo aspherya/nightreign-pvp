@@ -1,4 +1,4 @@
-# Status (updated 2026-11-02)
+# Status (updated 2026-11-03)
 
 **The only "now" doc.** Rules: keep it under ~8 KB; replace lines instead of appending history (results go to `testing-log/`, traps to
 [TRAPS.md](TRAPS.md), decisions to [DECISIONS.md](DECISIONS.md), tools to [TOOLS.md](TOOLS.md), live cards to [TASKS.md](TASKS.md)).
@@ -19,13 +19,13 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **Spectating:** a defeated player watches a living one (held body follows), mouse / d-pad switch player, F10 leaves, Esc / pad Start open the menu; **a hint with these controls shows when the watching starts and every 45 s** (UI-4) | **Works** (Nucleus 3 players; `spectate`, `esc-defeated` PASS). Camera smoothness open |
 | **RW-3 defeat drops:** a rival's kill drops the victim's weapons (level kept), talismans and picked-up consumables where they fell; the host makes the drop, everyone can pick it; **runes are discarded** | **Built, `mi-rw3-items` PASS (2026-11-01)**; the inventory part verified by hand; two-PC check left |
 | **RW-8 runes** shared only inside the own team | **Built and accepted on one PC** (`mi-rw8-runes` PASS 3/3, 2026-10-28). Open: Duo/Trio teammate, client-side kill |
-| **RW-9 HUD filter:** rivals and their map pins are off the map, compass, 3D world, party bars and name tags | **Built, seen with two instances** (`mi-rw9-rivals` PASS 2/2, `mi-rw9-markers`). The pin toast ("Ally is showing location") is off in every match, for teammates too (UI-5, `mi-toast-solo`); open: Duo/Trio teammates |
+| **RW-9 HUD filter:** rivals and their map pins (with the green beam) are off the map, compass, 3D world, party bars and name tags | **Built, seen with two instances** (`mi-rw9-rivals` PASS 2/2, `mi-rw9-markers`, `mi-pin-beam`). The pin toast ("Ally is showing location") is off in every match, for teammates too (UI-5, `mi-toast-solo`); open: Duo/Trio teammates |
 | Enemy strength by team size (RW-10) | **Accepted: Leonardo found it balanced (2026-11-01)** |
 | Private match (RW-6): `private_code` in `nrpvp.toml` | Unit-tested only; needs two instances / PCs |
 | **RW-5 boss orbs** | **Parked, vanilla** (everyone can loot; DECISIONS 2026-10-31). A first-to-loot skeleton is in the code, off by default (`orb_auto 1`) |
 | Offline mode (`mode = "offline"`) | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
-| **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS, 2026-11-03). A real hit between players not seen: FS-HM1 |
+| **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS; a real hit by hand, 2026-11-03). Not seen on two PCs: FS-HM1 |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
 **Not built yet** (scope in PROJECT_SCOPE): A match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
@@ -44,8 +44,8 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 ## 3. Next (Leonardo, 2026-11-03, in this order)
 
-1. **Finish the match start:** no Invite Members press (MM-3g), the match starts at once (MM-7), no Steam invite on the overlay.
-2. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
+1. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)). Discuss with Leonardo before any build.
+2. **Finish the match start:** no Invite Members press (MM-3g), the match starts at once (MM-7), no Steam invite on the overlay.
 
 **Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 
