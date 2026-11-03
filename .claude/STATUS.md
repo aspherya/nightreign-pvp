@@ -27,7 +27,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
-**Not built yet** (scope in PROJECT_SCOPE): Sites of Grace blocked in PvP combat, a match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6), host migration (MM-8/9).
+**Not built yet** (scope in PROJECT_SCOPE): Sites of Grace blocked in PvP combat, a match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 
@@ -43,7 +43,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 ## 3. Next (Leonardo, 2026-11-02, in this order)
 
-1. **Host leaves mid-match** (MM-9, Leonardo's worry): a host who is defeated, spectates and then quits must not drop everybody else. First one short two-instance check of what the joiners see; then a v1 that keeps the match alive or ends it cleanly; real host migration after (S10, [NETWORKING.md](NETWORKING.md)).
+1. **Host leaves mid-match** (top priority): the game has its own host migration; `mi-host-migration` PASS on one PC, a defeated host who leaves too. **Not proven on real Steam after a crash: next test, FS-HM1 (TESTING §6), up to six players, with a fresh zip.** Player count later, on good results. Everything: [HOST_MIGRATION.md](HOST_MIGRATION.md).
 2. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
 3. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
 

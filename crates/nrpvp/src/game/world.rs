@@ -108,6 +108,8 @@ pub(crate) struct World {
     pub clock: Option<ClockState>,
     /// M5-5: the night flags (filled by the main loop; `None` = flag manager not live).
     pub night: Option<NightFlags>,
+    /// HM-1: this game's session role (`layout::SESSION_ROLE`; `None` = no session manager). The game changes it when it migrates the host.
+    pub session_role: Option<u32>,
     /// M5-5: every ChrSet player (filled by the main loop from the downed rule's controller).
     pub fighters: [Option<crate::game::combat_state::Fighter>; MAX_FIGHTERS],
     /// M5-6: LOCAL's world position and its "on ground" byte (filled by the main loop).
@@ -172,6 +174,10 @@ impl World {
                 .then(|| PlayArea::new(mem, i.play_area).clock())
                 .flatten(),
             night: None,
+            session_role: mem
+                .read_u64(i.base + layout::RVA_SESSION)
+                .filter(|&s| s != 0)
+                .and_then(|s| mem.read_u32(s as usize + layout::SESSION_ROLE)),
             fighters: [None; MAX_FIGHTERS],
             local_pos: None,
             team_size: 0,

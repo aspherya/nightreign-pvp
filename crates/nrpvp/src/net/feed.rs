@@ -1,6 +1,8 @@
 //! NET-2: where the channel's roster comes from. The Steam thread (`steam/probe.rs`) already sees every lobby event; once a second it
-//! asks [`scan`] which Seamless Co-op lobbies (data key `nrsc_lobby_type`) we are a member of and publishes their members here. The net
-//! worker reads them with [`lobby_members`]. We only ever read lobby getters; nothing is written to any lobby.
+//! asks [`scan`] which session lobbies we are a member of and publishes their members here: Seamless Co-op's lobby (data key
+//! `nrsc_lobby_type`) and the game's own expedition lobby (`inviteParam`). The second one matters when the host dies: the clients drop
+//! out of the first, and the expedition lobby is what still lists the survivors (HOST_MIGRATION.md). The net worker reads them with
+//! [`lobby_members`]. We only ever read lobby getters; nothing is written to any lobby.
 
 use std::collections::BTreeSet;
 use std::sync::Mutex;
@@ -8,6 +10,7 @@ use std::sync::Mutex;
 use crate::steam::LobbyApi;
 
 const KEY_SC_TYPE: &str = "nrsc_lobby_type";
+const KEY_GAME_LOBBY: &str = "inviteParam";
 /// Same cap the probe uses for member loops (a garbage count must not spin the thread).
 const MAX_MEMBERS: i32 = 64;
 
@@ -16,7 +19,7 @@ static MEMBERS: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
 /// Result of one [`scan`].
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Scan {
-    /// Members (including ourselves) of every Seamless Co-op lobby we are a member of.
+    /// Members (including ourselves) of every session lobby we are a member of.
     pub(crate) members: BTreeSet<u64>,
     /// The lobbies of the input that we are still a member of (the caller keeps only these, so left lobbies do not pile up).
     pub(crate) joined: Vec<u64>,
@@ -40,10 +43,10 @@ pub(crate) fn scan(api: &dyn LobbyApi, own: u64, lobbies: &[u64]) -> Scan {
             continue;
         }
         out.joined.push(lobby);
-        let is_sc = (0..api.data_count(lobby).clamp(0, 256))
+        let is_session = (0..api.data_count(lobby).clamp(0, 256))
             .filter_map(|i| api.data_by_index(lobby, i))
-            .any(|(k, _)| k == KEY_SC_TYPE);
-        if is_sc {
+            .any(|(k, _)| k == KEY_SC_TYPE || k == KEY_GAME_LOBBY);
+        if is_session {
             out.members.extend(ids.into_iter().filter(|&i| i != 0));
         }
     }
@@ -133,6 +136,20 @@ mod tests {
             Scan::default(),
             "not a member: nothing"
         );
+    }
+
+    #[test]
+    fn the_expedition_lobby_keeps_the_survivors_after_the_sc_lobby_is_gone() {
+        let f = Fake {
+            members: HashMap::from([
+                (100, vec![2, 3]),    // SC lobby: we (1) dropped out when the host died
+                (500, vec![1, 2, 3]), // the game's expedition lobby
+            ]),
+            keys: HashMap::from([(100, vec!["nrsc_lobby_type"]), (500, vec!["inviteParam"])]),
+        };
+        let got = scan(&f, 1, &[100, 500]);
+        assert_eq!(got.members, BTreeSet::from([1, 2, 3]));
+        assert_eq!(got.joined, vec![500]);
     }
 
     #[test]

@@ -105,6 +105,11 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `boss_lots` | `<n> <field> <value>` | RW-5 test aid: write one NpcParam reward field of boss n on this game. Dev only |
 | `drop_gear [dry]` | | RW-3 test aid: `dry` lists what a rival's defeat would drop (LOCAL's equipped weapons, talismans and consumables of the inventory, never the flask) and whether this game is the host; without `dry` it drops them now at LOCAL's spot without a defeat. Dev only |
 | `item_drop <id hex> [count] [dx dy dz]` | | RW-3 E1 research: drop one item with the game's own drop function `exe+0x576110` at LOCAL's position (+ offset), reply with the MapItemMan slots that changed. Dev only |
+| `session` | | HM-0 research: role, protocol state, limit, host and players of this game's `CSSessionManager`, with raw qwords. Read-only, dev only |
+| `mobs_raw [n]` | | HM-0 research: the n nearest living enemies (default 4) with position and the raw network fields of their `ChrIns`. Read-only, dev only |
+| `hm_leave_lobbies` | | HM-1 research: this game leaves every Steam lobby it has seen, so the lobby owner moves as on real Steam when a host dies. Dev only |
+| `mobs_dump` | | HM-1 research: every enemy this game holds, sorted by handle, into the log (`handle:npc:hp:x,z`), with a hash in the reply, to compare two games. Read-only, dev only |
+| `players_pos` | | HM-0 research: world position of every character in the player list, to compare what two games see. Read-only, dev only |
 | `rawcall <rva hex> [arg]` | | NET-5 research: call `exe+rva(arg)` once on the game thread (one integer argument), reply with rax. Dev only |
 | `puppet_think`, `puppet_forget`, `puppet_session`, `puppet_watch`, `peek` | | ORCH-2 research: NpcThink id for new puppets (default -1, no AI); bot manager forget; the session-field experiment; a write watch / execute trace; a read-only hex dump (`peek wcm+0x9A40 0x40`). Dev only |
 | `pad`, `pad_connect`, `pad_clear`, `pad_status` | `A; wait 500; LS 0 1 800` | ORCH-1: a virtual XInput pad 0 (import-table hook of `XINPUT1_4` ordinal 2). **Not effective yet**: the game only polls XInput pads it found in a device scan, which does not run without a real pad. Dev only |

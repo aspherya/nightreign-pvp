@@ -20,6 +20,7 @@ column says when a doc is worth its tokens.
 | [re/MEMORY_MAP.md](re/MEMORY_MAP.md) | **Every memory location we found**, behaviour, how it was confirmed | Touching game memory |
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Version pins, stack, Seamless Co-op facts, non-memory engine facts, ADRs | Version or engine questions |
 | [NETWORKING.md](NETWORKING.md) | Replacing Seamless Co-op: what SC does, game netcode, transport and session options, phased plan, gates | Cross-game data, anything about SC or sessions |
+| [HOST_MIGRATION.md](HOST_MIGRATION.md) | Host migration and player count: findings, design, plan, budgets | Anything about a host leaving or more players |
 | [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, logs, failures | Matchmaking work |
 | [TESTING.md](TESTING.md) | Test environment, cases, regression set, Friend Session runbooks (§6) | Planning or judging a test |
 | [testing-log/](testing-log/) | Results log, one entry per run, newest file last (append-only) | Looking up what a past run showed |

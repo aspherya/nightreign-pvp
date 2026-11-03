@@ -1,0 +1,277 @@
+name = "mi-host-migration"
+about = "HM-1: the host leaves its lobbies and dies; a client becomes host by itself; the other is defeated, the new host makes the drop and wins"
+tags = ["mi", "slow"]
+# Three emulated-Steam instances (MULTI-INSTANCE.md Â§20): Steam closed, `nro desk` running, about 8 GB of RAM per game (free RAM can fall to ~0).
+# Run: nro run scenarios\mi-host-migration.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 3
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING Â§8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[instance]]
+n = 3
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+[[step]]
+instance = 3
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one the others find and join (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 3
+console = "mm_queue_solo"
+
+[[step]]
+instance = 3
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 90 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+# The host opens its Seamless Co-op lobby the player's way; the others join it.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 3 player(s)", "team_type 1"], timeout_s = 150, every_ms = 2000 }
+
+[[step]]
+instance = 3
+wait = { console = "status", contains = ["world loaded, 3 player(s)", "team_type 1"], timeout_s = 150, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 90, every_ms = 2000 }
+
+# The expedition: every member readies at the table, the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 3
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 3 player(s)", "team_type 2"], timeout_s = 150, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 3 player(s)", "team_type 2"], timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 3
+wait = { console = "status", contains = ["world loaded, 3 player(s)", "team_type 2"], timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "mm_status", contains = ["IN EXPEDITION"] }
+
+[[step]]
+instance = 2
+expect = { console = "mm_status", contains = ["IN EXPEDITION"] }
+
+[[step]]
+instance = 3
+expect = { console = "mm_status", contains = ["IN EXPEDITION"] }
+
+# Off the start hawks, land.
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 3
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 16000
+
+# The clients stay alive while nobody plays them.
+[[step]]
+instance = 2
+console = "god 1"
+
+[[step]]
+instance = 3
+console = "god 1"
+
+[[step]]
+instance = 1
+expect = { console = "session", contains = ["lobby_state 3", "players 3"] }
+
+[[step]]
+instance = 2
+expect = { console = "session", contains = ["lobby_state 6", "host_steam 76561199023125438", "players 3"] }
+
+[[step]]
+instance = 3
+expect = { console = "session", contains = ["lobby_state 6", "host_steam 76561199023125438", "players 3"] }
+
+# The host goes. On real Steam the lobby owner moves by itself when the owner dies; the emulator keeps a killed owner, so it leaves first.
+[[step]]
+instance = 1
+console = "hm_leave_lobbies"
+
+[[step]]
+instance = 1
+sleep_ms = 1500
+
+[[step]]
+instance = 1
+kill_game = true
+
+# The game promotes a client by itself; no write by the mod.
+[[step]]
+instance = 3
+wait_log = { contains = ["session: role client -> host"], timeout_s = 90, since = "run" }
+
+[[step]]
+instance = 3
+expect = { console = "session", contains = ["lobby_state 3", "host_steam 76561199023125440", "players 2"] }
+
+[[step]]
+instance = 2
+wait = { console = "session", contains = ["lobby_state 6", "host_steam 76561199023125440", "players 2"], timeout_s = 30, every_ms = 2000 }
+
+# Past the old end of the session (+55 s), still together, the match not decided.
+[[step]]
+instance = 1
+sleep_ms = 45000
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"] }
+
+[[step]]
+instance = 3
+expect = { console = "players", contains = ["me", "rival"] }
+
+[[step]]
+instance = 2
+expect_log = { absent = ["match decided"], since = "run" }
+
+[[step]]
+instance = 3
+expect_log = { absent = ["match decided"], since = "run" }
+
+# The data channel still has the survivor on both sides.
+[[step]]
+instance = 2
+wait = { console = "net_status", contains = "peers={76561199023125440}", timeout_s = 20, every_ms = 2000 }
+
+[[step]]
+instance = 3
+wait = { console = "net_status", contains = "peers={76561199023125439}", timeout_s = 20, every_ms = 2000 }
+
+[[step]]
+instance = 2
+console = "mobs_dump"
+
+[[step]]
+instance = 3
+console = "mobs_dump"
+
+[[step]]
+instance = 3
+expect = { console = "drop_gear dry", contains = ["host yes"] }
+
+[[step]]
+instance = 2
+expect = { console = "drop_gear dry", contains = ["host no"] }
+
+# Client 2 is defeated by the survivor: it publishes, the new host makes the drop, and the match is decided for the new host.
+[[step]]
+instance = 3
+mark = "before_defeat"
+
+[[step]]
+instance = 2
+console = "flag 10007420 1"
+
+[[step]]
+instance = 2
+console = "rival_hit"
+
+[[step]]
+instance = 2
+sleep_ms = 1000
+
+[[step]]
+instance = 2
+console = "hp0"
+
+[[step]]
+instance = 2
+wait = { console = "night_status", contains = "defeated by a rival", timeout_s = 40 }
+
+[[step]]
+instance = 3
+wait_log = { contains = ["itemdrop: on the game thread", "rax 0x1"], timeout_s = 40, since = "mark:before_defeat" }
+
+[[step]]
+instance = 3
+wait_log = { contains = ["match decided", "this game's player won, host"], timeout_s = 60, since = "mark:before_defeat" }
+
+[[step]]
+instance = 3
+screenshot = "new_host_wins"
+
+[[step]]
+instance = 2
+screenshot = "defeated_client"

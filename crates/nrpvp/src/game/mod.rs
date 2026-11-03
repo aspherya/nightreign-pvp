@@ -22,6 +22,7 @@ pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod gamemem;
 pub(crate) mod hawk;
+pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;
 pub(crate) mod image;
 pub(crate) mod input;
@@ -44,6 +45,8 @@ pub(crate) mod rawcall;
 pub(crate) mod reviveblock;
 pub(crate) mod rtti;
 pub(crate) mod runeshare;
+#[cfg(feature = "dev")]
+pub(crate) mod sessionprobe;
 pub(crate) mod singletons;
 pub(crate) mod spawn;
 pub(crate) mod team;

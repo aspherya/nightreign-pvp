@@ -88,6 +88,8 @@ pub enum Step {
     /// A named macro the runner knows (`title_to_world`).
     Navigate(String),
     SleepMs(u64),
+    /// `kill_game = true`: end this instance's game at once, as a crash or Alt-F4 would (host-loss tests). Later steps use other instances.
+    KillGame(bool),
     /// A screenshot of the game window, saved as `<run>\shots\<name>.png`.
     Screenshot(String),
     /// Make this many AFK puppet players (1..=5; mod ORCH-2).

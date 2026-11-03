@@ -70,6 +70,17 @@ pub(crate) const TIDE_FROM: ClockTime = ClockTime { h: 12, m: 30, s: 0 };
 /// The host's session player id has this in its upper half (`0x6001FFFFFFFF`; FS-0, run 21, M5-4 runs 1-2).
 pub(crate) const HOST_ID_HI: u64 = 0x6001;
 
+/// Is this game the host? The session role says so, and it follows the game's own host migration (HOST_MIGRATION.md): a promoted client
+/// keeps its id. Without a session (offline, solo) the id decides.
+fn is_host(role: Option<u32>, local_id: u64) -> bool {
+    use crate::game::layout::{SESSION_ROLE_CLIENT, SESSION_ROLE_HOST};
+    match role {
+        Some(SESSION_ROLE_HOST) => true,
+        Some(SESSION_ROLE_CLIENT) => false,
+        _ => local_id >> 32 == HOST_ID_HI,
+    }
+}
+
 fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
     let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()
@@ -249,7 +260,7 @@ impl Match {
             nf,
             local,
             fighters: &fighters,
-            host: local.id >> 32 == HOST_ID_HI,
+            host: is_host(world.session_role, local.id),
         };
         for r in &mut self.rules {
             r.step(&t, &mut self.book, &mut out);
@@ -305,6 +316,19 @@ mod tests {
     use super::testutil::*;
     use super::*;
     use crate::game::views::Place;
+
+    #[test]
+    fn the_host_is_the_session_role_and_survives_a_migration() {
+        use crate::game::layout::{SESSION_ROLE_CLIENT, SESSION_ROLE_HOST};
+        // The game promoted this client: its id stays 0x6003, the role is what changed.
+        assert!(is_host(Some(SESSION_ROLE_HOST), P3));
+        // An old host's id on a game that is a client now.
+        assert!(!is_host(Some(SESSION_ROLE_CLIENT), ME));
+        // No session (offline, solo): the id decides.
+        assert!(is_host(Some(0), ME));
+        assert!(is_host(None, ME));
+        assert!(!is_host(None, P2));
+    }
 
     #[test]
     fn leaving_the_expedition_resets_everything_and_releases_the_hold() {

@@ -460,6 +460,7 @@ fn step_name(s: &Step) -> String {
         Step::Keys(k) => format!("keys {k}"),
         Step::Navigate(n) => format!("navigate {n}"),
         Step::SleepMs(m) => format!("sleep {m} ms"),
+        Step::KillGame(_) => "kill the game".to_string(),
         Step::Screenshot(n) => format!("screenshot {n}"),
         Step::Puppets(n) => format!("puppets {n}"),
         Step::PuppetRing(r) => format!("puppet_ring {r}"),
@@ -609,6 +610,11 @@ fn step_plain(st: &State, s: &Step, god: bool) -> Result<(bool, String), String>
         Step::SleepMs(m) => {
             std::thread::sleep(Duration::from_millis(*m));
             Ok((true, String::new()))
+        }
+        Step::KillGame(_) => {
+            // A fresh copy: this function only has a shared view, and the stop records the end of this instance.
+            let mut own = State::load(&st.dir())?;
+            Ok((true, session::stop(&mut own)))
         }
         Step::Puppets(n) => crate::ops::puppets(*n as usize)
             .map(|v| (true, v["list"].as_str().unwrap_or_default().to_string())),

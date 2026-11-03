@@ -53,6 +53,37 @@ Past regression runs: `testing-log/`.
 
 ## 6. Friend Session runbooks
 
+### FS-HM1 — does a match survive the host leaving? Up to six real players (about 60-90 min, four matches)
+
+**Why:** the game has its own host migration; on one PC it works when the Steam lobby owner moves (HOST_MIGRATION.md). Only real Steam can show whether the owner moves, and in time. **This is the most important open test of the project.**
+
+**Zip:** build from `main` after the host-migration PR with `scripts\package-release.ps1 -MatchPlayers N`, N = how many really play (`release-zip` skill). Everyone needs the same zip. The more players the better; 3 is the minimum that shows survivors staying together, and 2 still shows the promotion.
+
+**Before each match:** note who is the host (the player who presses Invite Members) and write down the clock time when the host leaves.
+
+**Host leaves in a different way each match:**
+
+| Match | How the host leaves, on Day 1, once everyone has landed |
+|---|---|
+| A | Alt-F4 |
+| B | Task Manager, End task on `nightreign.exe` |
+| C | The host is defeated by a rival, watches a little, then F10 |
+| D | The host pulls the network cable or turns the Wi-Fi off, and only then closes the game |
+
+**Everyone else, for about 3 minutes after the host leaves:** keep playing normally. Stay near another player if you can, kill an enemy together, hit each other. Note what you see.
+
+**Expect:**
+1. Nobody is thrown to the title or to the Roundtable, and no Result screen appears while 2 or more teams are alive.
+2. Within about a minute the survivors' logs show `session: role client -> host` on exactly one game and `session: role client -> client` with the new host id on the others.
+3. Players still see each other move; an enemy killed by one disappears for the others.
+4. Match A only, if time allows: play on to the end of Day 1. Day 2 must start for everyone (log `Day 2 has begun`), which proves the new host runs the day.
+5. A player defeated after the change drops their items and everyone sees them on the ground.
+6. Bonus: the new host leaves as well. Another migration should follow.
+
+**If it fails:** write the time it failed and what each screen showed. In the logs, `session: role client -> none` means the session ended with no new host. **Do not repeat a failing way more than once;** go to the next match.
+
+**Afterwards, from every PC:** the `NightreignPvP\logs\` folder (one file per game launch, the newest 30 are kept), plus the times written down. Put them under `.claude\experiments\FS-HM1\<player>\`. Then the `test-report` skill turns them into evidence.
+
 ### FS-RW1 — the new match rules on two real PCs (about 60 min, two or three matches)
 **Zip:** `dist\NightreignPvP.zip` (**rebuild it from `main` first** with the `release-zip` skill: the zip of 2026-10-24 predates RW-3, RW-8 and RW-9; STATUS §2 records the build, the `nrpvp.dll` hash and what `VERSION.txt` says), `-MatchPlayers 2`, `team_size = 1`. Both PCs compare `NightreignPvP\VERSION.txt`, Seamless Co-op v1.1.3 and game exe 1.3.3.0 (stop Steam auto-updates). Never EAC. **Pre-flight:** back up `%APPDATA%\Nightreign\<steamid>\`; Leonardo installs the zip himself and sees Solo / Duo / Trio in the table menu. For a shorter Day 1 both PCs add the line `day1_secs = 300` at the top of `NightreignPvP\nrpvp.toml` (default 1020 s = 17 min; both the same, the host ends the day).
 

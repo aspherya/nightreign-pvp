@@ -261,6 +261,43 @@ pub(crate) fn summarize(api: &dyn LobbyApi, lobby: u64) -> Vec<String> {
     out
 }
 
+/// HM-1 research, console `hm_leave_lobbies`: this game leaves every lobby it has seen, on the Steam thread. On real Steam the lobby
+/// owner moves when the host dies; the emulator keeps a killed host as owner, so a test host leaves first (HOST_MIGRATION.md).
+#[cfg(feature = "dev")]
+pub(crate) static HM_LEAVE_LOBBIES: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(feature = "dev")]
+fn hm_leave_lobbies(ids: &[u64]) {
+    type FnLeave = unsafe extern "system" fn(*mut std::ffi::c_void, u64);
+    type FnAccessor = unsafe extern "system" fn() -> *mut std::ffi::c_void;
+    let (Some(acc), Some(leave)) = (
+        super::export("SteamAPI_SteamMatchmaking_v009\0"),
+        super::export("SteamAPI_ISteamMatchmaking_LeaveLobby\0"),
+    ) else {
+        tracing::warn!("hm_leave_lobbies: Steam exports missing");
+        return;
+    };
+    // SAFETY: both addresses come from GetProcAddress for exactly these names; signatures from steam_api_flat.h.
+    let (acc, leave) = unsafe {
+        (
+            std::mem::transmute::<usize, FnAccessor>(acc),
+            std::mem::transmute::<usize, FnLeave>(leave),
+        )
+    };
+    // SAFETY: the accessor takes no arguments and returns the interface or null.
+    let mm = unsafe { acc() };
+    if mm.is_null() {
+        tracing::warn!("hm_leave_lobbies: no ISteamMatchmaking");
+        return;
+    }
+    for &id in ids {
+        tracing::info!("hm_leave_lobbies: LeaveLobby({id} (0x{id:X}))");
+        // SAFETY: non-null interface; `LeaveLobby(self, uint64)`. Dev builds only, on the operator's order.
+        unsafe { leave(mm, id) };
+    }
+}
+
 /// Remembers which lobbies were seen and when each was last summarised.
 #[derive(Default)]
 pub(crate) struct Tracker {
@@ -570,6 +607,11 @@ fn run(queue: Option<crate::mm::worker::Setup>, evidence: bool, verbose: bool) {
         }
         if let Some(w) = worker.as_mut() {
             w.tick(Instant::now());
+        }
+        #[cfg(feature = "dev")]
+        if HM_LEAVE_LOBBIES.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            let ids: Vec<u64> = lobbies_seen.iter().map(|l| l.0).collect();
+            hm_leave_lobbies(&ids);
         }
         // NET-2: the data channel's roster = members of the Seamless Co-op lobby we are in (getters only, once a second).
         if mm_ok && Instant::now() >= next_feed {

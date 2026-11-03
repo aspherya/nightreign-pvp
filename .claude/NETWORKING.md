@@ -31,7 +31,7 @@ Pins: game 1.03.3 (exe 1.3.3.0), SC 1.1.3, me3 0.11.0.
 | Bandai servers | Cut out: no `RequestCreateSession`/QuickMatch; EAC not running | Required (rule: never online) | `[SOURCE: S10 §2]` |
 | Player slots | Builds the 6-slot `CSChrSet<PlayerIns>` (`WorldChrMan+0x9A40`) itself; sweeps slots 1..5 every frame and destroys a PlayerIns whose `[chr+0x5D0]+8` matches no active member (`nrsc.dll+0x62AB4`) | all of `game/team/*`, `rules/teams.rs` (teams = sorted session ids `0x600N`), puppets (`game/puppet.rs` must dodge the sweep) | `[VERIFIED: MEMORY_MAP §2, §18]` |
 | Remote players and sync | Remote `PlayerIns` come from the game: pending `CSSessionManager` entry -> `exe+0xC43B94` -> `exe+0xC445A0` -> `WorldChrMan::CreateNetPlayer exe+0x518280` -> `ChrSet<PlayerIns>::CreateNetPlayer exe+0x4AC240`. The member table `[[exe+0x3C078D0]+0x10] + idx*0x8A0` has room for idx <= 1 (vanilla = 3 players); SC widens it | PvP (hits, HP, death, positions) works only because the game syncs these players; H1 | `[SOURCE: ORCH-R2 L11-15]` `[VERIFIED: FS-0/FS-1 PvP]` |
-| Host authority | Host runs world and enemies, sends EMEVD event sync (flag 7502 reaches clients); no host migration anywhere in the exe | `features/br_match` relies on it; MM-9 is "end the match" | `[SOURCE: S10 §4]` `[VERIFIED: Nucleus run 2]` |
+| Host authority | Host runs world and enemies, sends EMEVD event sync (flag 7502 reaches clients); the exe has its own migration, S10 was wrong (HOST_MIGRATION.md) | `features/br_match` relies on it; MM-9 is "end the match" | `[SOURCE: S10 §4]` `[VERIFIED: Nucleus run 2]` |
 | Saves and settings | `.co2` save extension, `nrsc_settings.ini` (scaling keys, save ext), "Up to 6 players" menu ring, 4-6 slot data fixes | profiles (no me3 `savefile`), `nro` copies an ini per instance | `[VERIFIED: grep profiles/, emu.rs]` |
 | Load order | `nrsc.dll` `load_early`; `nrpvp.dll` loads after it | `nrpvp-launcher`, `pins/nightreign.toml` | `[VERIFIED]` |
 | Not used | SC password, SC chat | the game's own Password menu fields exist, nothing reads them | `[VERIFIED: grep]` |
@@ -84,6 +84,10 @@ Scenario `scenarios/mi-nosc-join.toml`; manual probes with the new dev console c
 
 **What it means.** SC's core trick is not networking, it is **making the game believe it is signed in to Bandai without the server**, then letting the game's own session code run with a raised limit. Everything else we measured (server block by me3, table width, limit field) is small and located. The unknown is the sign-in completion: which function turns state 3 into 2 and with which data. If that is one hook, S1 is weeks; if the sign-in feeds many later server calls (create session, ranking, quick match), SC's ~40 patches exist for a reason and S1 is months.
 
+### 2c. Host loss and the player limit
+
+Moved to [HOST_MIGRATION.md](HOST_MIGRATION.md).
+
 ## 3. Designs for the transport (problem a)
 
 | # | Design | Verdict | Flaws |
@@ -120,8 +124,8 @@ feature  <--take(topic)---------------  net::bus  <--  worker thread  <--  Chann
   the SC lobby is left (the next match), so reuse across matches is fine, within a match it is not. Facts of a topic this build does not
   know are dropped without recording or ack. Bounds: 256 pending, 4096 keys, 1024 unread.
 - **Delivered to the other machines only;** the publisher already knows its value.
-- **Roster (`net/feed.rs`):** the Steam thread (`steam/probe.rs`) asks once a second which Seamless Co-op lobbies (data key
-  `nrsc_lobby_type`) we are a member of and publishes their members; getters only, nothing is ever written to a lobby. Console `net_peer`
+- **Roster (`net/feed.rs`):** the Steam thread (`steam/probe.rs`) asks once a second which session lobbies (data key
+  `nrsc_lobby_type`, or the game's `inviteParam`, which outlives the host: HOST_MIGRATION.md) we are a member of and publishes their members; getters only, nothing is ever written to a lobby. Console `net_peer`
   adds test peers. Only roster members are heard (everything else is counted as `strangers`).
 - **Wire (`net/msg.rs`):** `[version][type][body]`, little endian, at most 256 bytes, strict decoder (exact length, known version and
   type, never allocates from a length field). Messages: `Hello`, `Ping`, `Pong`, `Fact`, `Ack`. Facts only, nothing asks the receiver to run
@@ -182,7 +186,7 @@ Leonardo: proceed only with enough proof that the path does not get players bann
 | The data channel is Steam networking between the two players' own games (our private channel number), the same Valve service the game already uses for lobbies; it carries no account, save or Bandai data | `[VERIFIED: NET-1 code and scenario]` |
 | Reports of bans concern modified files used **online** with EAC; SC's own author says there is no ban risk unless connecting with vanilla users (secondary sources) | `[SOURCE: press/guide search, 2026-10-30]` |
 
-Not shown: that any of this is safe under Bandai's rules. Decision: **NET-1 / NET-2 (the data channel) go ahead**: they add no Bandai contact and no EAC interaction, and sit next to SC exactly as SC's own traffic does. **NET-7 (faking the sign-in) is on hold** until we have either an official statement or Leonardo accepts the residual risk in writing in DECISIONS: it changes how the game believes it is signed in to Bandai, and a mistake there (flag byte set, server reachable) could produce a real sign-in request. If it is ever run: emulated Steam ids only, `Menu.IsEnableOnlineMode` stays false, firewall-blocked game exe, and nro's TCP watch must show no public endpoint.
+Not shown: that any of this is safe under Bandai's rules. Decision: **NET-1 / NET-2 (the data channel) go ahead**: they add no Bandai contact and no EAC interaction, and sit next to SC exactly as SC's own traffic does. **NET-7 (faking the sign-in)** changes how the game believes it is signed in to Bandai, and a mistake there (flag byte set, server reachable) could produce a real sign-in request. **Released for the lab stage on 2026-11-02 (DECISIONS):** emulated Steam ids only, `Menu.IsEnableOnlineMode` stays false, firewall-blocked game exe, and nro's TCP watch must show no public endpoint. Real Steam needs a separate go.
 
 ## 8. Open unknowns
 
@@ -197,3 +201,8 @@ Not shown: that any of this is safe under Bandai's rules. Decision: **NET-1 / NE
 | 7 | Is session id `0x6001` the host from the engine or from SC? | after NET-4 |
 | 8 | Official Bandai/FromSoftware policy on offline mods and P2P | read the EULA / support pages (NET-6) |
 | 9 | Real-network behaviour of Messages (relay, latency, idle timeouts) | next Friend Session |
+| 10 | Host loss: [HOST_MIGRATION.md](HOST_MIGRATION.md) §7 | HM-1 |
+
+## 9. Host migration and player count
+
+Owner doc: [HOST_MIGRATION.md](HOST_MIGRATION.md).

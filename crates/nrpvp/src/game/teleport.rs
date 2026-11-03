@@ -430,6 +430,122 @@ pub(crate) fn mobs_cmd() -> Result<String, String> {
     ))
 }
 
+/// `mobs_raw [n]`: HM-0 research, read-only. The nearest living enemies with position and the qwords around ER's network fields
+/// (`p2p_entity_handle` +0x70, `network_authority` +0x1E4), to compare host and client. HOST_MIGRATION.md.
+pub(crate) fn mobs_raw_cmd(args: &[String]) -> Result<String, String> {
+    let n = match args.first() {
+        Some(a) => a.parse::<usize>().map_err(|_| format!("bad count {a:?}"))?,
+        None => 4,
+    };
+    let (chr, phys) = local()?;
+    let me = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
+    let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
+    let mut list = mobs_alive()?;
+    list.sort_by(|a, b| dist(a.pos, me).total_cmp(&dist(b.pos, me)));
+    let raw = |addr: usize, len: usize| -> String {
+        mem::copy_guarded(addr, len)
+            .0
+            .chunks(8)
+            .map(|c| {
+                let mut v = [0u8; 8];
+                v[..c.len()].copy_from_slice(c);
+                format!("{:016X}", u64::from_le_bytes(v))
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let lines: Vec<String> = list
+        .iter()
+        .take(n)
+        .map(|m| {
+            format!(
+                "chr 0x{:X} {:#X} npc {} hp {} world ({:.2}, {:.2}, {:.2}) {:.0} m\n  +60 {}\n  +1C0 {}",
+                m.chr,
+                m.handle,
+                m.npc,
+                m.hp,
+                m.pos[0] - origin[0],
+                m.pos[1] - origin[1],
+                m.pos[2] - origin[2],
+                dist(m.pos, me),
+                raw(m.chr + 0x60, 0x20),
+                raw(m.chr + 0x1C0, 0x30),
+            )
+        })
+        .collect();
+    let text = format!("mobs_raw: {} alive\n{}", list.len(), lines.join("\n"));
+    tracing::info!("{text}");
+    Ok(text)
+}
+
+/// `mobs_dump`: HM-1 research, read-only. Every enemy this game holds, sorted by handle, into the log, with a hash in the reply, so two
+/// games can be compared by handle (the handle is the same on every game, MEMORY_MAP §25).
+pub(crate) fn mobs_dump_cmd() -> Result<String, String> {
+    let (chr, _) = local()?;
+    let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
+    let mut list = enemies_alive(0, u32::MAX)?;
+    list.sort_by_key(|m| m.handle);
+    let mut hash = 0xCBF2_9CE4_8422_2325u64;
+    for m in &list {
+        hash = (hash ^ m.handle).wrapping_mul(0x0100_0000_01B3);
+    }
+    for part in list.chunks(40) {
+        let line: Vec<String> = part
+            .iter()
+            .map(|m| {
+                format!(
+                    "{:X}:{}:{}:{:.0},{:.0}",
+                    m.handle,
+                    m.npc,
+                    m.hp,
+                    m.pos[0] - origin[0],
+                    m.pos[2] - origin[2],
+                )
+            })
+            .collect();
+        tracing::info!("mobs_dump: {}", line.join(" "));
+    }
+    Ok(format!(
+        "mobs_dump: {} enemies, hash {hash:016X}",
+        list.len()
+    ))
+}
+
+/// `players_pos`: HM-0 research, read-only. World position of every character in the player list, to compare what two games see.
+pub(crate) fn players_pos_cmd() -> Result<String, String> {
+    let (chr, _) = local()?;
+    let origin = read3(chr + PLAYER_ORIGIN).unwrap_or([0.0; 3]);
+    let b = crate::game::puppet::exe_base()?;
+    let wcm = mem::read::<usize>(b + RVA_WCM_SLOT)
+        .filter(|&w| w != 0)
+        .ok_or("no world")?;
+    let ents = mem::read::<usize>(wcm + WCM_CHRSET + CHRSET_ENTRIES)
+        .filter(|&e| e != 0)
+        .ok_or("no player list")?;
+    let mut lines = Vec::new();
+    for slot in 0..6 {
+        let Some(c) =
+            mem::read::<usize>(ents + slot * super::layout::CHRSET_ENTRY_SIZE).filter(|&c| c != 0)
+        else {
+            continue;
+        };
+        let pos = mem::read::<usize>(c + PLAYER_MODULES)
+            .and_then(|m| mem::read::<usize>(m + MODULES_PHYSICS))
+            .and_then(|p| read3(p + PHYSICS_POS));
+        let id = mem::read::<u64>(c + 0x78).unwrap_or(0);
+        lines.push(match pos {
+            Some(p) => format!(
+                "s{slot} {id:#X} world ({:.2}, {:.2}, {:.2})",
+                p[0] - origin[0],
+                p[1] - origin[1],
+                p[2] - origin[2]
+            ),
+            None => format!("s{slot} {id:#X} no position"),
+        });
+    }
+    Ok(lines.join("; "))
+}
+
 /// `boss_list`: the living bosses (HP above [`BOSS_MIN_HP`]) with handle, npc id, HP, world position and distance.
 pub(crate) fn boss_list_cmd() -> Result<String, String> {
     let (chr, phys) = local()?;

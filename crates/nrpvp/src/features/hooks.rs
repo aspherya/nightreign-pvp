@@ -94,6 +94,7 @@ impl Hooks for Real {
     }
     fn defeatdrop(&mut self, base: usize, in_match: bool) {
         defeatdrop::tick(base, in_match);
+        crate::game::hostwatch::tick(base);
     }
     fn orbclaim(&mut self, base: usize, in_match: bool, my_team: Option<u8>, local: Option<usize>) {
         orbclaim::tick(base, in_match, my_team, local);

@@ -5,6 +5,21 @@
 //! Naming: `WCM_*` WorldChrMan, `CHRSET_*` the ChrSet inside it, `CHR_*` any character (ChrIns), `PLAYER_*` PlayerIns only,
 //! `GAMEDATA_*` the PlayerGameData object.
 
+// ---- CSSessionManager (MEMORY_MAP §25; HM-0, HM-1) ----
+/// Slot of the `CSSessionManager` pointer.
+pub(crate) const RVA_SESSION: usize = 0x3C2_1EC8;
+/// u32 role: 0 none, 3 host, 6 client.
+pub(crate) const SESSION_ROLE: usize = 0xC;
+pub(crate) const SESSION_ROLE_HOST: u32 = 3;
+pub(crate) const SESSION_ROLE_CLIENT: u32 = 6;
+/// `players` vector: first and last pointers.
+pub(crate) const SESSION_PLAYERS_FIRST: usize = 0x78;
+pub(crate) const SESSION_PLAYERS_LAST: usize = 0x80;
+/// Size of one `players` entry.
+pub(crate) const SESSION_PLAYER_ENTRY: usize = 0xF0;
+/// u64 Steam id of the host.
+pub(crate) const SESSION_HOST_STEAM: usize = 0xA0;
+
 // ---- WorldChrMan and its ChrSet (MEMORY_MAP §2; T-007a) ----
 /// WorldChrMan -> inline ChrSet.
 pub(crate) const WCM_CHRSET: usize = 0x9A40;
