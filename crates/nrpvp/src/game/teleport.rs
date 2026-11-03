@@ -511,6 +511,59 @@ pub(crate) fn mobs_dump_cmd() -> Result<String, String> {
     ))
 }
 
+/// `grace_go [skip] [npc]`: GRACE-1 test aid. Put LOCAL 1.5 m from the nearest Site of Grace (or the skip-th nearest). A grace is a dummy
+/// character running talk script `t000001000` next to its asset; by default the NpcParam row is 10000000; the row is shared with other dummies, see MEMORY_MAP §26.
+pub(crate) fn grace_go_cmd(args: &[String]) -> Result<String, String> {
+    let usage = "usage: grace_go [skip|0xhandle] [npc]";
+    if let Some(h) = args.first().and_then(|a| a.strip_prefix("0x")) {
+        let handle = u64::from_str_radix(h, 16).map_err(|_| usage)?;
+        let list: Vec<Mob> = enemies_alive(0, u32::MAX)?
+            .into_iter()
+            .filter(|m| m.handle == handle)
+            .collect();
+        return go_to_enemy(list, None, 0, "grace_go", true);
+    }
+    let skip: usize = args
+        .first()
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(0);
+    let npc: u32 = args
+        .get(1)
+        .map(|v| v.parse().map_err(|_| usage))
+        .transpose()?
+        .unwrap_or(10_000_000);
+    let list: Vec<Mob> = enemies_alive(0, u32::MAX)?
+        .into_iter()
+        .filter(|m| m.npc == npc)
+        .collect();
+    go_to_enemy(list, None, skip, "grace_go", true)
+}
+
+/// `hp_set <n>`: GRACE-1 test aid. Write LOCAL's HP.
+pub(crate) fn hp_set_cmd(args: &[String]) -> Result<String, String> {
+    let n: u32 = args
+        .first()
+        .and_then(|v| v.parse().ok())
+        .ok_or("usage: hp_set <n>")?;
+    let (chr, _) = local()?;
+    let f = hp_field(chr).ok_or("HP field unreadable")?;
+    mem::write_bytes(f, &n.to_le_bytes()).map_err(|e| e.to_string())?;
+    Ok(format!("hp_set: HP {n}"))
+}
+
+/// `grace_status`: GRACE-1 test aid. LOCAL's HP and the game's "all bonfires disabled" flag.
+pub(crate) fn grace_status_cmd() -> Result<String, String> {
+    let (chr, _) = local()?;
+    let hp = hp_field(chr).and_then(mem::read::<u32>).unwrap_or(0);
+    let b = crate::game::puppet::exe_base()?;
+    let off = crate::game::flags::get(b, 7525).map_err(|e| e.to_string())?;
+    Ok(format!(
+        "grace_status: hp {hp}, flag 7525 {}",
+        if off { "ON" } else { "off" }
+    ))
+}
+
 /// `players_pos`: HM-0 research, read-only. World position of every character in the player list, to compare what two games see.
 pub(crate) fn players_pos_cmd() -> Result<String, String> {
     let (chr, _) = local()?;

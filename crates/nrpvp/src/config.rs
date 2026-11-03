@@ -198,6 +198,10 @@ day1_secs = 1020
 # 0 = stay and watch until the match ends; press F10 to leave at any time.
 defeat_exit_secs = 0
 
+# GRACE-1: after a PvP fight (a rival hit you, or you hit a rival) Sites of Grace give nothing for this many seconds (0..=120), or until
+# no rival is left within 100 m (the rival died or ran off). 0 = the rule is off and graces always work.
+grace_combat_secs = 15
+
 # RW-1 spectating: a defeated player's camera follows a player who is still in the match (the invisible dead body is moved to
 # the watched player every tick). false = the dead body stays where it fell.
 spectate = true
@@ -310,6 +314,8 @@ pub(crate) struct Config {
     pub day1_secs: u32,
     /// RW-1: seconds from a defeat to the defeat screen (0 = never; clamped to 0..=600 in `parse`).
     pub defeat_exit_secs: u32,
+    /// GRACE-1: seconds after a PvP fight during which Sites of Grace are switched off (0 = rule off; clamped to 0..=120 in `parse`).
+    pub grace_combat_secs: u32,
     /// RW-1: a defeated player's camera follows a living player.
     pub spectate: bool,
     /// RW-6: the private match code ("" = the public queue; normalised in `parse`).
@@ -407,6 +413,7 @@ impl Default for Config {
             rival_hit_seconds: crate::game::combat_state::DEFAULT_RIVAL_HIT_SECONDS,
             day1_secs: DEFAULT_DAY1_SECS,
             defeat_exit_secs: DEFAULT_DEFEAT_EXIT_SECS,
+            grace_combat_secs: DEFAULT_GRACE_COMBAT_SECS,
             spectate: true,
             private_code: String::new(),
             team_spawns: false,
@@ -423,6 +430,8 @@ pub(crate) const DAY1_SECS_RANGE: (u32, u32) = (120, 3600);
 /// RW-1: default seconds between a defeat and the defeat screen.
 pub(crate) const DEFAULT_DEFEAT_EXIT_SECS: u32 = 0;
 pub(crate) const DEFEAT_EXIT_MAX: u32 = 600;
+pub(crate) const DEFAULT_GRACE_COMBAT_SECS: u32 = 15;
+pub(crate) const GRACE_COMBAT_MAX: u32 = 120;
 /// RW-6: longest private match code.
 pub(crate) const PRIVATE_CODE_MAX: usize = 32;
 
@@ -814,6 +823,14 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.defeat_exit_secs
         ));
         cfg.defeat_exit_secs = DEFEAT_EXIT_MAX;
+    }
+    // GRACE-1: grace_combat_secs (0 = off).
+    if cfg.grace_combat_secs > GRACE_COMBAT_MAX {
+        warnings.push(format!(
+            "grace_combat_secs = {} is above {GRACE_COMBAT_MAX}; using {GRACE_COMBAT_MAX}",
+            cfg.grace_combat_secs
+        ));
+        cfg.grace_combat_secs = GRACE_COMBAT_MAX;
     }
     // RW-6: private_code.
     match normalize_private_code(&cfg.private_code) {

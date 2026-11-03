@@ -25,9 +25,10 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **RW-5 boss orbs** | **Parked, vanilla** (everyone can loot; DECISIONS 2026-10-31). A first-to-loot skeleton is in the code, off by default (`orb_auto 1`) |
 | Offline mode (`mode = "offline"`) | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
+| **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS, 2026-11-03). A real hit between players not seen: FS-HM1 |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
-**Not built yet** (scope in PROJECT_SCOPE): Sites of Grace blocked in PvP combat, a match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
+**Not built yet** (scope in PROJECT_SCOPE): A match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 
@@ -43,9 +44,8 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 ## 3. Next (Leonardo, 2026-11-03, in this order)
 
-1. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
-2. **Finish the match start:** no Invite Members press (MM-3g), the match starts at once (MM-7), no Steam invite on the overlay.
-3. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
+1. **Finish the match start:** no Invite Members press (MM-3g), the match starts at once (MM-7), no Steam invite on the overlay.
+2. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
 
 **Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 

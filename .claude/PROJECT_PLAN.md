@@ -42,7 +42,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 | ~~F13~~ | ~~Winner's choice: escape with loot or fight the Nightlord~~ | **Dropped** (Leonardo, 2026-10-24): there is no winner's choice; the match ends when the final fight is decided | - | - |
 | F14 | Balancing rules (no kill rewards, default gear, loot stays on the ground, final-arena supply) | Mostly follow from F8–F9 | Tuning, after the mechanics exist | Low |
 | F15 | Mode selection in Roundtable Hold | SC already edits that menu | Our own menu entry or a panel toggle; all clients agreeing on the mode | Medium |
-| F17 | Sites of Grace blocked while a player is engaged in PvP (no HP / flask restore) | Grace behaviour is vanilla | Per-player combat state + a veto on the rest path (TASKS GRACE-1) | Medium |
+| F17 | Sites of Grace blocked while a player is engaged in PvP (no HP / flask restore) | Grace behaviour is vanilla | **Built (GRACE-1):** game flag 7525 ("all bonfires disabled") ON per game while engaged; no hook needed (MEMORY_MAP §26) | Medium |
 | F18 | Match time limit: past the maximum vanilla time everyone loses | - | Not built (TASKS TIMELIMIT-1, idea) | Low |
 | F19 | Arena mode (MODE-02), later | Nightlord arena exists | Decoupled modules first (refactor); not for the first release | - |
 | F16 | Install and launch for normal players | Friend kit with a script | A launcher | Medium |

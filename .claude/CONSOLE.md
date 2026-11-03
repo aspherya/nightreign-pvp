@@ -35,6 +35,7 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `clock` | `[night\|circle\|end\|hh:mm[:ss]]` | M5: the expedition's play-area clock (`clock: 14:03:10 (running, speed …)`). With a time the game jumps its own clock there on its next frame (its set-time mailbox, MEMORY_MAP §16): `circle` = 20:20 (final circle starts 20:24), `night` = 22:55 (night events from 23:00), `end` = 23:58:30 (night flag at 23:59). Expedition only. Logs `clock:` (one line per game hour, and "the game applied …" after a jump). Dev only |
 | `night_end` | | M5-3: end the current night now. Sets our flag 10007400, which the night-end events (`gamedata/emevd-nights.json`) wait for besides their 10 min fallback; the game's own morning follows (flasks, grace, next day; no heal since M5-5). Acts only at night and only in the host's game; without our event file (Nucleus) the night match writes 7502 itself 1.5 s later (night 1 only). Logs `nights:`. Dev only |
 | `night_status` | | The match rules in this game: `free day 1` / `day n` / `night n` / `match over` (`decided (winner …)`), players, teams seen, how many are out, `LOCAL in` or `defeated by a rival / the tide`, mob deaths, recorded respawn places, and `death held` (RW-1). Answered on the pipe thread. Dev only |
+| `grace_lock` | | GRACE-1: `ON, Sites of Grace are off` while a PvP fight locks the graces (game flag 7525), else `off`. Pipe thread. Dev only |
 | `night_count` | `[0\|1]` | Test switch: 1 (default) the match ends when one team is left standing; 0 it never ends by count. Resets at launch. Dev only |
 | `spectate` | `[0\|1]` | RW-1: 0 = a defeated player's held body stays where it fell (shows what the game itself does for a dead player), 1 = it follows a living player (the mod's spectator; the `spectate` setting's default). Dev only |
 | `rune_watch` | `[0\|1]` | RW-8 research: log which instruction writes LOCAL's rune count (`PlayerGameData+0x6C`, hardware write watch) as `T-041 bar_trace` lines. Dev only |
@@ -109,6 +110,9 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `mobs_raw [n]` | | HM-0 research: the n nearest living enemies (default 4) with position and the raw network fields of their `ChrIns`. Read-only, dev only |
 | `hm_leave_lobbies` | | HM-1 research: this game leaves every Steam lobby it has seen, so the lobby owner moves as on real Steam when a host dies. Dev only |
 | `mobs_dump` | | HM-1 research: every enemy this game holds, sorted by handle, into the log (`handle:npc:hp:x,z`), with a hash in the reply, to compare two games. Read-only, dev only |
+| `grace_go [skip] [npc]` | | GRACE-1 test aid: stand 1.5 m from the nearest Site of Grace. Dev only |
+| `grace_status` | | GRACE-1 test aid: LOCAL's HP and flag 7525. Dev only |
+| `hp_set <n>` | | GRACE-1 test aid: write LOCAL's HP. Dev only |
 | `players_pos` | | HM-0 research: world position of every character in the player list, to compare what two games see. Read-only, dev only |
 | `rawcall <rva hex> [arg]` | | NET-5 research: call `exe+rva(arg)` once on the game thread (one integer argument), reply with rax. Dev only |
 | `puppet_think`, `puppet_forget`, `puppet_session`, `puppet_watch`, `peek` | | ORCH-2 research: NpcThink id for new puppets (default -1, no AI); bot manager forget; the session-field experiment; a write watch / execute trace; a read-only hex dump (`peek wcm+0x9A40 0x40`). Dev only |

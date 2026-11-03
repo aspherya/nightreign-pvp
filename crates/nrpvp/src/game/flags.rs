@@ -76,7 +76,10 @@ pub(crate) fn set(base: usize, flag: u32, on: bool) -> Result<bool, &'static str
 /// package is applied): 7502 night 1 done (host only; the host's own event script then passes 7503 / 7505 to everyone, M5-4 run 2),
 /// 7000 win / 7001 failure (each game for itself; M5-4 run 2: the result screen followed in both games). Each is written at most
 /// once per expedition, so the read-modify-write rarely meets a game write of the same byte.
-pub(crate) const MATCH_WRITABLE: [u32; 3] = [7000, 7001, 7502];
+///
+/// GRACE-1 adds 7525 ("all bonfires disabled", MEMORY_MAP §26): written on every change of the grace lock, so its byte (which also
+/// holds 7520 and 7523, written by game events) takes one read-modify-write per change; accepted.
+pub(crate) const MATCH_WRITABLE: [u32; 4] = [7000, 7001, 7502, 7525];
 
 /// Set one of [`MATCH_WRITABLE`]. Returns the previous state.
 pub(crate) fn set_match_flag(base: usize, flag: u32, on: bool) -> Result<bool, &'static str> {
@@ -101,7 +104,7 @@ fn write(base: usize, flag: u32, on: bool) -> Result<bool, &'static str> {
 /// (`archive/research/M5-no-boss-nights.md`). The game writes these bytes rarely (once per expedition each), so the read-modify-write is safe
 /// enough for a test tool. Features use [`set_match_flag`].
 #[cfg(feature = "dev")]
-pub(crate) const RESEARCH_WRITABLE: [u32; 4] = [7000, 7001, 7502, 7507];
+pub(crate) const RESEARCH_WRITABLE: [u32; 5] = [7000, 7001, 7502, 7507, 7525];
 
 /// Last `flag` console answer (main loop writes, pipe thread reads).
 #[cfg(feature = "dev")]
@@ -195,7 +198,7 @@ mod tests {
 
     #[test]
     fn match_flags_are_only_the_endings_and_night_one() {
-        assert_eq!(MATCH_WRITABLE, [7000, 7001, 7502]);
+        assert_eq!(MATCH_WRITABLE, [7000, 7001, 7502, 7525]);
         assert!(MATCH_WRITABLE.iter().all(|f| !writable(*f)));
     }
 

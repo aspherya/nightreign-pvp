@@ -79,3 +79,5 @@ Read when you touch the area named in a bullet, or before debugging something od
 - **`scripts\build.ps1` fails with exit 101 while `nro desk` runs** (HM-0, 2026-11-02): its workspace build cannot link the running `nro.exe`, and the DLL is not copied. Stop the desk, or build `-p nrpvp` and copy `target\release\nrpvp.dll` to `dist\`.
 - **`trace_write` hits appear as `T-041 FLAG WRITE`, not `bar_trace`** (HM-0, 2026-11-02): grep for both. RIP is already past the writer, so the writer is the instruction before the logged address.
 - **Read the mod log before blaming the game** (HM-0, 2026-11-02): the MM-9 note blamed the game for a Result screen that our own last-team rule caused. In host-loss tests set `night_count 0` first.
+- **`navigate expedition` leaves `god 1` on** (GRACE-1, 2026-11-03): a test that reads HP sees it full (524287). Run `god 0` first.
+- **A grace cannot be found by NpcParam row alone** (GRACE-1, 2026-11-03): row 10000000 is shared with dummies that are not graces (MEMORY_MAP §26). Check the `F: Level up` prompt on a screenshot, and go by handle.

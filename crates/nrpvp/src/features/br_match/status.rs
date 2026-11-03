@@ -16,6 +16,8 @@ pub(crate) struct StatusParts {
     pub spec_target: Option<u64>,
     /// [`RespawnFar`](super::respawn_far::RespawnFar): places recorded.
     pub places: usize,
+    /// [`GraceLock`](super::grace_lock::GraceLock): flag 7525 is ON.
+    pub grace_lock: bool,
 }
 
 pub(super) fn render(
@@ -43,7 +45,7 @@ pub(super) fn render(
         None => String::new(),
     };
     format!(
-        "{phase}{who}; {players} player(s), {} team(s) seen, {out} out; LOCAL {}; mob deaths {}; places {}",
+        "{phase}{who}; {players} player(s), {} team(s) seen, {out} out; LOCAL {}; mob deaths {}; places {}{}",
         book.max_teams,
         match book.defeat {
             Some(d) => format!(
@@ -56,7 +58,8 @@ pub(super) fn render(
             None => "in".into(),
         },
         book.mob_deaths,
-        parts.places
+        parts.places,
+        if parts.grace_lock { "; grace lock ON" } else { "" }
     )
 }
 

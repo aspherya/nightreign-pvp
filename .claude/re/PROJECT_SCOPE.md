@@ -137,7 +137,7 @@ Players begin inside the Nightlord arena, with no expedition phase.
 | Hawk crossing | **Built**, on by default; not run in a Friend Session |
 | Solo / Duo / Trio queue, 6-player matches | Solo queue works over real Steam with 2 players; 6 players and Duo / Trio queues only in automated tests (MM-6) |
 | Private match by password | `private_code` in `nrpvp.toml` (unit-tested only); the in-game "Multiplayer Password" field is the planned route |
-| Sites of Grace blocked in PvP combat | **Not built** (TASKS GRACE-1) |
+| Sites of Grace blocked in PvP combat | **Built** (GRACE-1): flag 7525 ON while a fight lasts (`grace_combat_secs`, 15), per game; `grace-lock` PASS on one PC; two-PC check in FS-HM1 |
 | Respawn far after a mob death | **Built** (RW-7), unit-tested; two-instance check open |
 | Time limit | **Not built**, rule open (§5) |
 | Final-circle stall-breaker | Only the vanilla tide damage |

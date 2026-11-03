@@ -249,10 +249,6 @@ Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements c
 
 ## Not built yet (Leonardo, 2026-11-01; rules in `re/PROJECT_SCOPE.md`)
 
-### GRACE-1 — Sites of Grace blocked during PvP combat (first priority, Leonardo 2026-11-03)
-Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
-Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `features/br_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
-
 ### DUOTRIO-1 — First Duo and Trio tests (Leonardo 2026-11-02; now the official Duo / Trio work)
 Owner: HUMAN + OPUS | Status: **in progress**: `mi-duo-party` (party, queue, expedition as `ally`) PASS 2026-11-02; next scenarios on that base (two teammates): runes shared, revive, HUD / pins of a teammate, a teammate's defeat; then a puppet team scenario for 2 vs 2 / win by team | Depends on: none
 Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.

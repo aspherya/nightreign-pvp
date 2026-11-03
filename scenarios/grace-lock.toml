@@ -1,0 +1,105 @@
+name = "grace-lock"
+about = "GRACE-1: a PvP fight switches every Site of Grace off (flag 7525) for 15 s or until no rival is near: no rival hit = a grace heals; rival hit = no heal, then the timer releases and the grace heals; a hit on a near puppet locks, its down releases early"
+tags = ["rules", "slow"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+grace_combat_secs = 15
+
+[[step]]
+navigate = "title_to_world"
+# The offline expedition of the stock navigation (the Tricephalos card). The Battle Royale card also starts offline (`commence_br`), but its
+# map is random per launch, so no fixed grace handle exists there (checked by hand, testing-log); this card's map is the same every run.
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 0"
+[[step]]
+puppets = 1
+# A real Site of Grace of this card (seen in every run so far, MEMORY_MAP section 26); LOCAL lands 1.5 m from it and is healed on arrival.
+[[step]]
+console = "grace_go 0x3C2D250011000001"
+[[step]]
+sleep_ms = 3000
+# The puppet 50 m from the grace (a hostile near LOCAL trips the game own combat lock, so the control keeps it far; the mod still sees it inside 100 m); LOCAL steps 45 m off to the side of it (a grace heals again only after leaving past 9 m).
+[[step]]
+console = "puppet_move 1 50 0"
+[[step]]
+console = "tp_player 1 0 45"
+[[step]]
+sleep_ms = 2000
+[[step]]
+screenshot = "away"
+
+# 1. No rival hit: the lock is off and the grace heals.
+[[step]]
+console = "hp_set 60"
+[[step]]
+expect = { console = "grace_lock", contains = ["off"], absent = ["ON"] }
+[[step]]
+console = "grace_go 0x3C2D250011000001"
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "control_healed"
+[[step]]
+expect = { console = "grace_status", contains = ["flag 7525 off"], absent = ["hp 60,"] }
+
+# 2. A rival hit: the flag goes ON, the grace gives nothing; after 15 s the flag goes OFF and the player standing there is healed.
+[[step]]
+console = "grace_go 0x3C2D250011000001"
+[[step]]
+console = "puppet_move 1 50 0"
+[[step]]
+console = "tp_player 1 0 45"
+[[step]]
+sleep_ms = 2000
+[[step]]
+console = "hp_set 60"
+[[step]]
+mark = "hit"
+[[step]]
+console = "rival_hit"
+[[step]]
+wait_log = { contains = "grace_lock: ON (a rival hit me)", timeout_s = 10, since = "mark:hit" }
+[[step]]
+expect = { console = "grace_lock", contains = ["ON"] }
+[[step]]
+console = "grace_go 0x3C2D250011000001"
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "locked_no_heal"
+[[step]]
+expect = { console = "grace_status", contains = ["flag 7525 ON", "hp 60,"] }
+[[step]]
+wait_log = { contains = "grace_lock: OFF (15 s without a fight)", timeout_s = 30, since = "mark:hit" }
+[[step]]
+sleep_ms = 3000
+[[step]]
+screenshot = "timer_healed"
+[[step]]
+expect = { console = "grace_status", contains = ["flag 7525 off"], absent = ["hp 60,"] }
+
+# 3. LOCAL hits the near puppet (its HP falls within 30 m): ON. 4. The puppet at 0 HP and no other rival: OFF at once.
+[[step]]
+console = "puppet_move 1 20 0"
+[[step]]
+mark = "puppet"
+[[step]]
+console = "puppet_hp 1 1"
+[[step]]
+wait_log = { contains = "grace_lock: ON (I hit a rival", timeout_s = 10, since = "mark:puppet" }
+[[step]]
+expect = { console = "grace_status", contains = ["flag 7525 ON"] }
+[[step]]
+console = "puppet_hp 1 0"
+[[step]]
+wait_log = { contains = "grace_lock: OFF (no living rival within 100 m)", timeout_s = 10, since = "mark:puppet" }
+[[step]]
+expect = { console = "grace_status", contains = ["flag 7525 off"] }
+[[step]]
+expect_log = { contains = ["grace_lock: ON (a rival hit me)"], absent = ["panicked at", "no free hardware slot"], since = "run" }

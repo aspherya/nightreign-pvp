@@ -79,6 +79,7 @@ Past regression runs: `testing-log/`.
 4. Match A only, if time allows: play on to the end of Day 1. Day 2 must start for everyone (log `Day 2 has begun`), which proves the new host runs the day.
 5. A player defeated after the change drops their items and everyone sees them on the ground.
 6. Bonus: the new host leaves as well. Another migration should follow.
+7. GRACE-1, any match with a fight: when a real rival hits you, `grace_lock: ON (a rival hit me)` appears in your log and a Site of Grace gives nothing for about 15 s; the rival's game does the same for them when you hit back. Note whether the flag stayed per game (the other player's grace still works if they were not fighting).
 
 **If it fails:** write the time it failed and what each screen showed. In the logs, `session: role client -> none` means the session ended with no new host. **Do not repeat a failing way more than once;** go to the next match.
 

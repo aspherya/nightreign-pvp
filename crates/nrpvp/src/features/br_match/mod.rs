@@ -10,7 +10,8 @@
 //! 3. [`spectate::Spectate`] (RW-1): a defeated player watches a living one; F10 leaves.
 //! 4. [`respawn_far::RespawnFar`] (RW-7): records Day-1 places and moves a mob-death respawn far from the others.
 //! 5. [`free_day1::FreeDay1`] (RW-4): slow the clock on Day 1, end it, put the speed back on Day 2.
-//! 6. [`fallback::FlagFallback`]: write the game's flag when our event file is not loaded.
+//! 6. [`grace_lock::GraceLock`] (GRACE-1): flag 7525 ON while LOCAL is in a PvP fight, so no Site of Grace works.
+//! 7. [`fallback::FlagFallback`]: write the game's flag when our event file is not loaded.
 //!
 //! Then [`status::render`] makes the `night_status` text. Who writes a [`MatchBook`] field is named on the field.
 //!
@@ -46,6 +47,7 @@ pub(crate) mod defeat;
 pub(crate) mod elimination;
 pub(crate) mod fallback;
 pub(crate) mod free_day1;
+pub(crate) mod grace_lock;
 pub(crate) mod respawn_far;
 pub(crate) mod spectate;
 pub(crate) mod status;
@@ -102,6 +104,8 @@ pub(crate) struct MatchBook {
     day1_secs: u32,
     /// `defeat_exit_secs` in ms (0 = never). Writer: construction (kept across a reset).
     exit_ms: u64,
+    /// `grace_combat_secs` in ms (0 = the grace lock is off). Writer: [`MatchFeature::new`] (kept across a reset).
+    grace_ms: u64,
     /// Writer: [`Match::step`].
     in_expedition: bool,
     /// Every player seen in this expedition. Writer: [`elimination::Elimination`].
@@ -137,9 +141,10 @@ impl MatchBook {
     /// Back in the Roundtable (or a load): forget the expedition, keep the config values and the console's `night_count`.
     fn reset(&mut self) {
         let (day1_secs, exit_ms, spectate) = (self.day1_secs, self.exit_ms, self.spectate);
-        let count_off = self.count_off;
+        let (count_off, grace_ms) = (self.count_off, self.grace_ms);
         *self = MatchBook {
             count_off,
+            grace_ms,
             day1_secs,
             exit_ms,
             spectate,
@@ -173,6 +178,8 @@ pub(crate) trait MatchRule: std::any::Any {
     fn step(&mut self, t: &Tick, book: &mut MatchBook, out: &mut MatchOut);
     /// Leaving the expedition: forget what this rule learned (the [`MatchBook`] is reset by the caller).
     fn reset(&mut self) {}
+    /// Leaving the expedition, before [`reset`](MatchRule::reset): undo what the rule switched on in the game.
+    fn leave(&mut self, _out: &mut MatchOut) {}
     /// Add this rule's part of the `night_status` line (see [`status`]).
     fn describe(&self, _parts: &mut StatusParts) {}
 }
@@ -203,6 +210,7 @@ impl Match {
                 Box::<spectate::Spectate>::default(),
                 Box::<respawn_far::RespawnFar>::default(),
                 Box::<free_day1::FreeDay1>::default(),
+                Box::<grace_lock::GraceLock>::default(),
                 Box::<fallback::FlagFallback>::default(),
             ],
         )
@@ -237,6 +245,7 @@ impl Match {
                 self.book.reset();
                 self.status.clear();
                 for r in &mut self.rules {
+                    r.leave(&mut out);
                     r.reset();
                 }
                 out.acts.push(Act::DeathHold(false));
@@ -285,8 +294,10 @@ pub(crate) struct MatchFeature {
 impl MatchFeature {
     pub(crate) fn new(cfg: &crate::config::Config) -> Self {
         spectate::set_cfg(cfg.spectate);
+        let mut core = Match::battle_royale(cfg.day1_secs, cfg.defeat_exit_secs, cfg.spectate);
+        core.book.grace_ms = u64::from(cfg.grace_combat_secs) * 1000;
         MatchFeature {
-            core: Match::battle_royale(cfg.day1_secs, cfg.defeat_exit_secs, cfg.spectate),
+            core,
             spectate_cfg: cfg.spectate,
             started: Instant::now(),
         }
