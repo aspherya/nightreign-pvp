@@ -6,12 +6,13 @@
 //! ordered list of [`MatchRule`]s; each tick it calls them in list order, so the order is behaviour:
 //!
 //! 1. [`defeat::Defeat`] (RW-1 / RW-2): judge LOCAL's death, hold a defeated player, send the defeat screen.
-//! 2. [`elimination::Elimination`] (RW-1): who is out, and the match decision.
-//! 3. [`spectate::Spectate`] (RW-1): a defeated player watches a living one; F10 leaves.
-//! 4. [`respawn_far::RespawnFar`] (RW-7): records Day-1 places and moves a mob-death respawn far from the others.
-//! 5. [`free_day1::FreeDay1`] (RW-4): slow the clock on Day 1, end it, put the speed back on Day 2.
-//! 6. [`grace_lock::GraceLock`] (GRACE-1): flag 7525 ON while LOCAL is in a PvP fight, so no Site of Grace works.
-//! 7. [`fallback::FlagFallback`]: write the game's flag when our event file is not loaded.
+//! 2. [`kill_report::KillReport`] (KF-1): LOCAL went down by a rival or is out: tell the killfeed.
+//! 3. [`elimination::Elimination`] (RW-1): who is out, and the match decision.
+//! 4. [`spectate::Spectate`] (RW-1): a defeated player watches a living one; F10 leaves.
+//! 5. [`respawn_far::RespawnFar`] (RW-7): records Day-1 places and moves a mob-death respawn far from the others.
+//! 6. [`free_day1::FreeDay1`] (RW-4): slow the clock on Day 1, end it, put the speed back on Day 2.
+//! 7. [`grace_lock::GraceLock`] (GRACE-1): flag 7525 ON while LOCAL is in a PvP fight, so no Site of Grace works.
+//! 8. [`fallback::FlagFallback`]: write the game's flag when our event file is not loaded.
 //!
 //! Then [`status::render`] makes the `night_status` text. Who writes a [`MatchBook`] field is named on the field.
 //!
@@ -48,6 +49,7 @@ pub(crate) mod elimination;
 pub(crate) mod fallback;
 pub(crate) mod free_day1;
 pub(crate) mod grace_lock;
+pub(crate) mod kill_report;
 pub(crate) mod respawn_far;
 pub(crate) mod spectate;
 pub(crate) mod status;
@@ -206,6 +208,7 @@ impl Match {
             MatchBook::new(day1_secs, exit_secs, spectate),
             vec![
                 Box::<defeat::Defeat>::default(),
+                Box::<kill_report::KillReport>::default(),
                 Box::<elimination::Elimination>::default(),
                 Box::<spectate::Spectate>::default(),
                 Box::<respawn_far::RespawnFar>::default(),

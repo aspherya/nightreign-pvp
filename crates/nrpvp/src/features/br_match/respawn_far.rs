@@ -195,6 +195,7 @@ mod tests {
         w.local_hits = LocalHits {
             last: Some((HitKind::Mob, 10)),
             rival_age_ms: None,
+            rival_id: None,
         };
         run_dead(&mut c, 100, &w);
         // Standing again next to the other player (P2 at x=10): the far place is x=1000.

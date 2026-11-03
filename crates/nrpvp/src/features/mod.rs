@@ -11,6 +11,7 @@ pub(crate) mod br_match;
 pub(crate) mod clock;
 pub(crate) mod effects;
 pub(crate) mod hooks;
+pub(crate) mod killfeed;
 pub(crate) mod mode;
 pub(crate) mod nights;
 
@@ -178,7 +179,8 @@ mod tests {
                 "orbclaim",
                 "maphide",
                 "toastfilter",
-                "hawk"
+                "hawk",
+                "killfeed"
             ]
         );
         let phases: Vec<Phase> = f.0.iter().map(|f| f.phase()).collect();

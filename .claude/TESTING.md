@@ -80,6 +80,7 @@ Past regression runs: `testing-log/`.
 5. A player defeated after the change drops their items and everyone sees them on the ground.
 6. Bonus: the new host leaves as well. Another migration should follow.
 7. GRACE-1, any match with a fight: when a real rival hits you, `grace_lock: ON (a rival hit me)` appears in your log and a Site of Grace gives nothing for about 15 s; the rival's game does the same for them when you hit back. Note whether the flag stayed per game (the other player's grace still works if they were not fighting).
+8. Killfeed, any match with a fight: at the bottom right everyone sees `<name> downed <name>` when a rival knocks someone and `<name> killed <name>` when they are out, with the killer's real name, on every screen, within about a second. Write down one case where a third player hits someone already down: the kill should be theirs.
 
 **If it fails:** write the time it failed and what each screen showed. In the logs, `session: role client -> none` means the session ended with no new host. **Do not repeat a failing way more than once;** go to the next match.
 

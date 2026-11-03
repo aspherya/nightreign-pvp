@@ -23,6 +23,8 @@ pub(crate) enum Act {
     MenuGate(bool),
     /// RW-3: LOCAL was defeated by a rival: its gear drops where it stands (`game::defeatdrop`).
     DropItems,
+    /// KF-1: a line of the killfeed, from the victim's game (`features::killfeed::report`).
+    KillFeed(super::killfeed::KillEvent),
 }
 
 /// Carry out the match rules' requests (the hold of a defeated player, a move, the game's flags, the clock's speed).
@@ -53,6 +55,10 @@ pub(super) fn run_acts(acts: Vec<Act>, t: Targets, mem: &dyn GameMem) {
                 }
                 None => Err("no local player"),
             },
+            Act::KillFeed(ev) => {
+                super::killfeed::report(ev);
+                Ok(())
+            }
             Act::MenuGate(on) => {
                 menugate::set_active(on);
                 Ok(())

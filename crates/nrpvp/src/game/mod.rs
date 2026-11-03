@@ -21,6 +21,7 @@ pub(crate) mod flags;
 pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod gamemem;
+pub(crate) mod gametoast;
 pub(crate) mod hawk;
 pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;

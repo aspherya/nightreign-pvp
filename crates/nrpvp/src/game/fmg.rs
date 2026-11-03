@@ -54,6 +54,13 @@ pub(crate) fn offset_slot(fmg: usize, id: u32) -> Option<(usize, u32)> {
     Some((offsets + idx as usize * 8, count))
 }
 
+/// Address of the UTF-16 text of `id` in `fmg` (`fmg` + its offset slot, as `exe+0x27F5710`).
+pub(crate) fn text_at(fmg: usize, id: u32) -> Option<usize> {
+    let (slot, _) = offset_slot(fmg, id)?;
+    let offset = r64(slot).filter(|o| *o != 0)?;
+    Some(fmg + offset)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

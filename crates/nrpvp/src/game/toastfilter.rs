@@ -147,6 +147,17 @@ pub(crate) fn tick(in_match: bool) {
     }
 }
 
+/// Where row `row` (6100..6130, 10 apart) is in every copy of the table; empty before the scan has found it. For `game::gametoast`, on
+/// the game thread: never blocks.
+pub(crate) fn rows_at(row: u32) -> Vec<usize> {
+    let Some(step) = row.checked_sub(6100).map(|d| d as usize / 10) else {
+        return Vec::new();
+    };
+    STATE.try_lock().map_or(Vec::new(), |st| {
+        st.copies.iter().map(|c| c + step * ROW_SIZE).collect()
+    })
+}
+
 fn scan() {
     let n = needle();
     let r = memscan::scan_aligned(&n, 4 * ROW_SIZE, usize::MAX, 4);

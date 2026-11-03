@@ -35,13 +35,15 @@ pub(crate) mod topic {
     /// id `i`, `0x80 + i` = its count), `value` the field; published by the victim's machine only, once per defeat. (Topics 3 and 4
     /// belong to the rejected rune-record slice on another branch.)
     pub(crate) const ITEM_DROP: u16 = 5;
+    /// KF-1: one line of the killfeed (`features::killfeed::encode`), published by the victim's machine only.
+    pub(crate) const KILL_FEED: u16 = 6;
     /// Dev tests (console `net_publish`).
     #[allow(dead_code)] // used by the dev console and tests
     pub(crate) const TEST: u16 = 0xF000;
 
     /// Topics this build understands: a fact of any other topic is dropped (not recorded, not acked). Add yours here too.
     pub(crate) fn known(t: u16) -> bool {
-        matches!(t, BOSS_VERDICT | ORB_CLAIM | ITEM_DROP | TEST)
+        matches!(t, BOSS_VERDICT | ORB_CLAIM | ITEM_DROP | KILL_FEED | TEST)
     }
 }
 

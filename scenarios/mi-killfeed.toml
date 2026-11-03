@@ -1,0 +1,229 @@
+name = "mi-killfeed"
+about = "KF-1 killfeed, two emulated instances in one Battle Royale expedition as rivals: player 2 goes down by a rival's hit, bleeds out and is out. Both games show the same `downed` and `killed` lines as toasts, with the character names (the victim's game publishes, the other one receives)"
+tags = ["mi", "hud", "slow"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running.
+# The verdict covers the lines in both logs; the toast on the screen is judged on the screenshots kf_*.
+# Run: nro run scenarios\mi-killfeed.toml
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+navigate = "commence_br"
+
+[[step]]
+instance = 2
+navigate = "commence_br"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 14000
+
+# Safe landing: kill the enemies near both players (wolves killed a player mid-test once).
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+# The toast table is found about 35 s after launch and a line waits for it, but the photos must catch the toast.
+[[step]]
+instance = 1
+wait_log = { contains = ["toastfilter: scanned", "copy(ies) of UserDispLogParam"], timeout_s = 90, since = "run" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["toastfilter: scanned", "copy(ies) of UserDispLogParam"], timeout_s = 90, since = "run" }
+
+[[step]]
+instance = 1
+mark = "before"
+
+[[step]]
+instance = 2
+mark = "before"
+
+# A rival's hit, then 0 HP with no die-at-once effect: player 2 goes down. The flag stays ON in a test save from older scenarios.
+[[step]]
+instance = 2
+console = "flag 10007420 0"
+
+[[step]]
+instance = 2
+sleep_ms = 3000
+
+[[step]]
+instance = 2
+console = "rival_hit"
+
+[[step]]
+instance = 2
+console = "hp0"
+
+[[step]]
+instance = 2
+wait_log = { contains = ["killfeed: <font", " downed <font"], absent = ["panicked at"], timeout_s = 20, since = "mark:before" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["killfeed: <font", " downed <font"], absent = ["panicked at"], timeout_s = 20, since = "mark:before" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["gametoast: shown", " downed "], timeout_s = 10, since = "mark:before" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["gametoast: shown", " downed "], timeout_s = 10, since = "mark:before" }
+
+[[step]]
+instance = 1
+screenshot = "kf_downed_p1"
+
+[[step]]
+instance = 2
+screenshot = "kf_downed_p2"
+
+# Still in the rival window when the bleed-out ends: a kill by the rival, on both screens. The match ends with it, after the toast.
+[[step]]
+instance = 2
+console = "rival_hit"
+
+[[step]]
+instance = 2
+wait_log = { contains = ["killfeed: <font", " killed <font"], absent = ["panicked at"], timeout_s = 40, since = "mark:before" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["killfeed: <font", " killed <font"], absent = ["panicked at"], timeout_s = 20, since = "mark:before" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["gametoast: shown", " killed "], timeout_s = 10, since = "mark:before" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["gametoast: shown", " killed "], timeout_s = 10, since = "mark:before" }
+
+[[step]]
+instance = 1
+screenshot = "kf_killed_p1"
+
+[[step]]
+instance = 2
+screenshot = "kf_killed_p2"
+
+[[step]]
+instance = 1
+expect = { console = "killfeed", contains = "2 line(s) shown" }
+
+[[step]]
+instance = 2
+expect = { console = "killfeed", contains = "2 line(s) shown" }
+
+[[step]]
+instance = 1
+expect_log = { absent = ["panicked at", "gametoast: not shown"], since = "run" }
+
+[[step]]
+instance = 2
+expect_log = { absent = ["panicked at", "gametoast: not shown"], since = "run" }

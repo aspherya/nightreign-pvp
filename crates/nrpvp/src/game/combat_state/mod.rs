@@ -104,6 +104,8 @@ pub(crate) struct LocalHits {
     pub last: Option<(HitKind, u64)>,
     /// The last hit (or downed-state hit) a rival dealt.
     pub rival_age_ms: Option<u64>,
+    /// KF-1: that rival's session player id, when the last-attacker handle named one.
+    pub rival_id: Option<u64>,
 }
 
 /// M5-5: the team key of a player: its roster team when the rosters are known, else its own session id (free-for-all).
@@ -145,6 +147,7 @@ pub(crate) struct CombatCtl {
     hit_prev_hp: Option<u32>,
     last_hit: Option<(HitKind, u64)>,
     last_rival_ms: Option<u64>,
+    last_rival_id: Option<u64>,
 }
 
 impl CombatCtl {
@@ -173,6 +176,7 @@ impl CombatCtl {
             hit_prev_hp: None,
             last_hit: None,
             last_rival_ms: None,
+            last_rival_id: None,
         }
     }
 
@@ -186,6 +190,7 @@ impl CombatCtl {
         LocalHits {
             last: self.last_hit.map(|(k, t)| (k, now.saturating_sub(t))),
             rival_age_ms: self.last_rival_ms.map(|t| now.saturating_sub(t)),
+            rival_id: self.last_rival_id,
         }
     }
 
@@ -200,6 +205,18 @@ impl CombatCtl {
         }
         self.last_rival_ms = Some(now);
         self.last_hit = Some((HitKind::Rival, now));
+        if let Some(id) = self.attacking_rival() {
+            self.last_rival_id = Some(id);
+        }
+    }
+
+    /// KF-1: the session player id of the rival LOCAL's last-attacker handle names.
+    fn attacking_rival(&self) -> Option<u64> {
+        let addr = self.subjects.iter().find(|s| s.local)?.addr;
+        let r = read_state(&self.mem, addr);
+        let infos = player_infos(&self.mem, &self.subjects);
+        let a = classify(r.attacker_raw, &infos);
+        (a.kind == AttackerKind::Rival).then_some(a.id).flatten()
     }
 
     /// RW-1: watch LOCAL's HP; a drop is a hit, classified by the last-attacker handle (read right away, while it is fresh).
@@ -436,6 +453,12 @@ impl CombatCtl {
         self.watch_hits();
         if FAKE_RIVAL_HIT.swap(false, std::sync::atomic::Ordering::Relaxed) {
             self.stamp_rival();
+            // The console's hit has no attacker in the game: the first rival did it.
+            self.last_rival_id = self
+                .subjects
+                .iter()
+                .find(|s| !s.local && s.relation == Some(crate::overlay::shared::Relation::Rival))
+                .and_then(|s| s.id);
             tracing::info!("console rival_hit: a rival hit on LOCAL is recorded now");
         }
     }

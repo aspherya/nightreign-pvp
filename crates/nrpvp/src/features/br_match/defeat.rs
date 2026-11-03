@@ -229,6 +229,7 @@ mod tests {
         w.local_hits = LocalHits {
             last: Some((HitKind::Mob, 500)),
             rival_age_ms: None,
+            rival_id: None,
         };
         let (acts, flags, lines) = run_dead(&mut c, 100, &w);
         assert!(!acts.contains(&Act::DeathHold(true)));
@@ -259,6 +260,7 @@ mod tests {
         let env = |age| LocalHits {
             last: Some((HitKind::Env, age)),
             rival_age_ms: None,
+            rival_id: None,
         };
         let mut c = core();
         let mut w = world(&[up(ME, true), up(P2, false)], nf);

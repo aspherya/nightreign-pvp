@@ -1,7 +1,7 @@
 # Toasts and the killfeed (investigation notes, started 2026-10-27)
 
 **Owner of:** everything we know about the game's on-screen toast / notification messages, the "Ally is showing location" leak, and the
-plan to reuse the same mechanism as a **killfeed** (Leonardo's idea, 2026-10-27: a full investigation is planned, nothing here is built).
+**killfeed** built on the same mechanism (Leonardo's idea, 2026-10-27; built 2026-11-03).
 Memory facts go to [MEMORY_MAP.md](MEMORY_MAP.md) once verified; this file is the working notes. Tags: `[VERIFIED]`, `[SOURCE]`, `[HYPOTHESIS]`, `UNKNOWN`.
 
 ## 1. The leak that started this: "Ally is showing location"
@@ -25,30 +25,25 @@ Memory facts go to [MEMORY_MAP.md](MEMORY_MAP.md) once verified; this file is th
   TRAPS). Dev tool: `toast_trace = true` logs who asks for toast texts (`game/toasttrace.rs`).
 - Requirement (RW-9): a rival must not be locatable by a notification either. Teammates keep the toast.
 
-## 2. What we already know about showing text on screen (reusable for a killfeed)
+## 2. The killfeed (KF-1, built 2026-11-03, Claude's design on Leonardo's delegation, DECISIONS)
 
-- The mod already writes **the game's own on-screen messages**: matchmaking status as blinking messages (UI-2). Each message is an event in the
-  Roundtable event script (`gamedata/emevd-events.json`) that waits for a flag (`FLAG_BASE` 10007200 + k) and runs *Display Blinking
-  Message* (2007:4) with a text from `EventTextForMap_dlc01` (`gamedata/fmg-entries.json`, text id `TEXT_BASE` 99100500 + k); the DLL sets the
-  flag (group 10007 only). Code: `crates/nrpvp/src/mm/ui_msg.rs`; texts in 15 languages by the game-data package. Limits seen: the game may
-  drop a new message while one is showing (about one message per 6 s), and our events exist only where our event script is loaded (the
-  Roundtable; the expedition has its own scripts: `defeat`, `match` banners use events 4000 / 4010 `[SOURCE: STATUS, TRAPS]`).
-- Text is localised per client (FMG), so a killfeed line like "<name> defeated <name>" needs **runtime names**, which static FMG entries
-  do not have: UNKNOWN how the game formats a toast with a player name (the ally toast and the "<player> joined" style messages show it exists).
+**What the player sees:** at the bottom right, the game's own toasts, stacked: `Leo downed Bob`, then `Ana killed Bob` or `Bob was consumed by the tide`. The own team's names are blue, everyone else's red. No count of who is left (Leonardo, 2026-11-03). No line for a mob's or a fall's death: the game's own respawn follows, nobody is out.
 
-## 3. Investigation plan (killfeed and toast), in order
+**The rules:** a `downed` line when a rival's hit (last 2 s) puts a player down; a `killed` line when `defeat::Defeat` judges them defeated by a rival, naming the **last rival who hit** (the window of the defeat rule, 30 s: a player who knocks someone and a third player who touches them before the bleed-out ends: the third player gets the kill; there is no finishing blow in our rules). `Player1 + Player3 killed Player2` is not done.
 
-1. **Find the toast producer.** Observe with two instances (`nro`, scenario `mi-rw9-markers`): place a pin on one, `trace_write` / hardware
-   watch the message/FE queue on the other, or hook-log the FE message creation (`CSFeMan` entries, `exe+0x7C67E0` neighbours); use
-   Ghidra/REA on `nightreign.exe` (TOOLS.md) from the string / FMG id of "Ally is showing location" (find its text id in the unpacked FMG
-   `Z:\Tools\nr-unpacked\1.03.3\`, then xrefs).
-2. **Suppress for rivals** (RW-9 acceptance): skip or re-route that toast when the pin's placer is a rival; same style as `hudfilter`.
-3. **Learn the toast API**: the function that shows a toast with an icon and a text with parameters (player name, icon id). If callable from
-   the mod on the main thread, it is the killfeed output: "A defeated B" with the killer / victim names from `night_match` (hit log, defeat
-   state), shown to everyone including the defeated and spectators.
-4. **Killfeed rules**: who sees what (rivals' deaths shown to all, no positions), spam limit, localisation (names are data, the sentence is FMG).
-5. **Acceptance as scenarios** (`mi-*`): kill a rival (`rival_hit` + `hp0` or a real hit), assert the line on the other instance (screenshot +
-   a mod counter), run twice.
+**How it works** `[VERIFIED: mi-killfeed PASS, photos read, 2026-11-03]`:
+- **Who did it:** only the victim's game knows (`PlayerIns+0x1A0`). `features/br_match/kill_report.rs` raises the event; `features/killfeed.rs` publishes it on `net::bus` (topic 6) and shows it; the other games receive it in under half a second.
+- **Names:** `PlayerGameData+0x9C` of each player's copy (MEMORY_MAP §5), read once a second and kept. No Steam name, no id to Steam id map.
+- **The screen:** `game/gametoast.rs`. On the game thread (a call site of the `CSFeMan` update, no hardware slot): write the line over a placeholder text (`99100110..117`), point row 6120 at it, call the toast function, put the row back. Row 6120 is the ally pin toast that is off in a match anyway. The row is known from `toastfilter`'s scan (about 30 s after launch), a line waits for it.
+- A name goes through `gametoast::clean`: the toast reads markup, a name must not bring any.
+
+**Open:** a real hit naming the killer on two PCs (the path is the same `classify` that `T-033 hit` used with real hits in FS-RC1, but the killer's name from it has only been seen with the console's `rival_hit`: TESTING §6 FS-HM1 item 8); whether a rival's hit on a player already down updates the attacker field before the T-041 hook runs (if not, the kill goes to the last rival whose hit took HP). The sentence is English in every language, as our other texts. A name in an alphabet the game's language has no font for shows boxes (CJK in an English game). **The game's own "Near death" toast** (no name) also reaches the rival's screen; it sits above our `downed` line. Vanilla; left alone.
+
+## 3. Ideas left
+- An icon on the row (`toast_icon <id>` tries one; none looks clean).
+- The own name highlighted differently from a teammate's.
+- More than 6 players: the toasts stack and fade by themselves, so nothing here depends on the player count.
+- The `downed` line could go away in Solo, where it only announces the kill 15 s ahead. Kept: it is what the big battle royales show.
 
 ## 4. Test route
 

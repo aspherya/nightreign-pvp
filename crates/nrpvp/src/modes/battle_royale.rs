@@ -25,5 +25,6 @@ pub(crate) fn list(cfg: &Config) -> Vec<Box<dyn Feature>> {
         Box::new(hooks::MapHide::new(team)),
         Box::new(hooks::ToastFilter),
         Box::new(hooks::Hawk),
+        Box::new(crate::features::killfeed::KillFeed::new()),
     ]
 }

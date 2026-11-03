@@ -86,5 +86,6 @@ pub(super) fn rival_hit(w: &mut World, age: u64) {
     w.local_hits = LocalHits {
         last: Some((HitKind::Rival, age)),
         rival_age_ms: Some(age),
+        rival_id: None,
     };
 }

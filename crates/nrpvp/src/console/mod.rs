@@ -125,6 +125,9 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "boss_info", args: "[n]", help: "RW-5 test aid: boss number n of `boss_list`: address, vtable and its NpcParam reward lot fields. Dev only", run: |a| crate::game::teleport::boss_info_cmd(a).map(Act::Reply) },
     Spec { name: "boss_lots", args: "<n> <field> <value>", help: "RW-5 test aid: write one NpcParam reward field (rewardItemLot_1 / rewardItemLot_2 / itemLotId_enemy / ...) of boss n on this game. Dev only", run: |a| crate::game::teleport::boss_lots_cmd(a).map(Act::Reply) },
     Spec { name: "poke",args: "<addr|me+0x..|wcm+0x..|exe+0x..> <hex bytes>", help: "research (ESC while dead, RW-1): write up to 16 bytes of game memory (guarded writable check); `me` = LOCAL's PlayerIns. Logged as `research poke`", run: |a| crate::game::puppet::poke_cmd(a).map(Act::Reply) },
+    Spec { name: "killfeed", args: "", help: "KF-1: how many killfeed lines this game showed, and the last one", run: |_| Ok(Act::Reply(crate::features::killfeed::describe())) },
+    Spec { name: "toast", args: "[text...]", help: "KF-1: show this line as one of the game's toasts (`game::gametoast`); no text = what was shown so far", run: toast },
+    Spec { name: "toast_icon", args: "<id>", help: "KF-1 research: the icon id of the next toasts (`UserDispLogParam`), 0 = none", run: toast_icon },
     Spec { name: "memscan", args: "[utf16|ascii|hex] <text|hex bytes>", help: "research (RW-6): scan the whole process for a string (UTF-16 by default) or bytes on a background thread (about a minute) and log every hit with 64 bytes around it as `memscan:`; no argument shows the last result. Used to find where the game keeps a text the menu shows", run: memscan },
     Spec { name: "rival_hit", args: "", help: "RW-1 test aid: record a rival's hit on this game's player now (the player build's hit log does it for real hits); a death within 30 s after it is a defeat for good, a death without it is a normal one", run: rival_hit },
     Spec { name: "god", args: "[0|1]", help: "test aid: 1 = this game's player is put back to full HP every tick while up (max HP raised to 1,000,000 first, so a boss's hit does not down); 0 off (default); no argument shows it", run: god },
@@ -578,6 +581,23 @@ fn memscan(args: &[String]) -> Result<Act, String> {
         return Err("the pattern must be at least 6 bytes".into());
     }
     crate::game::memscan::start_console_scan(needle).map(Act::Reply)
+}
+
+fn toast(args: &[String]) -> Result<Act, String> {
+    if args.is_empty() {
+        return Ok(Act::Reply(crate::game::gametoast::describe()));
+    }
+    crate::game::gametoast::show(&args.join(" "));
+    Ok(Act::Reply("toast: queued".into()))
+}
+
+fn toast_icon(args: &[String]) -> Result<Act, String> {
+    let id = args
+        .first()
+        .and_then(|a| a.parse::<i32>().ok())
+        .ok_or("usage: toast_icon <id>")?;
+    crate::game::gametoast::ICON.store(id, std::sync::atomic::Ordering::Relaxed);
+    Ok(Act::Reply(format!("toast_icon: {id}")))
 }
 
 fn rival_hit(args: &[String]) -> Result<Act, String> {

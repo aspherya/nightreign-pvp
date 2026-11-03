@@ -36,6 +36,9 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `night_end` | | M5-3: end the current night now. Sets our flag 10007400, which the night-end events (`gamedata/emevd-nights.json`) wait for besides their 10 min fallback; the game's own morning follows (flasks, grace, next day; no heal since M5-5). Acts only at night and only in the host's game; without our event file (Nucleus) the night match writes 7502 itself 1.5 s later (night 1 only). Logs `nights:`. Dev only |
 | `night_status` | | The match rules in this game: `free day 1` / `day n` / `night n` / `match over` (`decided (winner …)`), players, teams seen, how many are out, `LOCAL in` or `defeated by a rival / the tide`, mob deaths, recorded respawn places, and `death held` (RW-1). Answered on the pipe thread. Dev only |
 | `grace_lock` | | GRACE-1: `ON, Sites of Grace are off` while a PvP fight locks the graces (game flag 7525), else `off`. Pipe thread. Dev only |
+| `killfeed` | | KF-1: how many killfeed lines this game showed, and the last one. Pipe thread. Dev only |
+| `toast` | `[text...]` | KF-1: show this line as one of the game's toasts (takes the game's markup); no text = counters. Pipe thread. Dev only |
+| `toast_icon` | `<id>` | KF-1 research: icon id of the next toasts (`UserDispLogParam`), 0 = none. Pipe thread. Dev only |
 | `night_count` | `[0\|1]` | Test switch: 1 (default) the match ends when one team is left standing; 0 it never ends by count. Resets at launch. Dev only |
 | `spectate` | `[0\|1]` | RW-1: 0 = a defeated player's held body stays where it fell (shows what the game itself does for a dead player), 1 = it follows a living player (the mod's spectator; the `spectate` setting's default). Dev only |
 | `rune_watch` | `[0\|1]` | RW-8 research: log which instruction writes LOCAL's rune count (`PlayerGameData+0x6C`, hardware write watch) as `T-041 bar_trace` lines. Dev only |

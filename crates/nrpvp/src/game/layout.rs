@@ -52,6 +52,8 @@ pub(crate) const PLAYER_LAST_ATTACKER: usize = 0x1A0;
 /// Pointer to the player's `CS::PlayerGameData`. The same field the T-015 evidence log called ER's `player_session_holder`
 /// (ER +0x598, shifted +8): that guess was the game-data pointer all along (FS-0 run 7).
 pub(crate) const PLAYER_GAMEDATA: usize = 0x5A0;
+/// UTF-16 character name inside `PlayerGameData`, 16 units with the terminator (the name of the save) `[VERIFIED: peek, 2026-11-03, MEMORY_MAP §5]`.
+pub(crate) const GAMEDATA_NAME: usize = 0x9C;
 /// ER `session_manager_player_entry` shifted by NR's +8. Evidence only (log), not verified.
 pub(crate) const PLAYER_SESSION_ENTRY: usize = 0x6C0;
 /// u8 near-death state: 0 normal, 1 downed, 2 getting up.

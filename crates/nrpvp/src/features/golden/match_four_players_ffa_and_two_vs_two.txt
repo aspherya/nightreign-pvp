@@ -29,7 +29,7 @@ t=000000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 
 t=000100 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
-          acts: DropItems, DeathHold(true)
+          acts: DropItems, DeathHold(true), KillFeed(KillEvent { kind: Killed, victim: 24577, killer: None })
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
           status: free day 1; 4 player(s), 4 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
 t=002000 in: [6001*:hp0/s0 6002:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
@@ -86,7 +86,7 @@ t=000000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] 
 t=000100 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
           .
 t=000900 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
-          acts: DropItems, DeathHold(true)
+          acts: DropItems, DeathHold(true), KillFeed(KillEvent { kind: Killed, victim: 24577, killer: None })
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
           status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
 t=020900 in: [6001*@1:hp0/s0 6002@1:hp0/s1 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
@@ -110,7 +110,7 @@ t=000000 in: [6001*@1:hp240/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] 
 t=000100 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
           .
 t=000900 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)
-          acts: DropItems, DeathHold(true)
+          acts: DropItems, DeathHold(true), KillFeed(KillEvent { kind: Killed, victim: 24577, killer: None })
           log: night_match: LOCAL defeated by a rival: stays dead until the match ends, the defeat screen follows in 20 s
           status: free day 1; 4 player(s), 2 team(s) seen, 0 out; LOCAL defeated by a rival; mob deaths 0; places 0
 t=005000 in: [6001*@1:hp0/s0 6002@1:hp240/s0 6003@2:hp240/s0 6004@2:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 100)) rival_age Some(100)

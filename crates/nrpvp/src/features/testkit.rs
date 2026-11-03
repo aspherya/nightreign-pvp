@@ -134,6 +134,7 @@ impl WorldBuilder {
         self.w.local_hits = LocalHits {
             last: Some((HitKind::Rival, age)),
             rival_age_ms: Some(age),
+            rival_id: None,
         };
         self
     }
@@ -142,6 +143,7 @@ impl WorldBuilder {
         self.w.local_hits = LocalHits {
             last: Some((HitKind::Env, age)),
             rival_age_ms: None,
+            rival_id: None,
         };
         self
     }
@@ -150,6 +152,7 @@ impl WorldBuilder {
         self.w.local_hits = LocalHits {
             last: Some((HitKind::Mob, age)),
             rival_age_ms: None,
+            rival_id: None,
         };
         self
     }
