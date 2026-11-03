@@ -41,13 +41,13 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Release candidate (2026-11-01):** the build of `main` at the audit PRs was tested with a friend in a 2-player Solo match; Leonardo accepted it as the release candidate, core gameplay frozen (DECISIONS). Three checks left for a finished Battle Royale: Grace in combat, Duo/Trio, the revive item.
 
-## 3. Next (Leonardo, 2026-11-02, in this order)
+## 3. Next (Leonardo, 2026-11-03, in this order)
 
-1. **Host leaves mid-match** (top priority): the game has its own host migration; `mi-host-migration` PASS on one PC, a defeated host who leaves too. **Not proven on real Steam after a crash: next test, FS-HM1 (TESTING §6), up to six players, with a fresh zip.** Player count later, on good results. Everything: [HOST_MIGRATION.md](HOST_MIGRATION.md).
-2. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
+1. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
+2. **Finish the match start:** no Invite Members press (MM-3g), the match starts at once (MM-7), no Steam invite on the overlay.
 3. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
 
-**Leonardo checks in the playtests with friends:** Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-3g / MM-7 / MM-8, the 3-team Duo match), FS-RW1.
+**Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 
 Clean-up plan around the next features: docs 1:1 with the product (done in this pass), then a refactor so a new mode is an assembly of existing modules (ARCHITECTURE §6), then better orchestrator scenarios and tooling.
 

@@ -93,7 +93,7 @@ The normal expeditions started from the other cards are vanilla in every checked
 rules follow "this expedition came from our card" and which stay always on; the card signal exists (`menuflow::decide_for_card`), the expedition itself would need a flag set at Commence. First check what really changes in a normal expedition (one short run).
 
 ### MM-3g — No host click: trigger Invite Members from the mod
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: **second priority (Leonardo 2026-11-03), after GRACE-1**; no Steam invite on the overlay is part of it (the quiet invite already swallows the host's window, MATCHMAKING §5; check what a joiner still sees) (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
 UI-0 settled that **no talk command opens Matchmaking Settings or Invite Members** (all NR ESDs + esdtool's command list), so the data route
 is closed. The action is the game's menu code: S9 §5d has the chain (menu functor calls `+0x80D743` → `+0x80E32A` → `+0x213B4F`, session
 code `+0x258568B` / `+0x257F5DA`, the latter obfuscated with no `.pdata`).
@@ -114,7 +114,7 @@ invisible and chosen by the matchmaker; host leaving = match ends cleanly for no
 share one RE spike (both call game menu code from the mod); MM-8 and MM-9 are independent; S10 runs alongside as research.
 
 ### MM-7 — Auto-start: the expedition starts by itself once everyone is here
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: ON HOLD until S10 is reviewed (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Settles: S9 U6
+Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: **second priority (Leonardo 2026-11-03), with MM-3g** (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Settles: S9 U6
 At `ALL PRESENT` (and every player loaded, `players` = roster), the host's mod starts the departure with no Commence press. Route A:
 call the Commence checks `exe+0x9EEBE0` (ordinary code, `re/MEMORY_MAP.md` §13) with a valid menu object, so find what builds that
 object without the menu open; route B: an EMEVD instruction that starts a departure (UNKNOWN whether one exists). Also check whether a
@@ -249,7 +249,7 @@ Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements c
 
 ## Not built yet (Leonardo, 2026-11-01; rules in `re/PROJECT_SCOPE.md`)
 
-### GRACE-1 — Sites of Grace blocked during PvP combat (BACKLOG, Leonardo 2026-11-02)
+### GRACE-1 — Sites of Grace blocked during PvP combat (first priority, Leonardo 2026-11-03)
 Owner: OPUS (RE) → SONNET/implementer | Status: todo, first priority | Depends on: none
 Rule (PROJECT_SCOPE §6): while a player is engaged in PvP, a Site of Grace must not restore HP or flasks; access returns when combat ends (the opponent dies, the player flees or disengages). Needs: a per-player "in PvP combat" state (hit log of `features/br_match` is the source), the rest/restore path of a grace (MEMORY_MAP: UNKNOWN), a way to veto it. Acceptance: a scenario with a puppet rival hitting LOCAL, then a grace rest that must not restore; after the combat timer it must. Console access via `add-console-command`.
 
