@@ -129,7 +129,11 @@ Today the queue lobby owner becomes host (luck). Each member publishes its Steam
 hosts (no host wording in messages once MM-3g/MM-7 land). Verify the Steam API calls exist in the game's `steam_api64.dll` first.
 
 ### MM-9 — Host leaves mid-match: end the match cleanly (v1), find what SC does
-Owner: OPUS (runbook) → HUMAN (FS) → SONNET/implementer | Status: ready (FS observation first)
+Owner: OPUS (runbook) → HUMAN (FS) → SONNET/implementer | Status: **FIRST PRIORITY (Leonardo, 2026-11-02)**
+**Leonardo's worry:** the host is defeated, becomes a spectator and quits (F10 or the menu): if that drops every client, the match is ruined. Assumed, not seen.
+**Step 1 first result (2026-11-02, `mi-host-leave`, testing-log):** when the host's game leaves the expedition the client is not dropped or crashed: it follows to the Roundtable about 12 s later, and the match ends for everybody (confirmed for that exit). Still unseen: F10 / menu / title exit of a HELD host (the test aid made the host leave by itself 4 s after the defeat), and a hard kill of the host's game.
+**Step 2 result (2026-11-02, `mi-host-kill`, 3 instances, host killed abruptly):** the clients keep playing together for about 55 s, then lose each other (each ends up alone), the expedition ends for them (the game's Result screen) and they return to the Roundtable; no crash, no title screen. So a dying host ends the match for everybody about a minute later. A v1 therefore cannot keep the match alive without host migration; what is left for v1 is to **keep the host from leaving** while others play (F10 / menu exit of a defeated host) and to tell the others clearly why the match ended.
+**Order:** (1) one short check with two instances (a `defeat-rival` style run, then the defeated host leaves: what does the client's game do?), no friend needed; (2) v1 from what it shows: keep the others playing, or end the match cleanly with a message; (3) real host migration is S10 / NETWORKING, later.
 FS step: in an expedition the host quits (title screen, then Alt-F4 in a second round); log and note what each joiner's screen does
 (kicked to title? Roundtable? stays in a broken world?) and what SC shows. Then v1: the joiners' mods detect the host's loss and show
 "The host left - match over" and return everyone to idle. Feeds S10 (host migration).

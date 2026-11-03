@@ -1,0 +1,277 @@
+name = "mi-host-leave"
+about = "MM-9 observation on one PC: two emulated instances reach an expedition as rivals; the HOST is defeated by a rival (rival_hit + hp0), spectates, then leaves with F10 (defeat screen, Roundtable); the client is observed for about a minute (status, mm_status, players, screenshots). Not a pass / fail test: the replies and screenshots are the result (does the client drop, stay, or get a broken world?)"
+tags = ["mi"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
+# instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
+# Run: nro run scenarios\mi-host-leave.toml --mod-dist <dev dist>
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+screenshot = "host_match_ready"
+
+# The host opens its Seamless Co-op lobby the player's way (Matchmaking Settings > Invite Members); the quiet invite swallows the
+# invite window, the host's mod invites the roster, gbe auto-accepts on the joiner.
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"], absent = ["panic"] }
+
+[[step]]
+instance = 1
+expect_log = { contains = ["mm_join: ALL PRESENT 2/2"], since = "run" }
+
+[[step]]
+instance = 1
+screenshot = "host"
+
+[[step]]
+instance = 2
+screenshot = "joiner"
+
+# The expedition: every party member readies at the table (the party list counts n/2), the host first.
+[[step]]
+instance = 1
+navigate = "commence"
+
+[[step]]
+instance = 2
+navigate = "commence"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+expect = { console = "mm_status", contains = ["IN EXPEDITION"] }
+
+[[step]]
+instance = 2
+expect = { console = "mm_status", contains = ["IN EXPEDITION"] }
+
+[[step]]
+instance = 1
+screenshot = "host_expedition"
+
+[[step]]
+instance = 2
+screenshot = "joiner_expedition"
+
+# Off the start hawks, land, kill the enemies near both players (wolves killed a player mid-test once).
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 14000
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+# --- The HOST is defeated by a rival (rival_hit + hp0, as the client is in mi-rw3-items) and becomes a spectator.
+[[step]]
+instance = 1
+console = "flag 10007420 1"
+
+[[step]]
+instance = 1
+console = "rival_hit"
+
+[[step]]
+instance = 1
+sleep_ms = 1000
+
+[[step]]
+instance = 1
+console = "hp0"
+
+[[step]]
+instance = 1
+wait = { console = "night_status", contains = "defeated by a rival", timeout_s = 40 }
+
+[[step]]
+instance = 1
+wait = { console = "night_status", contains = ["watching"], timeout_s = 40 }
+
+# What the client sees while the host spectates (baseline).
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 2
+screenshot = "client_host_spectating"
+
+# --- The host leaves: F10 (the defeat screen, then the Roundtable).
+[[step]]
+instance = 1
+keys = "F10"
+
+[[step]]
+instance = 1
+wait_log = { contains = ["the leave key was pressed"], timeout_s = 20, since = "run" }
+
+# Observation of the client: it is not asserted, the replies are the result (a dead client makes the console step fail).
+[[step]]
+instance = 2
+sleep_ms = 6000
+
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 2
+screenshot = "client_host_leaving_6s"
+
+[[step]]
+instance = 2
+sleep_ms = 20000
+
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 2
+console = "mm_status"
+
+[[step]]
+instance = 2
+console = "players"
+
+[[step]]
+instance = 2
+console = "night_status"
+
+[[step]]
+instance = 2
+screenshot = "client_host_leaving_26s"
+
+[[step]]
+instance = 1
+console = "status"
+
+[[step]]
+instance = 1
+screenshot = "host_after_leave"
+
+[[step]]
+instance = 2
+sleep_ms = 25000
+
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 2
+screenshot = "client_host_leaving_51s"

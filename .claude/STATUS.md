@@ -41,18 +41,13 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Release candidate (2026-11-01):** the build of `main` at the audit PRs was tested with a friend in a 2-player Solo match; Leonardo accepted it as the release candidate, core gameplay frozen (DECISIONS). Three checks left for a finished Battle Royale: Grace in combat, Duo/Trio, the revive item.
 
-## 3. Next (Leonardo, 2026-11-02: UI improvements first; items 1-3 below are BACKLOG, only simple work with a valid result)
+## 3. Next (Leonardo, 2026-11-02, in this order)
 
-**Now:** refactor for decoupled, plug-and-play modules and better test tooling (plan: TASKS "Clean-up phases 2 and 3"), then the three checks below.
+1. **Host leaves mid-match** (MM-9, Leonardo's worry): a host who is defeated, spectates and then quits must not drop everybody else. First one short two-instance check of what the joiners see; then a v1 that keeps the match alive or ends it cleanly; real host migration after (S10, [NETWORKING.md](NETWORKING.md)).
+2. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
+3. **Killfeed:** first lines without names ("a team was eliminated, N left"), then names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)).
 
-Cards in [TASKS.md](TASKS.md) ("Not built yet").
-
-1. **Sites of Grace blocked during PvP combat** (GRACE-1): no HP / flask restore while engaged.
-2. **Duo and Trio first tests** (DUOTRIO-1): never run by us.
-3. **Revive item in Solo:** test whether the vanilla revive item already behaves as wanted (SOLO-REVIVE); the die-at-once rule and a **match time limit** are open ideas without schedule.
-4. Two-instance checks: respawn far (F1), the other screen of a defeat and spectating (D1), private match (D7).
-5. Friend session FS-RW1 (TESTING §6) with a fresh zip.
-6. Matchmaking: MM-3g + MM-7 (no Invite click), MM-8, MM-9, MM-6 (Duo/Trio); pin toast and killfeed idea ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)); spectator camera smoothness.
+**Leonardo checks in the playtests with friends:** Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-3g / MM-7 / MM-8, the 3-team Duo match), FS-RW1.
 
 Clean-up plan around the next features: docs 1:1 with the product (done in this pass), then a refactor so a new mode is an assembly of existing modules (ARCHITECTURE §6), then better orchestrator scenarios and tooling.
 
