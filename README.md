@@ -1,63 +1,334 @@
-# Nightreign PvP
+# NIGHTREIGN PVP
 
-PvPvE / Battle Royale mod for ELDEN RING NIGHTREIGN. It runs next to Seamless Co-op, with no anti-cheat and no connection to
-the official matchmaking servers.
+A PVP Mod that includes Battle Royale and Arena (Coming soon) modes for **ELDEN RING NIGHTREIGN**. Players queue from the game's own expedition menu, land on Limveld as rivals, fight
+each other and the map's enemies, and the last player or team standing wins.
 
-**The mod only loads when the game is started with `nrpvp_launcher.exe` (players) or `scripts\launch.ps1` (developer).**
-Steam's Play button starts the normal game with anti-cheat and without the mod; that is how to play the normal game.
+It runs on top of [Seamless Co-op](#requirements), with no anti-cheat and no connection to the official matchmaking servers. There is no
+server of ours and no overlay: players find each other through Steam lobbies, and everything on screen is the game's own menus and messages.
 
-## Build (developer PC)
+> **Status: pre-release.** The Solo mode is playable and has been played on two PCs. Some of the newest parts are only proven on one PC:
+> see [What works today](#what-works-today).
 
-Needs: Rust (stable, `x86_64-pc-windows-msvc`), me3 0.11.0 in `Z:\Tools\me3`, the game with Seamless Co-op 1.1.3 installed.
-Close the game first: the build cannot replace a DLL that is in use.
+**Contents:** [For players](#for-players) · [The rules](#the-rules) · [What works today](#what-works-today) ·
+[For developers](#for-developers) · [The test orchestrator (`nro`)](#the-test-orchestrator-nro) · [Project layout](#project-layout) ·
+[Documentation](#documentation) · [Safety and legal](#safety-and-legal)
 
-1. Build the mod. Output: `dist\nrpvp.dll`.
+---
 
-```powershell
-powershell -NoProfile -File scripts\build.ps1
-```
+## For players
 
-1b. Build the game data (needs the 1.03.3 unpack and Python, `.claude/TOOLS.md`); the packaging script refuses to run without `dist\gamedata`:
+### Requirements
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1
-```
+- ELDEN RING NIGHTREIGN on Steam, version **1.03.3**
+- Seamless Co-op for Nightreign, version **1.1.3**, installed in the game folder
+- The same mod zip on every PC
 
-2. Make the zip to send. The full guide (settings, friend test, more players): [.claude/RELEASE.md](.claude/RELEASE.md). Pick one:
+Nothing else is needed: the zip brings its own copy of [me3](https://github.com/garyttierney/me3), the mod loader.
 
-| Zip | Command | For |
+### Install
+
+1. Back up `%APPDATA%\Nightreign`, where the saves live.
+2. In Steam, right-click the game > **Manage** > **Browse local files**, then open `Game`. It is the folder with `nightreign.exe` and
+   `nrsc_launcher.exe`.
+3. If an older version is there, delete `nrpvp_launcher.exe` and the `NightreignPvP` folder.
+4. Drag `nrpvp_launcher.exe` and the whole `NightreignPvP` folder from the zip into that folder.
+
+**To uninstall,** delete the same two items. Nothing else is changed.
+
+### Play
+
+1. Start Steam, then double-click **`nrpvp_launcher.exe`**.
+2. At the Roundtable table, open the expedition list and pick the **Battle Royale** card, the last one in the list.
+3. In **Matchmaking Settings**, set **Number of Players** to **Solo**.
+4. Press **Commence**. To stop searching, press the same button again.
+
+That is the last click. When the match is found, everyone is brought together and the expedition starts by itself, about a minute later.
+
+> The mod only loads through `nrpvp_launcher.exe`. Steam's **Play** button starts the normal game with anti-cheat and without the mod, which
+> is how you play the normal game. Any other card in the list is also a normal expedition.
+
+### In a match
+
+| Situation | What happens |
+|---|---|
+| Start | Everyone rides the hawk along one line across the map and chooses where to jump |
+| You are killed by an enemy, a boss or a fall | Normal death: you respawn, far from other players |
+| You are at 0 HP after a rival's hit | You are knocked. Each further hit from a rival takes 3 s off your 15 s bleed-out |
+| You are defeated by a rival or the Night's Tide | You are out for good, and your camera follows a living player |
+| While you watch | Mouse buttons or d-pad left / right switch player, **F10** leaves to the Roundtable, **Esc** or pad **Start** open the menu |
+
+### Settings
+
+Optional. Add them to `NightreignPvP\nrpvp.toml`. Match settings must be the same on every PC.
+
+| Key | Default | Meaning |
 |---|---|---|
-| `dist\NightreignPvP.zip` | `powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1` | Normal player build: PvP always on, Battle Royale Solo queue in the table menu (`matchmaking = true`). Options: `-MatchPlayers N`, `-TeamSize N` (pre-release match size) |
+| `day1_secs` | `1020` | Real seconds of the free Day 1 and Night 1 (120 to 3600). `0` is the vanilla Day 1 |
+| `defeat_exit_secs` | `0` | Seconds from a defeat to the defeat screen. `0` means watch until the match ends |
+| `spectate` | `true` | A defeated player's camera follows a living player |
+| `private_code` | empty | Players with the same code meet in a private queue |
+| `matchmaking` | `true` | `false` turns the queue off |
 
-The packaging script builds its own **player** `nrpvp.dll` (without the developer tooling) into `target\player\`, so step 1 is only
-needed for developer launches (`scripts\launch.ps1`, `nro`). Developers drive a running developer game with `dist\nrcon.exe`
-(see `.claude/CONSOLE.md`).
-`NightreignPvP\VERSION.txt` inside the zip says when and from which commit it was built.
+### If something goes wrong
 
-3. Send the zip. **Both players must install the same zip**, including you.
+- **"This launcher must be in the game folder":** the files are in the wrong place. Go back to [Install](#install), step 2.
+- **"Seamless Co-op was not found":** install Seamless Co-op first.
+- **The game does not start:** make sure Steam is running.
+- **Windows asks to run the file:** choose **Run**, or **More info** > **Run anyway** on a blue "Windows protected your PC" box.
+- **Never matched:** everyone needs the same zip. Compare `NightreignPvP\VERSION.txt` on each PC.
 
-To try a build alone on the developer PC without installing a zip:
+To report a problem, send the `NightreignPvP\logs` folder.
+
+---
+
+## The rules
+
+Battle Royale is built for 6 players: 6 solos, 3 duos or 2 trios. Pre-release zips usually start at 2 players, so a test needs only one friend.
+
+- **PvP is always on.** Rivals are marked as hostile automatically, and normal enemies keep fighting everyone.
+- **Day 1 and Night 1 are free:** no Night's Tide, no night and no boss. Day 2 and Night 2 use the vanilla tide, which shrinks the map.
+- **No Day 3 and no Nightlord.** The match ends the moment one team is left, on any day.
+- **Rivals are hidden:** no map or compass mark, party bar or name tag, and their map pins are hidden too. A locked-on target keeps its name tag.
+- **Defeat drops:** a rival's kill drops the victim's weapons (level kept), talismans and picked-up consumables where they fell, for anyone to
+  take. Runes are discarded.
+- **Runes from enemies** go only to the killer's team.
+- **Enemy strength** follows the team size, not the number of players in the session.
+- **Sites of Grace** give nothing to a player in a PvP fight, until 15 s after the last hit or until no rival is near.
+- **Killfeed:** `A downed B` and `A killed B` appear as the game's own messages, with character names.
+
+The full specification, including the planned Arena mode, is in [PROJECT_SCOPE.md](.claude/re/PROJECT_SCOPE.md).
+
+---
+
+## What works today
+
+"One PC" means two real game instances with an emulated Steam, driven by [`nro`](#the-test-orchestrator-nro). Only a session on two PCs can
+prove real networking. The current state is always in [STATUS.md](.claude/STATUS.md).
+
+| Feature | Proven on | Open |
+|---|---|---|
+| PvP between players, rival marking | Two PCs, real Steam | |
+| Solo matchmaking and one-click install | Two PCs, real Steam (2 players, older build with one host click) | 6 players only in automated tests |
+| No click after Commence | One PC | Real Steam: the join link, and whether Steam shows a notification |
+| Battle Royale card | One PC | Two PCs |
+| Hawk crossing | One game | Two PCs |
+| Match rules: defeat, respawn, free Day 1, early win | One PC | Two PCs |
+| Spectating | Three instances under Nucleus | Camera smoothness |
+| Defeat drops, team runes, hidden rivals | One PC | Two PCs, Duo / Trio teammates |
+| Sites of Grace lock, killfeed | One PC | Two PCs |
+| Host migration (the game's own) | One PC | Real Steam |
+| Duo and Trio | A Duo party reaches an expedition, on one PC | The 3-team match, rules between teammates, Trio |
+
+**Not built yet:** match time limit, the in-game password field for private matches, the Arena mode.
+
+**Known issues:** the game often crashes when quitting (heap corruption, cause unproven), and the table menu stays open during the departure.
+
+---
+
+## For developers
+
+### Build requirements
+
+| Tool | Version | Note |
+|---|---|---|
+| Rust | stable, `x86_64-pc-windows-msvc` | Pinned in `rust-toolchain.toml` |
+| MSVC Build Tools | | "link: extra operand" means they are missing |
+| me3 | 0.11.0 | Expected in `Z:\Tools\me3` |
+| Game + Seamless Co-op | 1.03.3 + 1.1.3 | Hashes in `pins/nightreign.toml`, which also holds the game path |
+| Game unpack + Python | | Only for the game data, see [TOOLS.md](.claude/TOOLS.md) |
+
+The mod is tied to one game version. **If the game updates, stop:** the addresses must be verified again.
+
+### Build and run
+
+Run from the repository root, with the game closed. The build cannot replace a DLL in use.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\launch.ps1
+powershell -NoProfile -File scripts\build.ps1                     # developer DLL, nrcon and nro
+powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1  # event scripts, texts, regulation.bin
+powershell -ExecutionPolicy Bypass -File scripts\launch.ps1       # start the game with the developer build
 ```
 
-## Install (every player, including the developer)
+While a developer game runs, drive it with the console (commands in [CONSOLE.md](.claude/CONSOLE.md)):
 
-Needs: ELDEN RING NIGHTREIGN on Steam and Seamless Co-op for Nightreign, the same version on every PC (1.1.3 today).
+```powershell
+dist\nrcon.exe status
+dist\nrcon.exe players
+dist\nrcon.exe log 30
+```
 
-1. Back up `%APPDATA%\Nightreign` (the Seamless Co-op saves live there).
-2. Open the game folder: in Steam, right-click the game > Manage > Browse local files, then open `Game`.
-   It is the folder with `nightreign.exe` and `nrsc_launcher.exe`.
-3. If an older version is there, delete the `NightreignPvP` folder and `nrpvp_launcher.exe`.
-4. Drag `nrpvp_launcher.exe` and the whole `NightreignPvP` folder from the zip into the game folder.
-5. Start Steam, then double-click `nrpvp_launcher.exe`.
+### Build a player zip
 
-The zip also contains `HOW TO INSTALL.txt` with the same steps for players.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2
+```
 
-Uninstall: delete `nrpvp_launcher.exe` and the `NightreignPvP` folder. Nothing else is changed.
+This writes `dist\NightreignPvP.zip` and builds its own player DLL, without the developer tooling. `-MatchPlayers N` (2 to 6) is how many
+players start a match. Everyone who should meet needs the same N. The full procedure is in [RELEASE.md](.claude/RELEASE.md).
 
-## After a test
+### Checks before a commit
 
-Each player sends the folder `<game folder>\NightreignPvP\logs`. The current friend-session steps and what to write down are in
-[.claude/TESTING.md](.claude/TESTING.md) §6 (the current friend-session runbook).
+The same checks run in GitHub Actions.
+
+```powershell
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy -p nrpvp --no-default-features --all-targets -- -D warnings
+cargo test --workspace
+```
+
+---
+
+## The test orchestrator (`nro`)
+
+`nro` launches a **developer** copy of the game through me3, never online and without anti-cheat. It plays it like a player (console, keys,
+screenshots), can fill it with AFK puppet players, and runs **scenarios**: lists of steps with checks. Every command prints JSON, and everything
+it writes goes to `runs\<id>\`.
+
+### Setup
+
+1. Build as above, including the game data.
+2. Start the desk in a **normal terminal** and leave it open. It serves keys and screenshots:
+
+   ```powershell
+   New-Item -ItemType Directory -Force runs | Out-Null
+   Copy-Item target\release\nro.exe runs\nro-desk.exe
+   runs\nro-desk.exe desk
+   ```
+
+   Running a copy keeps `target\release\nro.exe` free for the next build.
+3. In your working terminal, make the command short:
+
+   ```powershell
+   Set-Alias nro .\target\release\nro.exe
+   ```
+
+Keep the PC awake, unlocked and untouched while a run uses keys. `nro env` shows the versions, the relevant processes and the current session.
+
+### Run one game by hand
+
+Steam must be running.
+
+```powershell
+nro launch --world --set mode=offline   # safety checks, launch, press through to the Roundtable
+nro navigate expedition                 # Roundtable to the offline Solo expedition
+nro puppets 3                           # 3 AFK puppet players, who count as rivals
+nro cmd players                         # any console command
+nro cmd "night_status"                  # what the match rules see
+nro keys "F; wait 2s; click 0.5 0.5"    # keys and mouse into the game window
+nro shot after_kill                     # screenshot into runs\<id>\shots\
+nro log 50 night_match                  # last 50 mod log lines containing that text
+nro stop                                # always end with this
+```
+
+### Run scenarios
+
+```powershell
+nro scenarios --tag smoke                                                # list them; tags: smoke rules hud mi slow lab
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 -Tag smoke  # the quick sanity pair
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1 day1-free   # by name, one PASS / FAIL line each
+powershell -ExecutionPolicy Bypass -File scripts\regress.ps1             # everything except the mi and lab tags
+nro run scenarios\day1-free.toml                                         # one scenario with the full JSON report
+```
+
+**PASS** means every check held. **FAIL** means the game did something else than expected, so read the log around that step. **ABORTED** means
+it never got there, for example a menu did not open or the PC locked. The results are in `runs\<id>\report.json`, `mod\nrpvp.log` and `shots\`.
+
+### Two real instances on one PC
+
+For anything that needs two games: matchmaking, drops seen by both, hidden rivals. Each instance gets an emulated Steam id, so **Steam must be
+closed**.
+
+```powershell
+nro stop --all
+nro run scenarios\mi-zero-click.toml   # the whole player flow, no click after Commence
+```
+
+To explore by hand, add `--i N` to any command:
+
+```powershell
+nro launch --emulated 1
+nro launch --emulated 2
+nro cmd players --i 2
+nro shot a --i 1
+nro stop --all
+```
+
+This needs about 20 GB of free RAM for two games, the emulator files from the Nucleus handler folder (or the folder in `NRO_EMU_SRC`), and
+Allow-Private firewall rules for the instance folders. Run `nro` from a normal terminal or PowerShell. Only one run at a time works on a PC.
+
+### Write a scenario
+
+Copy the nearest file in `scenarios\`. `[config]` keys go over the staged `nrpvp.toml`, then the steps run in order:
+
+```toml
+name = "my-check"
+about = "One line: what this proves"
+
+[config]
+mode = "offline"
+mm_queue = false
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+puppets = 1
+[[step]]
+console = "rival_hit"
+[[step]]
+console = "hp0"
+[[step]]
+wait = { console = "night_status", contains = ["defeated by a rival"], timeout_s = 30 }
+[[step]]
+screenshot = "done"
+```
+
+Reach a state with console commands rather than keys. Every step type is in [GUIDE.md](.claude/orchestrator/GUIDE.md), and what each scenario proves is
+in [SCENARIOS.md](.claude/orchestrator/SCENARIOS.md).
+
+---
+
+## Project layout
+
+| Path | What it is |
+|---|---|
+| `crates/nrpvp` | The mod (`nrpvp.dll`) |
+| `crates/nrpvp-launcher` | `nrpvp_launcher.exe`, the player's one-click start |
+| `crates/nrcon` | `nrcon.exe`, the console client for a running developer game |
+| `crates/nro`, `nro-core`, `nro-mcp` | The orchestrator and its MCP server |
+| `gamedata/` | Sources of the game data: texts, event scripts, the Battle Royale card |
+| `scenarios/` | Automated test scenarios |
+| `profiles/`, `pins/` | me3 profiles, and the versions and hashes every launch is checked against |
+| `scripts/`, `tools/` | Build, launch, packaging and regression scripts, and the regulation writer |
+| `.claude/` | All project documentation |
+
+Inside the mod, game memory lives in `crates/nrpvp/src/game/`, matchmaking in `mm/`, the Steam calls in `steam/`, the match rules in `features/` and
+the data channel between games in `net/`.
+
+## Documentation
+
+| Read | For |
+|---|---|
+| [STATUS.md](.claude/STATUS.md) | What works, what is deployed, what is next |
+| [PROJECT_SCOPE.md](.claude/re/PROJECT_SCOPE.md) | The product specification |
+| [ARCHITECTURE.md](.claude/ARCHITECTURE.md) | Code structure and coding rules |
+| [MATCHMAKING.md](.claude/MATCHMAKING.md) | How the queue and the match start work, and how to read their logs |
+| [MEMORY_MAP.md](.claude/re/MEMORY_MAP.md) | Every game address we use and how it was confirmed |
+| [TOOLS.md](.claude/TOOLS.md), [CONSOLE.md](.claude/CONSOLE.md) | Build tools, test routes, console commands |
+| [RELEASE.md](.claude/RELEASE.md) | Building and releasing the player zip |
+| [TESTING.md](.claude/TESTING.md), [TRAPS.md](.claude/TRAPS.md) | Test plans and runbooks, and mistakes already made |
+
+[.claude/CLAUDE.md](.claude/CLAUDE.md) has the full map of the documentation and the working rules of the project.
+
+## Safety and legal
+
+- **Never go online with a modded game.** Start it only through `nrpvp_launcher.exe`, `scripts\launch.ps1` or `nro`, which run without
+  EasyAntiCheat. Never start `start_protected_game.exe` with mods present.
+- Back up `%APPDATA%\Nightreign` before you install. Mod sessions use Seamless Co-op's own save files, separate from the vanilla save.
+- Seamless Co-op is closed-source third-party software. This project does not modify or redistribute it: players install it themselves, and the mod only
+  works alongside it at run time.
+- This is an unofficial fan project, not affiliated with or endorsed by FromSoftware, Bandai Namco or the author of Seamless Co-op. Use it at your own risk.
+- The crates declare `MIT OR Apache-2.0` in `Cargo.toml`. me3 is bundled in the player zip under its own license files.
