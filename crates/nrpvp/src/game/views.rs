@@ -4,12 +4,12 @@
 
 use super::gamemem::GameMem;
 use super::layout::{
-    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, BR_CARD_KIND,
-    BR_CARD_SLOT, CHR_HANDLE, CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE,
-    DATA_MODULE_HP, MENU_CARD_KIND, MENU_CARD_SLOT, MENU_SETTINGS, MENU_SETTINGS_PLAYERS,
-    PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING, PLAYAREA_SET_HOUR,
-    PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED, PLAYER_MODULES,
-    PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
+    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, BR_CARD_ROW,
+    CHR_HANDLE, CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE,
+    DATA_MODULE_HP, MENU_SETTINGS, MENU_SETTINGS_PLAYERS, MENU_SETTINGS_TARGETS_BEGIN,
+    MENU_SETTINGS_TARGETS_END, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
+    PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED,
+    PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -104,12 +104,29 @@ impl<'m> ExpeditionMenu<'m> {
         ExpeditionMenu { mem, addr }
     }
 
-    /// True when the selected card of the expedition list is our Battle Royale card, false for any other card, `None` when the menu
-    /// cannot be read (`layout::MENU_CARD_KIND`).
+    /// True when our Battle Royale card is among the targets chosen in the expedition list, false for any other choice, `None` when the
+    /// menu cannot be read (`layout::MENU_SETTINGS_TARGETS_BEGIN`).
     pub(crate) fn is_battle_royale_card(&self) -> Option<bool> {
-        let kind = self.mem.read_u32(self.addr.checked_add(MENU_CARD_KIND)?)?;
-        let slot = self.mem.read_u32(self.addr.checked_add(MENU_CARD_SLOT)?)?;
-        Some(kind == BR_CARD_KIND && slot == BR_CARD_SLOT)
+        /// More targets than this is not a list (the game sends at most 20, `exe+0xDF9EB5`).
+        const MAX_TARGETS: usize = 20;
+        let s = self.mem.read_ptr(self.addr.checked_add(MENU_SETTINGS)?)?;
+        // Not `read_ptr`: the end of a list of 4-byte values is not 8-aligned.
+        let begin = self
+            .mem
+            .read_u64(s.checked_add(MENU_SETTINGS_TARGETS_BEGIN)?)? as usize;
+        let end = self
+            .mem
+            .read_u64(s.checked_add(MENU_SETTINGS_TARGETS_END)?)? as usize;
+        let n = end.checked_sub(begin)? / 4;
+        if n > MAX_TARGETS {
+            return None;
+        }
+        for i in 0..n {
+            if self.mem.read_u32(begin.checked_add(i * 4)?)? as i32 == BR_CARD_ROW {
+                return Some(true);
+            }
+        }
+        Some(false)
     }
 
     /// Its matchmaking settings object, when the pointer is plausible.
@@ -453,24 +470,27 @@ mod tests {
     #[test]
     fn only_our_card_reads_as_battle_royale() {
         let m = FakeMem::default();
-        let menu = 0x10_0000;
-        m.put_u32(menu + MENU_CARD_KIND, BR_CARD_KIND);
-        m.put_u32(menu + MENU_CARD_SLOT, BR_CARD_SLOT);
-        assert_eq!(
-            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
-            Some(true)
-        );
-        m.put_u32(menu + MENU_CARD_KIND, 4); // the Everdark Tricephalos
-        assert_eq!(
-            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
-            Some(false)
-        );
-        m.put_u32(menu + MENU_CARD_KIND, BR_CARD_KIND);
-        m.put_u32(menu + MENU_CARD_SLOT, 1);
-        assert_eq!(
-            ExpeditionMenu::new(&m, menu).is_battle_royale_card(),
-            Some(false)
-        );
+        let (menu, settings, list) = (0x10_0000, 0x20_0000, 0x30_0000);
+        m.put_u64(menu + MENU_SETTINGS, settings as u64);
+        let card = |targets: &[u32]| {
+            for (i, t) in targets.iter().enumerate() {
+                m.put_u32(list + i * 4, *t);
+            }
+            m.put_u64(settings + MENU_SETTINGS_TARGETS_BEGIN, list as u64);
+            m.put_u64(
+                settings + MENU_SETTINGS_TARGETS_END,
+                (list + targets.len() * 4) as u64,
+            );
+            ExpeditionMenu::new(&m, menu).is_battle_royale_card()
+        };
+        assert_eq!(card(&[BR_CARD_ROW as u32]), Some(true));
+        assert_eq!(card(&[0]), Some(false));
+        assert_eq!(card(&[100]), Some(false)); // The Deep of Night, of which our row is a copy
+        assert_eq!(card(&[3, BR_CARD_ROW as u32]), Some(true)); // several selected
+        assert_eq!(card(&[]), Some(false));
+        // A pointer pair that is no list.
+        m.put_u64(settings + MENU_SETTINGS_TARGETS_END, (list + 0x1000) as u64);
+        assert_eq!(ExpeditionMenu::new(&m, menu).is_battle_royale_card(), None);
         assert_eq!(
             ExpeditionMenu::new(&m, 0x50_0000).is_battle_royale_card(),
             None

@@ -117,6 +117,10 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `grace_status` | | GRACE-1 test aid: LOCAL's HP and flag 7525. Dev only |
 | `hp_set <n>` | | GRACE-1 test aid: write LOCAL's HP. Dev only |
 | `players_pos` | | HM-0 research: world position of every character in the player list, to compare what two games see. Read-only, dev only |
+| `mm_open_lobby` | | MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread). Dev only |
+| `expedition_start` | `[leader] [players byte] [target]` | MM-7: this player is ready, as Commence does in a party; with `leader` it sends the settings first. Players byte 0 by default, target row, negative for none. Dev only |
+| `br_card` | | UI-3 test aid: whether the Battle Royale card is the chosen target of the expedition menu, and its Number of Players byte (needs `br_menu`). Dev only |
+| `exec_trace` | `<slot 1..3> <rva hex\|0>` | research: log every run of `exe+rva` with registers, the code addresses on its stack and the memory `rdx` points at (hardware execute breakpoint, one slot; check the slot is free); 0 frees it. Logs `exec_trace:`. Dev only |
 | `rawcall <rva hex> [arg]` | | NET-5 research: call `exe+rva(arg)` once on the game thread (one integer argument), reply with rax. Dev only |
 | `puppet_think`, `puppet_forget`, `puppet_session`, `puppet_watch`, `peek` | | ORCH-2 research: NpcThink id for new puppets (default -1, no AI); bot manager forget; the session-field experiment; a write watch / execute trace; a read-only hex dump (`peek wcm+0x9A40 0x40`). Dev only |
 | `pad`, `pad_connect`, `pad_clear`, `pad_status` | `A; wait 500; LS 0 1 800` | ORCH-1: a virtual XInput pad 0 (import-table hook of `XINPUT1_4` ordinal 2). **Not effective yet**: the game only polls XInput pads it found in a device scan, which does not run without a real pad. Dev only |

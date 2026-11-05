@@ -58,15 +58,71 @@ pub(crate) struct Setup {
     pub host_create: bool,
     /// MM-3f: `mm_quiet_invite`.
     pub quiet_invite: bool,
+    /// MM-3g + MM-7: `mm_auto_start`.
+    pub auto_start: bool,
     /// MM-3d: `Some(type)` when `mm_sc_create` is on (dev only).
     pub sc_create: Option<crate::steam::queue::ScType>,
     /// The game build string (the exe FileVersion the banner logs), or [`GAME_UNKNOWN`].
     pub game: String,
 }
 
+/// MM-3g + MM-7: when to ask the game for the lobby and the ready mark (pure timing, unit tested). The game's calls are safe to repeat: a
+/// second lobby job is refused while one runs and the ready mark only acts on a change, so a lost request is simply asked again.
+#[derive(Default)]
+struct AutoStart {
+    lobby_tries: u32,
+    lobby_next: Option<Instant>,
+    start_tries: u32,
+    start_next: Option<Instant>,
+}
+
+impl AutoStart {
+    const LOBBY_EVERY: Duration = Duration::from_secs(5);
+    const START_DELAY: Duration = Duration::from_secs(2);
+    const START_EVERY: Duration = Duration::from_secs(10);
+    const MAX_TRIES: u32 = 3;
+
+    /// `Some(try number)` when the game should be asked for its lobby now.
+    fn lobby_due(&mut self, wanted: bool, now: Instant) -> Option<u32> {
+        if !wanted {
+            self.lobby_tries = 0;
+            self.lobby_next = None;
+            return None;
+        }
+        if self.lobby_tries >= Self::MAX_TRIES || self.lobby_next.is_some_and(|t| now < t) {
+            return None;
+        }
+        self.lobby_tries += 1;
+        self.lobby_next = Some(now + Self::LOBBY_EVERY);
+        Some(self.lobby_tries)
+    }
+
+    /// `Some((sends the settings, try number))` when this player should be marked ready now. The settings go only with the first try:
+    /// once the departure runs they must not change.
+    fn start_due(&mut self, wanted: Option<bool>, now: Instant) -> Option<(bool, u32)> {
+        let Some(host) = wanted else {
+            self.start_tries = 0;
+            self.start_next = None;
+            return None;
+        };
+        let Some(next) = self.start_next else {
+            self.start_next = Some(now + Self::START_DELAY);
+            return None;
+        };
+        if now < next || self.start_tries >= Self::MAX_TRIES {
+            return None;
+        }
+        self.start_tries += 1;
+        self.start_next = Some(now + Self::START_EVERY);
+        Some((host && self.start_tries == 1, self.start_tries))
+    }
+}
+
 pub(crate) struct Worker {
     steam: RealSteam,
     machine: Machine,
+    /// MM-3g + MM-7.
+    auto: AutoStart,
     sc_seen: Option<u64>,
     refusal: Option<String>,
     last_status: Option<Status>,
@@ -130,6 +186,7 @@ impl Worker {
             join_auto: s.join_auto,
             host_create: s.host_create && s.join,
             quiet_invite: s.quiet_invite && s.join,
+            auto_start: s.auto_start && s.join,
         });
         if s.join {
             tracing::info!(
@@ -147,9 +204,11 @@ impl Worker {
         if s.quiet_invite && s.join {
             tracing::info!("mm_quiet_invite: enabled: the Steam invite window is skipped while we are host at MATCH READY without a Seamless Co-op lobby (or for 60 s after the dev button)");
         }
+        super::set_auto_start(s.auto_start && s.join);
         Some(Worker {
             world_stale: s.world_stale,
             quiet: s.quiet_invite && s.join,
+            auto: AutoStart::default(),
             quiet_test_until: None,
             quiet_raw_at: None,
             quiet_last_want: false,
@@ -344,6 +403,25 @@ impl Worker {
         }
     }
 
+    /// MM-3g + MM-7: ask the game for what the match needs next. The game does it on its own thread on its next frame.
+    fn auto_tick(&mut self, now: Instant) {
+        use crate::game::matchstart as ms;
+        let own = self.steam.own_id();
+        if let Some(n) = self
+            .auto
+            .lobby_due(self.machine.game_lobby_wanted(own), now)
+        {
+            tracing::info!("mm_join: asking the game for its lobby (try {n})");
+            ms::request_lobby();
+        }
+        if let Some((leader, n)) = self.auto.start_due(self.machine.start_wanted(own), now) {
+            tracing::info!(
+                "mm_join: marking this player ready (try {n}, sends the settings: {leader})"
+            );
+            ms::request_start(leader, ms::PLAYERS_ANY, ms::TARGET_BR_CARD);
+        }
+    }
+
     /// MM-3f: decide whether the invite window is suppressed right now and tell the arming thread.
     fn quiet_tick(&mut self, now: Instant) {
         use crate::steam::quietinvite as qi;
@@ -411,6 +489,7 @@ impl Worker {
         self.machine.world_tick(&mut self.steam, away, now);
         self.machine.tick(&mut self.steam, now);
         self.quiet_tick(now);
+        self.auto_tick(now);
         if self.sc_create.as_ref().is_some_and(|c| c.running()) {
             // What the worker's own SC-lobby detection reports right now (env.sc), for the MM-3d log lines.
             let reports = self.current_sc().map(|(sc, _, _)| sc.id());
@@ -466,6 +545,54 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
+    use super::AutoStart;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn the_lobby_is_asked_for_a_few_times_while_it_is_wanted() {
+        let t0 = Instant::now();
+        let mut a = AutoStart::default();
+        assert_eq!(a.lobby_due(false, t0), None);
+        assert_eq!(a.lobby_due(true, t0), Some(1));
+        assert_eq!(a.lobby_due(true, t0 + Duration::from_secs(1)), None);
+        assert_eq!(a.lobby_due(true, t0 + Duration::from_secs(5)), Some(2));
+        assert_eq!(a.lobby_due(true, t0 + Duration::from_secs(10)), Some(3));
+        assert_eq!(a.lobby_due(true, t0 + Duration::from_secs(60)), None);
+        // The next match starts over.
+        assert_eq!(a.lobby_due(false, t0 + Duration::from_secs(61)), None);
+        assert_eq!(a.lobby_due(true, t0 + Duration::from_secs(62)), Some(1));
+    }
+
+    #[test]
+    fn the_ready_mark_waits_a_moment_and_only_the_first_try_sends_the_settings() {
+        let t0 = Instant::now();
+        let mut a = AutoStart::default();
+        assert_eq!(a.start_due(None, t0), None);
+        assert_eq!(a.start_due(Some(true), t0), None);
+        assert_eq!(a.start_due(Some(true), t0 + Duration::from_secs(1)), None);
+        assert_eq!(
+            a.start_due(Some(true), t0 + Duration::from_secs(2)),
+            Some((true, 1))
+        );
+        assert_eq!(a.start_due(Some(true), t0 + Duration::from_secs(3)), None);
+        assert_eq!(
+            a.start_due(Some(true), t0 + Duration::from_secs(12)),
+            Some((false, 2))
+        );
+        assert_eq!(
+            a.start_due(Some(true), t0 + Duration::from_secs(22)),
+            Some((false, 3))
+        );
+        assert_eq!(a.start_due(Some(true), t0 + Duration::from_secs(60)), None);
+        // A joiner never sends them.
+        let mut j = AutoStart::default();
+        j.start_due(Some(false), t0);
+        assert_eq!(
+            j.start_due(Some(false), t0 + Duration::from_secs(2)),
+            Some((false, 1))
+        );
+    }
+
     use super::*;
     use crate::mm::join::Phase;
     use crate::mm::World;

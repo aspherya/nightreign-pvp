@@ -40,6 +40,8 @@ pub(crate) fn run() {
                     host_create: cfg.mm_host_create,
                     // MM-3f: skip the Steam invite window at the host's MATCH READY.
                     quiet_invite: cfg.mm_quiet_invite,
+                    // MM-3g + MM-7: no click after Commence.
+                    auto_start: cfg.mm_auto_start,
                     // MM-3d: the "create SC lobby (test)" dev button.
                     sc_create: cfg.mm_sc_create.then(|| cfg.sc_create_type()),
                     // The game build string the banner logs (exe FileVersion); TODO MM-4: a sturdier build id if needed.

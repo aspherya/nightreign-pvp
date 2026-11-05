@@ -167,6 +167,10 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "net_status", args: "", help: "NET-1: data channel counters (sent, received, pongs, last round trip)", run: net_status },
     Spec { name: "item_drop", args: "<id hex> [count] [dx dy dz]", help: "RW-3 E1 research: drop ONE item on the ground with the game's own drop function exe+0x576110 (the red phantom's open) at LOCAL's position (+ optional offset in metres) on the game thread; reply = result and the MapItemMan slots that changed. Ids: weapon = plain id, accessory = 0x20000000|id, goods = 0x40000000|id", run: item_drop },
     Spec { name: "drop_gear", args: "[dry]", help: "RW-3 test aid: what a rival's defeat drops (LOCAL's equipped weapons, talismans and picked-up consumables) and whether this game is the host; without `dry` it drops it NOW at LOCAL's spot (the host makes the drop, the game shows it to everyone) without a defeat", run: drop_gear },
+    Spec { name: "mm_open_lobby", args: "", help: "MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread)", run: |_| { crate::game::matchstart::request_lobby(); Ok(Act::Reply("mm_open_lobby: requested".into())) } },
+    Spec { name: "expedition_start", args: "[leader] [players byte] [target]", help: "MM-7: this player is ready, as Commence does in a party, with no menu (next frame, game thread); with `leader` it first sends the settings to the party. Players byte: 2 one, 1 two, 0 three (default). Target: the card's number, negative for none", run: expedition_start },
+    Spec { name: "br_card", args: "", help: "UI-3 test aid: whether the Battle Royale card is the chosen target of the expedition menu (yes, no or unknown; needs br_menu), and its Number of Players byte (2 Solo, 1 Duo, 0 Trio)", run: |_| Ok(Act::Reply(format!("br_card: {}, players byte {}", match crate::game::menuflow::last_card_is_br() { Some(true) => "yes", Some(false) => "no", None => "unknown" }, crate::game::menuflow::last_players().map_or("unknown".to_string(), |p| p.to_string())))) },
+    Spec { name: "exec_trace", args: "<slot 1..3> <rva hex|0>", help: "MM-7 research: log every run of exe+rva with its registers and the code addresses on its stack (hardware execute breakpoint; 0 frees the slot)", run: exec_trace },
     Spec { name: "rawcall", args: "<rva hex> [arg]", help: "NET-5 research: call exe+rva(arg) once on the game thread (one integer argument), reply with rax. Example: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0)", run: rawcall },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
     Spec { name: "session", args: "", help: "HM-0 research: role, protocol state, limit, host and players of this game's CSSessionManager, with raw qwords (read-only)", run: |_| crate::game::sessionprobe::session_cmd().map(Act::Reply) },
@@ -794,6 +798,46 @@ fn drop_gear(args: &[String]) -> Result<Act, String> {
         [a] if a == "dry" => Ok(Act::Main(MainReq::DropGear(true))),
         _ => Err("usage: drop_gear [dry]".into()),
     }
+}
+
+fn expedition_start(args: &[String]) -> Result<Act, String> {
+    let leader = args.first().is_some_and(|a| a == "leader");
+    let rest = &args[usize::from(leader)..];
+    let players = match rest.first() {
+        None => 0,
+        Some(a) => a
+            .parse::<u8>()
+            .ok()
+            .filter(|p| *p <= 2)
+            .ok_or("players byte must be 0, 1 or 2")?,
+    };
+    let target = match rest.get(1) {
+        None => -1,
+        Some(a) => a.parse::<i32>().map_err(|_| "target must be a number")?,
+    };
+    crate::game::matchstart::request_start(leader, players, target);
+    Ok(Act::Reply(format!(
+        "expedition_start: requested (leader {leader}, players byte {players}, target {target})"
+    )))
+}
+
+fn exec_trace(args: &[String]) -> Result<Act, String> {
+    let slot = args
+        .first()
+        .and_then(|a| a.parse::<usize>().ok())
+        .filter(|s| (1..=3).contains(s))
+        .ok_or("slot must be 1, 2 or 3")?;
+    let rva = args
+        .get(1)
+        .and_then(|a| usize::from_str_radix(a.trim_start_matches("0x"), 16).ok())
+        .ok_or("rva must be hex")?;
+    let base = crate::game::gametoast::exe_base();
+    if base == 0 {
+        return Err("the exe base is not known yet".into());
+    }
+    Ok(Act::Reply(crate::game::matchstart::trace::set(
+        base, slot, rva,
+    )))
 }
 
 fn rawcall(args: &[String]) -> Result<Act, String> {

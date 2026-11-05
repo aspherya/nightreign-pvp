@@ -59,7 +59,7 @@ Past regression runs: `testing-log/`.
 
 **Zip:** build from `main` after the host-migration PR with `scripts\package-release.ps1 -MatchPlayers N`, N = how many really play (`release-zip` skill). Everyone needs the same zip. The more players the better; 3 is the minimum that shows survivors staying together, and 2 still shows the promotion.
 
-**Before each match:** note who is the host (the player who presses Invite Members) and write down the clock time when the host leaves.
+**Before each match:** nobody presses anything as host any more, so look at the `Preparing n/m` panel at the top right before the departure: the host is the name with the small banner mark. Write down the clock time when the host leaves. (In the logs afterwards: `matchstart: ready sent (leader true`.)
 
 **Host leaves in a different way each match:**
 
@@ -82,6 +82,8 @@ Past regression runs: `testing-log/`.
 7. GRACE-1, any match with a fight: when a real rival hits you, `grace_lock: ON (a rival hit me)` appears in your log and a Site of Grace gives nothing for about 15 s; the rival's game does the same for them when you hit back. Note whether the flag stayed per game (the other player's grace still works if they were not fighting).
 8. Killfeed, any match with a fight: at the bottom right everyone sees `<name> downed <name>` when a rival knocks someone and `<name> killed <name>` when they are out, with the killer's real name, on every screen, within about a second. Write down one case where a third player hits someone already down: the kill should be theirs.
 
+9. **No click after Commence (MM-3g, MM-7), every match:** everyone picks the Battle Royale card, Solo, Commence, and takes their hands off. No Invite Members, no second Commence. Expect: the match starts by itself with no Steam window and **no Steam notification on any screen** (write down if anyone gets the "invited you to play" toast; `mm_join: method (b)` in a log means the 25 s fallback was needed). Logs: `matchstart: lobby job started` on one game, `matchstart: ready sent` on all. Note how long from the last Commence to the landing (one PC: about 65 s), and how the open menu looks during the departure.
+
 **If it fails:** write the time it failed and what each screen showed. In the logs, `session: role client -> none` means the session ended with no new host. **Do not repeat a failing way more than once;** go to the next match.
 
 **Afterwards, from every PC:** the `NightreignPvP\logs\` folder (one file per game launch, the newest 30 are kept), plus the times written down. Put them under `.claude\experiments\FS-HM1\<player>\`. Then the `test-report` skill turns them into evidence.
@@ -89,7 +91,7 @@ Past regression runs: `testing-log/`.
 ### FS-RW1 — the new match rules on two real PCs (about 60 min, two or three matches)
 **Zip:** `dist\NightreignPvP.zip` (**rebuild it from `main` first** with the `release-zip` skill: the zip of 2026-10-24 predates RW-3, RW-8 and RW-9; STATUS §2 records the build, the `nrpvp.dll` hash and what `VERSION.txt` says), `-MatchPlayers 2`, `team_size = 1`. Both PCs compare `NightreignPvP\VERSION.txt`, Seamless Co-op v1.1.3 and game exe 1.3.3.0 (stop Steam auto-updates). Never EAC. **Pre-flight:** back up `%APPDATA%\Nightreign\<steamid>\`; Leonardo installs the zip himself and sees Solo / Duo / Trio in the table menu. For a shorter Day 1 both PCs add the line `day1_secs = 300` at the top of `NightreignPvP\nrpvp.toml` (default 1020 s = 17 min; both the same, the host ends the day).
 
-**How a match runs:** table > Number of Players = Solo > Commence; the host presses Invite Members; both land by hawk. Nothing needs a console. **Escape hatch:** a defeated player watches until the match ends and can press F10 to leave; if F10 does nothing, Alt-F4 and say so. Write down the time of every quit and any Windows "Application Error".
+**How a match runs:** table > the Battle Royale card > Number of Players = Solo > Commence, then no more clicks; both land by hawk. Nothing needs a console. **Escape hatch:** a defeated player watches until the match ends and can press F10 to leave; if F10 does nothing, Alt-F4 and say so. Write down the time of every quit and any Windows "Application Error".
 
 1. **Free Day 1.** Play Day 1 to its end (no circle, no storm, no night). **Expect** both logs: `free Day 1: clock speed`, host `Day 1 is over at 11:50`, both `Day 2 has begun`; then the game's morning (clock 07:00) and the normal tide on Day 2. Photo of the clock around 11:50 and of the morning.
 2. **A real kill.** (Match A, Day 1 or Day 2.) The host brings the guest to 0 HP and the bleed-out runs out (or the host finishes them). **Expect** guest log: `LOCAL defeated by a rival`, `spectating player …`, then `M5-9 deathhold: start step HELD` (no respawn); the camera follows the other player until the match ends; F10 gives `the leave key was pressed`, the defeat screen, Result, Roundtable. Host log: `match decided … won` about 31 s after the guest's death (30 s dead timer), then the win ending. **Unknown today:** is `start step HELD` reached after a bleed-out death in a session (the one-PC runs used a direct death)? If the guest respawns anyway, say how long they stood before the defeat screen.

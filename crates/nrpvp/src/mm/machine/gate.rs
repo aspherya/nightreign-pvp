@@ -42,6 +42,12 @@ const DIRECT_TIMEOUT: Duration = Duration::from_secs(20);
 /// MM-3a: after an expedition, this long outside the Expedition phase with no Seamless Co-op lobby of the match ends the match.
 const SC_GONE_END: Duration = Duration::from_secs(15);
 
+/// MM-3g: if the game has made no lobby this long after MATCH READY, the host is asked to open Invite Members after all.
+pub(crate) const AUTO_LOBBY_GRACE: Duration = Duration::from_secs(20);
+/// With [`crate::mm::join::JoinAuto::LinkThenInvite`], the host invites a player this long after publishing `sc_lobby` if the link has not
+/// brought that player in. The time of a healthy join is 8-9 s (FS-UI2).
+pub(crate) const INVITE_FALLBACK: Duration = Duration::from_secs(25);
+
 /// MM-3e: how long our created lobby may take to carry `nrsc_lobby_type` before it is left and the host is asked to open Invite Members.
 const HOST_ADOPT_WITHIN: Duration = Duration::from_secs(10);
 /// MM-3e: give up waiting for the `LobbyCreated_t` call result after this long.
@@ -129,6 +135,10 @@ pub(crate) struct Gate {
     no_arrival_logged: bool,
     /// MM-4: the "you can start" line was logged.
     missing_logged: bool,
+    /// MM-7: a joiner: when it first saw `sc_lobby`.
+    published_seen: Option<Instant>,
+    /// MM-7: the wait for players who have not arrived is over and the players here go ahead.
+    gave_up_waiting: bool,
 }
 
 impl Gate {
@@ -159,6 +169,8 @@ impl Gate {
             pub_at: None,
             no_arrival_logged: false,
             missing_logged: false,
+            published_seen: None,
+            gave_up_waiting: false,
         }
     }
 
@@ -196,6 +208,10 @@ impl Gate {
     /// MM-3f: no ALL PRESENT yet and no expedition: the window in which the host's Invite Members is still expected.
     pub(crate) fn quiet_window_open(&self) -> bool {
         self.all_present.is_none() && !self.saw_expedition
+    }
+    /// MM-7: time to mark this player ready.
+    pub(crate) fn start_ok(&self) -> bool {
+        !self.saw_expedition && (self.all_present.is_some() || self.gave_up_waiting)
     }
     pub(crate) fn sc_owner(&self) -> bool {
         self.sc_owner
@@ -517,7 +533,11 @@ impl Machine {
                     && self.cfg.join_auto.invites()
                     && self.env.guard.is_ok()
                 {
-                    let due = r.gate.invite_retry_at.is_none_or(|t| now >= t);
+                    let due = r.gate.invite_retry_at.is_none_or(|t| now >= t)
+                        && (!self.cfg.join_auto.link_first()
+                            || r.gate.pub_at.is_some_and(|t| {
+                                now.saturating_duration_since(t) >= INVITE_FALLBACK
+                            }));
                     let todo: Vec<u64> = absent
                         .iter()
                         .copied()
@@ -646,6 +666,18 @@ impl Machine {
                 NO_ARRIVAL.as_secs()
             );
         }
+        // MM-7: everybody in the lobby goes ahead with the players here once 60 s have passed since the lobby was known, the host and the
+        // joiners on the same rule, so nobody waits for a click.
+        if self.cfg.auto_start && !is_host && r.gate.published.is_some() {
+            r.gate.published_seen.get_or_insert(now);
+        }
+        let lobby_known = if is_host {
+            r.gate.pub_at
+        } else {
+            r.gate.published_seen
+        };
+        let auto_lobby_pending =
+            self.cfg.auto_start && now.saturating_duration_since(r.gate.created) < AUTO_LOBBY_GRACE;
         // MM-4 step 3: the host may start without the players who have not arrived once 60 s have passed and enough are here.
         let here = if self.env.players > 0 {
             present.len().min(self.env.players)
@@ -664,6 +696,14 @@ impl Machine {
             "{here}/{total} here - you can start; {} did not arrive",
             names(&others_absent, api)
         );
+        if self.cfg.auto_start
+            && i_am_in
+            && r.gate.all_present.is_none()
+            && here >= self.cfg.min as usize
+            && lobby_known.is_some_and(|t| now.saturating_duration_since(t) >= MISSING_AFTER)
+        {
+            r.gate.gave_up_waiting = true;
+        }
         if missing && !r.gate.missing_logged {
             r.gate.missing_logged = true;
             tracing::info!(
@@ -673,6 +713,8 @@ impl Machine {
         }
         r.gate.pline = if r.gate.saw_expedition {
             "In match".to_string()
+        } else if r.gate.start_ok() && self.cfg.auto_start {
+            "The match is starting".to_string()
         } else if r.gate.all_present.is_some() {
             if is_host {
                 "Everyone is here - host: start the expedition".to_string()
@@ -690,7 +732,7 @@ impl Machine {
             } else {
                 "Match found! Loading in...".to_string()
             }
-        } else if is_host && env_sc.is_none() && r.gate.creating() {
+        } else if is_host && env_sc.is_none() && (r.gate.creating() || auto_lobby_pending) {
             "Match found! Creating your lobby...".to_string()
         } else if no_arrival {
             format!(
@@ -722,6 +764,11 @@ impl Machine {
         r.gate.line = if r.gate.saw_expedition {
             "IN EXPEDITION - match active (Leave, or going back to the Roundtable, ends it)"
                 .to_string()
+        } else if r.gate.start_ok() && self.cfg.auto_start {
+            format!(
+                "ALL PRESENT {}/{total} - the match is starting",
+                r.gate.all_present.unwrap_or(here)
+            )
         } else if let Some(n) = r.gate.all_present {
             if is_host {
                 format!("ALL PRESENT {n}/{n} - host: start the expedition")
@@ -740,7 +787,7 @@ impl Machine {
             } else {
                 "in the host's lobby, loading in...".to_string()
             }
-        } else if is_host && env_sc.is_none() && r.gate.creating() {
+        } else if is_host && env_sc.is_none() && (r.gate.creating() || auto_lobby_pending) {
             "creating the Seamless Co-op lobby...".to_string()
         } else if no_arrival {
             format!(
@@ -1007,6 +1054,7 @@ mod tests {
             join_auto: auto,
             host_create: false,
             quiet_invite: false,
+            auto_start: false,
         })
     }
 
@@ -1116,7 +1164,142 @@ mod tests {
             join_auto: JoinAuto::Invite,
             host_create: false,
             quiet_invite: true,
+            auto_start: false,
         })
+    }
+
+    fn auto_machine(auto: JoinAuto) -> Machine {
+        Machine::new(MachineCfg {
+            need: 2,
+            room: String::new(),
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly: false,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            join: true,
+            join_auto: auto,
+            host_create: false,
+            quiet_invite: true,
+            auto_start: true,
+        })
+    }
+
+    #[test]
+    fn only_the_host_asks_the_game_for_a_lobby_and_only_until_it_exists() {
+        let t = Instant::now();
+        let mut m = auto_machine(JoinAuto::Invite);
+        assert!(!m.game_lobby_wanted(HOST), "no match");
+        ready(&mut m, HOST, t);
+        m.set_env(None, Ok(()), None, 2);
+        assert!(m.game_lobby_wanted(HOST));
+        assert!(!m.game_lobby_wanted(JOINER));
+        m.set_env(sc(), Ok(()), None, 2);
+        assert!(!m.game_lobby_wanted(HOST), "the lobby is there");
+        // Without the setting the host still gets the old prompt.
+        let mut off = quiet_machine();
+        ready(&mut off, HOST, t);
+        off.set_env(None, Ok(()), None, 2);
+        assert!(!off.game_lobby_wanted(HOST));
+    }
+
+    #[test]
+    fn the_host_sees_no_prompt_while_the_game_makes_its_lobby_and_the_prompt_comes_back_if_it_never_does(
+    ) {
+        let mut m = auto_machine(JoinAuto::Invite);
+        let mut s = world(HOST);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(None, Ok(()), None, 2);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(line(&m), "creating the Seamless Co-op lobby...");
+        t += AUTO_LOBBY_GRACE;
+        tick(&mut m, &mut s, &mut t, 2);
+        assert!(line(&m).contains("Invite Members"), "{}", line(&m));
+    }
+
+    #[test]
+    fn everybody_here_marks_every_player_ready_with_the_host_sending_the_settings() {
+        for (own, is_host) in [(HOST, true), (JOINER, false)] {
+            let mut m = auto_machine(JoinAuto::Invite);
+            let sc_id = SC.to_string();
+            let mut s = FakeSteam::new(own);
+            s.add_lobby(
+                Q,
+                HOST,
+                2,
+                &[HOST, JOINER],
+                &[
+                    ("nrpvp", "1"),
+                    ("host", "7001"),
+                    ("state", "go"),
+                    ("sc_lobby", sc_id.as_str()),
+                ],
+            );
+            add_sc(&mut s, &[HOST, JOINER]);
+            let mut t = Instant::now();
+            ready(&mut m, own, t);
+            m.set_env(sc(), Ok(()), None, 2);
+            assert_eq!(m.start_wanted(own), None, "not yet");
+            tick(&mut m, &mut s, &mut t, 3);
+            assert_eq!(m.start_wanted(own), Some(is_host));
+            assert_eq!(line(&m), "ALL PRESENT 2/2 - the match is starting");
+            // The expedition started: nothing more to ask.
+            m.set_env(None, Ok(()), Some(Phase::Expedition), 2);
+            tick(&mut m, &mut s, &mut t, 2);
+            assert_eq!(m.start_wanted(own), None);
+        }
+    }
+
+    #[test]
+    fn a_player_who_never_arrives_does_not_hold_the_others_forever() {
+        let mut m = Machine::new(MachineCfg {
+            min: 1,
+            ..auto_cfg()
+        });
+        let mut s = world(HOST);
+        add_sc(&mut s, &[HOST]);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(m.start_wanted(HOST), None, "still waiting");
+        t += MISSING_AFTER;
+        tick(&mut m, &mut s, &mut t, 2);
+        assert_eq!(m.start_wanted(HOST), Some(true));
+    }
+
+    #[test]
+    fn with_the_link_first_the_host_invites_only_a_player_the_link_did_not_bring_in() {
+        let mut m = auto_machine(JoinAuto::LinkThenInvite);
+        let mut s = world(HOST);
+        add_sc(&mut s, &[HOST]);
+        let mut t = Instant::now();
+        ready(&mut m, HOST, t);
+        m.set_env(sc(), Ok(()), None, 1);
+        tick(&mut m, &mut s, &mut t, 3);
+        assert_eq!(s.lobby_data(Q, "sc_lobby"), SC.to_string());
+        assert!(!s.writes.iter().any(|w| matches!(w, Write::Invite(..))));
+        t += INVITE_FALLBACK;
+        tick(&mut m, &mut s, &mut t, 2);
+        assert!(s.writes.iter().any(|w| matches!(w, Write::Invite(..))));
+    }
+
+    fn auto_cfg() -> MachineCfg {
+        MachineCfg {
+            need: 2,
+            room: String::new(),
+            min: 2,
+            fill_wait: Duration::from_secs(90),
+            friendly: false,
+            game: "1.3.3.0".into(),
+            sc: "1.1.3".into(),
+            join: true,
+            join_auto: JoinAuto::Invite,
+            host_create: false,
+            quiet_invite: true,
+            auto_start: true,
+        }
     }
 
     #[test]
@@ -1152,6 +1335,7 @@ mod tests {
             join_auto: JoinAuto::Invite,
             host_create: false,
             quiet_invite: true,
+            auto_start: false,
         });
         ready(&mut nojoin, HOST, t);
         assert!(!nojoin.quiet_invite_wanted(HOST));
@@ -1829,6 +2013,7 @@ mod host_create_tests {
             join_auto: JoinAuto::InviteLink,
             host_create,
             quiet_invite: false,
+            auto_start: false,
         })
     }
 
@@ -2194,6 +2379,7 @@ mod multi_tests {
             join_auto: JoinAuto::InviteLink,
             host_create: false,
             quiet_invite: true,
+            auto_start: false,
         })
     }
 

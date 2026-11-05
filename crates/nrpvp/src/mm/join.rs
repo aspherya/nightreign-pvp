@@ -14,6 +14,9 @@ pub(crate) enum JoinAuto {
     InviteLink,
     /// (a) only, by the joiners.
     Link,
+    /// (a) by the joiners, and (b) on the host only for a player the link did not bring in ([`INVITE_FALLBACK`]): normally no Steam
+    /// invite reaches anyone's screen. What the player build uses.
+    LinkThenInvite,
     /// Nothing automatic; only the dev buttons.
     None,
 }
@@ -24,6 +27,7 @@ impl JoinAuto {
             "invite" => Some(JoinAuto::Invite),
             "invite+link" => Some(JoinAuto::InviteLink),
             "link" => Some(JoinAuto::Link),
+            "link+invite" => Some(JoinAuto::LinkThenInvite),
             "none" => Some(JoinAuto::None),
             _ => Option::None,
         }
@@ -33,16 +37,27 @@ impl JoinAuto {
             JoinAuto::Invite => "invite",
             JoinAuto::InviteLink => "invite+link",
             JoinAuto::Link => "link",
+            JoinAuto::LinkThenInvite => "link+invite",
             JoinAuto::None => "none",
         }
     }
     /// The host's mod sends invites by itself.
     pub(crate) fn invites(self) -> bool {
-        matches!(self, JoinAuto::Invite | JoinAuto::InviteLink)
+        matches!(
+            self,
+            JoinAuto::Invite | JoinAuto::InviteLink | JoinAuto::LinkThenInvite
+        )
+    }
+    /// The host's invites wait until the link had time to work.
+    pub(crate) fn link_first(self) -> bool {
+        self == JoinAuto::LinkThenInvite
     }
     /// The joiner's mod opens the join link by itself.
     pub(crate) fn links(self) -> bool {
-        matches!(self, JoinAuto::InviteLink | JoinAuto::Link)
+        matches!(
+            self,
+            JoinAuto::InviteLink | JoinAuto::Link | JoinAuto::LinkThenInvite
+        )
     }
 }
 

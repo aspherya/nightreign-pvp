@@ -198,6 +198,8 @@ pub(crate) struct MachineCfg {
     pub host_create: bool,
     /// MM-3f: `mm_quiet_invite` (needs `join`): the host's line asks for Invite Members and the Steam invite window is suppressed.
     pub quiet_invite: bool,
+    /// MM-3g + MM-7: `mm_auto_start` (needs `join`): the game makes its lobby and everybody is marked ready with no click.
+    pub auto_start: bool,
 }
 
 pub(crate) struct Machine {
@@ -400,6 +402,29 @@ impl Machine {
             && r.host == own
             && self.env.sc.is_none()
             && r.gate.quiet_window_open()
+    }
+
+    /// MM-3g: we are the host of a ready match with no Seamless Co-op lobby yet, so the game should make one now. Pure state read.
+    pub(crate) fn game_lobby_wanted(&self, own: u64) -> bool {
+        let State::MatchReady(r) = &self.state else {
+            return false;
+        };
+        self.cfg.join
+            && self.cfg.auto_start
+            && r.host != 0
+            && r.host == own
+            && self.env.sc.is_none()
+            && r.gate.quiet_window_open()
+    }
+
+    /// MM-7: this player should be marked ready: everybody is here (or the wait for the missing ones is over) and the expedition has not
+    /// started. `Some(true)`: this player is the host, who sends the settings. Pure state read.
+    pub(crate) fn start_wanted(&self, own: u64) -> Option<bool> {
+        let State::MatchReady(r) = &self.state else {
+            return None;
+        };
+        (self.cfg.join && self.cfg.auto_start && r.gate.start_ok())
+            .then_some(r.host != 0 && r.host == own)
     }
 
     /// MM-3: the worker only needs the (cheap but not free) Seamless Co-op lookup while a match is ready and `mm_join` is on.
@@ -1402,6 +1427,7 @@ mod tests {
             join_auto: JoinAuto::Invite,
             host_create: false,
             quiet_invite: false,
+            auto_start: false,
         }
     }
 

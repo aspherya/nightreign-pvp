@@ -96,7 +96,7 @@ expect_log = { contains = ["start step HELD"], absent = ["RELEASED"], since = "r
 ```
 `since` is `"step"` (default: from where the previous step ended, so a line the previous step itself logged is NOT seen: use `mark` before
 the triggering command), `"run"` (the whole log) or `"mark:<name>"`. `absent` text appearing after the offset fails the step; in a
-`wait_log` it aborts at once. `navigate = "commence_br"` is `commence` with the Battle Royale card selected first (`Up` wraps to the last card; the scenario `mi-br-card`). `navigate = "expedition"` ends with the console `god 1` (no wolf deaths); add `god = false` to that step
+`wait_log` it aborts at once. `navigate = "commence_br"` is `commence` with the Battle Royale card selected first (`Up` wraps to the last card; the scenario `mi-br-card`). `navigate = "queue_br"` is the player's way into the Solo queue from the menu, with the card and Number of Players checked through the console `br_card` (needs `br_menu`; the scenario `mi-zero-click`). `navigate = "expedition"` ends with the console `god 1` (no wolf deaths); add `god = false` to that step
 when a mob should be able to kill the character (`hp0` turns god mode off by itself).
 
 ### Writing a scenario (copy the nearest one)

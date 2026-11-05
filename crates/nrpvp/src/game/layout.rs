@@ -136,15 +136,12 @@ pub(crate) const CHR_TYPE_EXPEDITION: u32 = 13;
 pub(crate) const MENU_SETTINGS: usize = 0xFC8;
 /// u8 Number of Players inside the settings object: 2 one player, 1 two, 0 three.
 pub(crate) const MENU_SETTINGS_PLAYERS: usize = 0x49;
-/// UI-3: which card of the expedition list is selected, read from the menu object (`i32` fields; game 1.03.3, 18 Commence presses on
-/// 9 cards, 2026-11-02, log `br_menu dump`). `+0x1338` was 10 on our Battle Royale card only (4 on the Everdark Tricephalos, 0 on the
-/// seven other cards sampled) and `+0x10C4` was 18 on it in all four presses. `[VERIFIED]` against The Deep of Night
-/// too (our row is a copy of it, yet Commence on the real one was left to the game, 2026-11-02).
-pub(crate) const MENU_CARD_KIND: usize = 0x1338;
-pub(crate) const MENU_CARD_SLOT: usize = 0x10C4;
-/// The values our card reads (`MENU_CARD_KIND`, `MENU_CARD_SLOT`).
-pub(crate) const BR_CARD_KIND: u32 = 10;
-pub(crate) const BR_CARD_SLOT: u32 = 18;
+/// UI-3: the targets chosen in the expedition list, a `vector<i32>` of `NightBossMenuParam` rows inside the settings object (begin, end). The
+/// game's own Commence reads the same list (`exe+0x9EEDB4`, and `exe+0xDF9E90` sends it) `[VERIFIED: exec_trace, list [9] on our card, 2026-11-05]`.
+pub(crate) const MENU_SETTINGS_TARGETS_BEGIN: usize = 0x58;
+pub(crate) const MENU_SETTINGS_TARGETS_END: usize = 0x60;
+/// The row of our Battle Royale card (`gamedata/nightbossmenu-rows.json`).
+pub(crate) const BR_CARD_ROW: i32 = 9;
 
 // ---- The NPC bot manager, CSNpcBotMan (MEMORY_MAP §15; OFF-3 static reading, game 1.03.3) ----
 /// Singleton name in the FD4 map (slot `exe+0x3C0B518` in 1.03.3; found by name, never by address).

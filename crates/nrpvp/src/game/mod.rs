@@ -30,6 +30,7 @@ pub(crate) mod input;
 pub(crate) mod itemdrop;
 pub(crate) mod layout;
 pub(crate) mod maphide;
+pub(crate) mod matchstart;
 pub(crate) mod mem;
 pub(crate) mod memscan;
 pub(crate) mod menuflow;

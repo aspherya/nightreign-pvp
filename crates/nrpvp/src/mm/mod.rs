@@ -103,6 +103,8 @@ const MAX_CMDS: usize = 16;
 
 static HUB: OnceLock<Hub> = OnceLock::new();
 static ENABLED: AtomicBool = AtomicBool::new(false);
+/// MM-3g + MM-7: `mm_auto_start` is on.
+static AUTO_START: AtomicBool = AtomicBool::new(false);
 /// 0 = no override.
 static TEAM_OVERRIDE: AtomicUsize = AtomicUsize::new(0);
 /// MM-3: the local player's team_type as last read by the game loop (0 = never read). Only written while the feature is enabled.
@@ -147,6 +149,15 @@ fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// Called once at startup when `dev_mode && mm_queue`. Until then every function below is inert.
 pub(crate) fn enable() {
     ENABLED.store(true, Ordering::SeqCst);
+}
+
+/// MM-3g + MM-7: a found match starts by itself.
+pub(crate) fn auto_start() -> bool {
+    AUTO_START.load(Ordering::Relaxed)
+}
+
+pub(crate) fn set_auto_start(on: bool) {
+    AUTO_START.store(on, Ordering::Relaxed);
 }
 
 pub(crate) fn enabled() -> bool {

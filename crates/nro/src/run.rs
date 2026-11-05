@@ -452,6 +452,60 @@ pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String>
     ))
 }
 
+/// The player's whole way into the Solo queue, from anywhere at the Roundtable: to the table, the expedition menu, Matchmaking Settings (F2) where
+/// Number of Players is a ring the game keeps between runs (RIGHT until `br_card` reads Solo), back to the list (F1; `Up` wraps from the first
+/// card to the last one, Battle Royale), F picks it, which `br_card` confirms; F is Commence, F is OK on the game's dialog. The menu stays open
+/// as for a player. Needs `br_menu`.
+pub fn queue_br(st: &State) -> Result<String, String> {
+    let pid = st.live_pid().ok_or("the game is not running")?;
+    let keys =
+        |seq: &str| crate::desk::request(serde_json::json!({"op": "keys", "pid": pid, "seq": seq}));
+    let menu = || -> Result<Option<u32>, String> {
+        Ok(parse_pos(&session::cmd(st, "pos")?)
+            .ok_or("the mod's `pos` gave no position (dev build with `pos`/`tp`?)")?
+            .1)
+    };
+    let mut open = false;
+    for _ in 0..4 {
+        let r = session::cmd(
+            st,
+            &format!(
+                "tp {} {} {} {}",
+                TABLE_SPOT[0], TABLE_SPOT[1], TABLE_SPOT[2], TABLE_YAW
+            ),
+        )?;
+        if !r.starts_with("tp:") {
+            return Err(format!("tp refused: {r}"));
+        }
+        std::thread::sleep(Duration::from_millis(1500));
+        keys("wait 300ms; F; wait 2500ms")?;
+        if menu()? == Some(MENU_EXPEDITION) {
+            open = true;
+            break;
+        }
+    }
+    if !open {
+        return Err("F did not open the expedition menu".into());
+    }
+    keys("wait 300ms; F2; wait 1s")?;
+    for _ in 0..3 {
+        if session::cmd(st, "br_card")?.contains("players byte 2") {
+            break;
+        }
+        keys("RIGHT; wait 800ms")?;
+    }
+    keys("F1; wait 1s; Up; wait 800ms; F; wait 1500ms")?;
+    let card = session::cmd(st, "br_card")?;
+    if !card.contains("players byte 2") {
+        return Err(format!("Number of Players is not Solo: {card}"));
+    }
+    if !card.contains("yes") {
+        return Err(format!("the Battle Royale card was not picked: {card}"));
+    }
+    keys("F; wait 2s; F; wait 1s")?;
+    Ok("the Battle Royale card picked; Commence pressed".to_string())
+}
+
 fn step_name(s: &Step) -> String {
     match s {
         Step::Console(l) => format!("console {l}"),
@@ -603,8 +657,9 @@ fn step_plain(st: &State, s: &Step, god: bool) -> Result<(bool, String), String>
             "invite_members" => invite_members(st, 3).map(|r| (true, r)),
             "commence" => commence(st, 3, false).map(|r| (true, r)),
             "commence_br" => commence(st, 3, true).map(|r| (true, r)),
+            "queue_br" => queue_br(st).map(|r| (true, r)),
             other => Err(format!(
-                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence, commence_br)"
+                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence, commence_br, queue_br)"
             )),
         },
         Step::SleepMs(m) => {

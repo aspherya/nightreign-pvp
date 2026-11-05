@@ -92,41 +92,21 @@ Owner: OPUS (design) | Status: idea, not scheduled
 The normal expeditions started from the other cards are vanilla in every checked way, except that the hawk crossing at the start (and maybe other rules: free Day 1, PvP team writes, HUD filter) also runs in them although it is meant for Battle Royale. Decide which
 rules follow "this expedition came from our card" and which stay always on; the card signal exists (`menuflow::decide_for_card`), the expedition itself would need a flag set at Commence. First check what really changes in a normal expedition (one short run).
 
-### MM-3g — No host click: trigger Invite Members from the mod
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: **second priority (Leonardo 2026-11-03), after GRACE-1**; no Steam invite on the overlay is part of it (the quiet invite already swallows the host's window, MATCHMAKING §5; check what a joiner still sees) (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Depends: MM-3f, UI-0 Q3
-UI-0 settled that **no talk command opens Matchmaking Settings or Invite Members** (all NR ESDs + esdtool's command list), so the data route
-is closed. The action is the game's menu code: S9 §5d has the chain (menu functor calls `+0x80D743` → `+0x80E32A` → `+0x213B4F`, session
-code `+0x258568B` / `+0x257F5DA`, the latter obfuscated with no `.pdata`).
-1. Spike (Opus, read-only): with the MM-3c trace and `archive/experiments/UI-0/disfunc.py`, find the highest frame that is "Invite Members was
-   chosen" and has `.pdata` (`+0x80D743` / `+0x80E32A` are candidates) and what its arguments are (menu object, item id). A hardware-breakpoint
-   trace on it while Leonardo presses Invite Members gives the live registers (reuse `ui_text_trace`'s VEH pattern).
-2. If a callable entry exists: the host's mod calls it on the main thread at MATCH READY (dev flag first), with MM-3f's quiet invite armed.
-   If not: fall back to opening the Matchmaking Settings menu for the host (still one click) and record why.
-Acceptance (HUMAN, solo): dev button "invite now (test)" makes the game's lobby (`inviteParam`) with no menu and no Steam window.
-
 ### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
 Owner: OPUS to card in detail | Status: **started 2026-11-02**: the menu queues Duo / Trio (`br_menu`), a Duo party of 2 reaches an expedition as teammates (`mi-duo-party`); open: the 6-player 3-team match, Trio, messages for a party member / no party, the roster → team mapping with several teams | Settles: S9 U7
 Match sizes (Leonardo, 2026-10-19): Duo = 3 teams of 2, Squad = 2 teams of 3, always 6 players; complete parties only.
 With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapped to expedition players on every client.
 
-**Direction 2026-10-21 (STATUS §8):** no Steam window on any screen, everyone arrives ready and the match starts itself, the host is
-invisible and chosen by the matchmaker; host leaving = match ends cleanly for now, host migration is the goal. Order: MM-3g and MM-7
-share one RE spike (both call game menu code from the mod); MM-8 and MM-9 are independent; S10 runs alongside as research.
+**Direction 2026-10-21:** no Steam window on any screen, everyone arrives ready and the match starts itself, the host is invisible and chosen by the matchmaker; host leaving = host migration (HOST_MIGRATION.md).
 
-### MM-7 — Auto-start: the expedition starts by itself once everyone is here
-Owner: OPUS (RE) → SONNET/implementer → HUMAN (solo) then FS | Status: **second priority (Leonardo 2026-11-03), with MM-3g** (brief: `archive/tasks/MM-3g-MM-7-zero-click-autostart.md`) | Settles: S9 U6
-At `ALL PRESENT` (and every player loaded, `players` = roster), the host's mod starts the departure with no Commence press. Route A:
-call the Commence checks `exe+0x9EEBE0` (ordinary code, `re/MEMORY_MAP.md` §13) with a valid menu object, so find what builds that
-object without the menu open; route B: an EMEVD instruction that starts a departure (UNKNOWN whether one exists). Also check whether a
-SC party has any "ready" state of its own. Players see "Match starting…" (UI-2 message) instead of "host: start the expedition".
-Solo-testable part: the call path with a dev console command in a solo SC session (Commence by console = departure).
+**Done 2026-11-05: MM-3g and MM-7** (`mi-zero-click` PASS 3/3; `game/matchstart.rs`, MEMORY_MAP §12). Their real-Steam check is FS-HM1 item 9. Left as polish, no card: the table menu stays open during the departure. Cards removed; text in git.
 
 ### MM-8 — Host chosen by the matchmaker (best connection)
 Owner: OPUS (spec) → SONNET/implementer → FS | Status: ready | Depends: —
 Today the queue lobby owner becomes host (luck). Each member publishes its Steam ping location (`ISteamNetworkingUtils`
 `GetLocalPingLocation` → member data); the owner picks the member with the lowest worst-case estimated ping to the others
 (`EstimatePingTimeBetweenTwoLocations`), ties by Steam id, and writes `host`. FakeSteam tests for the pick; the player never sees who
-hosts (no host wording in messages once MM-3g/MM-7 land). Verify the Steam API calls exist in the game's `steam_api64.dll` first.
+hosts. Verify the Steam API calls exist in the game's `steam_api64.dll` first.
 
 ## Host migration and 12 players (top priority: migration first, player count later; Leonardo 2026-11-02; plan and budgets in [HOST_MIGRATION.md](HOST_MIGRATION.md))
 

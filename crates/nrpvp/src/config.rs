@@ -99,7 +99,7 @@ mm_fill_wait_s = 90
 
 # MM-3 (dev mode only; needs mm_queue = true; the player build forces it off): after MATCH READY, get every roster member into the host's
 # Seamless Co-op lobby. false = exactly MM-2. mm_join_auto = what happens by itself: \"invite\" (the host's mod invites every absent
-# player; default) | \"invite+link\" (plus the joiner's mod opens a steam://joinlobby link) | \"link\" | \"none\" (only the console's mm_join).
+# player; default) | \"invite+link\" (plus the joiner's mod opens a steam://joinlobby link) | \"link\" | \"link+invite\" (the link, and the invite only for a player it did not bring in) | \"none\" (only the console's mm_join).
 # Log lines start with \"mm_join:\".
 mm_join = false
 mm_join_auto = \"invite\"
@@ -115,6 +115,9 @@ mm_host_create = false
 # Uses debug registers, so it is switched off (with a warning) when mm_lobby_trace = true.
 # Log lines start with \"mm_quiet_invite:\".
 mm_quiet_invite = false
+# MM-3g + MM-7 (dev mode only; needs mm_join = true; the player build turns it on with matchmaking): no click after Commence. At MATCH READY the
+# host's game makes its lobby by itself, and once everyone is here every player is marked ready, so the expedition starts by itself. Logs \"matchstart:\".
+mm_auto_start = false
 
 # MM-3c (dev mode only; the player build and the mmtest zip force it off): find what creates Seamless Co-op's lobby A. Arms hardware
 # execute breakpoints (debug registers, no code is patched) on ISteamMatchmaking::CreateLobby and
@@ -280,6 +283,8 @@ pub(crate) struct Config {
     pub mm_host_create: bool,
     /// MM-3f: skip the Steam invite window while this player is the host at MATCH READY without a Seamless Co-op lobby (developer mode + `mm_join` only; forced off in the player build and when `mm_lobby_trace` is on).
     pub mm_quiet_invite: bool,
+    /// MM-3g + MM-7: no click after Commence (developer mode + `mm_join`; the player build turns it on with `matchmaking`).
+    pub mm_auto_start: bool,
     /// MM-3c: lobby-creation call-stack tracer (developer mode only; forced off in the player build).
     pub mm_lobby_trace: bool,
     /// UI-0: text-id tracer (developer mode only; forced off in the player build; turns `mm_quiet_invite` and `mm_lobby_trace` off).
@@ -396,6 +401,7 @@ impl Default for Config {
             mm_join: false,
             mm_host_create: false,
             mm_quiet_invite: false,
+            mm_auto_start: false,
             mm_join_auto: "invite".to_string(),
             mm_lobby_trace: false,
             ui_text_trace: false,
@@ -542,11 +548,13 @@ fn enforce_player_mode(
     cfg.pvpve = true;
     cfg.pvpve_scheme = SCHEME_RIVALS.to_string();
     // MM-4: the player setting `matchmaking` (default true) turns on exactly what Solo matchmaking needs: the queue, the join step
-    // with the host's invite plus the joiner's link, and the quiet invite (S9 5g). `matchmaking = false` leaves all of it off.
+    // with the joiner's link, and the quiet invite (S9 5g). `matchmaking = false` leaves all of it off.
     cfg.mm_queue = cfg.matchmaking;
     cfg.mm_join = cfg.matchmaking;
     cfg.mm_quiet_invite = cfg.matchmaking;
-    cfg.mm_join_auto = "invite+link".to_string();
+    cfg.mm_auto_start = cfg.matchmaking;
+    // No Steam invite on the joiner's screen: the link alone, and the invite only if the link did not bring the player in.
+    cfg.mm_join_auto = "link+invite".to_string();
     // MM-1: the Steam probe's logging is a developer tool (the callbacks it registers stay when the queue needs them).
     cfg.mm_probe = false;
     // NET-2: features (RW-5) need the data channel in a match; it only talks to the members of your Seamless Co-op lobby.
@@ -713,7 +721,7 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             Some(a) => cfg.mm_join_auto = a.label().to_string(),
             None => {
                 warnings.push(format!(
-                    "mm_join_auto = {:?} is not \"invite\", \"invite+link\", \"link\" or \"none\"; using \"invite\"",
+                    "mm_join_auto = {:?} is not \"invite\", \"invite+link\", \"link\", \"link+invite\" or \"none\"; using \"invite\"",
                     cfg.mm_join_auto
                 ));
                 cfg.mm_join_auto = "invite".to_string();
@@ -738,6 +746,12 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
             cfg.mm_quiet_invite = false;
         }
         // MM-3f: both use the four debug registers of every thread; the tracer would overwrite the suppression's.
+        if cfg.dev_mode && cfg.mm_auto_start && !cfg.mm_join {
+            warnings.push(
+                "mm_auto_start = true needs mm_join = true; the automatic start is off".to_string(),
+            );
+            cfg.mm_auto_start = false;
+        }
         if cfg.dev_mode && cfg.mm_quiet_invite && cfg.mm_lobby_trace {
             warnings.push("mm_quiet_invite and mm_lobby_trace both use the hardware breakpoints; mm_quiet_invite is off while mm_lobby_trace = true".to_string());
             cfg.mm_quiet_invite = false;
@@ -1094,13 +1108,14 @@ mod tests {
 
     /// What a player-mode parse of an empty file gives.
     fn player_default() -> Config {
-        // MM-4: matchmaking = true (the default) turns on the queue, the join step with invite+link and the quiet invite; UI-1: and
+        // MM-4: matchmaking = true (the default) turns on the queue, the join step with the link first, the quiet invite and the automatic start; UI-1: and
         // Battle Royale from the expedition menu.
         Config {
             pvpve: true,
             mm_queue: true,
             mm_join: true,
-            mm_join_auto: "invite+link".to_string(),
+            mm_join_auto: "link+invite".to_string(),
+            mm_auto_start: true,
             mm_quiet_invite: true,
             br_menu: true,
             ..Config::default()
@@ -1238,11 +1253,11 @@ mm_match_players = 9
         // mm_join without mm_queue is switched off with a warning.
         let (cfg, w) = parse_dev("mm_join = true\n").expect("ok");
         assert!(!cfg.mm_join && w.len() == 1, "{w:?}");
-        // Player build: follows `matchmaking`, and always joins with invite+link.
+        // Player build: follows `matchmaking`, and always joins with the link first.
         let (cfg, _) = parse("mm_queue = true\nmm_join = true\nmatchmaking = false\n").expect("ok");
         assert!(!cfg.dev_mode && !cfg.mm_join);
         let (cfg, _) = parse("mm_join_auto = \"none\"\n").expect("ok");
-        assert!(cfg.mm_join && cfg.join_auto() == JoinAuto::InviteLink);
+        assert!(cfg.mm_join && cfg.join_auto() == JoinAuto::LinkThenInvite && cfg.mm_auto_start);
         assert!(parse_dev("mm_join = \"yes\"").is_err());
     }
 

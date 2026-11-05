@@ -38,6 +38,7 @@ pub(crate) const ALL_HERE_HOST: u32 = 10;
 pub(crate) const ALL_HERE_JOINER: u32 = 11;
 pub(crate) const SOME_MISSING: u32 = 12;
 pub(crate) const PROBLEM: u32 = 13;
+pub(crate) const STARTING: u32 = 14;
 /// First "Searching for players: N of M" message (M = 2..=6, N = 1..=M; see [`count_msg`]).
 pub(crate) const COUNT_FIRST: u32 = 20;
 /// Number of messages (k < COUNT).
@@ -57,6 +58,8 @@ pub(crate) fn count_msg(n: u32, m: u32) -> Option<u32> {
 pub(crate) fn for_gate_line(line: &str) -> Option<u32> {
     if line.is_empty() || line == "In match" {
         None
+    } else if line == "The match is starting" {
+        Some(STARTING)
     } else if line.starts_with("Everyone is here - host") {
         Some(ALL_HERE_HOST)
     } else if line.starts_with("Everyone is here - waiting") {
@@ -137,6 +140,7 @@ pub(crate) fn repeats(k: u32) -> bool {
             | ALL_HERE_HOST
             | ALL_HERE_JOINER
             | SOME_MISSING
+            | STARTING
     ) || (COUNT_FIRST..COUNT).contains(&k)
 }
 
@@ -497,6 +501,7 @@ mod tests {
             ALL_HERE_JOINER,
             SOME_MISSING,
             PROBLEM,
+            STARTING,
         ]
         .into_iter()
         .chain(COUNT_FIRST..COUNT)

@@ -88,9 +88,8 @@ the script refuses an incomplete set) and `me3\` (3 binaries + 2 licences). If y
    folder into the game folder (next to `nightreign.exe` and `nrsc_launcher.exe`); "Replace the files" for an older version.
 3. **Compare `NightreignPvP\VERSION.txt` on both PCs**: the `nrpvp.dll` hash must be identical. If not, someone has an old zip.
 4. Steam running, start with `nrpvp_launcher.exe` (never the Steam Play button).
-5. Both: Roundtable > table > Matchmaking Settings > Number of Players = **Solo** > Commence. "searching for players (1 of 2)" appears; when the
-   match is found the **host** (the message tells you who) opens Matchmaking Settings > Invite Members once; the other is brought in by itself.
-   When "Everyone is here", the host presses Commence.
+5. Both: Roundtable > table > the **Battle Royale** card > Matchmaking Settings > Number of Players = **Solo** > Commence. "searching for players (1 of 2)"
+   appears; nobody presses anything after that: the match is found, both are brought together and the expedition starts by itself.
 6. Play. For a quick check set `day1_secs = 300` at the top of both `nrpvp.toml` files before starting. The runbook with what to try and what
    to expect (kill, spectate, drops, F10, quit) is [TESTING.md](TESTING.md) §6.
 7. After the session, collect from **both** PCs: `NightreignPvP\nrpvp.log`, the `NightreignPvP\logs\` folder, the me3 log folder

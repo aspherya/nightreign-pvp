@@ -102,7 +102,8 @@ pub(crate) const T_SEARCHING_DUO: usize = 2;
 pub(crate) const T_OFF: usize = 3;
 pub(crate) const T_OFFLINE_SOLO: usize = 4;
 pub(crate) const T_SEARCHING_TRIO: usize = 5;
-const N_TEXTS: usize = 6;
+pub(crate) const T_STARTING: usize = 6;
+const N_TEXTS: usize = 7;
 const TEXT_UNITS: usize = 256;
 
 /// Requests from the handler to the thread.
@@ -140,6 +141,19 @@ pub(crate) fn decide_for_card(
         return Decision::Pass;
     }
     decide(players, phase, mm_on, mode)
+}
+
+/// MM-3g + MM-7: once a match is found it starts by itself, so a Commence pressed in the moment before the player is in the host's lobby must
+/// not run the game's own expedition (pure). After that the menu is in its party state, which never reaches this hook.
+pub(crate) fn while_starting(d: Decision, phase: u8, auto_start: bool) -> Decision {
+    if auto_start && phase == PHASE_MATCHED {
+        Decision::Dialog {
+            text: T_STARTING,
+            request: REQ_NONE,
+        }
+    } else {
+        d
+    }
 }
 
 /// The decision for a Commence press (pure; unit tested).
@@ -199,6 +213,7 @@ pub(crate) fn texts() -> [String; N_TEXTS] {
         "Offline mode is solo only.
 Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale: searching for players (Trio).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
+        "Battle Royale: match found.\nThe match starts by itself.".to_string(),
     ]
 }
 
@@ -211,6 +226,8 @@ static TEXTS: Texts = Texts(UnsafeCell::new([[0; TEXT_UNITS]; N_TEXTS]));
 static ADDR: AtomicUsize = AtomicUsize::new(0);
 static LABEL_ADDR: AtomicUsize = AtomicUsize::new(0);
 static LABEL_SWAPS: AtomicU32 = AtomicU32::new(0);
+/// The menu the Commence button last asked its text for (console `br_card`).
+static LAST_MENU: AtomicUsize = AtomicUsize::new(0);
 static TARGET: AtomicUsize = AtomicUsize::new(0);
 /// The CL_Dialogues FMG and the address of entry 506040's offset slot (0 = not resolved: Commence is left alone).
 static FMG: AtomicUsize = AtomicUsize::new(0);
@@ -252,6 +269,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             // `rbx` still holds the expedition menu at the call that asks for the Commence button's text (`exe+0x9EF45E`, 1.03.3).
             let menu = (*ctx).Rbx as usize;
             let ours = label_for_card((*ctx).Rdx as u32, crate::mm::phase(), || {
+                LAST_MENU.store(menu, Ordering::Relaxed);
                 ExpeditionMenu::new(&RealMem, menu).is_battle_royale_card()
             });
             if let Some(ours) = ours {
@@ -273,7 +291,11 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
             let mode = crate::features::mode::current();
-            let d = decide_for_card(br_card, players, phase, crate::mm::enabled(), mode);
+            let d = while_starting(
+                decide_for_card(br_card, players, phase, crate::mm::enabled(), mode),
+                phase,
+                crate::mm::auto_start(),
+            );
             PRESSES.fetch_add(1, Ordering::Relaxed);
             LAST.store(
                 (u64::from(mode == GameMode::Offline) << 40)
@@ -299,6 +321,24 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         (*ctx).EFlags |= EFLAGS_RF;
     }
     EXCEPTION_CONTINUE_EXECUTION
+}
+
+/// Whether the card selected right now in the expedition menu is the Battle Royale card (`None`: no menu known). Console `br_card`.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn last_card_is_br() -> Option<bool> {
+    match LAST_MENU.load(Ordering::Relaxed) {
+        0 => None,
+        menu => ExpeditionMenu::new(&RealMem, menu).is_battle_royale_card(),
+    }
+}
+
+/// The Number of Players byte of the expedition menu (`None`: no menu known). Console `br_card`.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn last_players() -> Option<u8> {
+    match LAST_MENU.load(Ordering::Relaxed) {
+        0 => None,
+        menu => ExpeditionMenu::new(&RealMem, menu).settings()?.players(),
+    }
 }
 
 /// Start the thread (`br_menu = true` with the queue: developer mode with `mm_queue`, or the player build with `matchmaking`).
@@ -504,6 +544,19 @@ mod tests {
             decide(PLAYERS_TWO, PHASE_MATCHED, true, GameMode::BattleRoyale),
             Decision::Pass
         );
+    }
+
+    #[test]
+    fn with_the_automatic_start_a_found_match_needs_no_commence() {
+        let pass = Decision::PassMultiplayer;
+        let starting = Decision::Dialog {
+            text: T_STARTING,
+            request: REQ_NONE,
+        };
+        assert_eq!(while_starting(pass, PHASE_MATCHED, true), starting);
+        assert_eq!(while_starting(pass, PHASE_MATCHED, false), pass);
+        assert_eq!(while_starting(pass, PHASE_IDLE, true), pass);
+        assert_eq!(while_starting(pass, PHASE_SEARCHING, true), pass);
     }
 
     #[test]

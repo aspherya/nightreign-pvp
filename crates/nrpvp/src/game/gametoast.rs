@@ -57,6 +57,12 @@ static FAILED: AtomicU32 = AtomicU32::new(0);
 /// The icon of a toast (`UserDispLogParam` field, 0 = none). Dev console `toast_icon`.
 pub(crate) static ICON: AtomicI32 = AtomicI32::new(0);
 
+/// The exe's base once the main loop has run (0 = not yet).
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn exe_base() -> usize {
+    BASE.load(Ordering::Relaxed)
+}
+
 /// Queue one line for the screen (any thread). The game's texts are markup: anything a player typed goes through [`clean`] first.
 pub(crate) fn show(line: &str) {
     let mut q = QUEUE
@@ -119,6 +125,7 @@ pub(crate) fn tick(base: usize) {
 /// The hooked call: the game's thread, once a frame. The second integer register is not an argument of the callee (its second argument
 /// is the float in `xmm1`).
 unsafe extern "system" fn hook_update(fe: usize, dt: f32, a3: usize, a4: usize) -> usize {
+    let _ = std::panic::catch_unwind(|| super::matchstart::pump(BASE.load(Ordering::Relaxed)));
     if WAITING.load(Ordering::Acquire) {
         let _ = std::panic::catch_unwind(pump);
     }
