@@ -1,0 +1,29 @@
+[package]
+name = "nrpvp-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The Nightreign PvP launcher app: install wizard (mod + Seamless Co-op), updates, and Play."
+
+[[bin]]
+name = "NightreignPvP"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+winreg = "0.55"
+rfd = { version = "0.15", default-features = false }
+nrpvp-launcher = { path = "../nrpvp-launcher" }
+
+[features]
+# A plain `cargo build` is a production build: the UI is served from the embedded ui\ folder, never from a dev server.
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

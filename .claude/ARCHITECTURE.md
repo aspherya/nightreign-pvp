@@ -17,7 +17,7 @@ Patterns built for engines are not.
 
 ## 2. As built (2026-11-01; R0, R1, R5, R2-lite, R3-split done, the rest open: §6)
 
-Crates: `nrpvp` (the mod DLL, ~45 k lines incl. tests), `nrpvp-launcher` (player exe), `nrcon` (console client, dev), `nro-core` / `nro` /
+Crates: `nrpvp` (the mod DLL, ~45 k lines incl. tests), `nrpvp-launcher` (player exe in the game folder; its start code is the `nrpvp_launch` lib), `nrpvp-app` (the launcher app with the install wizard, Tauri 2, UI in `crates/nrpvp-app/ui`), `nrcon` (console client, dev), `nro-core` / `nro` /
 `nro-mcp` (orchestrator, dev tooling; `orchestrator/README.md`). `nrscan` (external scanner) was deleted on 2026-10-24 (`git show cbbffa2:crates/nrscan`).
 
 ```

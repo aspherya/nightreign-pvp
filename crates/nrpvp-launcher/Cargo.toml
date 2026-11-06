@@ -8,3 +8,7 @@ description = "Double-click launcher for the Nightreign PvP mod: starts the game
 [[bin]]
 name = "nrpvp_launcher"
 path = "src/main.rs"
+
+[lib]
+name = "nrpvp_launch"
+path = "src/lib.rs"

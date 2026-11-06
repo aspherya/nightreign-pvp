@@ -111,6 +111,26 @@ If the game crashes on quit (0xC0000374) it is the known bug; note the time and 
 - **Rollback:** keep the previous zip (name it by date); a player restores by dropping that zip's files over the game folder. Uninstall = delete
   `nrpvp_launcher.exe` and the `NightreignPvP` folder.
 
+## 5b. Publish for the launcher app (LAUNCH-1)
+
+The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of the **public releases-only
+repository** `notgonnaleo/nightreign-pvp-releases` (DECISIONS 2026-11-06; the source repository is private). One command builds the zip, the
+launcher and `release.json`, and uploads them:
+
+```powershell
+./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2 -DryRun   # stage in dist\release\, upload nothing
+$env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launcher.exe     # try the staged release locally
+./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2           # publish (gh auth login once)
+```
+
+- **Do not publish before the final test session with more than 3 players** (Leonardo, 2026-11-06). Until then use `-DryRun` only.
+- The newest non-draft release is what every launcher installs: publishing is the release. Never reuse a version number.
+- `release.json` pins the game exe and `nrsc.dll` hashes from `pins/nightreign.toml`: the launcher warns a player whose game or Seamless
+  Co-op differs. Update the pins when the game or SC changes.
+- Players download `NightreignPvP-Launcher.exe` once from the releases page; it shows when a newer launcher is out (no self-update yet).
+- Testing without GitHub: `NRPVP_RELEASE_DIR=<folder with release.json + assets>`; another repository: `NRPVP_RELEASES_REPO=owner/name`.
+- UI look without building: `.claude/launch.json` config `launcher-ui-mock` serves `crates/nrpvp-app/ui` on a mock (`?fresh`, `?update`).
+
 ## 6. Quick troubleshooting
 
 | Symptom | Cause / fix |

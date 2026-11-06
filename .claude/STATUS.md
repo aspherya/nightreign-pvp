@@ -30,6 +30,8 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS; a real hit by hand, 2026-11-03). Not seen on two PCs: FS-HM1 |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
+**Launcher app (LAUNCH-1, branch `launcher-app`):** `NightreignPvP.exe` (Tauri 2): first-run wizard (game folder, Seamless Co-op via Nexus, the mod from GitHub releases), update check, Play then the app closes. **Built, unit-tested and tried on a local staged release; not yet tried by Leonardo.** A draft: Leonardo creates the public releases repo; **no release is published before the final test session with more than 3 players** (RELEASE §5b).
+
 **Not built yet** (scope in PROJECT_SCOPE): A match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Nightreign PvP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="app.css" rel="stylesheet">
+</head>
+<body>
+  <!-- Backdrop: night sky, the closing tide ring, embers, grain. Pure decoration. -->
+  <div class="sky" aria-hidden="true">
+    <svg class="tide" viewBox="0 0 1000 1000">
+      <defs>
+        <radialGradient id="tideGlow" cx="50%" cy="50%" r="50%">
+          <stop offset="60%" stop-color="#91B9C9" stop-opacity="0"/>
+          <stop offset="96%" stop-color="#91B9C9" stop-opacity=".12"/>
+          <stop offset="100%" stop-color="#91B9C9" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <circle cx="500" cy="500" r="480" class="ring ring-faint"/>
+      <circle cx="500" cy="500" r="400" class="ring ring-dash"/>
+      <circle cx="500" cy="500" r="300" class="ring ring-faint"/>
+      <circle cx="500" cy="500" r="190" class="ring ring-gold"/>
+      <g class="closing"><circle cx="500" cy="500" r="470" fill="url(#tideGlow)"/><circle cx="500" cy="500" r="470" class="ring ring-tide"/></g>
+    </svg>
+    <canvas id="embers"></canvas>
+    <div class="grain"></div>
+    <div class="vignette"></div>
+  </div>
+
+  <header class="titlebar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <img src="crest.png" alt="" class="crest-img" data-tauri-drag-region>
+      <span data-tauri-drag-region>Nightreign <b data-tauri-drag-region>PvP</b></span>
+      <span class="brand-sep" data-tauri-drag-region></span>
+      <span class="brand-sub" data-tauri-drag-region>Launcher</span>
+    </div>
+    <div class="win-actions">
+      <button class="icon-btn" id="btnSettings" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      </button>
+      <span class="win-sep"></span>
+      <button class="icon-btn" id="btnMin" title="Minimize" aria-label="Minimize"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button class="icon-btn close" id="btnClose" title="Close" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+  </header>
+
+  <main class="home">
+    <section class="hero">
+      <div class="eyebrow">Player versus player &middot; Elden Ring Nightreign</div>
+      <h1 class="title">Nightreign<em>PvP</em></h1>
+      <p class="lede">Turn your blade on other Nightfarers. Nightreign PvP brings player&#8209;versus&#8209;player
+        combat to the game: find rivals, fight them, and prove who is the strongest.</p>
+      <div class="chips" id="chips"></div>
+    </section>
+
+    <aside class="panel">
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="notes" role="tab">Patch notes</button>
+        <button class="tab" data-tab="checks" role="tab">Install</button>
+      </nav>
+      <div class="tab-body" id="tab-notes">
+        <div class="notes-head">
+          <div class="notes-ver" id="notesVer">&mdash;</div>
+          <div class="notes-date" id="notesDate"></div>
+        </div>
+        <div class="notes" id="notes"><p class="muted">Looking for the latest release&hellip;</p></div>
+      </div>
+      <div class="tab-body" id="tab-checks" hidden>
+        <ul class="checks" id="checks"></ul>
+        <button class="link-btn" id="btnRerunSetup">Run setup again</button>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="dock">
+    <div class="dock-status">
+      <div class="dock-line"><span class="dot" id="dockDot"></span><span id="dockText">Checking your install&hellip;</span></div>
+      <div class="bar" id="dockBarWrap" hidden><div class="bar-fill js-bar"></div></div>
+      <div class="dock-sub" id="dockSub"></div>
+    </div>
+    <div class="dock-actions">
+      <button class="link-btn" id="btnPlayAnyway" hidden>Play without updating</button>
+      <button class="play" id="btnPrimary" disabled>
+        <span class="play-label" id="primaryLabel">&hellip;</span>
+        <span class="play-shine"></span>
+      </button>
+    </div>
+  </footer>
+
+  <!-- First-run wizard -->
+  <div class="overlay" id="wizard" hidden>
+    <div class="wizard">
+      <ol class="steps" id="steps">
+        <li data-step="0"><i></i><span><b>Game folder</b><small>Find ELDEN RING NIGHTREIGN</small></span></li>
+        <li data-step="1"><i></i><span><b>Seamless Co-op</b><small>The online layer, by Yui</small></span></li>
+        <li data-step="2"><i></i><span><b>Nightreign PvP</b><small>The mod itself</small></span></li>
+        <li data-step="3"><i></i><span><b>Ready</b><small>Into the night</small></span></li>
+      </ol>
+      <section class="wz-body">
+        <div class="wz-page" data-page="0">
+          <div class="eyebrow">Step 1 of 3</div>
+          <h2>Where is the game?</h2>
+          <p class="muted">The mod is installed into the game's own folder, next to <code>nightreign.exe</code>. Nothing else on your PC is changed.</p>
+          <div class="field" id="wzGame"></div>
+          <div class="row"><button class="btn" id="wzPickGame">Choose folder&hellip;</button></div>
+          <p class="hint">In Steam: right-click ELDEN RING NIGHTREIGN &rsaquo; Manage &rsaquo; Browse local files, then open <b>Game</b>.</p>
+        </div>
+
+        <div class="wz-page" data-page="1" hidden>
+          <div class="eyebrow">Step 2 of 3</div>
+          <h2>Seamless Co-op</h2>
+          <p class="muted">Nightreign PvP runs on top of Yui's Seamless Co-op. It is a separate mod with its own author, so you get it from the official source.</p>
+          <div id="wzSc"></div>
+        </div>
+
+        <div class="wz-page" data-page="2" hidden>
+          <div class="eyebrow">Step 3 of 3</div>
+          <h2>Install Nightreign PvP</h2>
+          <div id="wzMod"></div>
+          <div class="bar big" id="wzBarWrap" hidden><div class="bar-fill js-bar"></div></div>
+          <div class="hint" id="wzBarText"></div>
+        </div>
+
+        <div class="wz-page" data-page="3" hidden>
+          <div class="eyebrow">All set</div>
+          <h2>The night awaits.</h2>
+          <p class="muted">Start Steam, then press Play. The launcher closes itself once the game starts, so it does not take memory while you play.</p>
+          <ul class="ready-list">
+            <li>Always start the game from this launcher (or <code>nrpvp_launcher.exe</code>), never with Steam's Play button.</li>
+            <li>In the Roundtable, pick the <b>Battle Royale</b> card (the last one), set Number of Players to Solo, and press Commence.</li>
+            <li>Everyone you play with needs the same version of the mod and of Seamless Co-op.</li>
+          </ul>
+        </div>
+
+        <div class="wz-foot">
+          <button class="link-btn" id="wzBack">Back</button>
+          <div class="grow"></div>
+          <button class="link-btn" id="wzLater">Close</button>
+          <button class="btn gold" id="wzNext">Continue</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Settings drawer -->
+  <div class="overlay soft" id="settings" hidden>
+    <aside class="drawer">
+      <div class="drawer-head"><h3>Settings</h3><button class="icon-btn" id="btnCloseSettings" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <div class="drawer-sec">
+        <div class="label">Game folder</div>
+        <div class="path" id="setGame">&mdash;</div>
+        <div class="row"><button class="btn" id="setPickGame">Change&hellip;</button><button class="btn" data-open="game">Open folder</button></div>
+      </div>
+      <div class="drawer-sec">
+        <div class="label">Nightreign PvP</div>
+        <div class="path" id="setMod">&mdash;</div>
+        <div class="row"><button class="btn" id="setRepair">Reinstall</button><button class="btn" data-open="logs">Open mod folder</button></div>
+        <p class="hint">Reinstalling replaces <code>nrpvp.toml</code>; your old file is kept as <code>nrpvp.toml.bak</code>.</p>
+      </div>
+      <div class="drawer-sec">
+        <div class="label">Seamless Co-op</div>
+        <div class="path" id="setSc">&mdash;</div>
+        <div class="row"><button class="btn" id="setScSetup">Install or update&hellip;</button></div>
+      </div>
+      <div class="drawer-foot">
+        <span id="setVer"></span>
+        <button class="link-btn" data-open="releases">All releases</button>
+      </div>
+    </aside>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
