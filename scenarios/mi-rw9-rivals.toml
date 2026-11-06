@@ -1,5 +1,5 @@
 name = "mi-rw9-rivals"
-about = "RW-9 on one PC: two emulated instances queue Solo, reach the same expedition as rivals and, from each own screen, the rival is on no map pin, compass mark, party bar or name tag (rivalhud hooks); forcing the filter off brings them all back (contrast screenshots); a lock-on brings back the name tag of the target only"
+about = "RW-9 on one PC: two emulated instances queue Solo, reach the same expedition as rivals and, from each own screen, the rival is on no map pin, compass mark, party bar or name tag (rivalhud hooks); forcing the filter off brings them all back (contrast screenshots)"
 tags = ["mi", "hud", "slow"]
 # Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The queue is allowed only on emulated
 # instances (preflight P7) and nro refuses `mm_queue_*` unless the mod log shows the instance's emulated Steam id.
@@ -220,7 +220,7 @@ console = "rivalhud auto"
 instance = 2
 wait = { console = "rivalhud", contains = ["hiding rivals", "name tag hooked, hiding a rival now"], timeout_s = 10 }
 
-# Lock-on (Q) by player 2 on player 1: the name tag of the target comes back, its party bar and map / compass mark stay hidden.
+# Every site is hooked on both instances (the lock-on target has no name tag either: the game's enemy bar names it).
 [[step]]
 instance = 1
 expect = { console = "rivalhud", contains = ["map / compass hooked", "party bar hooked", "name tag hooked"], absent = ["NOT hooked", "not hooked"] }

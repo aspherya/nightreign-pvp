@@ -442,7 +442,7 @@ exe) that calls the game's function and returns null for a rival's character (ha
 | `exe+0x7DAAA4` | `E8 87 E4 D3 FF` = `exe+0x518F30(WorldChrMan, &handle)` in the party bar producer `exe+0x7DA8B0` (null → `+0` shown := 0 at `exe+0x7DABF7`) | party bar |
 | `exe+0x7DA1F9` | `E8 32 ED D3 FF` = same function in the overhead tag producer `exe+0x7D9F80` (null → `+0x18` := 0 at `exe+0x7DA79E`) | name over the head and its edge arrow |
 
-The name tag site lets LOCAL's lock-on target through (`PlayerIns+0x768`, handle; lock-on read live in `mi-rw9-rivals`). Teammates
+The name tag site hides the lock-on target too (since 2026-11-06: the game's own enemy bar already names it, so the tag doubled the name); `PlayerIns+0x768` (lock-on target handle) is only shown by `rivalhud`. Teammates
 are not in the rival list, so Duo / Trio keep their own team (not run yet). The `exe+0x3D2F30` (`chr+0x1F6` bit 6) test in the tag
 producer only picks a bone position (`exe+0x3D0130`), it is not a visibility gate (corrects the static row above).
 

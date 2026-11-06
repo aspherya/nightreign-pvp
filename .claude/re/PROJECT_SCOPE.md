@@ -95,7 +95,7 @@ When one player (or team) is the last standing:
 - If the game has none, the mod defines one. **Open:** whether vanilla Nightreign ends an expedition on its own at the end of Night 2 is not verified (Day 3 and the Nightlord are removed); until it is, nothing ends a stalled match except the Night's Tide damage inside the final circle. No limit is built.
 
 ### 6. Rules about information and fairness
-- **Rivals are invisible on the HUD:** a rival is on no map, compass, party bar or name tag, and the map pins a rival places are hidden too. Teammates stay visible. The lock-on target keeps its name tag and life bars stay vanilla.
+- **Rivals are invisible on the HUD:** a rival is on no map, compass, party bar or name tag, and the map pins a rival places are hidden too. Teammates stay visible. Life bars stay vanilla; the lock-on target is named only by the game's own enemy bar (no second name tag).
 - **Runes from killing enemies** are shared only inside the own team (Solo: only the killer). A rival's kill gives no runes to the other side.
 - **Enemy strength** follows the team size (the vanilla Solo / Duo / Trio values), not the number of players in the session.
 - **No permanent equipment:** every match begins with the Nightfarer's default gear.

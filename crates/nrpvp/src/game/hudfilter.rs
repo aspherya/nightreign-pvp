@@ -7,7 +7,7 @@
 //! |---|---|---|---|
 //! | `exe+0xC3C04D` | `exe+0x5197E0(chrman, map id)` in the map pin loop | the world-map pin and the compass mark (one list) | null, always |
 //! | `exe+0x7DAAA4` | `exe+0x518F30(chrman, &handle)` in the party bar producer `exe+0x7DA8B0` | the party bar (portrait, name, HP) top left | null, always |
-//! | `exe+0x7DA1F9` | `exe+0x518F30(chrman, &handle)` in the overhead tag producer `exe+0x7D9F80` | the name over the head and its off-screen arrow | null unless the rival is LOCAL's lock-on target (`PlayerIns+0x768`) |
+//! | `exe+0x7DA1F9` | `exe+0x518F30(chrman, &handle)` in the overhead tag producer `exe+0x7D9F80` | the name over the head and its off-screen arrow | null, always: the lock-on target too, since the game's own enemy bar already shows its name (DECISIONS 2026-11-06) |
 //!
 //! Each `call rel32` is pointed at a small trampoline (`mov rax, imm64; jmp rax`) in a page we allocate within ±2 GB of the exe, which
 //! jumps to our hook; the hook calls the game's own function and returns null for a character whose handle is in the rival list. Only
@@ -56,6 +56,7 @@ static RIVAL_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// The rivals' map ids (0 = none), for their markers.
 static RIVAL_IDS: [AtomicU16; MAX_RIVALS] = [const { AtomicU16::new(0) }; MAX_RIVALS];
 static RIVAL_ID_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// LOCAL's lock-on target (diagnostic only: shown by `rivalhud`, no site lets it through).
 static TARGET: AtomicU64 = AtomicU64::new(u64::MAX);
 /// The filter acts (a match runs, or the console forces it).
 static ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -71,9 +72,8 @@ struct Counters {
     patched: AtomicBool,
     calls: AtomicU64,
     hidden: AtomicU64,
-    /// [`now_ms`] of the last rival hidden, and of the last rival shown because it is the lock-on target (name tags).
+    /// [`now_ms`] of the last rival hidden.
     last_hidden: AtomicU64,
-    last_target: AtomicU64,
 }
 static MAP: Counters = Counters::new();
 static PARTY: Counters = Counters::new();
@@ -93,26 +93,17 @@ impl Counters {
             calls: AtomicU64::new(0),
             hidden: AtomicU64::new(0),
             last_hidden: AtomicU64::new(0),
-            last_target: AtomicU64::new(0),
         }
     }
     fn line(&self, name: &str) -> String {
         if self.patched.load(Ordering::Relaxed) {
-            let recent = |a: &AtomicU64| {
-                let t = a.load(Ordering::Relaxed);
-                t != 0 && now_ms().saturating_sub(t) < 1000
-            };
+            let t = self.last_hidden.load(Ordering::Relaxed);
             format!(
-                "{name} hooked{}{} ({} hidden / {} looked up)",
-                if recent(&self.last_hidden) {
+                "{name} hooked{} ({} hidden / {} looked up)",
+                if t != 0 && now_ms().saturating_sub(t) < 1000 {
                     ", hiding a rival now"
                 } else {
                     ", no rival hidden in the last second"
-                },
-                if recent(&self.last_target) {
-                    ", showing the lock-on target"
-                } else {
-                    ""
                 },
                 self.hidden.load(Ordering::Relaxed),
                 self.calls.load(Ordering::Relaxed)
@@ -148,9 +139,9 @@ fn wanted(in_match: bool) -> bool {
     }
 }
 
-/// What a hook answers for a looked-up character (pure, tested). `allow_target`: the lock-on target keeps it (name tags).
-fn hide(active: bool, handle: u64, rivals: &[u64], target: u64, allow_target: bool) -> bool {
-    active && rivals.contains(&handle) && !(allow_target && handle == target)
+/// What a hook answers for a looked-up character (pure, tested).
+fn hide(active: bool, handle: u64, rivals: &[u64]) -> bool {
+    active && rivals.contains(&handle)
 }
 
 /// Milliseconds since the first call (monotonic).
@@ -164,7 +155,7 @@ fn now_ms() -> u64 {
 }
 
 /// The hook's answer for `chr`: null for a hidden rival; counted per site.
-fn judge(c: &Counters, chr: usize, allow_target: bool) -> usize {
+fn judge(c: &Counters, chr: usize) -> usize {
     c.calls.fetch_add(1, Ordering::Relaxed);
     if chr == 0 || !ACTIVE.load(Ordering::Relaxed) {
         return chr;
@@ -180,15 +171,11 @@ fn judge(c: &Counters, chr: usize, allow_target: bool) -> usize {
     for (i, slot) in list.iter_mut().enumerate().take(n) {
         *slot = RIVALS[i].load(Ordering::Relaxed);
     }
-    let target = TARGET.load(Ordering::Relaxed);
-    if hide(true, handle, &list[..n], target, allow_target) {
+    if hide(true, handle, &list[..n]) {
         c.hidden.fetch_add(1, Ordering::Relaxed);
         c.last_hidden.store(now_ms(), Ordering::Relaxed);
         0
     } else {
-        if allow_target && handle == target && list[..n].contains(&handle) {
-            c.last_target.store(now_ms(), Ordering::Relaxed);
-        }
         chr
     }
 }
@@ -202,7 +189,7 @@ unsafe extern "system" fn hook_map(man: usize, id: u32) -> usize {
     let orig: ById =
         unsafe { std::mem::transmute::<usize, ById>(ORIG_BY_ID.load(Ordering::Relaxed)) };
     let chr = unsafe { orig(man, id) };
-    judge(&MAP, chr, false)
+    judge(&MAP, chr)
 }
 
 /// Party bar producer (game thread, every frame).
@@ -211,7 +198,7 @@ unsafe extern "system" fn hook_party(man: usize, handle: *const u64) -> usize {
     let orig: ByHandle =
         unsafe { std::mem::transmute::<usize, ByHandle>(ORIG_BY_HANDLE.load(Ordering::Relaxed)) };
     let chr = unsafe { orig(man, handle) };
-    judge(&PARTY, chr, false)
+    judge(&PARTY, chr)
 }
 
 /// Overhead name tag producer (game thread, every frame).
@@ -220,7 +207,7 @@ unsafe extern "system" fn hook_tag(man: usize, handle: *const u64) -> usize {
     let orig: ByHandle =
         unsafe { std::mem::transmute::<usize, ByHandle>(ORIG_BY_HANDLE.load(Ordering::Relaxed)) };
     let chr = unsafe { orig(man, handle) };
-    judge(&TAG, chr, true)
+    judge(&TAG, chr)
 }
 
 /// Is a marker placed by `owner` (map id) a rival's? Pure, tested.
@@ -660,21 +647,12 @@ mod tests {
     }
 
     #[test]
-    fn rivals_are_hidden_teammates_and_the_target_tag_are_not() {
+    fn rivals_are_hidden_teammates_are_not() {
         let rivals = [0x10, 0x20];
-        assert!(hide(true, 0x10, &rivals, u64::MAX, false));
-        assert!(
-            !hide(true, 0x30, &rivals, u64::MAX, false),
-            "a teammate stays"
-        );
-        assert!(
-            !hide(false, 0x10, &rivals, u64::MAX, false),
-            "off outside a match"
-        );
-        // The lock-on target keeps its name tag, not its map pin or party bar.
-        assert!(!hide(true, 0x20, &rivals, 0x20, true));
-        assert!(hide(true, 0x20, &rivals, 0x20, false));
-        assert!(hide(true, 0x10, &rivals, 0x20, true));
+        assert!(hide(true, 0x10, &rivals));
+        assert!(hide(true, 0x20, &rivals), "the lock-on target too");
+        assert!(!hide(true, 0x30, &rivals), "a teammate stays");
+        assert!(!hide(false, 0x10, &rivals), "off outside a match");
     }
 
     #[test]
