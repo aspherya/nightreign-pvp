@@ -57,7 +57,7 @@ Past regression runs: `testing-log/`.
 
 **Why:** the game has its own host migration; on one PC it works when the Steam lobby owner moves (HOST_MIGRATION.md). Only real Steam can show whether the owner moves, and in time. **This is the most important open test of the project.**
 
-**Zip:** build from `main` after the host-migration PR with `scripts\package-release.ps1 -MatchPlayers N`, N = how many really play (`release-zip` skill). Everyone needs the same zip. The more players the better; 3 is the minimum that shows survivors staying together, and 2 still shows the promotion.
+**Zip:** build from `main` after the host-migration PR with `scripts\package-release.ps1 -MatchPlayers N`, N = how many really play (`release-zip` skill). **Current: 2026-11-07 18:51 UTC, `main` b7c77d2, `-MatchPlayers 3`, Solo, `nrpvp.dll` FAF36FBC275172D3** (STATUS §2); each PC checks that `NightreignPvP\VERSION.txt` shows that hash. Everyone needs the same zip. The more players the better; 3 is the minimum that shows survivors staying together, and 2 still shows the promotion.
 
 **Before each match:** nobody presses anything as host any more, so look at the `Preparing n/m` panel at the top right before the departure: the host is the name with the small banner mark. Write down the clock time when the host leaves. (In the logs afterwards: `matchstart: ready sent (leader true`.)
 

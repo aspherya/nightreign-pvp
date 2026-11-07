@@ -44,7 +44,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 | Place | What |
 |---|---|
-| `dist\NightreignPvP.zip` in the main checkout | **Built 2026-11-07 from branch `bots` 6443787 (PR #58: bots, Bots switch), `nrpvp.dll` 0EC21E79DC9F77D8; installed by Claude into Leonardo's `Game\NightreignPvP\` at his request** (his `nrpvp.toml` kept; the old folder backed up to `%TEMP%\NightreignPvP-backup-20261107-094213`). Note: `scripts\build.ps1` only updates the repo's `dist\`; the game started from `nrpvp_launcher.exe` loads `Game\NightreignPvP\` |
+| `dist\NightreignPvP.zip` in the main checkout | **Built 2026-11-07 18:51 UTC from `main` b7c77d2 (clean; PR #63 TIDE-MAX: the final circle closes to a point), `-MatchPlayers 3`, `team_size = 1` (Solo), `nrpvp.dll` FAF36FBC275172D3, regulation.bin 1FD557448620BF28; not installed yet** (Leonardo installs it; every player in the session needs this same zip). The earlier zip of 2026-11-07 (branch `bots`, `nrpvp.dll` 0EC21E79DC9F77D8, 2 players, installed in Leonardo's `Game\NightreignPvP\`) must not be sent any more. Note: `scripts\build.ps1` only updates the repo's `dist\`; the game started from `nrpvp_launcher.exe` loads `Game\NightreignPvP\` |
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
 
 **Release candidate (2026-11-01):** the build of `main` at the audit PRs was tested with a friend in a 2-player Solo match; Leonardo accepted it as the release candidate, core gameplay frozen (DECISIONS). Three checks left for a finished Battle Royale: Grace in combat, Duo/Trio, the revive item.
