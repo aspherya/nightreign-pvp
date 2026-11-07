@@ -1,0 +1,71 @@
+name = "score-bots-end"
+about = "SB-4 end-of-match summary (bots mode): one bot killed by a mob (gone, replaced), then LOCAL kills every bot and wins; after the end flow, in the Roundtable, the game's dialog (3 lines a page, OK for the next page) lists every participant (7: LOCAL, the 5 bots and the replacement) with kills and deaths, LOCAL first as the winner"
+tags = ["rules", "hud", "slow"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+bots_fill = 5
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+wait_log = { contains = "bots: fill done: 5 of 5", timeout_s = 240, since = "run" }
+[[step]]
+console = "bots_kill 1 mob"
+[[step]]
+wait_log = { contains = ["scoreboard:", "is gone (a bot replaced after a mob's kill)"], timeout_s = 40, since = "run" }
+[[step]]
+wait_log = { contains = "sector 6 of 6", timeout_s = 60, since = "run" }   # the replacement bot is in
+[[step]]
+console = "bots_kill all"
+[[step]]
+wait_log = { contains = ["match decided", "this game's player won"], timeout_s = 90, since = "run" }
+[[step]]
+console = "score"
+[[step]]
+sleep_ms = 12000
+[[step]]
+keys = "F; wait 3s"
+[[step]]
+keys = "F; wait 3s"
+[[step]]
+keys = "F; wait 4s"
+[[step]]
+keys = "F; wait 6s"
+[[step]]
+wait = { console = "status", contains = "team_type 1", timeout_s = 90 }
+[[step]]
+wait_log = { contains = "scoreboard: summary page 1/3 shown", timeout_s = 60, since = "run" }
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+screenshot = "summary1"
+[[step]]
+keys = "F"   # OK: the next page follows
+[[step]]
+wait_log = { contains = "scoreboard: summary page 2/3 shown", timeout_s = 15, since = "run" }
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+screenshot = "summary2"
+[[step]]
+keys = "F"
+[[step]]
+wait_log = { contains = "scoreboard: summary page 3/3 shown", timeout_s = 15, since = "run" }
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+screenshot = "summary3"
+[[step]]
+keys = "F"
+[[step]]
+wait_log = { contains = "scoreboard: summary shown (7 rows, 3 pages)", timeout_s = 15, since = "run" }
+[[step]]
+expect_log = { contains = ["scoreboard: match over, summary of 7 rows", "- Winner  (you)"], absent = ["scoreboard: summary not shown", "was not seen open", "panicked at"], since = "run" }
+[[step]]
+screenshot = "summary_closed"

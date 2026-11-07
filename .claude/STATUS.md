@@ -28,6 +28,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | Offline mode (`mode = "offline"`) | **Works**; the test base of the orchestrator |
 | **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
 | **Killfeed (KF-1):** `A downed B`, `A killed B` as toasts, character names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)) | **Works with two instances** (`mi-killfeed` PASS, 2026-11-03). A real hit: FS-HM1 item 8 |
+| **K/D scoreboard (SB, [SCOREBOARD.md](SCOREBOARD.md)):** in a match the pause menu (Esc / pad Start) shows your own `Kills: n / Deaths: n` as the game's blinking centre message; back at the Roundtable after a match the game's dialog lists everyone (players and bots) by place with kills and deaths, 3 lines a page, OK for the next | **Works on one PC** (`score-bots`, `score-bots-end` PASS, 2026-11-07). Not seen with two real players (kills come from the victim's game, like the killfeed) |
 | **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS; a real hit by hand, 2026-11-03). Not seen on two PCs: FS-HM1 |
 | **Bots ([BOTS.md](BOTS.md)), offline training mode (beta):** Matchmaking Settings > Bots: On + Battle Royale card + Solo + Commence = Solo against 5 AI Nightfarers, no other players. They start at separate far camps; every minute the farthest comes to ~100 m of you; they count for the win, a bot kill defeats you (with only bots left you lose at once) | `mi-bots-menu`, `bots-match` PASS on one PC; Leonardo liked his second match (2026-11-07). Not yet: levels, bot names, Duo/Trio with bots, friends + bots |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
@@ -49,7 +50,10 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 ## 3. Next
 
-**The list of 2026-11-03 is done on one PC** (Grace, pin beam, killfeed, the match start). What is left of it needs real Steam: a fresh zip and the next session with friends (FS-HM1, now with item 9). Leonardo sets the next priority.
+**The list of 2026-11-03 is done on one PC** (Grace, pin beam, killfeed, the match start). What is left of it needs real Steam: a fresh zip and the next session with friends (FS-HM1, now with item 9).
+
+**Next (Leonardo, 2026-11-07): the K/D scoreboard** (TASKS "Scoreboard", design in [SCOREBOARD.md](SCOREBOARD.md); waiting for his
+answers Q1-Q4), then Arena (MODE-02, designed separately). The match timer is parked until he knows how long a match should last.
 
 **Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 

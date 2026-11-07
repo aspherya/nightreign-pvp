@@ -1,0 +1,69 @@
+name = "score-bots"
+about = "SB: the own K/D score. Bots mode: LOCAL kills one bot (K 1), dies to a mob (D 1, the game respawns it); `score` counts both; the score message (the game's centre message) shows from the console and when the pause menu opens (Esc), with LOCAL's own numbers only"
+tags = ["rules", "hud"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+bots_fill = 5
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+god = false   # a mob death is part of the test
+[[step]]
+wait_log = { contains = "bots: fill done: 5 of 5", timeout_s = 240, since = "run" }
+[[step]]
+console = "bots_kill 1"
+[[step]]
+wait_log = { contains = ["killfeed: bot event", "kind: Killed"], timeout_s = 15, since = "run" }
+[[step]]
+wait = { console = "score", contains = " K 1 D 0", timeout_s = 10 }
+# A mob's death: no rival hit, the die-at-once effect so HP 0 is a death and not a down.
+[[step]]
+console = "flag 10007420 1"
+[[step]]
+console = "hp0"
+[[step]]
+wait_log = { contains = "died to an enemy", timeout_s = 40, since = "run" }
+[[step]]
+wait = { console = "score", contains = " K 1 D 1", timeout_s = 10 }
+[[step]]
+sleep_ms = 25000   # the game's respawn
+[[step]]
+console = "score"
+[[step]]
+console = "score_show"
+[[step]]
+wait_log = { contains = "scoreboard: own score shown: Kills: 1   |   Deaths: 1", timeout_s = 10, since = "run" }
+[[step]]
+keys = "wait 1500ms"
+[[step]]
+screenshot = "score_console"
+[[step]]
+mark = "esc"
+[[step]]
+keys = "ESC"
+[[step]]
+wait_log = { contains = "scoreboard: own score shown", timeout_s = 10, since = "mark:esc" }
+[[step]]
+keys = "wait 500ms"
+[[step]]
+screenshot = "score_pause_menu1"   # the message blinks: three photos, at least one catches it lit
+[[step]]
+keys = "wait 700ms"
+[[step]]
+screenshot = "score_pause_menu2"
+[[step]]
+keys = "wait 700ms"
+[[step]]
+screenshot = "score_pause_menu3"
+[[step]]
+keys = "ESC"   # closing the menu shows nothing
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+expect_log = { contains = ["scoreboard: own score shown"], absent = ["scoreboard: own score not shown", "panicked at"], since = "run" }

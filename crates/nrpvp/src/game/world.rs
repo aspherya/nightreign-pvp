@@ -153,6 +153,8 @@ pub(crate) struct World {
     pub spec_prev: bool,
     /// RW-1: the leave key (F10) went down since the last tick (edge; filled by the main loop).
     pub leave_pressed: bool,
+    /// SB: the game's pause menu (Esc or the pad's Start) opened since the last tick (edge; filled by the main loop).
+    pub pause_opened: bool,
     /// RW-7: each fighter's world position, same order as [`World::fighters`] (filled by the main loop).
     pub positions: [Option<[f32; 3]>; MAX_FIGHTERS],
     /// R7-3: the exe base.
@@ -246,6 +248,7 @@ impl World {
             local_in_tide,
             local_hits: crate::game::combat_state::LocalHits::default(),
             leave_pressed: false,
+            pause_opened: false,
             spec_next: false,
             spec_prev: false,
             death_held: false,
@@ -313,6 +316,7 @@ impl World {
             self.local_hits = c.local_hits();
         }
         self.leave_pressed = input::leave_key_edge();
+        self.pause_opened = input::pause_menu_opened(menugate::menu_word(base));
         let (sn, sp) = input::spectate_switch_edges();
         let in_menu = menugate::menu_open(base);
         (self.spec_next, self.spec_prev) = (sn && !in_menu, sp && !in_menu);

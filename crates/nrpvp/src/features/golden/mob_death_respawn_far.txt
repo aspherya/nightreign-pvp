@@ -26,6 +26,7 @@ t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0
 t=009799 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
           .
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=015000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
@@ -63,6 +64,7 @@ t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0
 t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
           .
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(5000,0,0)
@@ -92,6 +94,7 @@ t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0
 t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
           .
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(899,0,0)
@@ -106,6 +109,7 @@ t=000000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0
 t=001000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
           .
 t=001800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 t=015000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
@@ -137,6 +141,7 @@ t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (
           log: night_match: Day 2 has begun; clock speed back to 72.9
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
@@ -168,6 +173,7 @@ t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (
           log: night_match: Day 2 has begun; clock speed back to 72.9
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 08:00:00 x72.90 | day2 | pos (600,0,0) | at #1(620,0,0)
@@ -198,6 +204,7 @@ t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0
 t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 0; places 2
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=024000 in: [6001*:hp240/s0 6002:hp240/s0] | clock - | day2 | pos (600,0,0) | at #1(620,0,0)
@@ -227,6 +234,7 @@ t=008000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0
 t=009000 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
           .
 t=009800 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 2
 t=020000 in: [6001*:hp240/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (600,0,0) | at #1(620,0,0)

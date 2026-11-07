@@ -165,6 +165,51 @@ Royale or Offline?" when the player first walks to the table and sets `mode` thr
 
 **Bots were cancelled on 2026-10-24 and are back as a feature on 2026-11-06:** see the "Bots" section and [BOTS.md](BOTS.md).
 
+## Scoreboard (Leonardo, 2026-11-07: first priority; design, rules and open questions in [SCOREBOARD.md](SCOREBOARD.md))
+
+### SB — K/D scoreboard: own numbers in the match, everyone's at the end
+Owner: OPUS designs and reviews, SONNET/implementer builds one piece at a time | Status: **SB-4 built (end-of-match summary, `score-bots-end` PASS 2026-11-07); SB-1 built and the own score built
+as the game's centre message (Leonardo's choice, not a toast); `score-bots` PASS, Leonardo saw it over the open menu; next: the end-of-match summary (SB-4)** | Depends on: KF-1, BOT-KF (on `main`) | Phase: player feature
+Goal: during a match each player sees only their own kills and deaths as they change; when the match ends every game shows every
+participant's kills and deaths (players and bots).
+Context: SCOREBOARD.md §2-§7 (rules, data path, UI options); re/TOAST_KILLFEED.md (toasts, `Feed`); BOTS.md §2d; `features/killfeed.rs`,
+`features/br_match/kill_report.rs`, `defeat.rs`, `elimination.rs`, `bots/fill.rs`; orchestrator/SCENARIOS.md (how to write a scenario).
+Steps (one PR each; stop after each for review):
+1. **SB-1 Tally + console `score`:** pure `Tally` in `features/scoreboard.rs` with the rules of SCOREBOARD §3 (kill = killer of a
+   `Killed` event; death = `Killed` / `Tide`, plus LOCAL's and bots' mob deaths if Q1 = yes; downs not counted; left = marked, no kill;
+   dedupe like `Feed`). Fed from `KillFeed::tick` for every accepted event (the bus topic keeps one reader). Frozen as "last match" when
+   the expedition ends. A replacement bot takes the row and name of the bot it replaces (`bots/fill.rs`). Console `score` (dev build,
+   `add-console-command` skill) prints one line per participant: `name K n D n [out: rival|tide] [left]`.
+   Acceptance: unit tests for every row of §3; scenario **`score-bots`** (one game, `bots_fill = 5`, like `bots-match`): `bots_kill 1
+   mob` then the replacement → `expect score` shows that bot's name again (and `D 1` if Q1 = yes); `bots_kill all` → `expect score`
+   LOCAL `K 5 D 0`, every original bot `D 1`.
+2. **SB-2 (done differently 2026-11-07: the blinking centre message on Esc / Start, not a toast; `score-bots` PASS) Own toast (option A):** on LOCAL's game only, after an event that changes LOCAL's kills or deaths, one gold toast
+   `Your score: n kills · n deaths` (plural right, < 120 units with markup). Nothing about other players.
+   Acceptance: `score-bots` gains `wait_log` "scoreboard: own toast" ×5 + "gametoast: shown" and a screenshot; new scenario
+   **`score-self`** (one game, like `defeat-mob` then `defeat-rival`: `hp0` = mob death, wait the respawn, then `rival_hit` + `hp0`)
+   → own toasts show deaths 1 then 2 (Q1 = yes) or only the second (Q1 = no); `expect score` LOCAL `out: rival`.
+3. **SB-3 Mob / fall deaths on the bus** (only if Q1 = yes): kind 3 `Died` fact from the victim's game when `Defeat` judges a death
+   that is not a defeat; no killfeed line; an older build ignores it (unit test). Acceptance: scenario **`mi-score`** (two instances,
+   like `mi-killfeed`): P2 `hp0` with no rival hit (respawns), then `rival_hit` + `hp0` → on both games `expect score`: P2 `D 2 out:
+   rival`, P1 `K 1`.
+4. **(done 2026-11-07: the run-time text works in the dialog; it shows 3 lines, so the summary comes in pages) SB-4a Spike (Opus, budget one session):** a long placeholder (1024 units) in EventTextForMap_dlc01 and a `display: dialog` event in
+   `m10_00_00_00` (`gamedata/emevd-events.json`); a dev command writes 8 coloured lines over the placeholder at run time and raises the
+   flag at the Roundtable. Questions: does the dialog show the new text, how many lines fit, does markup work. Result into
+   SCOREBOARD §9 and MEMORY_MAP. If the text does not change: stop, report, fall back to E2 (toasts in the banner).
+5. **(done 2026-11-07, `score-bots-end` PASS; no colours, no team totals yet) SB-4b End summary (E1):** when the player stands in the Roundtable after a match, the dialog shows the frozen table (SCOREBOARD §6
+   order and format; own row blue, rivals red; Duo/Trio grouped with team totals; "as of when you left" for an early leaver).
+   Acceptance: scenario **`score-bots-end`** (one game, bots mode: `bots_kill all` → WIN → end-flow presses as `match-win-end` →
+   Roundtable → `wait_log` "scoreboard: summary shown (6 rows)" + screenshot); `mi-score` gains the same end on both games with the
+   same rows in both logs.
+6. **SB-5 (later, Leonardo 2026-11-07):** a professional in-match UI by editing the game's GFx menus with JPEXS
+   (SCOREBOARD §8b); its own design card when it starts.
+Deliverables: `features/scoreboard.rs`, small edits in `killfeed.rs`, `kill_report.rs` / `defeat.rs` (SB-3), `bots/fill.rs` (names),
+`gamedata/*.json` (SB-4), the four scenarios + SCENARIOS.md rows, CONSOLE.md row, testing-log entries, SCOREBOARD §9.
+Acceptance (card): the scenarios above PASS; two real PCs (real hits, real names, the summary on both screens) go into the next FS
+runbook (TESTING §6).
+Out of scope: a persistent HUD counter (SB-5), lifetime stats across matches (Q4), assists, downs ("knocks"), ranking, any ImGui.
+Result: (filled in per piece)
+
 ## Bots (Leonardo, 2026-11-06; design, plan and open questions in [BOTS.md](BOTS.md))
 
 ### BOT-R1 — RE: how to steer a bot

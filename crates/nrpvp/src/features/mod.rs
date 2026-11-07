@@ -14,6 +14,7 @@ pub(crate) mod hooks;
 pub(crate) mod killfeed;
 pub(crate) mod mode;
 pub(crate) mod nights;
+pub(crate) mod scoreboard;
 
 #[cfg(test)]
 mod golden_timelines;

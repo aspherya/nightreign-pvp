@@ -61,6 +61,16 @@ pub(crate) fn text_at(fmg: usize, id: u32) -> Option<usize> {
     Some(fmg + offset)
 }
 
+/// The categories of the text table (`repo+0x14` bounds them; this caps a bad read).
+const MAX_CATEGORY: u32 = 1024;
+
+/// Address of the text `id` in whichever FMG of the repository holds it (the first one found).
+pub(crate) fn find_text(base: usize, id: u32) -> Option<usize> {
+    (0..MAX_CATEGORY)
+        .filter_map(|c| fmg_for(base, c))
+        .find_map(|f| text_at(f, id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

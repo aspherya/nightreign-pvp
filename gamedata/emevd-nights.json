@@ -8,7 +8,8 @@
     { "id": 99100803, "ending": "win", "banner": 4000, "secs": 10, "flag": 10007411 },
     { "id": 99100804, "ending": "lose", "banner": 4010, "secs": 10, "flag": 10007412 },
     { "id": 99100805, "speffect": 102130, "flag": 10007420 },
-    { "id": 99100806, "message": 99100600, "display": "blinking", "flag": 10007413 }
+    { "id": 99100806, "message": 99100600, "display": "blinking", "flag": 10007413 },
+    { "id": 99100807, "message": 99100601, "display": "blinking", "flag": 10007414 }
   ],
   "replace": [
     { "id": 1180, "body": "end" },

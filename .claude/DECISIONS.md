@@ -92,3 +92,6 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
 - **Bots for players again, as an offline training mode (beta)** (Leonardo, 2026-11-07, after his second bots match, which he liked;
   supersedes "a developer option for now" of the same day): the Bots row is on in the player build; its help says it is an offline
   training mode, Solo against 5 AI bots with no other players. Bots Off stays the online Battle Royale queue.
+- **K/D scoreboard in the match** (Leonardo, 2026-11-07): own numbers only, shown as the game's blinking centre message when the pause
+  menu opens (Esc / pad Start); mob and fall deaths count as deaths. Not a separate key (no free pad button), not the key-guide text
+  swap (tried, reverted). The professional version is a GFx edit of the game's menus with JPEXS, later (SCOREBOARD §8b).

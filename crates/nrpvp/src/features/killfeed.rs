@@ -11,11 +11,29 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use super::{Ctx, Feature, Phase};
+use super::{scoreboard, Ctx, Feature, Phase};
 use crate::game::world::World;
 use crate::game::{gametoast, layout, mem};
 use crate::net::bus::{self, topic};
 
+/// SB: a participant missing from the world this long is gone (a player who left, a bot the game removed); the match rules use the same.
+const GONE_AFTER: Duration = Duration::from_secs(6);
+/// SB: a rival bot dead this long with no kill report was killed by a mob.
+const BOT_DEAD_AFTER: Duration = Duration::from_secs(2);
+/// SB: the end-of-match summary waits this long in the Roundtable with no menu open (the arrival's fade and banners).
+const SUMMARY_SETTLE: Duration = Duration::from_secs(5);
+/// SB: the next page of the summary follows the closed dialog after this long.
+const PAGE_GAP: Duration = Duration::from_millis(600);
+/// SB: the menu word must read a dialog this long to count as open, and 0 this long to count as closed (it flickers while a dialog
+/// opens: score-bots-end run 1794072172 skipped a page).
+const DIALOG_OPEN_MIN: Duration = Duration::from_millis(500);
+const DIALOG_CLOSED_MIN: Duration = Duration::from_millis(300);
+/// SB: a page's dialog closed faster than this was not read (a leftover key press closed it): it is shown once more.
+const PAGE_MIN_READ: Duration = Duration::from_millis(1_500);
+/// SB: a page's dialog not seen open this long after it was asked for is given up (the next page follows).
+const PAGE_NEVER_OPENED: Duration = Duration::from_secs(10);
+/// SB: the summary is dropped if the player is not in the Roundtable this long after the match.
+const SUMMARY_GIVE_UP: Duration = Duration::from_secs(300);
 /// Names are read again this often (a player who just loaded in).
 const NAME_EVERY: Duration = Duration::from_secs(1);
 /// Characters of a name in `PlayerGameData` (the game's own limit, 16 with the terminator).
@@ -36,6 +54,8 @@ pub(crate) enum KillKind {
     Killed,
     /// Out of the match by the Night's Tide.
     Tide,
+    /// SB: died to a mob or a fall; the game respawns the player (no line on the feed, a death on the scoreboard).
+    Died,
 }
 
 /// One line of the feed, as the victim's game saw it.
@@ -58,6 +78,7 @@ pub(crate) fn encode(ev: KillEvent, seq: u32) -> (u32, u32) {
         KillKind::Downed => 0,
         KillKind::Killed => 1,
         KillKind::Tide => 2,
+        KillKind::Died => 3,
     };
     (
         (u32::from(ev.victim) << 16) | ((seq & 0x3FFF) << 2) | kind,
@@ -65,13 +86,13 @@ pub(crate) fn encode(ev: KillEvent, seq: u32) -> (u32, u32) {
     )
 }
 
-/// The event of a bus fact (pure); `None` for a kind this build does not know.
+/// The event of a bus fact (pure). A build before SB decodes kind 3 (`Died`) as `None` and ignores it.
 pub(crate) fn decode(key: u32, value: u32) -> Option<KillEvent> {
     let kind = match key & 3 {
         0 => KillKind::Downed,
         1 => KillKind::Killed,
         2 => KillKind::Tide,
-        _ => return None,
+        _ => KillKind::Died,
     };
     Some(KillEvent {
         kind,
@@ -151,6 +172,26 @@ impl Feed {
         }
     }
 
+    /// Everyone seen this expedition with their name and team (the end-of-match summary).
+    pub(crate) fn rows(&self) -> Vec<scoreboard::Row> {
+        self.teams
+            .iter()
+            .map(|(id, team)| scoreboard::Row {
+                id: *id,
+                name: self.plain_name(*id),
+                team: *team,
+            })
+            .collect()
+    }
+
+    /// A player's name as plain text (the console's score table).
+    pub(crate) fn plain_name(&self, id: u16) -> String {
+        self.names
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| format!("{id:#06X}"))
+    }
+
     /// A player's name in the colour of their side.
     fn who(&self, id: u16) -> String {
         let name = self.names.get(&id).map_or(NO_NAME, String::as_str);
@@ -161,7 +202,7 @@ impl Feed {
 
     /// The line of an event, and the book kept. A player already out gets no second line (a report that came twice).
     pub(crate) fn line(&mut self, ev: KillEvent) -> Option<String> {
-        if self.out.contains(&ev.victim) {
+        if ev.kind == KillKind::Died || self.out.contains(&ev.victim) {
             return None;
         }
         let victim = self.who(ev.victim);
@@ -175,6 +216,7 @@ impl Feed {
             (KillKind::Killed, Some(k)) => format!("{k} killed {victim}"),
             (KillKind::Killed, None) => format!("{victim} was killed"),
             (KillKind::Tide, _) => format!("{victim} was consumed by the tide"),
+            (KillKind::Died, _) => return None,
         })
     }
 }
@@ -187,19 +229,62 @@ fn read_name(player: usize) -> Option<String> {
     Some(String::from_utf16_lossy(&units[..n]))
 }
 
+/// SB: a summary page whose dialog was asked for: when, whether it was seen open, and the menu word since when.
+#[derive(Debug)]
+struct PageWait {
+    at: Instant,
+    /// The page's text (shown again once if its dialog closed too fast to be read), and whether it is already the second time.
+    text: String,
+    again: bool,
+    /// When the dialog was seen open (the menu word read a dialog long enough).
+    opened_at: Option<Instant>,
+    opened: bool,
+    word: Option<u32>,
+    word_since: Instant,
+}
+
 /// The feature: names from the world, events from the bus and from this game's rules, lines to the screen.
 pub(crate) struct KillFeed {
     feed: Feed,
+    /// SB: every participant's kills and deaths (fed every event the feed sees).
+    tally: scoreboard::Tally,
     active: bool,
     names_at: Option<Instant>,
+    /// SB: this expedition was a Battle Royale match (`World::in_match` was seen).
+    in_match: bool,
+    /// SB: LOCAL's short id this expedition.
+    me: Option<u16>,
+    /// SB: when each participant was last seen in the world, and whether it is a bot.
+    seen: BTreeMap<u16, (Instant, bool)>,
+    /// SB: since when each rival bot has read HP 0 (a bot's body stays in the world after its death).
+    bot_dead: BTreeMap<u16, Instant>,
+    /// SB: the end-of-match summary's dialog pages still to show, since when (the match end), and the rows in all.
+    summary: Option<(std::collections::VecDeque<String>, Instant, usize)>,
+    /// SB: since when the Roundtable has been calm (no menu, no dialog), and the page whose dialog was asked for: when, and whether
+    /// it was seen open (the menu word is not 0 while a dialog is open).
+    calm_since: Option<Instant>,
+    page_asked: Option<PageWait>,
+    pages_shown: usize,
+    /// SB: the next page is one shown again.
+    again_next: bool,
 }
 
 impl KillFeed {
     pub(crate) fn new() -> Self {
         KillFeed {
             feed: Feed::default(),
+            tally: scoreboard::Tally::default(),
             active: false,
             names_at: None,
+            in_match: false,
+            me: None,
+            seen: BTreeMap::new(),
+            bot_dead: BTreeMap::new(),
+            summary: None,
+            calm_since: None,
+            page_asked: None,
+            pages_shown: 0,
+            again_next: false,
         }
     }
 }
@@ -211,19 +296,40 @@ impl Feature for KillFeed {
     fn phase(&self) -> Phase {
         Phase::AfterCombat
     }
-    fn tick(&mut self, w: &World, _ctx: &mut Ctx) {
+    fn tick(&mut self, w: &World, ctx: &mut Ctx) {
         let received = bus::take(topic::KILL_FEED);
         let local =
             std::mem::take(&mut *LOCAL_EVENTS.lock().unwrap_or_else(PoisonError::into_inner));
         if !w.in_expedition() {
             if self.active {
                 self.active = false;
+                let rows = self.feed.rows();
+                if self.in_match && rows.len() >= 2 {
+                    let text = scoreboard::summary(&self.tally, &rows, self.me);
+                    tracing::info!(
+                        "scoreboard: match over, summary of {} rows waits for the Roundtable:\n{text}",
+                        rows.len()
+                    );
+                    let pages = scoreboard::pages(&text).into();
+                    self.summary = Some((pages, Instant::now(), rows.len()));
+                    self.pages_shown = 0;
+                    self.page_asked = None;
+                }
                 self.feed = Feed::default();
+                self.tally = scoreboard::Tally::default();
                 self.names_at = None;
+                self.in_match = false;
+                self.me = None;
+                self.seen.clear();
+                self.bot_dead.clear();
             }
+            self.show_summary(w, ctx);
             return;
         }
+        self.summary = None;
         self.active = true;
+        self.in_match |= w.in_match;
+        let now = Instant::now();
         let refresh = self.names_at.is_none_or(|t| t.elapsed() >= NAME_EVERY);
         if refresh {
             self.names_at = Some(Instant::now());
@@ -231,6 +337,10 @@ impl Feature for KillFeed {
         for f in w.fighters.iter().flatten() {
             let id = short_id(f.id);
             self.feed.see(id, f.team, f.local);
+            self.seen.insert(id, (now, false));
+            if f.local {
+                self.me = Some(id);
+            }
             if refresh {
                 if let Some(name) = read_name(f.addr) {
                     self.feed.name(id, &name);
@@ -242,18 +352,187 @@ impl Feature for KillFeed {
             let sid = crate::game::world::bot_session_id(b.handle);
             self.feed.see(short_id(sid), sid, false);
             self.feed.name(short_id(sid), &bot_name(b.handle));
+            self.seen.insert(short_id(sid), (now, true));
+            if b.hp == 0 {
+                self.bot_dead.entry(short_id(sid)).or_insert(now);
+            } else {
+                self.bot_dead.remove(&short_id(sid));
+            }
         }
         let events = local.into_iter().chain(
             received
                 .iter()
                 .filter_map(|r| decode(r.fact.key, r.fact.value)),
         );
+        let mut changed = false;
         for ev in events {
+            self.tally.record(ev);
+            changed = true;
             if let Some(line) = self.feed.line(ev) {
                 tracing::info!("killfeed: {line}");
                 gametoast::show(&line);
                 SHOWN.fetch_add(1, Ordering::Relaxed);
                 *LAST.lock().unwrap_or_else(PoisonError::into_inner) = line;
+            }
+        }
+        // SB: a participant gone from the world: a player who left, or a bot a mob killed (the game replaces it under a new name).
+        // A dead bot with no kill report after BOT_DEAD_AFTER was killed by a mob (a rival's kill reports within a tick or two).
+        let mut gone: Vec<(u16, bool)> = self
+            .seen
+            .iter()
+            .filter(|(_, (at, _))| now.duration_since(*at) >= GONE_AFTER)
+            .map(|(id, (_, bot))| (*id, *bot))
+            .collect();
+        gone.extend(
+            self.bot_dead
+                .iter()
+                .filter(|(id, at)| {
+                    now.duration_since(**at) >= BOT_DEAD_AFTER && !self.tally.get(**id).out
+                })
+                .map(|(id, _)| (*id, true)),
+        );
+        for (id, bot) in gone {
+            self.seen.remove(&id);
+            if !self.tally.get(id).out {
+                tracing::info!(
+                    "scoreboard: {} is gone ({})",
+                    self.feed.plain_name(id),
+                    if bot {
+                        "a bot replaced after a mob's kill"
+                    } else {
+                        "left the match"
+                    }
+                );
+            }
+            self.tally.gone(id, bot);
+            changed = true;
+        }
+        if changed || refresh {
+            scoreboard::set_table(self.tally.table(|id| self.feed.plain_name(id)));
+        }
+        // SB: opening the pause menu (or the console) shows LOCAL's own numbers as the game's centre message.
+        if w.pause_opened | scoreboard::take_show_asked() {
+            let me = w
+                .fighters
+                .iter()
+                .flatten()
+                .find(|f| f.local)
+                .map(|f| short_id(f.id));
+            if let Some(me) = me {
+                let text = scoreboard::message(self.tally.get(me));
+                match scoreboard::write_message(w.base, &text) {
+                    Ok(()) => {
+                        ctx.flags.push((scoreboard::FLAG_SCORE, true));
+                        tracing::info!("scoreboard: own score shown: {text}");
+                    }
+                    Err(e) => tracing::warn!("scoreboard: own score not shown: {e}"),
+                }
+            }
+        }
+    }
+}
+
+impl KillFeed {
+    /// SB: the end-of-match summary as the game's dialog, once LOCAL stands in the Roundtable with no menu open for a moment.
+    /// The dialog shows three lines, so the summary comes in pages: each one after the previous dialog was closed (OK).
+    fn show_summary(&mut self, w: &World, ctx: &mut Ctx) {
+        let Some((pages, since, rows)) = &mut self.summary else {
+            return;
+        };
+        if since.elapsed() >= SUMMARY_GIVE_UP {
+            tracing::info!("scoreboard: summary dropped (no Roundtable after the match)");
+            self.summary = None;
+            return;
+        }
+        let word = crate::game::menugate::menu_word(w.base);
+        // The page asked for: wait until its dialog was open for a while and is closed again (or it never opened).
+        if let Some(p) = &mut self.page_asked {
+            if word != p.word {
+                tracing::info!(
+                    "scoreboard: page {}: menu word {:?} -> {:?}",
+                    self.pages_shown,
+                    p.word,
+                    word
+                );
+                p.word = word;
+                p.word_since = Instant::now();
+            }
+            let steady = p.word_since.elapsed();
+            if word.is_some_and(|m| m != 0) && steady >= DIALOG_OPEN_MIN && !p.opened {
+                p.opened = true;
+                p.opened_at = Some(p.word_since);
+            }
+            let closed = p.opened && word == Some(0) && steady >= DIALOG_CLOSED_MIN;
+            if !closed && (p.opened || p.at.elapsed() < PAGE_NEVER_OPENED) {
+                return;
+            }
+            if !p.opened {
+                tracing::warn!("scoreboard: page {} was not seen open", self.pages_shown);
+            }
+            // Closed by a key press left over from the result screens: show the page once more.
+            let read_for = p
+                .opened_at
+                .map_or(Duration::ZERO, |t| p.word_since.duration_since(t));
+            if p.opened && read_for < PAGE_MIN_READ && !p.again {
+                tracing::info!(
+                    "scoreboard: page {} closed after {} ms: shown again",
+                    self.pages_shown,
+                    read_for.as_millis()
+                );
+                pages.push_front(std::mem::take(&mut p.text));
+                self.pages_shown -= 1;
+                self.again_next = true;
+            }
+            self.page_asked = None;
+            self.calm_since = None;
+        }
+        if pages.is_empty() {
+            tracing::info!(
+                "scoreboard: summary shown ({rows} rows, {} pages)",
+                self.pages_shown
+            );
+            self.summary = None;
+            return;
+        }
+        let calm = w.place == Some(crate::game::views::Place::Roundtable)
+            && w.local.is_some()
+            && word == Some(0);
+        if !calm {
+            self.calm_since = None;
+            return;
+        }
+        let settle = if self.pages_shown == 0 {
+            SUMMARY_SETTLE
+        } else {
+            PAGE_GAP
+        };
+        if self.calm_since.get_or_insert_with(Instant::now).elapsed() < settle {
+            return;
+        }
+        let total = self.pages_shown + pages.len();
+        let page = pages.pop_front().unwrap_or_default();
+        let again = std::mem::take(&mut self.again_next);
+        match scoreboard::write_summary(w.base, &page) {
+            Ok(()) => {
+                ctx.flags.push((scoreboard::FLAG_SUMMARY, true));
+                self.pages_shown += 1;
+                self.page_asked = Some(PageWait {
+                    at: Instant::now(),
+                    text: page,
+                    again,
+                    opened_at: None,
+                    opened: false,
+                    word,
+                    word_since: Instant::now(),
+                });
+                tracing::info!(
+                    "scoreboard: summary page {}/{total} shown",
+                    self.pages_shown
+                );
+            }
+            Err(e) => {
+                tracing::warn!("scoreboard: summary not shown: {e}");
+                self.summary = None;
             }
         }
     }
@@ -305,7 +584,9 @@ mod tests {
             assert_eq!(decode(key, value), Some(e));
             assert_ne!(encode(e, 8).0, key);
         }
-        assert_eq!(decode(3, 0), None, "a kind of a later build");
+        let (key, value) = encode(ev(KillKind::Died, B, None), 9);
+        assert_eq!(key & 3, 3, "the kind a build before SB ignores");
+        assert_eq!(decode(key, value), Some(ev(KillKind::Died, B, None)));
     }
 
     #[test]
@@ -374,6 +655,13 @@ mod tests {
             line.encode_utf16().count() < gametoast::TEXT_UNITS,
             "{line}"
         );
+    }
+
+    #[test]
+    fn a_mob_death_has_no_line_and_does_not_put_the_player_out() {
+        let mut f = feed();
+        assert_eq!(f.line(ev(KillKind::Died, B, None)), None);
+        assert!(f.line(ev(KillKind::Killed, B, Some(A))).is_some());
     }
 
     #[test]

@@ -30,6 +30,19 @@ pub(crate) fn spectate_switch_edges() -> (bool, bool) {
     (n || pn, p || pp)
 }
 
+/// `CSMenuMan+0x48` with the pause menu open (MEMORY_MAP "Menu stack counters": 0 closed, 0x11 open).
+const PAUSE_MENU_WORD: u32 = 0x11;
+
+/// SB: the game's own pause menu opened since the last call (an edge on the menu word, so Esc and the pad's Start both count and closing
+/// it does not).
+pub(crate) fn pause_menu_opened(word: Option<u32>) -> bool {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WAS_OPEN: AtomicBool = AtomicBool::new(false);
+    let open = word == Some(PAUSE_MENU_WORD);
+    let was = WAS_OPEN.swap(open, Ordering::Relaxed);
+    open && !was
+}
+
 /// RW-1: the leave key (F10) went down since the last call (an edge, so holding it asks once).
 pub(crate) fn leave_key_edge() -> bool {
     use std::sync::atomic::{AtomicBool, Ordering};

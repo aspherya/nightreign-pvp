@@ -21,6 +21,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,3
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Rival, 30001)) rival_age Some(30001)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Rival, 30001)), last rival hit Some(30001) ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -32,6 +33,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,3
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit None, last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -43,6 +45,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,3
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Mob, 500)) rival_age None
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Mob, 500)), last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -54,6 +57,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,3
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
           status: free day 1; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -65,6 +69,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 12:29:59 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -88,6 +93,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 10001)) rival_age None
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 10001)), last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 
@@ -99,6 +105,7 @@ t=000100 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hi
 t=000899 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
           .
 t=000900 in: [6001*:hp0/s0 6002:hp240/s0] | clock - | day2 | pos (10,20,30) | hits last Some((Env, 1000)) rival_age None
+          acts: KillFeed(KillEvent { kind: Died, victim: 24577, killer: None })
           log: night_match: LOCAL died to an enemy or a fall: the game's own respawn, items kept (last hit Some((Env, 1000)), last rival hit None ms ago)
           status: day 2; 2 player(s), 2 team(s) seen, 0 out; LOCAL in; mob deaths 1; places 0
 

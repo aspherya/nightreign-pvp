@@ -17,6 +17,8 @@ pub(crate) struct KillReport {
     down_since: Option<u64>,
     down_judged: bool,
     defeat_sent: bool,
+    /// SB: the mob deaths already reported (`MatchBook::mob_deaths`).
+    mob_deaths_sent: u32,
 }
 
 impl MatchRule for KillReport {
@@ -39,6 +41,15 @@ impl MatchRule for KillReport {
         } else {
             self.down_since = None;
             self.down_judged = false;
+        }
+        // SB: a death to a mob or a fall (the game respawns LOCAL) is a death on the scoreboard; the feed shows no line for it.
+        while self.mob_deaths_sent < book.mob_deaths {
+            self.mob_deaths_sent += 1;
+            out.acts.push(Act::KillFeed(KillEvent {
+                kind: KillKind::Died,
+                victim,
+                killer: None,
+            }));
         }
         match book.defeat {
             Some(d) if !self.defeat_sent => {
@@ -165,7 +176,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mobs_kill_is_no_line() {
+    fn a_mobs_kill_is_reported_as_a_death_only() {
         let mut c = core();
         let nf = NightFlags::default();
         run(&mut c, 0, &world(&[up(ME, true), up(P2, false)], nf));
@@ -176,6 +187,16 @@ mod tests {
             rival_id: None,
         };
         let (acts, _, _) = run_dead(&mut c, 100, &w);
-        assert!(reports(&acts).is_empty());
+        assert_eq!(
+            reports(&acts),
+            [KillEvent {
+                kind: KillKind::Died,
+                victim: short_id(ME),
+                killer: None,
+            }],
+            "a death on the scoreboard, no line on the feed"
+        );
+        let (acts, _, _) = run(&mut c, 5_000, &w);
+        assert!(reports(&acts).is_empty(), "once");
     }
 }

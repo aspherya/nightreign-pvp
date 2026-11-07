@@ -43,6 +43,9 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `night_status` | | The match rules in this game: `free day 1` / `day n` / `night n` / `match over` (`decided (winner …)`), players, teams seen, how many are out, `LOCAL in` or `defeated by a rival / the tide`, mob deaths, recorded respawn places, and `death held` (RW-1). Answered on the pipe thread. Dev only |
 | `grace_lock` | | GRACE-1: `ON, Sites of Grace are off` while a PvP fight locks the graces (game flag 7525), else `off`. Pipe thread. Dev only |
 | `killfeed` | | KF-1: how many killfeed lines this game showed, and the last one. Pipe thread. Dev only |
+| `score` | | SB: every participant's kills and deaths this match as this game counted them (`name K n D n [out]`). Pipe thread. Dev only |
+| `score_show` | | SB: show LOCAL's own score message now, as opening the pause menu does. Pipe thread (the main loop shows it next tick). Dev only |
+| `score_dialog` | `<text>` | SB research: write `<text>` (`|` = a new line) over the end-of-match summary's text; `flag 10007110 1` then shows it (Roundtable only). Pipe thread. Dev only |
 | `toast` | `[text...]` | KF-1: show this line as one of the game's toasts (takes the game's markup); no text = counters. Pipe thread. Dev only |
 | `toast_icon` | `<id>` | KF-1 research: icon id of the next toasts (`UserDispLogParam`), 0 = none. Pipe thread. Dev only |
 | `night_count` | `[0\|1]` | Test switch: 1 (default) the match ends when one team is left standing; 0 it never ends by count. Resets at launch. Dev only |

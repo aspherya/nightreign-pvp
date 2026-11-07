@@ -1,0 +1,36 @@
+name = "score-dialog-lab"
+about = "SB-4 research (lab, not a test): how much text the Roundtable's generic dialog (event 99100310) shows: 8 short lines, then one long line"
+tags = ["lab", "hud"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+sleep_ms = 5000
+[[step]]
+console = "score_dialog Line 1|Line 2|Line 3|Line 4|Line 5|Line 6|Line 7|Line 8"
+[[step]]
+console = "flag 10007110 1"
+[[step]]
+keys = "wait 2500ms"
+[[step]]
+screenshot = "eight_lines"
+[[step]]
+keys = "F; wait 2s"
+[[step]]
+console = "score_dialog 1. leo 5 kills 0 deaths (you, winner)    2. Bot 7 0 kills 1 death    3. Bot 5 0 kills 1 death    4. Bot 4 0 kills 1 death    5. Bot 3 0 kills 1 death    6. Bot 2 0 kills 1 death    7. Bot 1 0 kills 1 death"
+[[step]]
+console = "flag 10007110 1"
+[[step]]
+keys = "wait 2500ms"
+[[step]]
+screenshot = "long_line"
+[[step]]
+console = "pos"   # the menu word while the dialog is open (for paging)
+[[step]]
+keys = "F; wait 2s"

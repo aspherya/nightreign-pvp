@@ -5,6 +5,7 @@
     { "id": 99100300, "flag": 10007100, "message": 99100200, "display": "dialog" },
     { "id": 99100301, "flag": 10007101, "message": 99100201, "display": "blinking" },
     { "id": 99100302, "flag": 10007102, "message": 99100202, "display": "status" },
+    { "id": 99100310, "flag": 10007110, "message": 99100602, "display": "dialog" },
     { "id": 99100500, "flag": 10007200, "message": 99100500, "display": "blinking" },
     { "id": 99100501, "flag": 10007201, "message": 99100501, "display": "blinking" },
     { "id": 99100502, "flag": 10007202, "message": 99100502, "display": "blinking" },
