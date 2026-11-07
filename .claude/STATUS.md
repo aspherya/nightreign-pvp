@@ -52,8 +52,9 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **The list of 2026-11-03 is done on one PC** (Grace, pin beam, killfeed, the match start). What is left of it needs real Steam: a fresh zip and the next session with friends (FS-HM1, now with item 9).
 
-**Next (Leonardo, 2026-11-07): the K/D scoreboard** (TASKS "Scoreboard", design in [SCOREBOARD.md](SCOREBOARD.md); waiting for his
-answers Q1-Q4), then Arena (MODE-02, designed separately). The match timer is parked until he knows how long a match should last.
+**Next (Leonardo, 2026-11-07):** the K/D scoreboard is built on one PC (PR #61); then the JPEXS spike for a more professional
+in-game UI (SCOREBOARD §8b, TASKS SB-5), then Arena (MODE-02, designed separately). The match timer is parked until he knows how long
+a match should last.
 
 **Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 
