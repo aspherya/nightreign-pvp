@@ -10,7 +10,10 @@ pub(crate) fn list(cfg: &Config) -> Vec<Box<dyn Feature>> {
     let team = cfg.team_size_usize();
     vec![
         Box::new(mode::ModeFeature::new(cfg.game_mode(), "nrpvp.toml")),
-        Box::new(bots::BotsFeature::default()),
+        Box::new(bots::BotsFeature::new(
+            usize::try_from(cfg.bots_fill).unwrap_or(0),
+            cfg.pvpve_team,
+        )),
         Box::new(clock::ClockFeature::default()),
         Box::new(nights::NightsFeature),
         Box::new(br_match::MatchFeature::new(cfg)),

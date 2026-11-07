@@ -1,15 +1,40 @@
-//! OFF-4 (bot spike): start and stop the game's own NPC bots (AI Nightfarers) and log what the bot manager does. Kept as the engine
-//! of the orchestrator's puppet players (`game/puppet.rs`, `tools/`); it is not a game feature (decided 2026-10-24). Research and the
-//! engine facts: `archive/research/OFF-3-bots.md`, TECHNICAL_NOTES §4d, MEMORY_MAP §15.
+//! Bots (BOTS.md). OFF-4 started the game's own NPC bots (AI Nightfarers) by hand; BOT-1 brings back the fill director ([`fill`]):
+//! an offline expedition is filled with `bots_fill` hostile bots and a roster follows them. The game's bot manager is also the engine
+//! of the orchestrator's puppet players (`game/puppet.rs`, `tools/`). Research and the engine facts: `archive/research/OFF-3-bots.md`,
+//! TECHNICAL_NOTES §4d, MEMORY_MAP §15 / §18.
 //!
 //! No game code is called from here. Our events in `event/common.emevd.dcx` (`gamedata/emevd-bots.json`, built by
 //! `scripts/build-gamedata.ps1`) wait for our flags and run the game's instructions: `2003[97](table)` arms `CSNpcBotMan` with an
-//! `NPCBotTableParam` table (the manager then spawns its Nightfarers), `2003[98]` removes them. This feature only sets the flag
-//! (through [`Ctx::flags`]) and, every tick, compares the manager's state in the [`World`] with the last one and logs a change.
+//! `NPCBotTableParam` table (the manager then spawns its Nightfarers), `2003[98]` removes them. This feature sets the flags
+//! (through [`Ctx::flags`]), asks for the data writes of the fill ([`super::BotWrite`]) and, every tick, logs a change of the manager.
 //!
-//! Offline mode only: the game itself refuses `2003[97]` when its solo gate counts more than one, and bots in a matchmade match are
-//! out of scope. Requests come from the dev console (`bots`, `bots_clear`) and the orchestrator's puppets.
+//! Offline mode only for now: the game itself refuses `2003[97]` when its solo gate counts more than one (friends + bots: BOT-0).
+//! Requests come from the config (`bots_fill`), the dev console (`bots`, `bots_clear`, `bots_fill`, `bots_list`) and the puppets.
 //! Log lines start with `bots:`.
+
+pub(crate) mod fill;
+
+/// BOT-5: the next expedition is a match against bots (set by the Commence handler, `game::menuflow`, when Bots is On; cleared when that
+/// expedition is over). Read every tick by the fill director.
+static BOTS_MATCH: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// BOT-5: start (or forget) a match against bots for the next expedition.
+pub(crate) fn set_bots_match(on: bool) {
+    if BOTS_MATCH.swap(on, std::sync::atomic::Ordering::Relaxed) != on {
+        tracing::info!(
+            "bots: match against bots {}",
+            if on {
+                "requested (Bots On, Commence)"
+            } else {
+                "over"
+            }
+        );
+    }
+}
+
+pub(crate) fn bots_match() -> bool {
+    BOTS_MATCH.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 use std::sync::{Mutex, PoisonError};
 
@@ -25,6 +50,8 @@ pub(crate) enum BotsCmd {
     Spawn(i32),
     /// Remove every bot (`2003[98]`).
     Clear,
+    /// BOT-1: fill the expedition with this many hostile bots (0..=5).
+    Fill(usize),
 }
 
 /// Tables our events know, with their flags (`gamedata/emevd-bots.json`; a unit test checks both files). 10 / 30 / 50: 2
@@ -40,9 +67,8 @@ pub(crate) const FLAG_CLEAR: u32 = 10_007_302;
 
 /// The flag that carries out `cmd`, or why it is refused (pure; unit tested).
 pub(crate) fn plan(cmd: BotsCmd, mode: GameMode, world: &World) -> Result<u32, String> {
-    if mode != GameMode::Offline {
-        return Err("bots need the offline mode (mode offline)".into());
-    }
+    // BOT-0: the console may ask in any mode (the game's own solo gate still refuses in a session: `bots_gate`).
+    let _ = mode;
     if world.wcm_instance == 0 {
         return Err("no world loaded".into());
     }
@@ -58,6 +84,7 @@ pub(crate) fn plan(cmd: BotsCmd, mode: GameMode, world: &World) -> Result<u32, S
                 )
             }),
         BotsCmd::Clear => Ok(FLAG_CLEAR),
+        BotsCmd::Fill(_) => Err("fill is not a flag request".into()),
     }
 }
 
@@ -112,13 +139,47 @@ fn set_status(request: Option<String>, manager: Option<String>) {
     }
 }
 
-#[derive(Default)]
+/// BOT-1: the roster text for the console (`bots_list`; written by the main loop every tick, read by the pipe thread).
+static ROSTER: Mutex<String> = Mutex::new(String::new());
+
+/// `bots_list` (console): the fill director's roster.
+pub(crate) fn roster_line() -> String {
+    let s = ROSTER.lock().unwrap_or_else(PoisonError::into_inner);
+    if s.is_empty() {
+        "bots: no roster yet".into()
+    } else {
+        s.clone()
+    }
+}
+
 pub(crate) struct BotsFeature {
     /// The manager's state last logged (`None` before the first read).
     last: Option<Option<BotManState>>,
+    /// BOT-1: the fill director and its roster.
+    pub(crate) fill: fill::BotFill,
+    epoch: std::time::Instant,
+}
+
+impl Default for BotsFeature {
+    fn default() -> Self {
+        Self::new(0, 29)
+    }
 }
 
 impl BotsFeature {
+    /// `want` = `bots_fill` (0 = no fill until the console asks), `rival_team` = `pvpve_team`.
+    pub(crate) fn new(want: usize, rival_team: u8) -> Self {
+        BotsFeature {
+            last: None,
+            fill: fill::BotFill::new(want, rival_team),
+            epoch: std::time::Instant::now(),
+        }
+    }
+
+    fn now(&self) -> u64 {
+        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
     /// Ask for `cmd`: sets our flag when allowed (the flag is written after every feature ticked).
     pub(crate) fn request(
         &mut self,
@@ -128,6 +189,13 @@ impl BotsFeature {
         world: &World,
         ctx: &mut Ctx,
     ) {
+        if let BotsCmd::Fill(n) = cmd {
+            self.fill.set_want(n, self.now());
+            let line = format!("fill {} asked by {src}", self.fill.want());
+            tracing::info!("bots: {line}");
+            set_status(Some(line), None);
+            return;
+        }
         let line = match plan(cmd, mode, world) {
             Ok(flag) => {
                 ctx.flags.push((flag, true));
@@ -145,7 +213,14 @@ impl Feature for BotsFeature {
         "bots"
     }
 
-    fn tick(&mut self, world: &World, _ctx: &mut Ctx) {
+    fn tick(&mut self, world: &World, ctx: &mut Ctx) {
+        let now = self.now();
+        self.fill.set_bots_match(bots_match());
+        self.fill.step(now, super::mode::current(), world, ctx);
+        if self.fill.take_over() {
+            set_bots_match(false);
+        }
+        *ROSTER.lock().unwrap_or_else(PoisonError::into_inner) = self.fill.roster();
         if self.last == Some(world.bots) {
             return;
         }
@@ -169,10 +244,11 @@ mod tests {
     }
 
     #[test]
-    fn requests_need_offline_mode_and_a_world() {
-        assert!(plan(BotsCmd::Spawn(10), GameMode::BattleRoyale, &live())
-            .unwrap_err()
-            .contains("offline"));
+    fn requests_need_a_world_in_any_mode() {
+        assert_eq!(
+            plan(BotsCmd::Spawn(10), GameMode::BattleRoyale, &live()),
+            Ok(10_007_300)
+        );
         assert!(plan(BotsCmd::Clear, GameMode::Offline, &World::default())
             .unwrap_err()
             .contains("no world"));
@@ -214,7 +290,7 @@ mod tests {
             BotsCmd::Clear,
             "test",
             GameMode::BattleRoyale,
-            &live(),
+            &World::default(),
             &mut ctx,
         );
         assert!(ctx.flags.is_empty());
@@ -235,7 +311,7 @@ mod tests {
     /// Every table and the clear flag have their event in gamedata/emevd-bots.json (plain-text check: one event per line).
     #[test]
     fn gamedata_has_every_bot_event() {
-        let events = include_str!("../../../../gamedata/emevd-bots.json");
+        let events = include_str!("../../../../../gamedata/emevd-bots.json");
         for (table, flag) in TABLES {
             let want = format!("\"flag\": {flag}, \"bots\": {table} }}");
             assert!(events.contains(&want), "missing: {want}");

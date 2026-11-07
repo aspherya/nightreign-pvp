@@ -163,6 +163,8 @@ pub(crate) struct Tick<'a> {
     pub local: Fighter,
     /// Every fighter in the player list with its slot in `world.positions`.
     pub fighters: &'a [(usize, Fighter)],
+    /// BOT-2: the rival bots as fighters (no player-list slot; each its own team). Only the elimination counts them.
+    pub bots: &'a [Fighter],
     /// This game is the host's (session id).
     pub host: bool,
 }
@@ -266,12 +268,14 @@ impl Match {
             return (out.acts, out.lines);
         };
         self.book.in_expedition = true;
+        let bots: Vec<Fighter> = world.rival_bots().map(bot_fighter).collect();
         let t = Tick {
             now_ms,
             world,
             nf,
             local,
             fighters: &fighters,
+            bots: &bots,
             host: is_host(world.session_role, local.id),
         };
         for r in &mut self.rules {
@@ -284,6 +288,20 @@ impl Match {
         self.status = status::render(now_ms, fighters.len(), &nf, &self.book, &parts);
         flags.append(&mut out.flags);
         (out.acts, out.lines)
+    }
+}
+
+/// BOT-2: a rival bot as the elimination sees it: its handle is its id and its own team (bit 62 set, so it never equals a player's
+/// session id or a roster team key, `team_key`). A bot is never downed (solo play kills at 0 HP).
+pub(crate) fn bot_fighter(b: &crate::game::world::BotChr) -> Fighter {
+    Fighter {
+        addr: b.chr,
+        id: b.handle,
+        team: (1 << 62) | (b.handle & 0xFFFF_FFFF),
+        local: false,
+        state: 0,
+        hp: b.hp,
+        clock: 0.0,
     }
 }
 

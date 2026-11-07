@@ -1,0 +1,47 @@
+name = "bots-match"
+about = "BOT-1 spread + BOT-2 rules: 5 rival bots are sent to far enemy camps, each in its own direction, and stay alive a while; a bot killed by a mob is replaced 14 s later by a new one (also sent to a camp); when LOCAL has killed every bot the match is decided for LOCAL (WIN)"
+tags = ["rules"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+bots_fill = 5
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+wait_log = { contains = "bots: fill done: 5 of 5", timeout_s = 240, since = "run" }
+[[step]]
+wait_log = { contains = ["sector 1 of 5", "sector 2 of 5", "sector 3 of 5", "sector 4 of 5", "sector 5 of 5"], timeout_s = 30, since = "run" }
+[[step]]
+console = "bots_list"
+[[step]]
+screenshot = "spread"
+[[step]]
+keys = "wait 40000ms"   # do they stay at their camps (logic 30000 follows the host: walk or warp back?)
+[[step]]
+expect = { console = "bots_list", contains = "5 of 5 kept", absent = "gone" }
+[[step]]
+console = "night_status"
+[[step]]
+console = "bots_kill 1 mob"
+[[step]]
+wait_log = { contains = ["= Mob); a new bot replaces it in 14 s", "killed by mobs: arming a replacement round"], timeout_s = 40, since = "run" }
+[[step]]
+wait = { console = "bots_list", contains = ["5 of 5 kept", "dead (mob), replaced"], timeout_s = 60 }
+[[step]]
+wait_log = { contains = "sector 6 of 6", timeout_s = 30, since = "run" }
+[[step]]
+screenshot = "replaced"
+[[step]]
+console = "bots_kill all"
+[[step]]
+wait_log = { contains = "= Rival); out of the match", timeout_s = 10, since = "run" }
+[[step]]
+wait_log = { contains = ["match decided", "this game's player won"], timeout_s = 90, since = "run" }
+[[step]]
+screenshot = "won"

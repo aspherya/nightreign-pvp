@@ -11,8 +11,8 @@
 #   NPC bot instructions 2003:97 / 2003:98, started by our flags 10007300+; research\OFF-3-bots.md).
 #   event\common.emevd.dcx + event\common_func.emevd.dcx (M5-3, research\M5-no-boss-nights.md): nights with no boss and no minions
 #   (gamedata\emevd-nights-func.json replaces the shared boss/minion events, gamedata\emevd-nights.json adds the timed night end).
-#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only (the bots) are
-#   left out of a second copy written to dist\gamedata-player\, which package-release.ps1 puts into the player zip instead.
+#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only would be left out
+#   of a second copy written to dist\gamedata-player\ (none since BOT-5, 2026-11-06: the bot events are a player feature).
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 #   regulation.bin (UI-3, the Battle Royale card in the expedition list): the pinned regulation.bin with the param rows of
@@ -55,7 +55,8 @@ $pinnedEmevd = @{
 # Our event scripts (each names its target in "file"), applied in this order; Dev = left out of the player copy.
 $eventsFiles = @(
     @{ Path = (Join-Path $repo 'gamedata\emevd-events.json'); Dev = $false },
-    @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json'); Dev = $true },
+    # BOT-5 (2026-11-06): the bot events are a player feature (Bots On in Matchmaking Settings), so no longer dev-only.
+    @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json'); Dev = $false },
     @{ Path = (Join-Path $repo 'gamedata\emevd-nights.json'); Dev = $false },
     @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json'); Dev = $false }
 )

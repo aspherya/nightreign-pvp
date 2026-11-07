@@ -1,4 +1,4 @@
-# Status (updated 2026-11-05)
+# Status (updated 2026-11-06)
 
 **The only "now" doc.** Rules: keep it under ~8 KB; replace lines instead of appending history (results go to `testing-log/`, traps to
 [TRAPS.md](TRAPS.md), decisions to [DECISIONS.md](DECISIONS.md), tools to [TOOLS.md](TOOLS.md), live cards to [TASKS.md](TASKS.md)).
@@ -28,6 +28,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **Orchestrator `nro`** (puppets, keys, screenshots, scenarios, 2-3 real instances with emulated Steam) | **Works**; `scripts\regress.ps1` runs the single-game scenarios, `mi-*` run by name ([orchestrator/SCENARIOS.md](orchestrator/SCENARIOS.md)) |
 | **Killfeed (KF-1):** `A downed B`, `A killed B` as toasts, character names ([re/TOAST_KILLFEED.md](re/TOAST_KILLFEED.md)) | **Works with two instances** (`mi-killfeed` PASS, 2026-11-03). A real hit: FS-HM1 item 8 |
 | **GRACE-1:** a PvP fight switches Sites of Grace off for that player (flag 7525, 15 s or until no rival is near) | **Works on one PC** (`grace-lock`, `mi-grace-local` PASS; a real hit by hand, 2026-11-03). Not seen on two PCs: FS-HM1 |
+| **Bots ([BOTS.md](BOTS.md)):** Matchmaking Settings > **Bots: On** + Battle Royale card + Solo + Commence = a match against 5 AI Nightfarers at once (normal build and zip). They start at separate far camps, farm, then come for you; they count for the win, a bot kill defeats you, mob kills on bots replace them | **`mi-bots-menu`, `bots-match`, `bots-fill` PASS on one PC (2026-11-07, PR from branch `bots`)**; Leonardo has not played it yet. Not yet: levels, killfeed names, Duo/Trio with bots, friends + bots (on the map invaders, BOT-6) |
 | Own networking: `net::bus` facts between games | **Built** (NET-1/2); users today RW-3 (on) and RW-5 (off). Replacing Seamless Co-op is a study ([NETWORKING.md](NETWORKING.md)) |
 
 **Launcher app (LAUNCH-1, branch `launcher-app`):** `NightreignPvP.exe` (Tauri 2): first-run wizard (game folder, Seamless Co-op via Nexus, the mod from GitHub releases), update check, Play then the app closes. **Built, unit-tested and tried on a local staged release; not yet tried by Leonardo.** A draft: Leonardo creates the public releases repo; **no release is published before the final test session with more than 3 players** (RELEASE §5b).

@@ -60,6 +60,24 @@ pub(crate) struct Ctx {
     pub clock: Option<crate::game::views::ClockTime>,
     /// The match rules' requests on LOCAL, the clock and the game's flags (carried out first in [`Ctx::flush`], see `effects`).
     pub acts: Vec<Act>,
+    /// BOT-1: writes on the bot manager and on bot characters (each re-checked against the live memory in [`Ctx::flush`]).
+    pub bot_writes: Vec<BotWrite>,
+}
+
+/// A write the bot feature asks for (BOT-1; the OFF-5 writes, git `72f7689`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BotWrite {
+    /// Make the bot manager forget the bot in this slot (`BotMan::forget_slot`): the bot stays, the slot is free for the next table.
+    ForgetSlot(usize),
+    /// Write `team` on this bot character, only if its handle field still reads `handle`.
+    Team { chr: usize, handle: u64, team: u8 },
+    /// Move this bot once to an enemy camp far from LOCAL, in direction `sector` of `sectors` (`game::botspread`).
+    Spread {
+        chr: usize,
+        handle: u64,
+        sector: usize,
+        sectors: usize,
+    },
 }
 
 /// Where the main loop's bot writes go.
@@ -71,6 +89,10 @@ pub(crate) struct Targets {
     pub play_area: usize,
     /// R7-4: the local PlayerIns (the target of the match rules' [`Act`]s), `None` = no local player.
     pub local: Option<usize>,
+    /// BOT-1: `CSNpcBotMan` instance, 0 = none.
+    pub bot_man: usize,
+    /// BOT-1: WorldChrMan instance, 0 = none (the spread walks its character sets).
+    pub wcm: usize,
 }
 
 impl Ctx {
@@ -82,6 +104,37 @@ impl Ctx {
         for c in self.mm.drain(..) {
             if !crate::mm::send(c) {
                 tracing::info!("features: {c:?} not sent to matchmaking (queue off or full)");
+            }
+        }
+        for w in self.bot_writes.drain(..) {
+            let r = match w {
+                BotWrite::Spread {
+                    chr,
+                    handle,
+                    sector,
+                    sectors,
+                } => match t.local.filter(|_| t.wcm != 0) {
+                    Some(local) => crate::game::botspread::spread(
+                        t.wcm, local, base, chr, handle, sector, sectors,
+                    )
+                    .map(|l| tracing::info!("bots: {l}")),
+                    None => Err("no world or no local player"),
+                },
+                BotWrite::ForgetSlot(slot) if t.bot_man != 0 => {
+                    crate::game::views::BotMan::new(mem, t.bot_man).forget_slot(slot)
+                }
+                BotWrite::ForgetSlot(_) => Err("no bot manager"),
+                BotWrite::Team { chr, handle, team } => {
+                    let c = crate::game::views::ChrIns::new(mem, chr);
+                    if c.handle() == Some(handle) {
+                        c.set_team(team)
+                    } else {
+                        Err("the character is gone (handle changed)")
+                    }
+                }
+            };
+            if let Err(e) = r {
+                tracing::warn!("features: {w:?} failed: {e}");
             }
         }
         for (flag, on) in self.flags.drain(..) {

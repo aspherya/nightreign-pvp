@@ -10,6 +10,9 @@
 
 #[cfg(feature = "dev")]
 pub(crate) mod bartrace;
+#[cfg(feature = "dev")]
+pub(crate) mod botscan;
+pub(crate) mod botspread;
 pub(crate) mod combat_state;
 pub(crate) mod deathhold;
 #[cfg(feature = "dev")]
@@ -508,6 +511,13 @@ fn watch(
             base,
             crate::mm::effective_team_size(cfg.team_size_usize()),
         );
+        // BOT-1: the bots' positions (only when there are bots: one physics read each). BOT-2: their handles for the hit log.
+        if !world.bot_chrs.is_empty() {
+            world.fill_bot_positions(base);
+        }
+        if let Some(c) = combat.as_mut() {
+            c.set_rival_bots(world.rival_bots().map(|b| b.handle).collect());
+        }
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
@@ -585,6 +595,8 @@ fn watch(
                 base,
                 play_area,
                 local: world.local,
+                bot_man,
+                wcm: wcm_inst,
             },
             &mem,
         );
@@ -649,6 +661,8 @@ fn watch(
                 base,
                 play_area,
                 local: world.local,
+                bot_man,
+                wcm: wcm_inst,
             },
             &mem,
         );

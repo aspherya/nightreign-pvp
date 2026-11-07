@@ -14,8 +14,10 @@
 //   SFUtil.DecryptNightreignRegulation -> change the PARAM bytes -> SFUtil.EncryptNightreignRegulation(bnd, zero IV).
 //
 // rows.json (gamedata\nightbossmenu-rows.json): params[] of { param, rowSize, fields: [[name, type]...], rows: [{ id, mode: "replace",
-// expect: {field: vanilla value}, values: {field: new value} }] }. Only "replace" is supported: a new row id does not show in the
-// expedition list (in-game test 2026-11-02). "expect" makes a game patch that moved the rows fail the build.
+// expect: {field: vanilla value}, values: {field: new value} }] }. "replace" patches the row's bytes in place; "expect" makes a game patch
+// that moved the rows fail the build. "add" (BOT-5, 2026-11-06) inserts a new row id through SoulsFormats' own PARAM reader / writer with
+// a paramdef made from `fields` (every field in `values`); it refuses an id that exists. A new id 101 did not show in the expedition list
+// (2026-11-02); id 17 (the gap in 0..18) is the one BOT-5 tries.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -36,6 +38,12 @@ static class Program
 
     static int Main(string[] args)
     {
+        // Read-only: sbwriter dump <regulation.bin> <Param.param> prints every row id with its bytes as s32 words.
+        if (args.Length == 3 && args[0] == "dump")
+        {
+            try { Dump(args[1], args[2]); return 0; }
+            catch (Exception e) { Console.Error.WriteLine("sbwriter: " + e.Message); return 1; }
+        }
         if (args.Length != 3)
         {
             Console.Error.WriteLine("usage: sbwriter <original regulation.bin> <rows.json> <out regulation.bin>");
@@ -58,7 +66,8 @@ static class Program
         {
             var name = p.GetProperty("param").GetString();
             var file = bnd.Files.Single(f => f.Name.EndsWith("\\" + name, StringComparison.OrdinalIgnoreCase));
-            file.Bytes = PatchParam(file.Bytes.ToArray(), p, name);
+            var bytes0 = AddRows(file.Bytes.ToArray(), p, name);
+            file.Bytes = PatchParam(bytes0, p, name);
             expected[name] = file.Bytes.ToArray();
         }
 
@@ -83,6 +92,67 @@ static class Program
         Console.WriteLine($"regulation.bin: {bytes.Length} bytes, sha256 {Convert.ToHexString(SHA256.HashData(bytes))}");
     }
 
+    static void Dump(string regPath, string name)
+    {
+        var bnd = SFUtil.DecryptNightreignRegulation(File.ReadAllBytes(regPath));
+        var param = bnd.Files.Single(f => f.Name.EndsWith("\\" + name, StringComparison.OrdinalIgnoreCase)).Bytes.ToArray();
+        int count = BitConverter.ToUInt16(param, 0x0A);
+        var offs = new List<(long Id, int Off)>();
+        for (int i = 0; i < count; i++)
+            offs.Add((BitConverter.ToInt64(param, 0x40 + 24 * i), (int)BitConverter.ToInt64(param, 0x40 + 24 * i + 8)));
+        for (int i = 0; i < offs.Count; i++)
+        {
+            int end = i + 1 < offs.Count ? offs[i + 1].Off : Math.Min(param.Length, offs[i].Off + 256);
+            var words = new List<string>();
+            for (int o = offs[i].Off; o + 4 <= end; o += 4) words.Add(BitConverter.ToInt32(param, o).ToString());
+            Console.WriteLine($"{offs[i].Id}: {string.Join(" ", words)}");
+        }
+    }
+
+    // BOT-5: rows with mode "add", inserted in id order through SoulsFormats (paramdef from the json field list). The bytes are
+    // returned unchanged when there is no such row.
+    static byte[] AddRows(byte[] bytes, JsonElement p, string name)
+    {
+        var adds = p.GetProperty("rows").EnumerateArray()
+            .Where(r => r.TryGetProperty("mode", out var m) && m.GetString() == "add").ToList();
+        if (adds.Count == 0) return bytes;
+        var param = SoulsFile<PARAM>.Read(bytes);
+        var def = new PARAMDEF { ParamType = param.ParamType, DataVersion = param.ParamdefDataVersion, BigEndian = false, Unicode = true, FormatVersion = 203 };
+        foreach (var f in p.GetProperty("fields").EnumerateArray())
+        {
+            var type = f[1].GetString() switch
+            {
+                "s8" => PARAMDEF.DefType.s8, "u8" => PARAMDEF.DefType.u8, "s16" => PARAMDEF.DefType.s16,
+                "u16" => PARAMDEF.DefType.u16, "s32" => PARAMDEF.DefType.s32, "u32" => PARAMDEF.DefType.u32,
+                var t => throw new Exception($"unsupported field type {t}"),
+            };
+            def.Fields.Add(new PARAMDEF.Field(def, type, f[0].GetString()));
+        }
+        param.ApplyParamdef(def);
+        foreach (var r in adds)
+        {
+            int id = r.GetProperty("id").GetInt32();
+            if (param.Rows.Any(x => x.ID == id)) throw new Exception($"{name}: row {id} exists; 'add' needs a new id");
+            var row = new PARAM.Row(id, "", def);
+            foreach (var v in r.GetProperty("values").EnumerateObject())
+            {
+                var cell = row[v.Name] ?? throw new Exception($"{name}: unknown field {v.Name}");
+                long nv = v.Value.GetInt64();
+                cell.Value = cell.Def.DisplayType switch
+                {
+                    PARAMDEF.DefType.s8 => (object)(sbyte)nv, PARAMDEF.DefType.u8 => (byte)nv,
+                    PARAMDEF.DefType.s16 => (short)nv, PARAMDEF.DefType.u16 => (ushort)nv,
+                    PARAMDEF.DefType.s32 => (int)nv, PARAMDEF.DefType.u32 => (uint)nv,
+                    _ => throw new Exception("type"),
+                };
+            }
+            int at = param.Rows.FindIndex(x => x.ID > id);
+            param.Rows.Insert(at < 0 ? param.Rows.Count : at, row);
+            Console.WriteLine($"  {name} row {id}: added");
+        }
+        return param.Write();
+    }
+
     // PARAM with 64-bit offsets (format2D 0x85): row table at 0x40 of (i64 id, i64 dataOffset, i64 nameOffset).
     static byte[] PatchParam(byte[] param, JsonElement p, string name)
     {
@@ -99,7 +169,8 @@ static class Program
         foreach (var r in p.GetProperty("rows").EnumerateArray())
         {
             var mode = r.TryGetProperty("mode", out var m) ? m.GetString() : "replace";
-            if (mode != "replace") throw new Exception("only mode 'replace' is supported (a new row id does not show in the expedition list)");
+            if (mode == "add") continue; // done by AddRows
+            if (mode != "replace") throw new Exception($"unknown mode '{mode}' (replace or add)");
             long id = r.GetProperty("id").GetInt64();
             if (!rows.TryGetValue(id, out int off)) throw new Exception($"{name}: row {id} not found");
             var cur = Read(param, off, fields);

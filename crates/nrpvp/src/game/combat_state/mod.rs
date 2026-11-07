@@ -148,6 +148,8 @@ pub(crate) struct CombatCtl {
     last_hit: Option<(HitKind, u64)>,
     last_rival_ms: Option<u64>,
     last_rival_id: Option<u64>,
+    /// BOT-2: the handles of the rival bots this tick (`World::rival_bots`); a hit by one is a rival hit.
+    rival_bots: Vec<u64>,
 }
 
 impl CombatCtl {
@@ -177,7 +179,13 @@ impl CombatCtl {
             last_hit: None,
             last_rival_ms: None,
             last_rival_id: None,
+            rival_bots: Vec::new(),
         }
+    }
+
+    /// BOT-2: this tick's rival bot handles (set by the main loop after the world read).
+    pub(crate) fn set_rival_bots(&mut self, handles: Vec<u64>) {
+        self.rival_bots = handles;
     }
 
     fn now_ms(&self) -> u64 {
@@ -237,7 +245,13 @@ impl CombatCtl {
         if prev.is_none_or(|p| hp >= p) {
             return;
         }
-        let infos = player_infos(&self.mem, &self.subjects);
+        let mut infos = player_infos(&self.mem, &self.subjects);
+        // BOT-2: a rival bot's hit is a rival hit (its handle stands for its id; the killfeed names it by that).
+        infos.extend(self.rival_bots.iter().map(|&h| PlayerInfo {
+            handle: Some(h),
+            id: Some(h),
+            relation: Some(crate::overlay::shared::Relation::Rival),
+        }));
         let kind = match classify(r.attacker_raw, &infos) {
             Attacker {
                 kind: AttackerKind::Rival,

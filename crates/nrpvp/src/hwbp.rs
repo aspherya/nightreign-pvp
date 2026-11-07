@@ -20,6 +20,9 @@ use crate::dr::{apply_all, TARGETS, WRITE_SHIFT};
 
 /// Slot of MM-3f's flat `ActivateGameOverlayInviteDialog` export.
 pub(crate) const SLOT_QUIET_FLAT: usize = 0;
+/// BOT-5: the Bots row predicate (`game::menuflow`), only while the expedition menu is open and the queue idle; shares slot 0 with the
+/// quiet invite, which runs only while the queue is not idle.
+pub(crate) const SLOT_BOTS_ROW: usize = 0;
 /// Slot of MM-3f's vtable target.
 pub(crate) const SLOT_QUIET_VTABLE: usize = 1;
 /// Slot of the UI-1 Commence handler.

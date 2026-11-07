@@ -1,0 +1,40 @@
+name = "bots-card-lab"
+about = "BOT-5 lab: opens the expedition menu and photographs the Matchmaking Settings tab (F2) row by row, to pick the row that becomes Allow Bots (2026-11-06: an added NightBossMenuParam row 17 does not show in the card list)"
+tags = ["lab"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+keys = "wait 10000ms"   # a tp right after the load is undone by the spawn
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 3000ms; F; wait 3000ms"
+[[step]]
+wait = { console = "pos", contains = "menu 0x200004", timeout_s = 5 }
+[[step]]
+keys = "F2; wait 2000ms"
+[[step]]
+screenshot = "mm_tab"
+[[step]]
+keys = "Down; wait 1000ms"
+[[step]]
+screenshot = "mm_down1"
+[[step]]
+keys = "Down; wait 1000ms"
+[[step]]
+screenshot = "mm_down2"
+[[step]]
+keys = "Down; wait 1000ms"
+[[step]]
+screenshot = "mm_down3"
+[[step]]
+keys = "Down; wait 1000ms"
+[[step]]
+screenshot = "mm_down4"

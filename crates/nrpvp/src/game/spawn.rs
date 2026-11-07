@@ -142,6 +142,30 @@ pub(crate) fn world_position_of(other: usize, local: usize, base: usize) -> Opti
     (plausible(pos) && plausible(origin)).then(|| sub(pos, origin))
 }
 
+/// BOT-1 spread: move another character (a bot) to a world position: its physics position = the world position + LOCAL's origin (the
+/// frame [`world_position_of`] reads). Returns its world position before the move.
+pub(crate) fn teleport_other(
+    other: usize,
+    local: usize,
+    base: usize,
+    to: [f32; 3],
+) -> Result<[f32; 3], &'static str> {
+    let (phys, _) = physics_module(&RealMem, other, base).map_err(|_| "no physics module")?;
+    let pos = decode(&mem::read::<[u8; 12]>(phys + POS_OFF).ok_or("position unreadable")?);
+    let origin =
+        decode(&mem::read::<[u8; 12]>(local + ORIGIN_OFF).ok_or("LOCAL origin unreadable")?);
+    let target = add(to, origin);
+    if !plausible(target) || !plausible(pos) {
+        return Err("target implausible");
+    }
+    let mut bytes = [0u8; 12];
+    for (i, v) in target.iter().enumerate() {
+        bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    mem::write_bytes(phys + POS_OFF, &bytes)?;
+    Ok(sub(pos, origin))
+}
+
 /// M5-6: move the player to a world position (the T-028 teleport: the physics position, origin added back; VERIFIED T-028 run 4,
 /// other players see it). Returns the world position before the move.
 pub(crate) fn teleport(player: usize, base: usize, to: [f32; 3]) -> Result<[f32; 3], &'static str> {

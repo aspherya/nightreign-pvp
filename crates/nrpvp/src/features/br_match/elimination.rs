@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::{MatchBook, MatchOut, MatchRule, Tick, FLAG_LOSE, FLAG_WIN};
+use crate::game::combat_state::Fighter;
 
 /// Dead this long (HP 0, not downed) = out of the match. A mob's death respawns in about 14 s (defeat-mob run 2026-10-24: HP 0 to standing
 /// 14.2 s), so this must stay well above that or another game would call a respawning player out; a defeated player is held for good.
@@ -47,7 +48,9 @@ pub(crate) struct Elimination;
 impl MatchRule for Elimination {
     fn step(&mut self, t: &Tick, book: &mut MatchBook, out: &mut MatchOut) {
         let (now_ms, fighters, local, host) = (t.now_ms, t.fighters, t.local, t.host);
-        for (_, f) in fighters {
+        // BOT-2: the rival bots count like players (each its own team).
+        let all: Vec<&Fighter> = fighters.iter().map(|(_, f)| f).chain(t.bots).collect();
+        for f in &all {
             let s = book.seen.entry(f.id).or_default();
             s.team = f.team;
             s.gone_since = None;
@@ -58,7 +61,7 @@ impl MatchRule for Elimination {
             }
         }
         for (id, s) in book.seen.iter_mut() {
-            if !fighters.iter().any(|(_, f)| f.id == *id) {
+            if !all.iter().any(|f| f.id == *id) {
                 s.gone_since.get_or_insert(now_ms);
             }
         }
@@ -152,6 +155,37 @@ mod tests {
         assert!(flags.is_empty());
         let (_, flags, _) = run(&mut c, 1_200 + OUT_DEAD_MS, &w);
         assert_eq!(flags, vec![(FLAG_WIN, true)]);
+    }
+
+    /// BOT-2: rival bots count like rivals: alive they keep the match going; dead or gone from the bot set they are out.
+    #[test]
+    fn rival_bots_are_rivals_and_the_last_one_out_wins_the_match() {
+        use crate::game::world::BotChr;
+        let bot = |handle: u64, hp: u32, team: u8| BotChr {
+            handle,
+            chr: 0x7000 + handle as usize,
+            team,
+            npc_id: crate::game::layout::BOT_NPC_PARAM,
+            hp,
+            max_hp: 240,
+            pos: None,
+            attacker: 0,
+        };
+        let mut c = core();
+        let mut w = world(&[up(ME, true)], NightFlags::default());
+        // A bot left on the ally team 2 (not kept by the fill) is not a rival.
+        w.bot_chrs = vec![bot(0xA0, 700, 29), bot(0xA1, 700, 29), bot(0xA2, 700, 2)];
+        run(&mut c, 0, &w);
+        let (_, flags, _) = run(&mut c, 60_000, &w);
+        assert!(flags.is_empty(), "two bots alive");
+        // One bot dies (HP 0), the other leaves the set (its body removed).
+        w.bot_chrs = vec![bot(0xA0, 0, 29)];
+        run(&mut c, 61_000, &w);
+        let (_, flags, _) = run(&mut c, 61_000 + GONE_MS, &w);
+        assert!(flags.is_empty(), "the dead bot is not out yet");
+        run(&mut c, 61_000 + OUT_DEAD_MS, &w);
+        let (_, flags, lines) = run(&mut c, 62_000 + OUT_DEAD_MS, &w);
+        assert_eq!(flags, vec![(FLAG_WIN, true)], "{lines:?}");
     }
 
     #[test]

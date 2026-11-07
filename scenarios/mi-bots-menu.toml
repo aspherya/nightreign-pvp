@@ -1,0 +1,69 @@
+name = "mi-bots-menu"
+about = "BOT-5: the player's way in, normal Battle Royale mode: Matchmaking Settings (F2) > Bots (the No. of Password Players row, relabelled and never greyed out) set to On, the Battle Royale card, Commence Solo: no search, the game's own solo expedition starts and 5 hostile bots fill it"
+tags = ["mi"]
+# One emulated-Steam instance (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. The Battle Royale menu (br_menu) is allowed only on
+# emulated instances (preflight P7).
+
+[config]
+mm_queue = true
+br_menu = true
+mm_probe = true
+team_size = 1
+ui_flag_watch = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+keys = "wait 10000ms"   # a tp right after the load is undone by the spawn
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 3000ms; F; wait 3000ms"
+[[step]]
+wait = { console = "pos", contains = "menu 0x200004", timeout_s = 5 }
+# Matchmaking Settings: Number of Players, Team Session, Multiplayer Password, then the Bots row.
+[[step]]
+keys = "F2; wait 1500ms; Down; wait 600ms; Down; wait 600ms; Down; wait 1000ms"
+[[step]]
+screenshot = "bots_off"
+# The game remembers the switch between sessions: set it Off first (console), then Right turns it On as a player would.
+[[step]]
+console = "bots_switch off"
+[[step]]
+keys = "Right; wait 1000ms"
+[[step]]
+expect = { console = "bots_switch", contains = "On" }
+[[step]]
+screenshot = "bots_on"
+# Number of Players to Solo (the list wraps around and the game remembers the last choice, so the console sets it).
+[[step]]
+console = "bots_switch on solo"
+[[step]]
+keys = "wait 1000ms"
+[[step]]
+screenshot = "solo"
+[[step]]
+expect_log = { contains = ["Bots row help texts in place", "No. of Password Players shows Bots Off / On"], since = "run" }
+# Back to the cards: the Battle Royale card is the last one (Up from the first), F selects it, F commences.
+[[step]]
+keys = "F1; wait 1500ms; Up; wait 1000ms; F; wait 2000ms"
+[[step]]
+screenshot = "card"
+[[step]]
+keys = "F; wait 3000ms"
+[[step]]
+wait_log = { contains = ["decision code 0x3", "match against bots requested"], timeout_s = 20, since = "run" }
+[[step]]
+wait_log = { contains = ["match against bots: 5 bots", "bots: fill done: 5 of 5"], timeout_s = 300, since = "run" }
+[[step]]
+console = "god 1"
+[[step]]
+wait = { console = "bots_list", contains = ["5 of 5 kept, 5 alive", " m away"], timeout_s = 30 }
+[[step]]
+console = "mm_status"
+[[step]]
+screenshot = "landed"

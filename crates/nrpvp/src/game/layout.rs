@@ -138,6 +138,10 @@ pub(crate) const MENU_SETTINGS: usize = 0xFC8;
 pub(crate) const MENU_SETTINGS_PLAYERS: usize = 0x49;
 /// UI-3: the targets chosen in the expedition list, a `vector<i32>` of `NightBossMenuParam` rows inside the settings object (begin, end). The
 /// game's own Commence reads the same list (`exe+0x9EEDB4`, and `exe+0xDF9E90` sends it) `[VERIFIED: exec_trace, list [9] on our card, 2026-11-05]`.
+/// BOT-5: the "No. of Password Players" byte (0 = three players, the default; 1 = two), shown by the mod as **Bots: Off / On**. The row
+/// builder `exe+0x9F2500` passes `[list+0x3E08]+0x48` as the row's value, the help code `exe+0x9FAD48` tests it, and `exe+0x9F98F0`
+/// copies it with `+0x49` into the party settings (game 1.03.3, static 2026-11-06).
+pub(crate) const MENU_SETTINGS_BOTS: usize = 0x48;
 pub(crate) const MENU_SETTINGS_TARGETS_BEGIN: usize = 0x58;
 pub(crate) const MENU_SETTINGS_TARGETS_END: usize = 0x60;
 /// The row of our Battle Royale card (`gamedata/nightbossmenu-rows.json`).
@@ -154,6 +158,13 @@ pub(crate) const BOTMAN_ARMED: usize = 0x4;
 pub(crate) const BOTMAN_BOTS_BEGIN: usize = 0x28;
 pub(crate) const BOTMAN_BOTS_END: usize = 0x30;
 pub(crate) const BOTMAN_BOT_ENTRY: usize = 0x10;
+/// WorldChrMan -> inline ChrSet of the bot manager's characters (set index 0x0E; capacity 120), same layout as [`WCM_CHRSET`]
+/// (MEMORY_MAP §18: the creator `exe+0x4ABC40` is called with `WorldChrMan+0x9AF0`; OFF-5 found every bot in set 14, game 1.03.3).
+pub(crate) const WCM_BOT_SET: usize = 0x9AF0;
+/// A bot set larger than this is not plausible (sanity bound; the constructor makes 120).
+pub(crate) const BOT_SET_MAX_CAPACITY: u32 = 0x400;
+/// `NpcParam` id of the bot tables' Nightfarers (`CHR_ID`; OFF-5 run 1: every bot read 600040000).
+pub(crate) const BOT_NPC_PARAM: u32 = 600_040_000;
 
 // ---- The play-area clock, WorldPlayAreaManager (MEMORY_MAP §16; M5-1 static reading, game 1.03.3) ----
 /// Singleton name in the FD4 map (slot `exe+0x3C13158` in 1.03.3; found by name, never by address).

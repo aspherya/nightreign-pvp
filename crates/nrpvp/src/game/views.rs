@@ -4,12 +4,14 @@
 
 use super::gamemem::GameMem;
 use super::layout::{
-    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE, BR_CARD_ROW,
+    BOTMAN_ARMED, BOTMAN_BOTS_BEGIN, BOTMAN_BOTS_END, BOTMAN_BOT_ENTRY, BOTMAN_TABLE,
+    BOT_SET_MAX_CAPACITY, BR_CARD_ROW, CHRSET_CAPACITY, CHRSET_ENTRIES, CHRSET_ENTRY_SIZE,
     CHR_HANDLE, CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE,
-    DATA_MODULE_HP, MENU_SETTINGS, MENU_SETTINGS_PLAYERS, MENU_SETTINGS_TARGETS_BEGIN,
-    MENU_SETTINGS_TARGETS_END, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED, PLAYAREA_RUNNING,
-    PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED, PLAYER_DOWNED,
-    PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX, SPEFFECT_NEXT,
+    DATA_MODULE_HP, DATA_MODULE_MAX_HP, MENU_SETTINGS, MENU_SETTINGS_BOTS, MENU_SETTINGS_PLAYERS,
+    MENU_SETTINGS_TARGETS_BEGIN, MENU_SETTINGS_TARGETS_END, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED,
+    PLAYAREA_RUNNING, PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED,
+    PLAYER_DOWNED, PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX,
+    SPEFFECT_NEXT, WCM_BOT_SET,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -63,6 +65,18 @@ impl<'m> ChrIns<'m> {
         let list = self.mem.read_ptr(self.addr + PLAYER_MODULES)?;
         let data = self.mem.read_ptr(list)?;
         self.mem.read_u32(data + DATA_MODULE_HP)
+    }
+
+    /// PlayerIns only: max HP from the character data module (MEMORY_MAP §5).
+    pub(crate) fn max_hp(&self) -> Option<u32> {
+        let list = self.mem.read_ptr(self.addr + PLAYER_MODULES)?;
+        let data = self.mem.read_ptr(list)?;
+        self.mem.read_u32(data + DATA_MODULE_MAX_HP)
+    }
+
+    /// This game's copy of the team type (MEMORY_MAP §4). Callers gate what they write and to whom (BOT-1: bots only).
+    pub(crate) fn set_team(&self, v: u8) -> Result<(), &'static str> {
+        self.mem.write_u8(self.addr + CHR_TEAM, v)
     }
 
     /// PlayerIns only: the downed state byte, 0 up / 1 downed / 2 getting up (MEMORY_MAP §6).
@@ -152,6 +166,22 @@ impl MenuSettings<'_> {
     }
 
     /// The same byte the game's own Number of Players list writes.
+    /// BOT-5: the Bots switch (the password-players byte; 1 = On, 0 = Off, the game's default "Three players").
+    pub(crate) fn bots(&self) -> Option<bool> {
+        self.mem
+            .read_u8(self.addr.checked_add(MENU_SETTINGS_BOTS)?)
+            .map(|v| v == 1)
+    }
+
+    /// BOT-5 (test aid): set the Bots switch, as Left / Right on the row would.
+    pub(crate) fn set_bots(&self, on: bool) -> Result<(), &'static str> {
+        let at = self
+            .addr
+            .checked_add(MENU_SETTINGS_BOTS)
+            .ok_or("bad settings address")?;
+        self.mem.write_u8(at, u8::from(on))
+    }
+
     pub(crate) fn set_players(&self, v: u8) -> Result<(), &'static str> {
         self.mem.write_u8(self.addr + MENU_SETTINGS_PLAYERS, v)
     }
@@ -225,6 +255,33 @@ impl<'m> BotMan<'m> {
         self.mem
             .write_bytes(begin + slot * BOTMAN_BOT_ENTRY, &u64::MAX.to_le_bytes())
     }
+}
+
+/// BOT-1: every character in WorldChrMan's bot set (`WCM_BOT_SET`, the bot manager's characters), in entry order. Empty when the
+/// set is unreadable or implausible. Entries that are not pointers are skipped.
+pub(crate) fn bot_set_chrs(mem: &dyn GameMem, wcm: usize) -> Vec<usize> {
+    let set = wcm + WCM_BOT_SET;
+    let Some(cap) = mem.read_u32(set + CHRSET_CAPACITY) else {
+        return Vec::new();
+    };
+    if cap == 0 || cap > BOT_SET_MAX_CAPACITY {
+        return Vec::new();
+    }
+    let Some(entries) = mem.read_ptr(set + CHRSET_ENTRIES) else {
+        return Vec::new();
+    };
+    let mut buf = vec![0u8; cap as usize * CHRSET_ENTRY_SIZE];
+    if !mem.read_into(entries, &mut buf) {
+        return Vec::new();
+    }
+    buf.as_chunks::<CHRSET_ENTRY_SIZE>()
+        .0
+        .iter()
+        .filter_map(|e| {
+            let chr = u64::from_le_bytes(e[..8].try_into().ok()?) as usize;
+            crate::game::mem::is_ptr(chr).then_some(chr)
+        })
+        .collect()
 }
 
 /// A time of day on the play-area clock (07:00 is morning; the game holds the clock at 23:59:59 for the night).
@@ -327,6 +384,24 @@ impl<'m> PlayArea<'m> {
 mod tests {
     use super::*;
     use crate::game::gamemem::FakeMem;
+
+    #[test]
+    fn bot_set_lists_its_characters_and_writes_a_team() {
+        let m = FakeMem::default();
+        let (wcm, entries, chr) = (0x10_0000, 0x30_0000, 0x40_0000);
+        m.put_u32(wcm + WCM_BOT_SET + CHRSET_CAPACITY, 3);
+        m.put_u64(wcm + WCM_BOT_SET + CHRSET_ENTRIES, entries as u64);
+        m.put(entries, &[0u8; 3 * CHRSET_ENTRY_SIZE]);
+        m.put_u64(entries + CHRSET_ENTRY_SIZE, chr as u64);
+        assert_eq!(bot_set_chrs(&m, wcm), vec![chr]);
+        // An implausible capacity reads as an empty set.
+        m.put_u32(wcm + WCM_BOT_SET + CHRSET_CAPACITY, 0x10_0000);
+        assert!(bot_set_chrs(&m, wcm).is_empty());
+        m.put(chr + CHR_TEAM, &[2]);
+        let c = ChrIns::new(&m, chr);
+        c.set_team(29).expect("write");
+        assert_eq!(c.team(), Some(29));
+    }
 
     fn play_area(m: &FakeMem, addr: usize, h: u64, mi: u64, s: u64) {
         m.put_u64(addr + PLAYAREA_CLOCK, 0x01DC_0000_0000_0000);

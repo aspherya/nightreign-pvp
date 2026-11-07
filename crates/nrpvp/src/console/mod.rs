@@ -97,6 +97,12 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "status", args: "", help: "world, local player, team value, PvP mode, game mode, matchmaking line", run: |_| Ok(Act::Main(MainReq::Status)) },
     Spec { name: "mode", args: "[br|offline]", help: "game mode: br = Commence starts the queue, offline = Commence Solo starts a solo expedition at once; during an expedition the change waits for the Roundtable; no argument shows it", run: mode },
     Spec { name: "bots", args: "[10|30|50|10000]", help: "OFF-4 (offline mode): start the game's own NPC bots from NPCBotTableParam table 10 / 30 / 50 (2 Nightfarers, level 1) or 10000 (2 of 8, level 6); no argument shows the last request, the bot manager's state", run: bots },
+    Spec { name: "bots_fill", args: "<0..5>", help: "BOT-1 (offline mode): fill the expedition with this many hostile bots (more rounds when it is already filled); the fill count stays for the next expeditions", run: bots_fill },
+    Spec { name: "bots_list", args: "", help: "BOT-1: the bot roster (stage, kept, alive; per bot: handle, alive/dead/gone, HP, team, position)", run: |_| Ok(Act::Reply(crate::features::bots::roster_line())) },
+    Spec { name: "bots_scan", args: "", help: "BOT-0 spike: every bot-like character (NpcParam 600040000, small-base invaders 6000300x0, or a handle in set 0x0E) in every WorldChrMan set, with set, handle, team and HP", run: |_| crate::game::botscan::scan_cmd().map(Act::Reply) },
+    Spec { name: "bots_gate", args: "[hold <ms>]", help: "BOT-0 spike: the bot instruction's solo gate value (2003[97] refuses above 1); hold = keep it at 1 for ms, then put the old value back", run: |a| crate::game::botscan::gate_cmd(a).map(Act::Reply) },
+    Spec { name: "bots_switch", args: "[on|off] [solo]", help: "BOT-5: the Bots switch of Matchmaking Settings (the expedition menu must have been open once); solo also sets Number of Players to Solo; no argument reads it", run: |a| crate::game::menuflow::bots_switch_cmd(a.first().map(String::as_str), a.get(1).is_some_and(|s| s == "solo")).map(Act::Reply) },
+    Spec { name: "bots_kill", args: "[n|all] [mob]", help: "BOT-2 test aid: HP 0 on living rival bot n (1-based) or on all, killed by LOCAL (out of the match) or with mob by a made-up enemy (replaced after 14 s)", run: |a| crate::game::botscan::kill_cmd(a).map(Act::Reply) },
     Spec { name: "bots_clear", args: "", help: "OFF-4 spike (offline mode): remove every NPC bot the game spawned", run: |_| Ok(Act::Main(MainReq::Bots(BotsCmd::Clear))) },
     Spec { name: "clock", args: "[night|circle|end|hh:mm[:ss]]", help: "M5: the expedition's play-area clock (07:00 morning, 23:59:59 night); with a time, the game jumps its clock there on its next frame: circle = 20:20 (final circle starts 20:24), night = 22:55 (night from 23:00), end = 23:58:30", run: clock },
     Spec { name: "night_end", args: "", help: "M5-3: end the current night now (otherwise it ends when one team is left standing, or after 10 min); the game's morning follows. Host only", run: |_| Ok(Act::Main(MainReq::NightEnd)) },
@@ -534,6 +540,18 @@ fn mode(args: &[String]) -> Result<Act, String> {
             .map(|m| Act::Main(MainReq::Mode(m)))
             .ok_or_else(|| "expected br or offline".into()),
     }
+}
+
+fn bots_fill(args: &[String]) -> Result<Act, String> {
+    let n: usize = args
+        .first()
+        .ok_or("usage: bots_fill <0..5>")?
+        .parse()
+        .map_err(|_| "the count must be a number 0..5".to_string())?;
+    if n > crate::features::bots::fill::MAX_BOTS {
+        return Err("the count must be a number 0..5".into());
+    }
+    Ok(Act::Main(MainReq::Bots(BotsCmd::Fill(n))))
 }
 
 fn bots(args: &[String]) -> Result<Act, String> {
@@ -1247,6 +1265,12 @@ mod tests {
         let r = answer(MainReq::Bots(BotsCmd::Clear), &snap(), &mut |c| ran.push(c));
         assert_eq!(ran, vec![Command::Bots(BotsCmd::Clear)]);
         assert!(r.starts_with("bots: "), "{r}");
+        assert!(matches!(
+            bots_fill(&["3".into()]),
+            Ok(Act::Main(MainReq::Bots(BotsCmd::Fill(3))))
+        ));
+        assert!(bots_fill(&["9".into()]).is_err());
+        assert!(execute_line("bots_list").starts_with("bots: "));
     }
 
     #[test]

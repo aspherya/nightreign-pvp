@@ -196,6 +196,10 @@ rival_hit_seconds = 3.0
 # the host then starts Day 2, where the tide and the night behave as in vanilla. 0 = the vanilla Day 1 with its tide and night.
 day1_secs = 1020
 
+# BOT-1 (BOTS.md): in an offline expedition (mode = \"offline\"), this many hostile AI Nightfarers (0..=5) join at the landing and
+# fight you, each other and the monsters. 0 = none.
+bots_fill = 0
+
 # RW-1 defeat: a player killed by another player or by the tide stays dead for the rest of the match. This many seconds (0..=600)
 # after the defeat the game shows the defeat screen and returns the player to the Roundtable (to search for another match).
 # 0 = stay and watch until the match ends; press F10 to leave at any time.
@@ -255,6 +259,8 @@ pub(crate) struct Config {
     pub pvpve_scheme: String,
     /// T-026: players per team, clamped to 1..=3 in `parse`.
     pub team_size: u64,
+    /// BOT-1: hostile bots that fill an offline expedition (0..=5; 0 = none). BOTS.md.
+    pub bots_fill: u64,
     /// Deprecated FS-0 alias of `pvpve` + `pvpve_team`.
     pub auto_team_all: u32,
     /// MM-1: Steam access probe on (developer mode only; forced off in the player build).
@@ -388,6 +394,7 @@ impl Default for Config {
             pvpve_interval_ms: DEFAULT_PVPVE_INTERVAL_MS,
             pvpve_scheme: SCHEME_RIVALS.to_string(),
             team_size: DEFAULT_TEAM_SIZE,
+            bots_fill: 0,
             auto_team_all: 0,
             mm_probe: false,
             net: true,
@@ -482,6 +489,8 @@ const REVIVE_VANILLA: &str = "vanilla";
 const SCHEME_ALL: &str = "all";
 const DEFAULT_TEAM_SIZE: u64 = 1;
 const TEAM_SIZE_RANGE: (u64, u64) = (1, 3);
+/// BOT-1: at most 5 bots (a 6-player Solo match with one human).
+const BOTS_FILL_RANGE: (u64, u64) = (0, 5);
 
 impl Config {
     /// T-035: the rival revive policy. Always `Redown` outside dev mode.
@@ -642,6 +651,7 @@ pub(crate) fn parse(text: &str) -> Result<(Config, Vec<String>), String> {
         PVPVE_INTERVAL_MS_RANGE,
     );
     clamp("team_size", &mut cfg.team_size, TEAM_SIZE_RANGE);
+    clamp("bots_fill", &mut cfg.bots_fill, BOTS_FILL_RANGE);
     clamp(
         "mm_match_players",
         &mut cfg.mm_match_players,

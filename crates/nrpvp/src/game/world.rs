@@ -6,10 +6,9 @@
 use super::combat_state::CombatCtl;
 use super::gamemem::GameMem;
 use super::layout;
-use super::views::{BotMan, BotManState, ChrIns, ClockState, Place, PlayArea};
+use super::views::{bot_set_chrs, BotMan, BotManState, ChrIns, ClockState, Place, PlayArea};
 use super::{deathhold, flags, input, menugate, spawn};
 
-/// Bot characters a feature can ask the world to watch at once (OFF-5: 5 rivals + 1 spare).
 /// M5-5: players in a match (Seamless Co-op's limit).
 pub(crate) const MAX_FIGHTERS: usize = 6;
 
@@ -65,6 +64,31 @@ fn night_flags(base: usize) -> Option<NightFlags> {
         *o = flags::get(base, id).ok()?;
     }
     Some(NightFlags::from_values(v))
+}
+
+/// BOT-1: every character in the bot set with what the bot rules read.
+fn read_bots(mem: &dyn GameMem, wcm: usize) -> Vec<BotChr> {
+    if wcm == 0 {
+        return Vec::new();
+    }
+    bot_set_chrs(mem, wcm)
+        .into_iter()
+        .filter_map(|chr| {
+            let c = ChrIns::new(mem, chr);
+            Some(BotChr {
+                handle: c.handle()?,
+                chr,
+                team: c.team().unwrap_or(0),
+                npc_id: c.npc_id().unwrap_or(0),
+                hp: c.hp().unwrap_or(0),
+                max_hp: c.max_hp().unwrap_or(0),
+                pos: None,
+                attacker: mem
+                    .read_u64(chr + layout::PLAYER_LAST_ATTACKER)
+                    .unwrap_or(0),
+            })
+        })
+        .collect()
 }
 
 /// What the main loop knows before it reads the world.
@@ -144,6 +168,28 @@ pub(crate) struct World {
     pub local_state: Option<(usize, u8)>,
     /// R7-3: LOCAL's roster team number (refreshed by [`World::after_combat`]).
     pub local_team_no: Option<u8>,
+    /// BOT-1: the characters of the bot manager's set (read in an expedition only; empty elsewhere).
+    pub bot_chrs: Vec<BotChr>,
+    /// BOT-2: LOCAL's handle (who killed a bot).
+    pub local_handle: Option<u64>,
+}
+
+/// BOT-1: one character of the bot manager's set (`views::bot_set_chrs`), read every tick in an expedition.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct BotChr {
+    /// Its handle (`0x…10E0000n` in OFF-5).
+    pub handle: u64,
+    pub chr: usize,
+    pub team: u8,
+    /// `CHR_ID`: its NpcParam id (`layout::BOT_NPC_PARAM` for the bot tables' Nightfarers).
+    pub npc_id: u32,
+    pub hp: u32,
+    pub max_hp: u32,
+    /// World position (filled by the main loop, [`World::fill_bot_positions`]; `None` = not read or unreadable).
+    pub pos: Option<[f32; 3]>,
+    /// BOT-2: its last attacker's handle (`PLAYER_LAST_ATTACKER`; 0 or all-ones = none). Valid on the game that applied the hits
+    /// (MEMORY_MAP §21): the host's, where the bots live.
+    pub attacker: u64,
 }
 
 /// R7-3: the players this game marks as RIVAL (see [`World::rivals`]).
@@ -194,7 +240,36 @@ impl World {
             rivals: Rivals::default(),
             local_state: local.and(i.local_state),
             local_team_no: i.local_team_no,
+            local_handle: local.and_then(|p| ChrIns::new(mem, p).handle()),
+            bot_chrs: if place == Some(Place::Expedition) {
+                read_bots(mem, i.wcm_instance)
+            } else {
+                Vec::new()
+            },
         }
+    }
+
+    /// BOT-1: each bot's world position (its physics position minus LOCAL's origin, like the players'; `spawn::world_position_of`).
+    pub(crate) fn fill_bot_positions(&mut self, base: usize) {
+        let Some(local) = self.local else {
+            return;
+        };
+        for b in &mut self.bot_chrs {
+            b.pos = spawn::world_position_of(b.chr, local, base);
+        }
+    }
+
+    /// BOT-2: the bots that play the match as rivals: the bot tables' Nightfarers ([`layout::BOT_NPC_PARAM`]) that the bot fill has put on
+    /// a rival team (anything but the game's ally value 2). A bot left on 2 is one the fill did not keep (the clear removes it).
+    pub(crate) fn rival_bots(&self) -> impl Iterator<Item = &BotChr> {
+        self.bot_chrs
+            .iter()
+            .filter(|b| b.npc_id == layout::BOT_NPC_PARAM && b.team != 0 && b.team != 2)
+    }
+
+    /// BOT-1: the bot with this handle, if it is in the set this tick.
+    pub(crate) fn bot(&self, handle: u64) -> Option<&BotChr> {
+        self.bot_chrs.iter().find(|b| b.handle == handle)
     }
 
     /// R7-3: what the night match reads besides the read model, filled in one place (it was a block in the main loop). Only in an
@@ -297,6 +372,30 @@ mod tests {
             local,
             ..Inputs::default()
         }
+    }
+
+    #[test]
+    fn bots_are_read_in_an_expedition_only() {
+        use crate::game::layout::{
+            CHRSET_CAPACITY, CHRSET_ENTRIES, CHR_HANDLE, CHR_ID, CHR_TEAM, WCM_BOT_SET,
+        };
+        let m = FakeMem::default();
+        let (wcm, entries, chr) = (0x5_0000, 0x30_0000, 0x40_0000);
+        m.put_u32(wcm + WCM_BOT_SET + CHRSET_CAPACITY, 1);
+        m.put_u64(wcm + WCM_BOT_SET + CHRSET_ENTRIES, entries as u64);
+        m.put_u64(entries, chr as u64);
+        m.put_u64(entries + 8, 0);
+        m.put_u64(chr + CHR_HANDLE, 0xFFFF_FFFF_10E0_0000);
+        m.put_u32(chr + CHR_ID, 600_040_000);
+        m.put(chr + CHR_TEAM, &[2]);
+        m.put_u32(0x10_0000 + CHR_TYPE, 13);
+        let w = World::read(&m, &inputs(wcm, Some(0x10_0000)));
+        let b = w.bot(0xFFFF_FFFF_10E0_0000).expect("found");
+        assert_eq!((b.chr, b.team, b.npc_id), (chr, 2, 600_040_000));
+        m.put_u32(0x10_0000 + CHR_TYPE, 0);
+        assert!(World::read(&m, &inputs(wcm, Some(0x10_0000)))
+            .bot_chrs
+            .is_empty());
     }
 
     #[test]

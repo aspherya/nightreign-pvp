@@ -163,9 +163,20 @@ twice within a few seconds with Solo = Offline (no new UI, but hidden), or (b) a
 Royale or Offline?" when the player first walks to the table and sets `mode` through a flag the DLL reads (flag group 10007).
 (b) is the player-friendly one; it needs a yes/no dialog event (2007 family) whose answer lands in a flag: check that first.
 
-**Bots are not a game feature** (Leonardo, 2026-10-24): OFF-3 (research, done), OFF-6, OFF-7 and OFF-8 are cancelled; the automatic
-offline rival bots (OFF-5) were removed from the code. The game's bot manager stays as the engine of the orchestrator's puppet players
-(`game/puppet.rs`, console `bots` / `bots_clear` / `puppet_*`); `archive/research/OFF-3-bots.md` and MEMORY_MAP §15 / §18 keep the facts.
+**Bots were cancelled on 2026-10-24 and are back as a feature on 2026-11-06:** see the "Bots" section and [BOTS.md](BOTS.md).
+
+## Bots (Leonardo, 2026-11-06; design, plan and open questions in [BOTS.md](BOTS.md))
+
+### BOT-R1 — RE: how to steer a bot
+Owner: OPUS | Status: after BOT-1
+Rank the four levers of BOTS.md §2b with static reading (AI target "host" field of logic 30000, plain-text logic loading, shipped
+roaming logics) and one live probe each for the best two. Result into MEMORY_MAP and BOTS.md; BOT-3 is written from it.
+
+### BOT-3 / BOT-4 / BOT-6
+BOT-0 done 2026-11-06: host bots are not on a client; small-base invaders are (BOTS.md §4). BOT-6 builds friends + bots on the invaders.
+BOT-2 done for Solo 2026-11-06 (`bots-match`); open from it: killfeed names for bots (`?NpcName?`), a false WIN if the last bot's mob-death replacement takes over 30 s.
+BOT-5 done 2026-11-07: the Bots switch in Matchmaking Settings (`mi-bots-menu`).
+Brain v1, levels, friends + bots: written out when they start (BOTS.md §3 holds scope and order).
 
 ## Match flow: nights with no boss (M5; research `archive/research/M5-no-boss-nights.md`, `archive/research/M5-8-death.md`)
 

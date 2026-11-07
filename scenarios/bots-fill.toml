@@ -1,0 +1,31 @@
+name = "bots-fill"
+about = "BOT-1: an offline expedition fills with 5 hostile bots (the game's own AI Nightfarers): kept in 3 rounds, all alive on team 29 with positions read"
+tags = ["rules"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+bots_fill = 5
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+wait_log = { contains = "bots: fill done: 5 of 5", timeout_s = 240, since = "run" }   # the first round waits for the landing
+[[step]]
+wait = { console = "bots_list", contains = "5 of 5 kept, 5 alive", timeout_s = 30 }
+[[step]]
+expect = { console = "bots_list", contains = ["b5 0x", "team 29", " at ("], absent = "not found yet" }
+[[step]]
+expect_log = { contains = ["bots: round 3: table 50", "team 2 -> 29"], since = "run" }
+[[step]]
+screenshot = "bots"
+[[step]]
+keys = "wait 20000ms"   # let them fight a while: none should vanish within 20 s
+[[step]]
+expect = { console = "bots_list", contains = "5 of 5 kept", absent = "gone" }
+[[step]]
+screenshot = "bots_later"

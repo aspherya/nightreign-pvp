@@ -58,6 +58,19 @@ const CAT_MENUTEXT_DLC: u32 = 504;
 pub(crate) const LABEL_SOLO: u32 = 99_100_100;
 pub(crate) const LABEL_DUO: u32 = 99_100_101;
 pub(crate) const LABEL_TRIO: u32 = 99_100_102;
+/// BOT-5: the "No. of Password Players" row as **Bots**: its label and its two values ("Two players" = On, "Three players" = Off).
+pub(crate) const LABEL_BOTS: u32 = 99_100_105;
+pub(crate) const LABEL_BOTS_ON: u32 = 99_100_106;
+pub(crate) const LABEL_BOTS_OFF: u32 = 99_100_107;
+/// The row's own predicate `exe+0x9F91C0` (true = greyed out: no multiplayer password, or Number of Players not three; the only callers are
+/// the two variants of this row, `exe+0x9F78A4` / `exe+0x9F7E04`). Its first instruction is a `jmp`, so returning at the entry is safe.
+pub(crate) const RVA_BOTS_ROW_PREDICATE: usize = 0x9F_91C0;
+pub(crate) const BOTS_ROW_PREDICATE_BYTES: [u8; 5] = [0xE9, 0x82, 0xD5, 0x92, 0x06];
+/// `CSMenuMan+0x48` with the expedition menu open (nro's `MENU_EXPEDITION`, 2026-10-27).
+const MENU_WORD_EXPEDITION: u32 = 0x20_0004;
+/// The CL_LineHelp FMG's entries of the row (help line; value Two; value Three) and the text that identifies the FMG.
+const HELP_IDS: [u32; 3] = [701_002, 701_011, 701_012];
+const HELP_PROBE: (u32, &str) = (701_010, "Set number of players for expedition");
 /// "Stop Searching": the Commence button while our queue is searching.
 pub(crate) const LABEL_STOP: u32 = 99_100_103;
 /// UI-3: the Commence button's label while the Battle Royale card is selected and no queue is running.
@@ -73,6 +86,9 @@ pub(crate) fn label_swap(id: u32, phase: u8) -> Option<u32> {
         130_409 => Some(LABEL_SOLO),
         130_417 => Some(LABEL_DUO),
         130_408 => Some(LABEL_TRIO),
+        130_002 => Some(LABEL_BOTS),
+        130_200 => Some(LABEL_BOTS_ON),
+        130_201 => Some(LABEL_BOTS_OFF),
         _ if phase == PHASE_SEARCHING && COMMENCE_LABELS.contains(&id) => Some(LABEL_STOP),
         _ => None,
     }
@@ -103,7 +119,13 @@ pub(crate) const T_OFF: usize = 3;
 pub(crate) const T_OFFLINE_SOLO: usize = 4;
 pub(crate) const T_SEARCHING_TRIO: usize = 5;
 pub(crate) const T_STARTING: usize = 6;
-const N_TEXTS: usize = 7;
+/// BOT-5: Bots On with Duo / Trio.
+pub(crate) const T_BOTS_SOLO: usize = 7;
+/// BOT-5: the row's help texts (CL_LineHelp 701002 / 701011 / 701012 point at these).
+pub(crate) const T_HELP_ROW: usize = 8;
+pub(crate) const T_HELP_ON: usize = 9;
+pub(crate) const T_HELP_OFF: usize = 10;
+const N_TEXTS: usize = 11;
 const TEXT_UNITS: usize = 256;
 
 /// Requests from the handler to the thread.
@@ -121,6 +143,8 @@ pub(crate) enum Decision {
     Pass,
     /// Match ready: set the Number of Players byte to `PLAYERS_TWO` (a multiplayer start), then let Commence run.
     PassMultiplayer,
+    /// BOT-5: Bots On, Solo: the game's own solo Commence, and the expedition is a match against bots.
+    PassBots,
     /// Show our dialog `text` instead of Commence and hand `request` to the thread.
     Dialog { text: usize, request: u8 },
 }
@@ -135,10 +159,22 @@ pub(crate) fn decide_for_card(
     phase: u8,
     mm_on: bool,
     mode: GameMode,
+    bots: bool,
 ) -> Decision {
     let queue_active = phase == PHASE_SEARCHING || phase == PHASE_MATCHED;
     if br_card != Some(true) && !queue_active {
         return Decision::Pass;
+    }
+    // BOT-5: Bots On (an idle queue, the Battle Royale mode): no search, a match against bots at once. Solo only for now (BOTS.md §2f).
+    if bots && !queue_active && mode == GameMode::BattleRoyale {
+        return if players == PLAYERS_ONE {
+            Decision::PassBots
+        } else {
+            Decision::Dialog {
+                text: T_BOTS_SOLO,
+                request: REQ_NONE,
+            }
+        };
     }
     decide(players, phase, mm_on, mode)
 }
@@ -214,6 +250,10 @@ pub(crate) fn texts() -> [String; N_TEXTS] {
 Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale: searching for players (Trio).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
         "Battle Royale: match found.\nThe match starts by itself.".to_string(),
+        "Battle Royale with bots is Solo only for now.\nChoose Solo in Number of Players, or set Bots to Off.".to_string(),
+        "Bots: On starts a Solo Battle Royale against AI Nightfarers at once, with no search for players.".to_string(),
+        "Bots On: Commence starts a Solo match against 5 AI Nightfarers.".to_string(),
+        "Bots Off: Commence searches for players.".to_string(),
     ]
 }
 
@@ -224,6 +264,9 @@ unsafe impl Sync for Texts {}
 static TEXTS: Texts = Texts(UnsafeCell::new([[0; TEXT_UNITS]; N_TEXTS]));
 
 static ADDR: AtomicUsize = AtomicUsize::new(0);
+/// BOT-5: the Bots row predicate while its breakpoint is armed (0 = not armed).
+static PRED_ADDR: AtomicUsize = AtomicUsize::new(0);
+static PRED_HITS: AtomicU32 = AtomicU32::new(0);
 static LABEL_ADDR: AtomicUsize = AtomicUsize::new(0);
 static LABEL_SWAPS: AtomicU32 = AtomicU32::new(0);
 /// The menu the Commence button last asked its text for (console `br_card`).
@@ -246,6 +289,7 @@ fn decision_code(d: Decision) -> u64 {
     match d {
         Decision::Pass => 1,
         Decision::PassMultiplayer => 2,
+        Decision::PassBots => 3,
         Decision::Dialog { text, request } => 0x100 | ((text as u64) << 4) | u64::from(request),
     }
 }
@@ -265,6 +309,18 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             return EXCEPTION_CONTINUE_SEARCH;
         }
         let rip = (*ctx).Rip as usize;
+        if rip != 0 && rip == PRED_ADDR.load(Ordering::Relaxed) {
+            // BOT-5: the Bots row is never greyed out: return false at the entry (a `jmp`, nothing pushed yet): al = 0, pop the return
+            // address.
+            let rsp = (*ctx).Rsp as usize;
+            let ret = *(rsp as *const u64);
+            (*ctx).Rax &= !0xFF;
+            (*ctx).Rip = ret;
+            (*ctx).Rsp = (rsp + 8) as u64;
+            PRED_HITS.fetch_add(1, Ordering::Relaxed);
+            (*ctx).EFlags |= EFLAGS_RF;
+            return EXCEPTION_CONTINUE_EXECUTION;
+        }
         if rip != 0 && rip == LABEL_ADDR.load(Ordering::Relaxed) {
             // `rbx` still holds the expedition menu at the call that asks for the Commence button's text (`exe+0x9EF45E`, 1.03.3).
             let menu = (*ctx).Rbx as usize;
@@ -287,12 +343,13 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         let settings = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).settings();
         let players = settings.as_ref().and_then(|s| s.players());
         let br_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).is_battle_royale_card();
+        let bots = settings.as_ref().and_then(|s| s.bots()).unwrap_or(false);
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
             let mode = crate::features::mode::current();
             let d = while_starting(
-                decide_for_card(br_card, players, phase, crate::mm::enabled(), mode),
+                decide_for_card(br_card, players, phase, crate::mm::enabled(), mode, bots),
                 phase,
                 crate::mm::auto_start(),
             );
@@ -306,6 +363,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             );
             match d {
                 Decision::Pass => {}
+                Decision::PassBots => crate::features::bots::set_bots_match(true),
                 Decision::PassMultiplayer => {
                     let _ = settings.set_players(PLAYERS_TWO);
                 }
@@ -321,6 +379,72 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         (*ctx).EFlags |= EFLAGS_RF;
     }
     EXCEPTION_CONTINUE_EXECUTION
+}
+
+/// BOT-5: point the Bots row's CL_LineHelp entries at our texts. The FMG is the category whose entry [`HELP_PROBE`] reads the vanilla
+/// English text (the game's category ids are not documented for CL_LineHelp; 200..=215 are tried). `Some(count)` once done.
+fn point_help_texts(base: usize) -> Option<usize> {
+    let fmg = (200..=215).find_map(|cat| {
+        let f = super::fmg::fmg_for(base, cat)?;
+        let at = super::fmg::text_at(f, HELP_PROBE.0)?;
+        let want: Vec<u16> = HELP_PROBE.1.encode_utf16().collect();
+        let got = super::mem::read::<[u16; 36]>(at)?;
+        (got[..want.len()] == want[..]).then_some(f)
+    })?;
+    let mut n = 0;
+    for (id, text) in HELP_IDS
+        .into_iter()
+        .zip([T_HELP_ROW, T_HELP_ON, T_HELP_OFF])
+    {
+        let Some((slot, _)) = offset_slot(fmg, id) else {
+            continue;
+        };
+        if slot % 8 != 0 || super::mem::read::<u64>(slot).is_none() {
+            continue;
+        }
+        let off = (text_addr(text) as u64).wrapping_sub(fmg as u64);
+        if super::mem::write_bytes(slot, &off.to_le_bytes()).is_ok() {
+            n += 1;
+        }
+    }
+    (n > 0).then_some(n)
+}
+
+/// BOT-5: console `bots_switch [on|off] [solo]`: read or set the Bots switch (`solo` also sets Number of Players to Solo) of the expedition menu last seen (the menu must have been open once;
+/// the game keeps the value in its matchmaking settings, so it is remembered between sessions).
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn bots_switch_cmd(arg: Option<&str>, solo: bool) -> Result<String, String> {
+    let menu = LAST_MENU.load(Ordering::Relaxed);
+    if menu == 0 {
+        return Err("no expedition menu seen yet (open it at the table once)".into());
+    }
+    let mem = RealMem;
+    let settings = ExpeditionMenu::new(&mem, menu)
+        .settings()
+        .ok_or("menu settings unreadable")?;
+    if let Some(a) = arg {
+        let on = match a {
+            "on" | "1" => true,
+            "off" | "0" => false,
+            _ => return Err("usage: bots_switch [on|off]".into()),
+        };
+        settings.set_bots(on).map_err(str::to_string)?;
+        if solo {
+            settings.set_players(PLAYERS_ONE).map_err(str::to_string)?;
+        }
+        tracing::info!(
+            "br_menu: Bots switch set {} (console)",
+            if on { "On" } else { "Off" }
+        );
+    }
+    Ok(format!(
+        "bots switch: {}",
+        match settings.bots() {
+            Some(true) => "On",
+            Some(false) => "Off",
+            None => "unreadable",
+        }
+    ))
 }
 
 /// Whether the card selected right now in the expedition menu is the Battle Royale card (`None`: no menu known). Console `br_card`.
@@ -390,6 +514,13 @@ fn run(base: usize) {
         tracing::warn!("br_menu: menu text getter bytes differ from game 1.03.3; Number of Players labels stay as they are");
     }
     let mut labels_armed = false;
+    let pred_ok = check(RVA_BOTS_ROW_PREDICATE, &BOTS_ROW_PREDICATE_BYTES);
+    if !pred_ok {
+        tracing::warn!("br_menu: Bots row predicate bytes differ from game 1.03.3; the Bots row stays greyed out");
+    }
+    let mut pred_armed = false;
+    let mut help_done = false;
+    let mut seen_pred = 0u32;
     let mut seen_swaps = 0u32;
     let mut next_resolve = Instant::now();
     let mut seen = 0u32;
@@ -421,15 +552,52 @@ fn run(base: usize) {
         // Labels: arm once our package's ids are in the live CL_MenuText_dlc01 (else the list would show nothing).
         if labels_ok && !labels_armed && resolve_tick {
             if let Some(f) = super::fmg::fmg_for(base, CAT_MENUTEXT_DLC) {
-                if [LABEL_SOLO, LABEL_DUO, LABEL_TRIO, LABEL_STOP, LABEL_FIND]
-                    .iter()
-                    .all(|id| offset_slot(f, *id).is_some())
+                if [
+                    LABEL_SOLO,
+                    LABEL_DUO,
+                    LABEL_TRIO,
+                    LABEL_STOP,
+                    LABEL_FIND,
+                    LABEL_BOTS,
+                    LABEL_BOTS_ON,
+                    LABEL_BOTS_OFF,
+                ]
+                .iter()
+                .all(|id| offset_slot(f, *id).is_some())
                 {
                     LABEL_ADDR.store(base + RVA_MENUTEXT_GETTER, Ordering::Relaxed);
                     crate::hwbp::set(crate::hwbp::SLOT_LABELS, base + RVA_MENUTEXT_GETTER);
                     labels_armed = true;
-                    tracing::info!("br_menu: our labels found in CL_MenuText_dlc01 0x{f:X}: Number of Players shows Solo / Duo / Trio (hwbp slot 3)");
+                    tracing::info!("br_menu: our labels found in CL_MenuText_dlc01 0x{f:X}: Number of Players shows Solo / Duo / Trio, No. of Password Players shows Bots Off / On (hwbp slot 3)");
                 }
+            }
+        }
+        // BOT-5: the Bots row's breakpoint (hwbp slot 0, shared with the quiet invite) only while the expedition menu is open and our queue
+        // is idle; the help texts once the CL_LineHelp FMG is found.
+        let want_pred = pred_ok
+            && labels_armed
+            && crate::mm::phase() == crate::mm::PHASE_IDLE
+            && super::menugate::menu_word(base) == Some(MENU_WORD_EXPEDITION);
+        if want_pred && !pred_armed && crate::hwbp::is_free(crate::hwbp::SLOT_BOTS_ROW) {
+            PRED_ADDR.store(base + RVA_BOTS_ROW_PREDICATE, Ordering::Relaxed);
+            crate::hwbp::set(crate::hwbp::SLOT_BOTS_ROW, base + RVA_BOTS_ROW_PREDICATE);
+            pred_armed = true;
+        } else if !want_pred && pred_armed {
+            crate::hwbp::clear(crate::hwbp::SLOT_BOTS_ROW);
+            pred_armed = false;
+            // The address stays known to the handler a while longer (a late hit must still be ours, TRAPS).
+            let hits = PRED_HITS.load(Ordering::Relaxed);
+            if hits != seen_pred {
+                tracing::info!(
+                    "br_menu: Bots row kept selectable ({hits} predicate call(s) so far)"
+                );
+                seen_pred = hits;
+            }
+        }
+        if labels_armed && !help_done && resolve_tick {
+            if let Some(n) = point_help_texts(base) {
+                help_done = true;
+                tracing::info!("br_menu: Bots row help texts in place ({n} entries)");
             }
         }
         let sw = LABEL_SWAPS.load(Ordering::Relaxed);
@@ -571,12 +739,12 @@ mod tests {
     }
 
     #[test]
-    fn labels_swap_only_the_three_number_of_players_ids() {
+    fn labels_swap_only_the_number_of_players_and_bots_ids() {
         for ph in [PHASE_IDLE, PHASE_SEARCHING, PHASE_MATCHED] {
             assert_eq!(label_swap(130_409, ph), Some(LABEL_SOLO));
             assert_eq!(label_swap(130_417, ph), Some(LABEL_DUO));
             assert_eq!(label_swap(130_408, ph), Some(LABEL_TRIO));
-            assert_eq!(label_swap(130_200, ph), None);
+            assert_eq!(label_swap(130_406, ph), None);
             assert_eq!(label_swap(130_407, ph), None);
         }
     }
@@ -643,7 +811,7 @@ mod tests {
         }
         // Other texts never read the menu.
         assert_eq!(
-            label_for_card(130_200, PHASE_IDLE, || panic!("read the menu")),
+            label_for_card(130_406, PHASE_IDLE, || panic!("read the menu")),
             None
         );
         assert_eq!(
@@ -653,26 +821,66 @@ mod tests {
     }
 
     #[test]
+    fn bots_on_starts_a_solo_match_against_bots_and_says_solo_only_otherwise() {
+        let d = |p, card| decide_for_card(card, p, PHASE_IDLE, true, GameMode::BattleRoyale, true);
+        assert_eq!(d(PLAYERS_ONE, Some(true)), Decision::PassBots);
+        assert_eq!(
+            d(PLAYERS_TWO, Some(true)),
+            Decision::Dialog {
+                text: T_BOTS_SOLO,
+                request: REQ_NONE
+            }
+        );
+        // Another card is the game's own; a running queue is not interrupted.
+        assert_eq!(d(PLAYERS_ONE, Some(false)), Decision::Pass);
+        assert_eq!(
+            decide_for_card(
+                Some(true),
+                PLAYERS_ONE,
+                PHASE_SEARCHING,
+                true,
+                GameMode::BattleRoyale,
+                true
+            ),
+            Decision::Dialog {
+                text: T_STOPPED,
+                request: REQ_LEAVE
+            }
+        );
+        // The labels of the row.
+        assert_eq!(label_swap(130_002, PHASE_IDLE), Some(LABEL_BOTS));
+        assert_eq!(label_swap(130_200, PHASE_IDLE), Some(LABEL_BOTS_ON));
+        assert_eq!(label_swap(130_201, PHASE_IDLE), Some(LABEL_BOTS_OFF));
+    }
+
+    #[test]
     fn only_the_battle_royale_card_starts_our_queue() {
         use GameMode::BattleRoyale as BR;
         let br = Some(true);
         let other = Some(false);
         // Idle: our card queues, any other card (or an unreadable menu) is the game's own Commence.
         assert_eq!(
-            decide_for_card(br, PLAYERS_ONE, PHASE_IDLE, true, BR),
+            decide_for_card(br, PLAYERS_ONE, PHASE_IDLE, true, BR, false),
             decide(PLAYERS_ONE, PHASE_IDLE, true, BR)
         );
         for card in [other, None] {
             assert_eq!(
-                decide_for_card(card, PLAYERS_ONE, PHASE_IDLE, true, BR),
+                decide_for_card(card, PLAYERS_ONE, PHASE_IDLE, true, BR, false),
                 Decision::Pass
             );
             assert_eq!(
-                decide_for_card(card, PLAYERS_TWO, PHASE_IDLE, true, BR),
+                decide_for_card(card, PLAYERS_TWO, PHASE_IDLE, true, BR, false),
                 Decision::Pass
             );
             assert_eq!(
-                decide_for_card(card, PLAYERS_ONE, PHASE_IDLE, true, GameMode::Offline),
+                decide_for_card(
+                    card,
+                    PLAYERS_ONE,
+                    PHASE_IDLE,
+                    true,
+                    GameMode::Offline,
+                    false
+                ),
                 Decision::Pass
             );
         }
@@ -680,7 +888,7 @@ mod tests {
         for card in [br, other, None] {
             for phase in [PHASE_SEARCHING, PHASE_MATCHED] {
                 assert_eq!(
-                    decide_for_card(card, PLAYERS_ONE, phase, true, BR),
+                    decide_for_card(card, PLAYERS_ONE, phase, true, BR, false),
                     decide(PLAYERS_ONE, phase, true, BR)
                 );
             }
