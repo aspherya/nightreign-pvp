@@ -44,6 +44,12 @@ fn sector_of(c: [f32; 3], p: [f32; 3], n: usize) -> usize {
     ((a / std::f32::consts::TAU * n as f32) as usize).min(n.saturating_sub(1))
 }
 
+/// BOT-2 hunt: a far bot is brought to a living enemy this far from LOCAL (horizontal metres), closest to [`HUNT_IDEAL`], on its own side.
+/// Close enough for the bot's own logic (follow the host, logic 30000) to come for LOCAL, far enough to appear out of sight.
+pub(crate) const HUNT_MIN: f32 = 70.0;
+pub(crate) const HUNT_MAX: f32 = 130.0;
+pub(crate) const HUNT_IDEAL: f32 = 100.0;
+
 /// The camp for bot `sector` of `sectors` (pure; unit tested): in range, at least [`APART`] from every camp in `used`, and in its sector,
 /// closest to [`IDEAL`]; else any such camp in range.
 pub(crate) fn pick(
@@ -53,11 +59,30 @@ pub(crate) fn pick(
     sectors: usize,
     used: &[[f32; 3]],
 ) -> Option<[f32; 3]> {
+    pick_ring(
+        local,
+        cands,
+        (MIN_DIST, MAX_DIST, IDEAL),
+        sector,
+        sectors,
+        used,
+    )
+}
+
+/// [`pick`] for any ring `(min, max, ideal)` around LOCAL (pure).
+pub(crate) fn pick_ring(
+    local: [f32; 3],
+    cands: &[[f32; 3]],
+    (min, max, ideal): (f32, f32, f32),
+    sector: usize,
+    sectors: usize,
+    used: &[[f32; 3]],
+) -> Option<[f32; 3]> {
     let n = sectors.max(1);
-    let score = |p: &[f32; 3]| (hdist(local, *p) - IDEAL).abs();
+    let score = |p: &[f32; 3]| (hdist(local, *p) - ideal).abs();
     let ok = |p: &&[f32; 3]| {
         let d = hdist(local, **p);
-        (MIN_DIST..=MAX_DIST).contains(&d)
+        (min..=max).contains(&d)
             && (p[1] - local[1]).abs() <= MAX_DY
             && used.iter().all(|u| hdist(*u, **p) >= APART)
     };
@@ -121,6 +146,40 @@ fn enemy_positions(wcm: usize, local: usize, base: usize) -> Vec<[f32; 3]> {
 }
 
 /// Move bot `chr` (still `handle`) to a camp in direction `sector` of `sectors`. Main loop only (reads many characters).
+/// BOT-2 hunt: bring bot `chr` (still `handle`) to a living enemy about [`HUNT_IDEAL`] metres from LOCAL, on the side the bot already is
+/// (one of 8 sectors around LOCAL), so it comes from where it was. Main loop only (reads many characters).
+pub(crate) fn hunt(
+    wcm: usize,
+    local: usize,
+    base: usize,
+    chr: usize,
+    handle: u64,
+) -> Result<String, &'static str> {
+    if mem::read::<u64>(chr + CHR_HANDLE) != Some(handle) {
+        return Err("the bot is gone (handle changed)");
+    }
+    let me = super::spawn::world_position(local, base)
+        .ok_or("LOCAL position unreadable")?
+        .0;
+    let at = super::spawn::world_position_of(chr, local, base).ok_or("bot position unreadable")?;
+    let side = sector_of(me, at, 8);
+    let camps = enemy_positions(wcm, local, base);
+    let camp = pick_ring(me, &camps, (HUNT_MIN, HUNT_MAX, HUNT_IDEAL), side, 8, &[])
+        .ok_or("no living enemy 70..130 m from LOCAL")?;
+    let d = hdist(me, camp).max(1.0);
+    let to = [
+        camp[0] + (me[0] - camp[0]) / d * BESIDE,
+        camp[1] + LIFT,
+        camp[2] + (me[2] - camp[2]) / d * BESIDE,
+    ];
+    super::spawn::teleport_other(chr, local, base, to)?;
+    Ok(format!(
+        "bot 0x{handle:X} hunts: brought from {:.0} m to {:.0} m from LOCAL",
+        hdist(me, at),
+        hdist(me, to)
+    ))
+}
+
 pub(crate) fn spread(
     wcm: usize,
     local: usize,
@@ -200,5 +259,16 @@ mod tests {
             "within 80 m of a taken camp"
         );
         assert_eq!(pick(me, &[[10.0, 0.0, 0.0]], 0, 1, &[]), None);
+        // The hunt ring: 70..130 m, closest to 100 m.
+        let near = [
+            [95.0, 0.0, 0.0],
+            [125.0, 0.0, 0.0],
+            [40.0, 0.0, 0.0],
+            [230.0, 0.0, 0.0],
+        ];
+        assert_eq!(
+            pick_ring(me, &near, (HUNT_MIN, HUNT_MAX, HUNT_IDEAL), 0, 8, &[]),
+            Some([95.0, 0.0, 0.0])
+        );
     }
 }

@@ -518,6 +518,8 @@ fn watch(
         if let Some(c) = combat.as_mut() {
             c.set_rival_bots(world.rival_bots().map(|b| b.handle).collect());
         }
+        // BOT-5: the Bots row's breakpoint stays in the Roundtable.
+        menuflow::set_in_expedition(world.in_expedition());
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
@@ -589,6 +591,7 @@ fn watch(
             });
             let _ = reply.send(text);
         }
+        world.bots_pending = crate::features::bots::pending();
         features.tick(crate::features::Phase::Rules, &world, &mut fctx);
         fctx.flush(
             crate::features::Targets {

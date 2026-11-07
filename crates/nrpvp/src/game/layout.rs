@@ -109,6 +109,9 @@ pub(crate) const SPEFFECT_MAX: usize = 256;
 /// 7010-7012 of `common` 1183; MEMORY_MAP §17, archive/research/M5-8-death.md §R1). The die-at-once SpEffect 102130 must not be given
 /// to a player holding any of them.
 pub(crate) const SPEFFECTS_REVIVE_ITEM: [i32; 4] = [540_155, 6_999_100, 6_999_500, 8_970_061];
+/// The Night's Tide rain on a character standing outside the circle (`PlayAreaCreateCommonParam` row 0 rain SpEffects, MEMORY_MAP §16).
+/// `tide-lab` 2026-11-07: LOCAL held 99811 at 23:30 outside the final circle and not before.
+pub(crate) const SPEFFECTS_TIDE_RAIN: [i32; 2] = [99_810, 99_811];
 
 // ---- PlayerGameData (MEMORY_MAP §5) ----
 /// u32 HP mirror inside PlayerGameData.

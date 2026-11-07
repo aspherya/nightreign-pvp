@@ -1,5 +1,5 @@
 name = "bots-match"
-about = "BOT-1 spread + BOT-2 rules: 5 rival bots are sent to far enemy camps, each in its own direction, and stay alive a while; a bot killed by a mob is replaced 14 s later by a new one (also sent to a camp); when LOCAL has killed every bot the match is decided for LOCAL (WIN)"
+about = "BOT-1 spread + BOT-2 rules and hunt: 5 rival bots are sent to far enemy camps, each in its own direction, and stay alive a while; a bot killed by a mob is replaced 14 s later by a new one (also sent to a camp); when LOCAL has killed every bot the match is decided for LOCAL (WIN)"
 tags = ["rules"]
 
 [config]
@@ -22,7 +22,11 @@ console = "bots_list"
 [[step]]
 screenshot = "spread"
 [[step]]
-keys = "wait 40000ms"   # do they stay at their camps (logic 30000 follows the host: walk or warp back?)
+wait_log = { contains = ["hunt: bot", "hunts: brought from"], timeout_s = 100, since = "run" }   # BOT-2 hunt: a far bot comes near LOCAL after a minute
+[[step]]
+console = "bots_list"
+[[step]]
+screenshot = "hunt"
 [[step]]
 expect = { console = "bots_list", contains = "5 of 5 kept", absent = "gone" }
 [[step]]

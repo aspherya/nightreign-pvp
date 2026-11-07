@@ -50,7 +50,9 @@ How a goal turns into movement is the **one big unknown** (BOT-R1). Candidates, 
 2. **Our own logic script** in plain-text HavokScript from our package (the game loads `c0000.hks` as text, TECHNICAL_NOTES §4b), reading a
    goal point the DLL writes.
 3. **A logic the game already ships** that roams (search the 49 `script/*.luabnd` string tables) switched in by NpcThink id.
-4. **Teleport hops** along the navmesh (works anywhere, looks bad; last resort and for tests).
+4. **Teleport hops** along the navmesh (works anywhere, looks bad; last resort and for tests). **In use since 2026-11-07 as the "hunt"**:
+   every minute the farthest living bot beyond 150 m is brought to a living enemy 70-130 m from LOCAL, on the side it already was; its
+   own logic (follow the host) then comes for LOCAL. One bot per minute, so they arrive one by one.
 
 ### 2c. Levels: a bot grows with the match
 
@@ -79,6 +81,8 @@ game knows (0..16, 18, 100); an added row 17 did not show (2026-11-06), like 101
   130002 / 130200 / 130201 -> ours 99100105..107), its help lines point at our texts (CL_LineHelp 701002 / 701011 / 701012), and the game's
   "greyed out without a password" predicate is answered with false while the expedition menu is open and the queue is idle (hwbp slot 0,
   `exe+0x9F91C0`). The value is the game's own settings byte `+0x48`, so **the game remembers it between sessions**.
+- **On in both builds as an offline training mode (beta)** (Leonardo 2026-11-07, DECISIONS; it was dev-only for a few hours). Its help
+  line says so: Solo against 5 AI bots, no other players.
 - **Bots On + Battle Royale card + Solo + Commence** = no search: the game's own solo expedition starts at once and 5 bots fill it
   (same DLL, same zip, normal Battle Royale mode). Bots On with Duo / Trio says "Solo only for now". Bots Off = the normal queue. A running
   queue (searching or a match found) ignores the switch.
@@ -127,8 +131,16 @@ Done for "bots v1" = Leonardo plays one Solo match from the card against 5 bots 
 - 2026-11-07: **BOT-5 done** (`mi-bots-menu` PASS): Bots On in Matchmaking Settings, the Battle Royale card, Commence Solo -> 5 bots
   at 200-300 m, at least ~89 m apart, none near LOCAL at the landing (screenshot `landed`). The extra bot of a round is sent away too.
   The added card row 17 does not show (`bots-card-lab`). Regression `mi-br-card` PASS.
+- 2026-11-07: **Leonardo's first match** (player zip, log `nrpvp_2026-11-07_12-44-18.log`): the bots stayed alive at their far camps for
+  the whole match and never came; his tide death was judged a mob death (stale last-attacker field, TRAPS) so the game respawned him and
+  the match never ended. Fixed: tide by the rain SpEffect (`tide-defeat` PASS), a defeated LOCAL with only bots left loses at once, the
+  hunt (`bots-match`), the Bots row dev-only, the row's breakpoint only in the Roundtable (it was arming in the expedition menus).
+- 2026-11-07: **Leonardo's second match** (dev build, `dist\logs\nrpvp_2026-11-07_14-18-40.log`, "much better"): 9 hunts, each bringing a
+  bot from 170-433 m to 93-124 m; he killed 4, mobs killed 3 (replaced). The WIN came early: the last bot died to a mob as LOCAL died, and
+  the replacement could not spawn while LOCAL respawned. Fixed: a bot owed a replacement keeps the match open (`World::bots_pending`), a
+  replacement missing after 150 s is given up. `bots-match` PASS.
 
-## 5. How to play against bots (any build: the dev DLL or the player zip)
+## 5. How to play against bots (player zip or dev build)
 
 1. Roundtable, the table: Matchmaking Settings (F2) > **Bots: On** (Left / Right), Number of Players **Solo**.
 2. Targets (F1): the **Battle Royale** card, then **Commence**. No search: the expedition starts at once.

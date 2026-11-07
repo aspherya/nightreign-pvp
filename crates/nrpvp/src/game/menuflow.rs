@@ -24,7 +24,7 @@
 //! Log lines start with `br_menu:`.
 
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::STATUS_SINGLE_STEP;
@@ -66,6 +66,18 @@ pub(crate) const LABEL_BOTS_OFF: u32 = 99_100_107;
 /// the two variants of this row, `exe+0x9F78A4` / `exe+0x9F7E04`). Its first instruction is a `jmp`, so returning at the entry is safe.
 pub(crate) const RVA_BOTS_ROW_PREDICATE: usize = 0x9F_91C0;
 pub(crate) const BOTS_ROW_PREDICATE_BYTES: [u8; 5] = [0xE9, 0x82, 0xD5, 0x92, 0x06];
+/// BOT-5: the Bots row is on in both builds (Leonardo, 2026-11-07, after his second bots match: players may train against bots; it was
+/// dev-only for a few hours). `false` would leave the row as the game's own and never start a match against bots.
+pub(crate) const BOTS_MENU: bool = true;
+/// The main loop says whether LOCAL is in an expedition (the Bots row's breakpoint is armed only in the Roundtable: in an expedition slot 0
+/// belongs to the death hold and the revive block).
+static IN_EXPEDITION: AtomicBool = AtomicBool::new(false);
+
+/// Called by the main loop every tick.
+pub(crate) fn set_in_expedition(on: bool) {
+    IN_EXPEDITION.store(on, Ordering::Relaxed);
+}
+
 /// `CSMenuMan+0x48` with the expedition menu open (nro's `MENU_EXPEDITION`, 2026-10-27).
 const MENU_WORD_EXPEDITION: u32 = 0x20_0004;
 /// The CL_LineHelp FMG's entries of the row (help line; value Two; value Three) and the text that identifies the FMG.
@@ -251,9 +263,9 @@ Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale: searching for players (Trio).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
         "Battle Royale: match found.\nThe match starts by itself.".to_string(),
         "Battle Royale with bots is Solo only for now.\nChoose Solo in Number of Players, or set Bots to Off.".to_string(),
-        "Bots: On starts a Solo Battle Royale against AI Nightfarers at once, with no search for players.".to_string(),
-        "Bots On: Commence starts a Solo match against 5 AI Nightfarers.".to_string(),
-        "Bots Off: Commence searches for players.".to_string(),
+        "Bots (beta): an offline training mode. On: you alone against 5 AI Nightfarers, no other players, starts at once.".to_string(),
+        "Bots On: Commence starts an offline training match, Solo against 5 AI bots (no other players).".to_string(),
+        "Bots Off: Commence searches for players (the online Battle Royale).".to_string(),
     ]
 }
 
@@ -324,11 +336,13 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         if rip != 0 && rip == LABEL_ADDR.load(Ordering::Relaxed) {
             // `rbx` still holds the expedition menu at the call that asks for the Commence button's text (`exe+0x9EF45E`, 1.03.3).
             let menu = (*ctx).Rbx as usize;
-            let ours = label_for_card((*ctx).Rdx as u32, crate::mm::phase(), || {
+            let id = (*ctx).Rdx as u32;
+            let ours = label_for_card(id, crate::mm::phase(), || {
                 LAST_MENU.store(menu, Ordering::Relaxed);
                 ExpeditionMenu::new(&RealMem, menu).is_battle_royale_card()
             });
-            if let Some(ours) = ours {
+            let bots_label = matches!(ours, Some(LABEL_BOTS | LABEL_BOTS_ON | LABEL_BOTS_OFF));
+            if let Some(ours) = ours.filter(|_| BOTS_MENU || !bots_label) {
                 (*ctx).Rdx = u64::from(ours);
                 LABEL_SWAPS.fetch_add(1, Ordering::Relaxed);
             }
@@ -343,7 +357,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         let settings = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).settings();
         let players = settings.as_ref().and_then(|s| s.players());
         let br_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).is_battle_royale_card();
-        let bots = settings.as_ref().and_then(|s| s.bots()).unwrap_or(false);
+        let bots = BOTS_MENU && settings.as_ref().and_then(|s| s.bots()).unwrap_or(false);
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
@@ -574,8 +588,10 @@ fn run(base: usize) {
         }
         // BOT-5: the Bots row's breakpoint (hwbp slot 0, shared with the quiet invite) only while the expedition menu is open and our queue
         // is idle; the help texts once the CL_LineHelp FMG is found.
-        let want_pred = pred_ok
+        let want_pred = BOTS_MENU
+            && pred_ok
             && labels_armed
+            && !IN_EXPEDITION.load(Ordering::Relaxed)
             && crate::mm::phase() == crate::mm::PHASE_IDLE
             && super::menugate::menu_word(base) == Some(MENU_WORD_EXPEDITION);
         if want_pred && !pred_armed && crate::hwbp::is_free(crate::hwbp::SLOT_BOTS_ROW) {
@@ -594,7 +610,7 @@ fn run(base: usize) {
                 seen_pred = hits;
             }
         }
-        if labels_armed && !help_done && resolve_tick {
+        if BOTS_MENU && labels_armed && !help_done && resolve_tick {
             if let Some(n) = point_help_texts(base) {
                 help_done = true;
                 tracing::info!("br_menu: Bots row help texts in place ({n} entries)");

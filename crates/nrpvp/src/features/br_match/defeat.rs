@@ -9,6 +9,10 @@ use crate::game::world::{NightFlags, World};
 pub(crate) const RIVAL_WINDOW_MS: u64 = 30_000;
 /// A hit with no attacker this recent when LOCAL dies, from the tide's first closing, = killed by the tide.
 pub(crate) const ENV_WINDOW_MS: u64 = 10_000;
+/// LOCAL stood in the tide's rain this recent when it died = killed by the tide, whatever the last-attacker field says (it keeps the
+/// handle of the last enemy that hit LOCAL, so a tide death after a fight read as a mob kill and LOCAL respawned: Leonardo's match of
+/// 2026-11-07).
+pub(crate) const RAIN_WINDOW_MS: u64 = 10_000;
 /// RW-1: HP 0 without the downed state must last this long before it counts as a death (ms).
 pub(crate) const DEAD_DEBOUNCE_MS: u64 = 800;
 /// RW-1: the match rules switch the Esc menu gate (`game::menugate`) on for a defeated, held player: Esc then asks the game to open the
@@ -51,13 +55,19 @@ pub(crate) struct Defeat {
     hold_on: bool,
     /// RW-1: the Esc menu gate is open (what [`Act::MenuGate`] last said).
     menu_on: bool,
+    /// RW-1: the last tick LOCAL stood in the tide's rain (`World::local_in_tide`).
+    last_rain_ms: Option<u64>,
 }
 
 /// Who killed LOCAL, or `None` for an enemy, a fall or anything else the game handles itself.
-fn judge(world: &World, nf: &NightFlags) -> Option<Cause> {
+fn judge(world: &World, nf: &NightFlags, in_rain: bool) -> Option<Cause> {
     let hits = world.local_hits;
     if hits.rival_age_ms.is_some_and(|a| a <= RIVAL_WINDOW_MS) {
         return Some(Cause::Rival);
+    }
+    // The rain is the game's own word that LOCAL is outside the circle (any day: a vanilla Day 1 has a tide too).
+    if in_rain {
+        return Some(Cause::Tide);
     }
     let tide = nf.day2 && world.clock.is_some_and(|c| !before(c.time, TIDE_FROM));
     match hits.last {
@@ -69,6 +79,9 @@ fn judge(world: &World, nf: &NightFlags) -> Option<Cause> {
 impl MatchRule for Defeat {
     fn step(&mut self, t: &Tick, book: &mut MatchBook, out: &mut MatchOut) {
         let (now_ms, world, local) = (t.now_ms, t.world, t.local);
+        if world.local_in_tide {
+            self.last_rain_ms = Some(now_ms);
+        }
         let dead = local.hp == 0 && local.state != 1;
         if dead {
             self.dead_since.get_or_insert(now_ms);
@@ -83,7 +96,10 @@ impl MatchRule for Defeat {
             .is_some_and(|t| now_ms.saturating_sub(t) >= DEAD_DEBOUNCE_MS);
         if dead && settled && !self.judged {
             self.judged = true;
-            match judge(world, &t.nf) {
+            let in_rain = self
+                .last_rain_ms
+                .is_some_and(|r| now_ms.saturating_sub(r) <= RAIN_WINDOW_MS);
+            match judge(world, &t.nf, in_rain) {
                 Some(cause) => {
                     book.defeat = Some(DefeatInfo {
                         cause,
@@ -276,6 +292,27 @@ mod tests {
             "the tide drops no items (Leonardo 2026-10-31: rival kills only)"
         );
         assert!(lines.iter().any(|l| l.contains("defeated by the tide")));
+        // A tide death after a fight: the last-attacker field still names the last enemy (a "mob" hit), but LOCAL stood in the rain.
+        let mut c = core();
+        let mut a = world(&[up(ME, true), up(P2, false)], nf);
+        a.clock = Some(clock_at(23, 30, 72.9));
+        a.local_in_tide = true;
+        run(&mut c, 0, &a);
+        let mut b = world(&[dead(ME, true), up(P2, false)], nf);
+        b.clock = Some(clock_at(23, 30, 72.9));
+        b.local_hits = LocalHits {
+            last: Some((HitKind::Mob, 820)),
+            rival_age_ms: None,
+            rival_id: None,
+        };
+        let (acts, _, lines) = run_dead(&mut c, 100, &b);
+        assert!(acts.contains(&Act::DeathHold(true)), "{lines:?}");
+        assert!(lines.iter().any(|l| l.contains("defeated by the tide")));
+        // Rain long before the death does not count.
+        let mut c = core();
+        run(&mut c, 0, &a);
+        let (acts, _, _) = run_dead(&mut c, RAIN_WINDOW_MS + 1_000, &b);
+        assert!(!acts.contains(&Act::DeathHold(true)));
         // The same death on Day 1, or before 12:30, is a fall: vanilla.
         for (day2, h) in [(false, 14), (true, 9)] {
             let nf = NightFlags {

@@ -85,3 +85,10 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   Players" row becomes Bots Off / On; Bots On + the Battle Royale card + Solo starts a match against 5 bots at once, in the normal build and
   zip. Bots start in separate places, never next to the player. A second expedition card was not possible (the game ignores new row ids).
   The `play-bots.ps1` / `dist-bots` path was removed. BOTS.md §2e.
+- **Bots are a developer option for now; more aggressive** (Leonardo, 2026-11-07, after his first match): the Bots row shows only in
+  the dev build (`menuflow::BOTS_MENU`); the player zip leaves the row as the game's own until bots are further along. Bots should come
+  for the player: every minute the farthest living bot beyond 150 m is brought to a living enemy ~100 m from the player (BOTS.md §2b).
+  A defeated player with only bots left loses at once. The Night's Tide fix (rain SpEffect) was his priority.
+- **Bots for players again, as an offline training mode (beta)** (Leonardo, 2026-11-07, after his second bots match, which he liked;
+  supersedes "a developer option for now" of the same day): the Bots row is on in the player build; its help says it is an offline
+  training mode, Solo against 5 AI bots with no other players. Bots Off stays the online Battle Royale queue.

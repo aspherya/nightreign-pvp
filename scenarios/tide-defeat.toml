@@ -1,0 +1,63 @@
+name = "tide-defeat"
+about = "RW-1 tide death: straight to Day 2, the last-attacker field set to an old enemy's handle (as after a fight; Leonardo's match of 2026-11-07), the clock jumped into the final circle so LOCAL stands in the Night's Tide (rain SpEffect 99811); the tide's kill must be a defeat for good, not the game's respawn"
+tags = ["rules"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+day1_secs = 0
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+# Straight to Day 2: the game's "night 1 done" flag at once (what the host sets at the end of the free Day 1), then the game's morning.
+[[step]]
+mark = "flag"
+[[step]]
+console = "flag 7502 1"
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+console = "clock 11:50"
+[[step]]
+wait_log = { contains = "clock: 07:00:0", timeout_s = 90, since = "mark:flag" }   # the game's morning: Day 2 at 07:00
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "speffects"
+# An old enemy's handle in LOCAL's last / current attacker fields, as after a fight: the tide's hits do not overwrite them.
+[[step]]
+console = "poke me+0x1A0 1A00001150242C3C"
+[[step]]
+console = "poke me+0x198 1A00001150242C3C"
+[[step]]
+console = "clock 23:30"
+[[step]]
+keys = "wait 15000ms"
+[[step]]
+console = "speffects"
+[[step]]
+screenshot = "in_tide"
+[[step]]
+console = "god 0"
+[[step]]
+keys = "wait 5000ms"
+[[step]]
+console = "speffects"
+[[step]]
+wait_log = { contains = "LOCAL defeated by the tide", absent = "LOCAL died to an enemy", timeout_s = 120, since = "run" }
+[[step]]
+console = "speffects"
+[[step]]
+screenshot = "dead"
+[[step]]
+keys = "wait 20000ms"
+[[step]]
+console = "night_status"
+[[step]]
+screenshot = "after"
+[[step]]
+expect = { console = "night_status", contains = ["LOCAL defeated by the tide", "death held"] }

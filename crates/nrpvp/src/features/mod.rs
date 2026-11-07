@@ -71,6 +71,8 @@ pub(crate) enum BotWrite {
     ForgetSlot(usize),
     /// Write `team` on this bot character, only if its handle field still reads `handle`.
     Team { chr: usize, handle: u64, team: u8 },
+    /// BOT-2 hunt: bring this far bot to a living enemy about 100 m from LOCAL (`game::botspread::hunt`).
+    Hunt { chr: usize, handle: u64 },
     /// Move this bot once to an enemy camp far from LOCAL, in direction `sector` of `sectors` (`game::botspread`).
     Spread {
         chr: usize,
@@ -118,6 +120,11 @@ impl Ctx {
                         t.wcm, local, base, chr, handle, sector, sectors,
                     )
                     .map(|l| tracing::info!("bots: {l}")),
+                    None => Err("no world or no local player"),
+                },
+                BotWrite::Hunt { chr, handle } => match t.local.filter(|_| t.wcm != 0) {
+                    Some(local) => crate::game::botspread::hunt(t.wcm, local, base, chr, handle)
+                        .map(|l| tracing::info!("bots: {l}")),
                     None => Err("no world or no local player"),
                 },
                 BotWrite::ForgetSlot(slot) if t.bot_man != 0 => {

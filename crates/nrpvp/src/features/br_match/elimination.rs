@@ -73,6 +73,25 @@ impl MatchRule for Elimination {
             return;
         }
         let local_out = book.defeat.is_some();
+        // BOT-2: a defeated LOCAL with no other player left to watch (only bots stand) has lost: the match ends for it now, it does not
+        // wait for the bots to finish each other (Leonardo's match of 2026-11-07 never ended).
+        let humans_left = fighters
+            .iter()
+            .any(|(_, f)| !f.local && book.seen.get(&f.id).is_some_and(|s| !s.out(now_ms)));
+        if local_out && !humans_left && !t.bots.is_empty() {
+            book.decided = Some(Decision {
+                winner: None,
+                at_ms: now_ms,
+            });
+            book.match_over = true;
+            out.lines.push(
+                "night_match: match decided: LOCAL is out and only bots are left (this game's player lost)".into(),
+            );
+            if !book.defeat.is_some_and(|d| d.exit_sent) {
+                out.flags.push((FLAG_LOSE, true));
+            }
+            return;
+        }
         let standing: Vec<u64> = teams
             .iter()
             .copied()
@@ -82,7 +101,8 @@ impl MatchRule for Elimination {
                 })
             })
             .collect();
-        if standing.len() > 1 {
+        // BOT-2: a bot killed by a mob is still owed a replacement: it is a rival standing until it spawns (or is given up).
+        if standing.len() > 1 || t.world.bots_pending > 0 {
             book.lone_since = None;
             return;
         }
@@ -186,6 +206,67 @@ mod tests {
         run(&mut c, 61_000 + OUT_DEAD_MS, &w);
         let (_, flags, lines) = run(&mut c, 62_000 + OUT_DEAD_MS, &w);
         assert_eq!(flags, vec![(FLAG_WIN, true)], "{lines:?}");
+    }
+
+    /// BOT-2: the last bot killed by a mob does not hand LOCAL the win while its replacement is coming.
+    #[test]
+    fn a_bot_owed_a_replacement_keeps_the_match_open() {
+        use crate::game::world::BotChr;
+        let bot = |hp| BotChr {
+            handle: 0xA0,
+            chr: 0x7000,
+            team: 29,
+            npc_id: crate::game::layout::BOT_NPC_PARAM,
+            hp,
+            max_hp: 240,
+            pos: None,
+            attacker: 0,
+        };
+        let mut c = core();
+        let mut w = world(&[up(ME, true)], NightFlags::default());
+        w.bot_chrs = vec![bot(700)];
+        run(&mut c, 0, &w);
+        w.bot_chrs = vec![bot(0)];
+        w.bots_pending = 1;
+        run(&mut c, 1_000, &w);
+        let (_, flags, _) = run(&mut c, 2_000 + OUT_DEAD_MS * 2, &w);
+        assert!(flags.is_empty(), "the replacement is owed");
+        w.bots_pending = 0;
+        run(&mut c, 3_000 + OUT_DEAD_MS * 2, &w);
+        let (_, flags, _) = run(&mut c, 4_000 + OUT_DEAD_MS * 2, &w);
+        assert_eq!(flags, vec![(FLAG_WIN, true)]);
+    }
+
+    /// BOT-2: LOCAL defeated with only bots standing: lost at once.
+    #[test]
+    fn a_defeated_player_with_only_bots_left_loses_at_once() {
+        use crate::game::world::BotChr;
+        let bot = |handle: u64| BotChr {
+            handle,
+            chr: 0x7000 + handle as usize,
+            team: 29,
+            npc_id: crate::game::layout::BOT_NPC_PARAM,
+            hp: 700,
+            max_hp: 240,
+            pos: None,
+            attacker: 0,
+        };
+        let mut c = core();
+        let mut w = world(&[up(ME, true)], NightFlags::default());
+        w.bot_chrs = vec![bot(0xA0), bot(0xA1)];
+        run(&mut c, 0, &w);
+        // LOCAL killed by a bot (a rival hit), dead.
+        let mut d = world(&[dead(ME, true)], NightFlags::default());
+        d.bot_chrs = w.bot_chrs.clone();
+        crate::features::br_match::testutil::rival_hit(&mut d, 500);
+        let (_, flags, lines) = crate::features::br_match::testutil::run_dead(&mut c, 1_000, &d);
+        let (_, flags2, lines2) = run(&mut c, 2_000, &d);
+        let all: Vec<_> = flags.iter().chain(&flags2).copied().collect();
+        assert!(all.contains(&(FLAG_LOSE, true)), "{lines:?} {lines2:?}");
+        assert!(lines
+            .iter()
+            .chain(&lines2)
+            .any(|l| l.contains("only bots are left")));
     }
 
     #[test]

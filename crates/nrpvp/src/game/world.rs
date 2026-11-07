@@ -142,6 +142,8 @@ pub(crate) struct World {
     pub team_size: usize,
     /// M5-9: LOCAL holds a revive-item SpEffect (`layout::SPEFFECTS_REVIVE_ITEM`); read only in an expedition.
     pub local_revive_item: bool,
+    /// RW-1: LOCAL stands in the Night's Tide (holds a rain SpEffect, `layout::SPEFFECTS_TIDE_RAIN`); read only in an expedition.
+    pub local_in_tide: bool,
     /// RW-1: LOCAL's recent hits and who dealt them (filled by the main loop from the combat controller).
     pub local_hits: crate::game::combat_state::LocalHits,
     /// RW-1: the comeback's start step is held (`game::deathhold::held`): the dead body is hidden from the others from then on.
@@ -172,6 +174,9 @@ pub(crate) struct World {
     pub bot_chrs: Vec<BotChr>,
     /// BOT-2: LOCAL's handle (who killed a bot).
     pub local_handle: Option<u64>,
+    /// BOT-2: bots killed by a mob whose replacement has not spawned yet (`features::bots::pending`, from the previous tick; filled by
+    /// the main loop). While above 0 the match is not decided: the replacement is still a rival.
+    pub bots_pending: usize,
 }
 
 /// BOT-1: one character of the bot manager's set (`views::bot_set_chrs`), read every tick in an expedition.
@@ -208,6 +213,10 @@ impl World {
             && local.is_some_and(|p| {
                 ChrIns::new(mem, p).holds_any_speffect(&layout::SPEFFECTS_REVIVE_ITEM)
             });
+        let local_in_tide = place == Some(Place::Expedition)
+            && local.is_some_and(|p| {
+                ChrIns::new(mem, p).holds_any_speffect(&layout::SPEFFECTS_TIDE_RAIN)
+            });
         World {
             wcm_instance: i.wcm_instance,
             local,
@@ -228,6 +237,7 @@ impl World {
             local_pos: None,
             team_size: 0,
             local_revive_item,
+            local_in_tide,
             local_hits: crate::game::combat_state::LocalHits::default(),
             leave_pressed: false,
             spec_next: false,
@@ -241,6 +251,7 @@ impl World {
             local_state: local.and(i.local_state),
             local_team_no: i.local_team_no,
             local_handle: local.and_then(|p| ChrIns::new(mem, p).handle()),
+            bots_pending: 0,
             bot_chrs: if place == Some(Place::Expedition) {
                 read_bots(mem, i.wcm_instance)
             } else {

@@ -32,6 +32,13 @@ pub(crate) fn set_bots_match(on: bool) {
     }
 }
 
+/// BOT-2: bots killed by a mob whose replacement has not spawned yet (written by the fill director every tick).
+static PENDING: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+pub(crate) fn pending() -> usize {
+    PENDING.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 pub(crate) fn bots_match() -> bool {
     BOTS_MATCH.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -217,6 +224,7 @@ impl Feature for BotsFeature {
         let now = self.now();
         self.fill.set_bots_match(bots_match());
         self.fill.step(now, super::mode::current(), world, ctx);
+        PENDING.store(self.fill.pending(), std::sync::atomic::Ordering::Relaxed);
         if self.fill.take_over() {
             set_bots_match(false);
         }

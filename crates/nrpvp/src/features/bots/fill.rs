@@ -33,8 +33,17 @@ pub(crate) const ROUND_TABLES: [(i32, u32); 3] =
 pub(crate) const MAX_ROUNDS: usize = 40;
 /// BOT-2: a bot killed by a mob is replaced this long after its death (a player's mob death respawns in about 14 s, RW-2).
 pub(crate) const RESPAWN_MS: u64 = 14_000;
+/// BOT-2: a replacement that has not spawned this long after the death is given up (the bot is then out). The game spawns only while
+/// LOCAL stands on the ground, so a LOCAL that is respawning delays it (Leonardo's match of 2026-11-07: a WIN came while the last bot's
+/// replacement waited).
+pub(crate) const REPLACE_GIVE_UP_MS: u64 = 150_000;
 /// The most bots a match asks for (5 rivals for a 6-player Solo match).
 pub(crate) const MAX_BOTS: usize = 5;
+/// BOT-2 hunt (Leonardo 2026-11-07: bots more aggressive): this often, the living bot farthest from LOCAL, when it is farther than
+/// [`HUNT_FAR`], is brought to about 100 m from LOCAL (`BotWrite::Hunt`); one bot at a time, so they come one by one.
+pub(crate) const HUNT_EVERY_MS: u64 = 60_000;
+/// A bot this far from LOCAL (metres) is a candidate for the hunt.
+pub(crate) const HUNT_FAR: f32 = 150.0;
 /// Ticks (50 ms) a kept bot that was seen may be missing from the set before it counts as gone (3 s).
 const GONE_AFTER: u32 = 60;
 
@@ -142,6 +151,12 @@ pub(crate) struct BotFill {
     cfg_want: usize,
     /// An expedition this director was active in has just ended (read once by [`BotFill::take_over`]).
     over: bool,
+    /// BOT-2 hunt: when the last hunt was asked for (ms; the first comes [`HUNT_EVERY_MS`] after the fill is done).
+    last_hunt: Option<u64>,
+    /// BOT-2: since when a replacement has been waiting (ms), for [`REPLACE_GIVE_UP_MS`].
+    waiting_since: Option<u64>,
+    /// Bring far bots to LOCAL (`bots_hunt`, on by default).
+    pub(crate) hunt: bool,
 }
 
 impl BotFill {
@@ -159,6 +174,9 @@ impl BotFill {
             bots_match: false,
             cfg_want: want.min(MAX_BOTS),
             over: false,
+            last_hunt: None,
+            waiting_since: None,
+            hunt: true,
         }
     }
 
@@ -169,6 +187,21 @@ impl BotFill {
     /// Kept bots that still play for the fill count (not replaced after a mob death).
     fn active(&self) -> usize {
         self.kept.iter().filter(|k| !k.replaced).count()
+    }
+
+    /// BOT-2: bots killed by a mob whose replacement has not been kept yet (they still count as rivals for the match decision).
+    pub(crate) fn pending(&self) -> usize {
+        let dying = self
+            .kept
+            .iter()
+            .filter(|k| matches!(k.death, Some((Death::Mob, _))) && !k.replaced)
+            .count();
+        let unfilled = if self.kept.iter().any(|k| k.replaced) {
+            self.want.saturating_sub(self.active())
+        } else {
+            0
+        };
+        dying + unfilled
     }
 
     /// BOT-5: whether the current (or next) expedition is a match against bots.
@@ -216,6 +249,7 @@ impl BotFill {
         self.me = world.local_pos.map(|(p, _)| p);
         self.keep_rivals(now, world, ctx);
         self.respawn_due(now);
+        self.give_up_replacements(now);
         if self.want == 0 && self.stage == Stage::Idle {
             return;
         }
@@ -286,7 +320,43 @@ impl BotFill {
                     self.stage = Stage::Done;
                 }
             }
-            Stage::Done => {}
+            Stage::Done => self.hunt_step(now, world, ctx),
+        }
+    }
+
+    /// BOT-2 hunt: every [`HUNT_EVERY_MS`] the farthest living bot beyond [`HUNT_FAR`] is brought near LOCAL (LOCAL alive and on the ground).
+    fn hunt_step(&mut self, now: u64, world: &World, ctx: &mut Ctx) {
+        let last = *self.last_hunt.get_or_insert(now);
+        if !self.hunt || now.saturating_sub(last) < HUNT_EVERY_MS {
+            return;
+        }
+        let Some((me, true)) = world.local_pos else {
+            return;
+        };
+        if world.local_state.is_some_and(|(_, s)| s != 0)
+            || world
+                .fighters
+                .iter()
+                .flatten()
+                .any(|f| f.local && f.hp == 0)
+        {
+            return;
+        }
+        self.last_hunt = Some(now);
+        let far = self
+            .kept
+            .iter()
+            .filter(|k| k.seen && !k.gone && !k.dead && !k.replaced)
+            .filter_map(|k| {
+                let b = world.bot(k.handle)?;
+                let p = b.pos?;
+                let d = ((p[0] - me[0]).powi(2) + (p[2] - me[2]).powi(2)).sqrt();
+                (d > HUNT_FAR).then_some((d, b.chr, k.handle))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0));
+        if let Some((d, chr, handle)) = far {
+            tracing::info!("bots: hunt: bot 0x{handle:X} is {d:.0} m away; bringing it near LOCAL");
+            ctx.bot_writes.push(BotWrite::Hunt { chr, handle });
         }
     }
 
@@ -424,13 +494,39 @@ impl BotFill {
         }
     }
 
+    /// BOT-2: a replacement still missing after [`REPLACE_GIVE_UP_MS`] is given up: the fill count drops to the bots it has, so the match
+    /// can be decided.
+    fn give_up_replacements(&mut self, now: u64) {
+        if self.pending() == 0 {
+            self.waiting_since = None;
+            return;
+        }
+        let since = *self.waiting_since.get_or_insert(now);
+        if now.saturating_sub(since) >= REPLACE_GIVE_UP_MS {
+            let have = self.active();
+            tracing::warn!(
+                "bots: a replacement did not spawn in {} s; going on with {have} bot(s)",
+                REPLACE_GIVE_UP_MS / 1000
+            );
+            for k in &mut self.kept {
+                if matches!(k.death, Some((Death::Mob, _))) {
+                    k.replaced = true;
+                }
+            }
+            self.want = self.active();
+            self.waiting_since = None;
+        }
+    }
+
     fn reset(&mut self) {
         self.over = true;
+        self.waiting_since = None;
         self.want = self.cfg_want;
         self.stage = Stage::Idle;
         self.kept.clear();
         self.handled.clear();
         self.extra.clear();
+        self.last_hunt = None;
         self.rounds = 0;
     }
 
@@ -675,6 +771,16 @@ mod tests {
         d.step(3_050 + RESPAWN_MS, GameMode::Offline, &w, &mut ctx);
         assert_eq!(ctx.flags, vec![(10_007_303, true)], "a replacement round");
         assert_eq!(d.active(), 0);
+        assert_eq!(d.pending(), 1, "still owed a bot");
+        // The replacement never comes: given up after REPLACE_GIVE_UP_MS.
+        d.step(3_000 + REPLACE_GIVE_UP_MS, GameMode::Offline, &w, &mut ctx);
+        d.step(
+            3_050 + REPLACE_GIVE_UP_MS * 2,
+            GameMode::Offline,
+            &w,
+            &mut ctx,
+        );
+        assert_eq!(d.pending(), 0);
         // Killed by LOCAL instead: out, no replacement.
         let mut d = BotFill::new(1, 29);
         d.stage = Stage::Done;
@@ -715,6 +821,54 @@ mod tests {
         assert!(d.take_over());
         assert!(!d.take_over(), "once");
         assert_eq!(d.want(), 0, "the config count is back");
+    }
+
+    #[test]
+    fn every_minute_the_farthest_bot_is_brought_near_local() {
+        let mut d = BotFill::new(2, 29);
+        d.stage = Stage::Done;
+        d.rounds = 1;
+        d.kept.push(Kept::new(0xA0));
+        d.kept.push(Kept::new(0xA1));
+        let mut w = world([E, E]);
+        w.local_pos = Some(([0.0, 0.0, 0.0], true));
+        let bot = |handle, x: f32| BotChr {
+            handle,
+            chr: 0x7000 + handle as usize,
+            team: 29,
+            npc_id: 600_040_000,
+            hp: 700,
+            max_hp: 240,
+            pos: Some([x, 0.0, 0.0]),
+            attacker: 0,
+        };
+        w.bot_chrs = vec![bot(0xA0, 300.0), bot(0xA1, 180.0)];
+        let mut ctx = Ctx::default();
+        d.step(0, GameMode::Offline, &w, &mut ctx);
+        assert!(
+            !ctx.bot_writes
+                .iter()
+                .any(|b| matches!(b, BotWrite::Hunt { .. })),
+            "not before a minute"
+        );
+        let mut ctx = Ctx::default();
+        d.step(HUNT_EVERY_MS, GameMode::Offline, &w, &mut ctx);
+        assert!(
+            ctx.bot_writes.contains(&BotWrite::Hunt {
+                chr: 0x70A0,
+                handle: 0xA0
+            }),
+            "{:?}",
+            ctx.bot_writes
+        );
+        // A bot already near is left alone.
+        w.bot_chrs = vec![bot(0xA0, 100.0), bot(0xA1, 120.0)];
+        let mut ctx = Ctx::default();
+        d.step(HUNT_EVERY_MS * 2, GameMode::Offline, &w, &mut ctx);
+        assert!(!ctx
+            .bot_writes
+            .iter()
+            .any(|b| matches!(b, BotWrite::Hunt { .. })));
     }
 
     #[test]

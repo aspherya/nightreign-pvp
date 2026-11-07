@@ -89,3 +89,7 @@ Read when you touch the area named in a bullet, or before debugging something od
 - **Read the mod log before blaming the game** (HM-0, 2026-11-02): the MM-9 note blamed the game for a Result screen that our own last-team rule caused. In host-loss tests set `night_count 0` first.
 - **`navigate expedition` leaves `god 1` on** (GRACE-1, 2026-11-03): a test that reads HP sees it full (524287). Run `god 0` first.
 - **A grace cannot be found by NpcParam row alone** (GRACE-1, 2026-11-03): row 10000000 is shared with dummies that are not graces (MEMORY_MAP §26). Check the `F: Level up` prompt on a screenshot, and go by handle.
+- **The last-attacker field is not cleared by the Night's Tide** (2026-11-07, Leonardo's match): `PlayerIns+0x1A0` / `+0x198` keep the
+  handle of the last enemy that hit LOCAL, so the tide's hits read as "mob" hits and a tide death after a fight was judged a mob death
+  (vanilla respawn, a death loop in the final circle). The tide is told by the rain SpEffect 99810 / 99811 on LOCAL instead
+  (`World::local_in_tide`; `tide-defeat`). Never judge "no attacker" from that field alone.
