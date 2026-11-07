@@ -174,7 +174,7 @@ roaming logics) and one live probe each for the best two. Result into MEMORY_MAP
 
 ### BOT-3 / BOT-4 / BOT-6
 BOT-0 done 2026-11-06: host bots are not on a client; small-base invaders are (BOTS.md §4). BOT-6 builds friends + bots on the invaders.
-BOT-2 done for Solo 2026-11-06 (`bots-match`); open from it: killfeed names for bots (`?NpcName?`). The early WIN while a replacement was owed is fixed (2026-11-07).
+BOT-2 done for Solo 2026-11-06 (`bots-match`); bots are on the killfeed as "Bot N" since 2026-11-07 (BOT-KF); their HP bar still reads `?NpcName?`. The early WIN while a replacement was owed is fixed (2026-11-07).
 BOT-5 done 2026-11-07: the Bots switch in Matchmaking Settings (`mi-bots-menu`).
 Brain v1, levels, friends + bots: written out when they start (BOTS.md §3 holds scope and order).
 

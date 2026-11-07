@@ -83,6 +83,44 @@ pub(crate) fn death_cause(attacker: u64, local: Option<u64>, rival_bots: &[u64])
     }
 }
 
+/// BOT-KF: the killfeed line of a bot's death (pure): killed by LOCAL or another bot, or consumed by the tide. A mob's kill has none
+/// (the bot is replaced, like a player's mob death).
+pub(crate) fn kill_event(
+    handle: u64,
+    attacker: u64,
+    cause: Death,
+    world: &World,
+) -> Option<super::super::killfeed::KillEvent> {
+    use super::super::killfeed::{short_id, KillEvent, KillKind};
+    use crate::game::world::bot_session_id;
+    let victim = short_id(bot_session_id(handle));
+    match cause {
+        Death::Mob => None,
+        Death::Env => Some(KillEvent {
+            kind: KillKind::Tide,
+            victim,
+            killer: None,
+        }),
+        Death::Rival => {
+            let killer = if Some(attacker) == world.local_handle {
+                world
+                    .fighters
+                    .iter()
+                    .flatten()
+                    .find(|f| f.local)
+                    .map(|f| short_id(f.id))
+            } else {
+                Some(short_id(bot_session_id(attacker)))
+            };
+            Some(KillEvent {
+                kind: KillKind::Killed,
+                victim,
+                killer,
+            })
+        }
+    }
+}
+
 /// One kept bot and what the roster knows about it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Kept {
@@ -433,6 +471,9 @@ impl BotFill {
                 k.dead = true;
                 let cause = death_cause(b.attacker, world.local_handle, &rivals);
                 k.death = Some((cause, now));
+                if let Some(ev) = kill_event(k.handle, b.attacker, cause, world) {
+                    ctx.kills.push(ev);
+                }
                 let next = if cause == Death::Mob {
                     format!("; a new bot replaces it in {} s", RESPAWN_MS / 1000)
                 } else {
@@ -781,6 +822,7 @@ mod tests {
             &mut ctx,
         );
         assert_eq!(d.pending(), 0);
+        assert!(ctx.kills.is_empty(), "a mob's kill has no killfeed line");
         // Killed by LOCAL instead: out, no replacement.
         let mut d = BotFill::new(1, 29);
         d.stage = Stage::Done;
@@ -793,6 +835,15 @@ mod tests {
         d.step(RESPAWN_MS * 2, GameMode::Offline, &w, &mut ctx);
         assert!(ctx.flags.is_empty());
         assert!(d.roster().contains("dead (rival), out"), "{}", d.roster());
+        // The killfeed: LOCAL's handle names LOCAL's session id (no LOCAL fighter in this world: no killer name).
+        assert_eq!(
+            ctx.kills,
+            vec![super::super::super::killfeed::KillEvent {
+                kind: super::super::super::killfeed::KillKind::Killed,
+                victim: 0xB0A0,
+                killer: None,
+            }]
+        );
     }
 
     #[test]

@@ -139,6 +139,10 @@ Done for "bots v1" = Leonardo plays one Solo match from the card against 5 bots 
   bot from 170-433 m to 93-124 m; he killed 4, mobs killed 3 (replaced). The WIN came early: the last bot died to a mob as LOCAL died, and
   the replacement could not spawn while LOCAL respawned. Fixed: a bot owed a replacement keeps the match open (`World::bots_pending`), a
   replacement missing after 150 s is given up. `bots-match` PASS.
+- 2026-11-07: **BOT-KF**: bots are on the killfeed. Each bot has a stand-in id (`world::bot_session_id`, `0xB000 | n`) and the name
+  "Bot N" (spawn order); a bot killed by LOCAL or another bot gives "X killed Bot N", by the tide "Bot N was consumed by the tide", by a mob
+  nothing (it is replaced); a bot's kill on LOCAL now names the bot (it read "A player" before). `bots-match` PASS: five "leo killed Bot N"
+  lines handed to the game's toast.
 
 ## 5. How to play against bots (player zip or dev build)
 

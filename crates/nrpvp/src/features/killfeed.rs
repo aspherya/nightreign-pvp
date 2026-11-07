@@ -100,6 +100,20 @@ pub(crate) fn report(ev: KillEvent) {
         .push(ev);
 }
 
+/// BOT-KF: an event only this game knows (a bot's death: bots live on this game only). No bus fact.
+pub(crate) fn local_event(ev: KillEvent) {
+    tracing::info!("killfeed: bot event {ev:?}");
+    LOCAL_EVENTS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(ev);
+}
+
+/// BOT-KF: a bot's name on the feed: "Bot 1", "Bot 2"... in spawn order (the game gives the bots no name: their HP bar reads `?NpcName?`).
+pub(crate) fn bot_name(handle: u64) -> String {
+    format!("Bot {}", (handle & 0x0FFF) + 1)
+}
+
 /// The console's status line.
 #[cfg_attr(not(feature = "dev"), allow(dead_code))]
 pub(crate) fn describe() -> String {
@@ -223,6 +237,12 @@ impl Feature for KillFeed {
                 }
             }
         }
+        // BOT-KF: every rival bot is a rival of its own, named "Bot N".
+        for b in w.rival_bots() {
+            let sid = crate::game::world::bot_session_id(b.handle);
+            self.feed.see(short_id(sid), sid, false);
+            self.feed.name(short_id(sid), &bot_name(b.handle));
+        }
         let events = local.into_iter().chain(
             received
                 .iter()
@@ -286,6 +306,30 @@ mod tests {
             assert_ne!(encode(e, 8).0, key);
         }
         assert_eq!(decode(3, 0), None, "a kind of a later build");
+    }
+
+    #[test]
+    fn bots_have_names_and_their_kills_read_like_players() {
+        let mut f = feed();
+        let bot = short_id(crate::game::world::bot_session_id(0xFFFF_FFFF_10E0_0002));
+        assert_eq!(bot, 0xB002);
+        f.see(bot, 0xB002, false);
+        f.name(bot, &bot_name(0xFFFF_FFFF_10E0_0002));
+        assert_eq!(
+            plain(f.line(ev(KillKind::Killed, bot, Some(A)))),
+            "Leo killed Bot 3"
+        );
+        let other = short_id(crate::game::world::bot_session_id(0xFFFF_FFFF_10E0_0004));
+        f.see(other, 0xB004, false);
+        f.name(other, &bot_name(0xFFFF_FFFF_10E0_0004));
+        assert_eq!(
+            plain(f.line(ev(KillKind::Killed, A, Some(other)))),
+            "Bot 5 killed Leo"
+        );
+        assert_eq!(
+            plain(f.line(ev(KillKind::Tide, other, None))),
+            "Bot 5 was consumed by the tide"
+        );
     }
 
     #[test]

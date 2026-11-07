@@ -62,6 +62,8 @@ pub(crate) struct Ctx {
     pub acts: Vec<Act>,
     /// BOT-1: writes on the bot manager and on bot characters (each re-checked against the live memory in [`Ctx::flush`]).
     pub bot_writes: Vec<BotWrite>,
+    /// BOT-KF: a bot's death for this game's killfeed (bots live on this game only, so nothing goes on the bus).
+    pub kills: Vec<killfeed::KillEvent>,
 }
 
 /// A write the bot feature asks for (BOT-1; the OFF-5 writes, git `72f7689`).
@@ -107,6 +109,9 @@ impl Ctx {
             if !crate::mm::send(c) {
                 tracing::info!("features: {c:?} not sent to matchmaking (queue off or full)");
             }
+        }
+        for ev in self.kills.drain(..) {
+            killfeed::local_event(ev);
         }
         for w in self.bot_writes.drain(..) {
             let r = match w {

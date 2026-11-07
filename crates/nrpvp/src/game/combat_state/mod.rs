@@ -246,10 +246,10 @@ impl CombatCtl {
             return;
         }
         let mut infos = player_infos(&self.mem, &self.subjects);
-        // BOT-2: a rival bot's hit is a rival hit (its handle stands for its id; the killfeed names it by that).
+        // BOT-2: a rival bot's hit is a rival hit; BOT-KF: its id is the bot's stand-in id, so the killfeed names it ("Bot N").
         infos.extend(self.rival_bots.iter().map(|&h| PlayerInfo {
             handle: Some(h),
-            id: Some(h),
+            id: Some(crate::game::world::bot_session_id(h)),
             relation: Some(crate::overlay::shared::Relation::Rival),
         }));
         let kind = match classify(r.attacker_raw, &infos) {

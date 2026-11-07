@@ -1,5 +1,5 @@
 name = "bots-match"
-about = "BOT-1 spread + BOT-2 rules and hunt: 5 rival bots are sent to far enemy camps, each in its own direction, and stay alive a while; a bot killed by a mob is replaced 14 s later by a new one (also sent to a camp); when LOCAL has killed every bot the match is decided for LOCAL (WIN)"
+about = "BOT-1 spread + BOT-2 rules, hunt and killfeed (BOT-KF): 5 rival bots are sent to far enemy camps, each in its own direction, and stay alive a while; a bot killed by a mob is replaced 14 s later by a new one (also sent to a camp); when LOCAL has killed every bot the match is decided for LOCAL (WIN)"
 tags = ["rules"]
 
 [config]
@@ -45,6 +45,12 @@ screenshot = "replaced"
 console = "bots_kill all"
 [[step]]
 wait_log = { contains = "= Rival); out of the match", timeout_s = 10, since = "run" }
+[[step]]
+wait_log = { contains = ["killfeed: bot event", "killed <font color='#FF6A5A'>Bot"], timeout_s = 15, since = "run" }   # BOT-KF: LOCAL's kills on the feed
+[[step]]
+keys = "wait 2000ms"   # the toast is drawn a moment after the game's call
+[[step]]
+screenshot = "killfeed"
 [[step]]
 wait_log = { contains = ["match decided", "this game's player won"], timeout_s = 90, since = "run" }
 [[step]]

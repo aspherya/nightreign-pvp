@@ -197,6 +197,12 @@ pub(crate) struct BotChr {
     pub attacker: u64,
 }
 
+/// BOT-KF: a bot's stand-in for a session player id, so the killfeed can name it: upper half `0xB000 | n` (`n` = the handle's low 12 bits,
+/// 0, 1, 2... in spawn order), lower half all-ones like a player's. Real players' ids start `0x6001`..`0x6006`, so they never collide.
+pub(crate) fn bot_session_id(handle: u64) -> u64 {
+    ((0xB000 | (handle & 0x0FFF)) << 32) | 0xFFFF_FFFF
+}
+
 /// R7-3: the players this game marks as RIVAL (see [`World::rivals`]).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Rivals {
