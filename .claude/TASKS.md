@@ -201,8 +201,8 @@ Steps (one PR each; stop after each for review):
    Acceptance: scenario **`score-bots-end`** (one game, bots mode: `bots_kill all` → WIN → end-flow presses as `match-win-end` →
    Roundtable → `wait_log` "scoreboard: summary shown (6 rows)" + screenshot); `mi-score` gains the same end on both games with the
    same rows in both logs.
-6. **SB-5 (later, Leonardo 2026-11-07):** a professional in-match UI by editing the game's GFx menus with JPEXS
-   (SCOREBOARD §8b); its own design card when it starts.
+6. **SB-5 (later, Leonardo 2026-11-07):** a professional in-match UI by editing the game's GFx menus with JPEXS. **Spike done
+   2026-11-07** ([re/GFX_UI.md](re/GFX_UI.md)): new HUD elements work; next GFX-1 (RE: the DLL sets a text in the HUD movie), then GFX-2.
 Deliverables: `features/scoreboard.rs`, small edits in `killfeed.rs`, `kill_report.rs` / `defeat.rs` (SB-3), `bots/fill.rs` (names),
 `gamedata/*.json` (SB-4), the four scenarios + SCENARIOS.md rows, CONSOLE.md row, testing-log entries, SCOREBOARD §9.
 Acceptance (card): the scenarios above PASS; two real PCs (real hits, real names, the summary on both screens) go into the next FS

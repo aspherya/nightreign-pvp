@@ -93,3 +93,7 @@ Read when you touch the area named in a bullet, or before debugging something od
   handle of the last enemy that hit LOCAL, so the tide's hits read as "mob" hits and a tide death after a fight was judged a mob death
   (vanilla respawn, a death loop in the final circle). The tide is told by the rain SpEffect 99810 / 99811 on LOCAL instead
   (`World::local_in_tide`; `tide-defeat`). Never judge "no attacker" from that field alone.
+- **Each menu screen draws its own key guide** (2026-11-07): editing `menu/01_930_keyguide.gfx` changes nothing in the pause menu; the
+  Equipment screen's bar is in `02_013_equip.gfx` (50 menu files hold a `KeyGuide`). Find the screen's own file first (re/GFX_UI.md).
+- **Backslashes in a scenario's TOML strings** (2026-11-07): `"dist\gamedata"` in a basic string is an escape error and the run stops
+  at parse; write paths with `/` in `about` texts.

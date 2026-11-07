@@ -146,6 +146,8 @@ wrapping: UNKNOWN (SB-4a). Names go through `gametoast::clean` (no markup from p
 - **Gideon** (UI texture / layout deployer, CC BY-NC-ND: cannot be modified) `[SOURCE: github.com/ividyon/Gideon]`. Not useful here.
 - Verdict: nothing ready to reuse for "a number on the HUD". The GFx route (JPEXS) is real but is its own spike (download a tool,
   learn the menu's ActionScript and its data source).
+- **JPEXS spike done 2026-11-07: [re/GFX_UI.md](re/GFX_UI.md).** Editing and adding HUD elements works (a new text showed on the HUD);
+  a live value needs the DLL to write through the Scaleform runtime (GFX-1, unknown cost).
 
 ## 9. Findings log (newest last, one line each)
 

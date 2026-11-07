@@ -1,0 +1,22 @@
+name = "gfx-override-lab"
+about = "UI research (lab, re/GFX_UI.md): does the game load a menu .gfx from our game-data package, and does a new element show? Put the modified file in dist/gamedata/menu first and remove it after (2026-11-07: menu/01_000_fe.gfx with a text field KILLS 3 under the rune counter: shown); screenshots of the HUD and of the pause menu"
+tags = ["lab", "hud"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+sleep_ms = 4000
+[[step]]
+screenshot = "hud"
+[[step]]
+keys = "ESC; wait 2500ms"
+[[step]]
+screenshot = "pause_menu"
+[[step]]
+keys = "ESC; wait 1000ms"
