@@ -1,0 +1,88 @@
+name = "tide-close-max"
+about = "TIDE-MAX: the final Night's Tide circle closes to a point (PlayAreaCreateCommonParam row 0 secondCircleRadius 0 in our regulation.bin): straight to Day 2, the game's stage records read final 0 and the first circle 347.6 m (vanilla 367.7: the game puts the first circle's end about halfway between 700 and the final radius), the clock at the night cap reads a radius of about 0.03 m, LOCAL is in the tide (rain SpEffect 99811) and, with god off, the tide defeats LOCAL for good"
+tags = ["rules"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+day1_secs = 0
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+# Straight to Day 2 (as tide-defeat).
+[[step]]
+mark = "flag"
+[[step]]
+console = "flag 7502 1"
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+console = "clock 11:50"
+[[step]]
+wait_log = { contains = "clock: 07:00:0", timeout_s = 90, since = "mark:flag" }
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "god 1"
+# The game's own records for Day 2: first circle end 347.6 m (vanilla 367.7), final circle 0 m (ours; vanilla 40).
+[[step]]
+expect = { console = "clock", contains = ["day 2: first 347.6, final 0.0", "circle radius 700.000"] }
+# Day 2's first circle closes on the vanilla schedule (12:30 -> 16:09) to its record.
+[[step]]
+console = "clock 17:00"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+expect = { console = "clock", contains = "circle radius 347.5" }
+# The final circle: 20:24 -> 00:00; the night clock holds at 23:59:59.
+[[step]]
+console = "clock 23:30"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "clock"
+[[step]]
+console = "clock end"
+[[step]]
+keys = "wait 15000ms"
+[[step]]
+expect = { console = "clock", contains = ["23:59:59", "circle radius 0.0"] }
+[[step]]
+expect = { console = "speffects", contains = "99811" }
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "final_circle"
+[[step]]
+keys = "M 300ms"
+[[step]]
+keys = "wait 2500ms"
+[[step]]
+screenshot = "final_map"
+[[step]]
+keys = "Q 300ms"
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+wait = { console = "flag 7515", contains = "ON", timeout_s = 60 }
+# The night: the circle stays a point and the tide still kills (a defeat for good, RW-1).
+[[step]]
+keys = "wait 10000ms"
+[[step]]
+expect = { console = "clock", contains = ["23:59:59", "circle radius 0.0"] }
+[[step]]
+console = "god 0"
+[[step]]
+wait_log = { contains = "LOCAL defeated by the tide", absent = "LOCAL died to an enemy", timeout_s = 240, since = "run" }
+[[step]]
+screenshot = "dead"
+[[step]]
+expect = { console = "night_status", contains = "LOCAL defeated by the tide" }
+[[step]]
+expect_log = { contains = ["LOCAL defeated by the tide"], absent = ["panicked at", "no free hardware slot"], since = "run" }

@@ -1,6 +1,6 @@
 // sbwriter: builds Nightreign regulation.bin with changed param rows, written by Smithbox's own SoulsFormats writer.
 //
-//   sbwriter <original regulation.bin> <rows.json> <out regulation.bin>
+//   sbwriter <original regulation.bin> <rows.json> [<more rows.json> ...] <out regulation.bin>
 //
 // Called by scripts\build-gamedata.ps1 (UI-3), which builds this project in a temp folder against the DLLs of a Smithbox install
 // (default Z:\Tools\Smithbox-2.2.6; Smithbox is third-party, its DLLs are never copied into the repo).
@@ -13,11 +13,12 @@
 // So this tool does what Smithbox does when it saves an NR project (ProjectUtils.cs, ProjectType.NR):
 //   SFUtil.DecryptNightreignRegulation -> change the PARAM bytes -> SFUtil.EncryptNightreignRegulation(bnd, zero IV).
 //
-// rows.json (gamedata\nightbossmenu-rows.json): params[] of { param, rowSize, fields: [[name, type]...], rows: [{ id, mode: "replace",
-// expect: {field: vanilla value}, values: {field: new value} }] }. "replace" patches the row's bytes in place; "expect" makes a game patch
-// that moved the rows fail the build. "add" (BOT-5, 2026-11-06) inserts a new row id through SoulsFormats' own PARAM reader / writer with
-// a paramdef made from `fields` (every field in `values`); it refuses an id that exists. A new id 101 did not show in the expedition list
-// (2026-11-02); id 17 (the gap in 0..18) is the one BOT-5 tries.
+// rows.json (gamedata\nightbossmenu-rows.json, gamedata\playarea-rows.json; a param may appear in one of them only): params[] of
+// { param, rowSize, fields: [[name, type]...], rows: [{ id, mode: "replace", expect: {field: vanilla value}, values: {field: new value} }] }.
+// "replace" patches the row's bytes in place; "expect" makes a game patch that moved the rows fail the build. "add" (BOT-5,
+// 2026-11-06) inserts a new row id through SoulsFormats' own PARAM reader / writer with a paramdef made from `fields` (every field in `values`); it refuses an id that exists. A new id 101 did not show in the expedition list
+// (2026-11-02); id 17 (the gap in 0..18) is the one BOT-5 tries. Field type "f32" (TIDE-MAX, 2026-11-07) is read and written as a
+// float ("replace" only); its json values are plain numbers.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -33,7 +34,7 @@ static class Program
 
     static readonly Dictionary<string, int> FieldSize = new()
     {
-        ["s8"] = 1, ["u8"] = 1, ["s16"] = 2, ["u16"] = 2, ["s32"] = 4, ["u32"] = 4,
+        ["s8"] = 1, ["u8"] = 1, ["s16"] = 2, ["u16"] = 2, ["s32"] = 4, ["u32"] = 4, ["f32"] = 4,
     };
 
     static int Main(string[] args)
@@ -44,27 +45,28 @@ static class Program
             try { Dump(args[1], args[2]); return 0; }
             catch (Exception e) { Console.Error.WriteLine("sbwriter: " + e.Message); return 1; }
         }
-        if (args.Length != 3)
+        if (args.Length < 3)
         {
-            Console.Error.WriteLine("usage: sbwriter <original regulation.bin> <rows.json> <out regulation.bin>");
+            Console.Error.WriteLine("usage: sbwriter <original regulation.bin> <rows.json> [<more rows.json> ...] <out regulation.bin>");
             return 2;
         }
-        try { Run(args[0], args[1], args[2]); return 0; }
+        try { Run(args[0], args[1..^1], args[^1]); return 0; }
         catch (Exception e) { Console.Error.WriteLine("sbwriter: " + e.Message); return 1; }
     }
 
-    static void Run(string origPath, string rowsPath, string outPath)
+    static void Run(string origPath, string[] rowsPaths, string outPath)
     {
         var orig = File.ReadAllBytes(origPath);
         var hash = Convert.ToHexString(SHA256.HashData(orig));
         if (hash != PinnedSha256) throw new Exception($"regulation.bin hash {hash} is not the pinned 1.03.3 hash");
 
         var bnd = SFUtil.DecryptNightreignRegulation(orig);
-        using var spec = JsonDocument.Parse(File.ReadAllText(rowsPath));
         var expected = new Dictionary<string, byte[]>();
-        foreach (var p in spec.RootElement.GetProperty("params").EnumerateArray())
+        var specs = rowsPaths.Select(path => JsonDocument.Parse(File.ReadAllText(path))).ToList();
+        foreach (var p in specs.SelectMany(s => s.RootElement.GetProperty("params").EnumerateArray()))
         {
             var name = p.GetProperty("param").GetString();
+            if (expected.ContainsKey(name)) throw new Exception($"{name} is in more than one rows entry");
             var file = bnd.Files.Single(f => f.Name.EndsWith("\\" + name, StringComparison.OrdinalIgnoreCase));
             var bytes0 = AddRows(file.Bytes.ToArray(), p, name);
             file.Bytes = PatchParam(bytes0, p, name);
@@ -178,14 +180,14 @@ static class Program
                 foreach (var e in exp.EnumerateObject())
                 {
                     if (!cur.ContainsKey(e.Name)) throw new Exception($"{name}: unknown field {e.Name}");
-                    if (cur[e.Name] != e.Value.GetInt64())
-                        throw new Exception($"{name} row {id}: {e.Name} is {cur[e.Name]}, expected {e.Value.GetInt64()} (game patch?)");
+                    if (cur[e.Name] != e.Value.GetDouble())
+                        throw new Exception($"{name} row {id}: {e.Name} is {cur[e.Name]}, expected {e.Value.GetDouble()} (game patch?)");
                 }
             var changes = new List<string>();
             foreach (var v in r.GetProperty("values").EnumerateObject())
             {
                 if (!cur.ContainsKey(v.Name)) throw new Exception($"{name}: unknown field {v.Name}");
-                long nv = v.Value.GetInt64();
+                double nv = v.Value.GetDouble();
                 if (cur[v.Name] != nv) changes.Add($"{v.Name} {cur[v.Name]}->{nv}");
                 cur[v.Name] = nv;
             }
@@ -195,9 +197,10 @@ static class Program
         return param;
     }
 
-    static Dictionary<string, long> Read(byte[] b, int off, List<(string Name, string Type)> fields)
+    // Values as double: every s32 / u32 fits exactly and an f32 widens exactly.
+    static Dictionary<string, double> Read(byte[] b, int off, List<(string Name, string Type)> fields)
     {
-        var d = new Dictionary<string, long>();
+        var d = new Dictionary<string, double>();
         foreach (var f in fields)
         {
             d[f.Name] = f.Type switch
@@ -205,6 +208,7 @@ static class Program
                 "s8" => (sbyte)b[off], "u8" => b[off],
                 "s16" => BitConverter.ToInt16(b, off), "u16" => BitConverter.ToUInt16(b, off),
                 "s32" => BitConverter.ToInt32(b, off), "u32" => BitConverter.ToUInt32(b, off),
+                "f32" => BitConverter.ToSingle(b, off),
                 _ => throw new Exception(f.Type),
             };
             off += FieldSize[f.Type];
@@ -212,16 +216,18 @@ static class Program
         return d;
     }
 
-    static void Write(byte[] b, int off, List<(string Name, string Type)> fields, Dictionary<string, long> d)
+    static void Write(byte[] b, int off, List<(string Name, string Type)> fields, Dictionary<string, double> d)
     {
         foreach (var f in fields)
         {
-            long v = d[f.Name];
+            double v = d[f.Name];
+            if (f.Type != "f32" && v != Math.Floor(v)) throw new Exception($"{f.Name}: {v} is not a whole number");
             byte[] raw = f.Type switch
             {
                 "s8" => new[] { (byte)checked((sbyte)v) }, "u8" => new[] { checked((byte)v) },
                 "s16" => BitConverter.GetBytes(checked((short)v)), "u16" => BitConverter.GetBytes(checked((ushort)v)),
                 "s32" => BitConverter.GetBytes(checked((int)v)), "u32" => BitConverter.GetBytes(checked((uint)v)),
+                "f32" => BitConverter.GetBytes((float)v),
                 _ => throw new Exception(f.Type),
             };
             Buffer.BlockCopy(raw, 0, b, off, raw.Length);

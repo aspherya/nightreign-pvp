@@ -38,6 +38,7 @@ pub(super) fn clock_at(h: u8, m: u8, speed: f32) -> ClockState {
         speed,
         running: true,
         mailbox_free: true,
+        circle: None,
     }
 }
 

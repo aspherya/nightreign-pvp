@@ -45,7 +45,7 @@ After either mode ends, the winner receives a victory screen. Every participant 
 - The match ends the moment one player or team is left, at any time of any day. A night is not a round of its own.
 - **Night 2 ends the match:** its last player (team) wins (victory screen); everyone else gets the expedition's failure ending (defeat screen).
 - There is no Day 3 and no Nightlord. A night has no boss and no minions.
-- The final circle keeps the game's size (40 m radius).
+- **The final circle closes to a point** (Leonardo, 2026-11-07, DECISIONS): Night 2's circle shrinks 20:24 → 23:59:59 from 347.6 m to a point (vanilla 367.7 m to 40 m; the game sets Day 2's first circle about halfway between 700 m and the final radius, so it is 20 m smaller too), so the Night's Tide forces the end instead of a timer, as in Fortnite / Warzone. The tide's damage stays vanilla.
 - A player or team can be defeated from the very start of the match, once the bleed-out ends (or the whole team is down).
 - Each death and kill counts as a defeat; the defeated player becomes a spectator, or leaves for the Roundtable and searches another match.
 
@@ -92,7 +92,7 @@ When one player (or team) is the last standing:
 
 ### 5. Time limit
 - If the game has a maximum time per expedition, the match uses it and **everyone loses** when it runs out.
-- If the game has none, the mod defines one. **Open:** whether vanilla Nightreign ends an expedition on its own at the end of Night 2 is not verified (Day 3 and the Nightlord are removed); until it is, nothing ends a stalled match except the Night's Tide damage inside the final circle. No limit is built.
+- If the game has none, the mod defines one. **Seen 2026-11-07 (`tide-close-lab`, one PC):** when our night-2 fallback sets 7507 after 600 s, the game does nothing visible: no morning, no Day 3, no ending; the clock stays at 23:59:59 and the circle at its final size, and the expedition goes on. So the game has no limit of its own. **Decision (Leonardo, 2026-11-07): no timer; the final circle closes to a point (§1) and the tide ends the match.** A most-kills tiebreak for edge cases (simultaneous deaths, a stalemate) is wanted but not built. Open: whether the tide still hurts after 7507 (LOCAL lost rain SpEffect 99811 at 7507 while standing outside the circle; god mode was on, so the damage was not seen).
 
 ### 6. Rules about information and fairness
 - **Rivals are invisible on the HUD:** a rival is on no map, compass, party bar or name tag, and the map pins a rival places are hidden too. Teammates stay visible. Life bars stay vanilla; the lock-on target is named only by the game's own enemy bar (no second name tag).
@@ -139,8 +139,8 @@ Players begin inside the Nightlord arena, with no expedition phase.
 | Private match by password | `private_code` in `nrpvp.toml` (unit-tested only); the in-game "Multiplayer Password" field is the planned route |
 | Sites of Grace blocked in PvP combat | **Built** (GRACE-1): flag 7525 ON while a fight lasts (`grace_combat_secs`, 15), per game; `grace-lock` PASS on one PC; two-PC check in FS-HM1 |
 | Respawn far after a mob death | **Built** (RW-7), unit-tested; two-instance check open |
-| Time limit | **Not built**, rule open (§5) |
-| Final-circle stall-breaker | Only the vanilla tide damage |
+| Time limit | **None by decision** (§5): the closing circle ends the match; the game itself has no limit (the night-2 fallback ends nothing) |
+| Final-circle stall-breaker | **Built** (TIDE-MAX): the final circle closes to a point (`tide-close-max`); the tide's damage is vanilla. Most-kills tiebreak not built |
 | Revive item behaviour in this ruleset | **Not tested** (TASKS SOLO-REVIVE) |
 | Arena | Not started, after the first release |
 

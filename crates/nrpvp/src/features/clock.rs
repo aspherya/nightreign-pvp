@@ -83,10 +83,14 @@ pub(crate) fn describe(c: Option<&ClockState>) -> String {
     match c {
         None => "no play-area clock".into(),
         Some(c) => format!(
-            "{} ({}, speed {:.2})",
+            "{} ({}, speed {:.2}){}",
             c.time,
             if c.running { "running" } else { "held" },
-            c.speed
+            c.speed,
+            c.circle.map_or(String::new(), |r| format!(
+                "; circle radius {:.3} m (day 2: first {:.1}, final {:.1}; day 1 final {:.1})",
+                r.radius, r.day2_first, r.day2_final, r.day1_final
+            ))
         ),
     }
 }
@@ -189,6 +193,7 @@ mod tests {
             speed: 1.0,
             running: true,
             mailbox_free: free,
+            circle: None,
         }
     }
 
@@ -279,5 +284,15 @@ mod tests {
         let mut c = clock(true);
         c.running = false;
         assert_eq!(describe(Some(&c)), "10:00:00 (held, speed 1.00)");
+        c.circle = Some(crate::game::views::Circle {
+            radius: 0.025,
+            day1_final: 0.0,
+            day2_first: 367.724,
+            day2_final: 0.0,
+        });
+        assert_eq!(
+            describe(Some(&c)),
+            "10:00:00 (held, speed 1.00); circle radius 0.025 m (day 2: first 367.7, final 0.0; day 1 final 0.0)"
+        );
     }
 }

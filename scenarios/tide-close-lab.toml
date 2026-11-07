@@ -1,0 +1,143 @@
+name = "tide-close-lab"
+about = "Lab (TIDE-MAX research, no verdict that matters): straight to Day 2, the clock walked through the first and the final circle with a dump of WorldPlayAreaManager at each stop (to find the live circle radius / centre), the map at the final circle, then night 2 with 3 puppets alive and the match count off, kept running past the 600 s fallback (7507) to see what the game does after it"
+tags = ["lab"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+day1_secs = 0
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+[[step]]
+puppets = 3
+[[step]]
+console = "night_count 0"
+# Straight to Day 2 (as tide-defeat).
+[[step]]
+mark = "flag"
+[[step]]
+console = "flag 7502 1"
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+console = "clock 11:50"
+[[step]]
+wait_log = { contains = "clock: 07:00:0", timeout_s = 90, since = "mark:flag" }
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "god 1"
+[[step]]
+console = "pos"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+# First circle: 12:30 -> 16:09.
+[[step]]
+console = "clock 12:00"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "clock 14:20"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "clock 17:00"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+# Final circle: 20:24 -> 00:00.
+[[step]]
+console = "clock 22:12"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "clock 23:30"
+[[step]]
+keys = "wait 3000ms"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "clock end"
+[[step]]
+keys = "wait 15000ms"
+[[step]]
+console = "clock"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "pos"
+[[step]]
+console = "speffects"
+[[step]]
+console = "night_status"
+[[step]]
+screenshot = "final_circle"
+[[step]]
+keys = "M 300ms"
+[[step]]
+keys = "wait 2500ms"
+[[step]]
+screenshot = "final_map"
+[[step]]
+keys = "M 300ms"
+[[step]]
+keys = "wait 2000ms"
+# Night 2: our event's 600 s fallback sets 7507 with every team alive.
+[[step]]
+mark = "night"
+[[step]]
+wait = { console = "flag 7515", contains = "ON", timeout_s = 60 }
+[[step]]
+console = "night_status"
+[[step]]
+wait = { console = "flag 7507", contains = "ON", timeout_s = 720 }
+[[step]]
+console = "clock"
+[[step]]
+console = "night_status"
+[[step]]
+screenshot = "fallback_0s"
+[[step]]
+keys = "wait 10000ms"
+[[step]]
+screenshot = "fallback_10s"
+[[step]]
+console = "clock"
+[[step]]
+keys = "wait 30000ms"
+[[step]]
+screenshot = "fallback_40s"
+[[step]]
+console = "clock"
+[[step]]
+console = "night_status"
+[[step]]
+console = "pos"
+[[step]]
+keys = "wait 60000ms"
+[[step]]
+screenshot = "fallback_100s"
+[[step]]
+console = "clock"
+[[step]]
+console = "night_status"
+[[step]]
+console = "peek exe+0x3C13158+[0] 0x400"
+[[step]]
+console = "speffects"
+[[step]]
+console = "players"

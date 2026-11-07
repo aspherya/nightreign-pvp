@@ -1,0 +1,35 @@
+{
+  "_comment": "TIDE-MAX (Leonardo 2026-11-07: the Night's Tide closes as far as possible at the end instead of a match timer; its damage is untouched). Written into dist/gamedata/regulation.bin by scripts/build-gamedata.ps1 (tools/regulation = sbwriter, Smithbox's writer, from the pinned 1.03.3 regulation.bin), after nightbossmenu-rows.json. PlayAreaCreateCommonParam row 0 is the normal expedition's circle schedule (rows 1 and 2 have no times, no rain SpEffects and no initial circle; .claude/re/MEMORY_MAP.md §16). secondCircleRadius is the radius every day's final circle closes to (20:24 -> 00:00): the game copies it into WorldPlayAreaManager's per-day stage records (+0x88 Day 1, +0xE8 Day 2) and the live radius (+0x260) reaches it at 23:59:59, where the night clock holds. Vanilla 40 m; 0 = the circle closes to a point (the live radius stays about 0.03 m above it, since the night clock holds at 23:59:59). It also moves Day 2's first-circle end from 367.7 to 347.6 m: the game puts it about halfway between 700 m and the final radius. Field layout: Smithbox 2.2.6 Assets/PARAM/NR/Defs/PlayAreaCreateCommonParam.xml (136 bytes; pad1 and endPadding written back unchanged).",
+  "params": [
+    {
+      "param": "PlayAreaCreateCommonParam.param",
+      "rowSize": 136,
+      "fields": [
+        ["unknown_0", "s32"], ["secondCircleRadius", "f32"], ["unknown_2", "f32"], ["unknown_3", "f32"], ["unknown_4", "f32"],
+        ["unknown_5", "f32"],
+        ["firstCircleStartHour", "u8"], ["firstCircleStartMinute", "u8"], ["firstCircleEndHour", "u8"], ["firstCircleEndMinute", "u8"],
+        ["secondCircleStartHour", "u8"], ["secondCircleStartMinute", "u8"], ["secondCircleEndHour", "u8"], ["secondCircleEndMinute", "u8"],
+        ["unknown_8", "s32"], ["unknown_9", "s32"], ["day1RainSpEffect", "s32"], ["day2RainSpEffect", "s32"], ["unknown_12", "s32"],
+        ["unknown_13", "s32"], ["initialCircleRadius", "f32"],
+        ["initialCircleAreaNo", "u8"], ["initialCircleGridXNo", "u8"], ["initialCircleGridZNo", "u8"], ["pad1", "u8"],
+        ["initialCirclePosX", "f32"], ["initialCirclePosZ", "f32"], ["unknown_18", "s32"], ["unknown_19", "f32"], ["unknown_20", "f32"],
+        ["unknown_21", "f32"], ["unknown_22", "s32"], ["unknown_23", "s32"], ["unknown_24", "s32"], ["unknown_25", "s32"],
+        ["endPadding0", "s32"], ["endPadding1", "s32"], ["endPadding2", "s32"], ["endPadding3", "s32"],
+        ["endPadding4", "s32"], ["endPadding5", "s32"], ["endPadding6", "s32"], ["endPadding7", "s32"]
+      ],
+      "rows": [
+        {
+          "id": 0,
+          "mode": "replace",
+          "expect": {
+            "secondCircleRadius": 40, "initialCircleRadius": 700,
+            "firstCircleStartHour": 12, "firstCircleStartMinute": 30, "firstCircleEndHour": 16, "firstCircleEndMinute": 9,
+            "secondCircleStartHour": 20, "secondCircleStartMinute": 24, "secondCircleEndHour": 0, "secondCircleEndMinute": 0,
+            "day1RainSpEffect": 99810, "day2RainSpEffect": 99811
+          },
+          "values": { "secondCircleRadius": 0 }
+        }
+      ]
+    }
+  ]
+}

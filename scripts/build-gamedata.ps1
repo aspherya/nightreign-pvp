@@ -16,7 +16,8 @@
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 #   regulation.bin (UI-3, the Battle Royale card in the expedition list): the pinned regulation.bin with the param rows of
-#   gamedata\nightbossmenu-rows.json (NightBossMenuParam row 9 replaced), written by tools\regulation (sbwriter: Smithbox's own
+#   gamedata\nightbossmenu-rows.json (NightBossMenuParam row 9 replaced) and gamedata\playarea-rows.json (TIDE-MAX: the final circle's
+#   radius, PlayAreaCreateCommonParam row 0), written by tools\regulation (sbwriter: Smithbox's own
 #   SoulsFormats writer; needs the .NET 10 SDK and a Smithbox 2.2.6 folder, -Smithbox). Only Smithbox's writer is verified to make a
 #   file the game loads: WitchyBND's regulation repack and our earlier Python writer both make the game close (TRAPS.md).
 #   Sits at the package root, where me3 picks it up; in the player zip too.
@@ -208,6 +209,6 @@ $buildLog = & $dotnet build (Join-Path $sbSrc 'sbwriter.csproj') -c Release -o $
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { $buildLog | Out-Host; throw "dotnet build of tools\regulation\sbwriter failed ($code)" }
 $regOut = Join-Path $out 'regulation.bin'
-& (Join-Path $sbBin 'sbwriter.exe') $reg (Join-Path $repo 'gamedata\nightbossmenu-rows.json') $regOut
+& (Join-Path $sbBin 'sbwriter.exe') $reg (Join-Path $repo 'gamedata\nightbossmenu-rows.json') (Join-Path $repo 'gamedata\playarea-rows.json') $regOut
 if ($LASTEXITCODE -ne 0) { throw "sbwriter failed ($LASTEXITCODE)" }
 Write-Host ("UI-3: regulation.bin  {0}  {1}" -f (Get-Item $regOut).Length, (Get-FileHash $regOut).Hash.Substring(0, 16))

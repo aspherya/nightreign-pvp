@@ -9,9 +9,10 @@ use super::layout::{
     CHR_HANDLE, CHR_ID, CHR_TEAM, CHR_TYPE, CHR_TYPE_EXPEDITION, CHR_TYPE_ROUNDTABLE,
     DATA_MODULE_HP, DATA_MODULE_MAX_HP, MENU_SETTINGS, MENU_SETTINGS_BOTS, MENU_SETTINGS_PLAYERS,
     MENU_SETTINGS_TARGETS_BEGIN, MENU_SETTINGS_TARGETS_END, PLAYAREA_CLOCK, PLAYAREA_CLOCK_PACKED,
-    PLAYAREA_RUNNING, PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND, PLAYAREA_SPEED,
-    PLAYER_DOWNED, PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID, SPEFFECT_MAX,
-    SPEFFECT_NEXT, WCM_BOT_SET,
+    PLAYAREA_DAY1_FINAL_RADIUS, PLAYAREA_DAY2_FINAL_RADIUS, PLAYAREA_DAY2_FIRST_RADIUS,
+    PLAYAREA_RADIUS, PLAYAREA_RUNNING, PLAYAREA_SET_HOUR, PLAYAREA_SET_MINUTE, PLAYAREA_SET_SECOND,
+    PLAYAREA_SPEED, PLAYER_DOWNED, PLAYER_MODULES, PLAYER_SPEFFECTS, SPEFFECT_FIRST, SPEFFECT_ID,
+    SPEFFECT_MAX, SPEFFECT_NEXT, WCM_BOT_SET,
 };
 
 /// Where a player character is, from its character type (MEMORY_MAP §3).
@@ -323,6 +324,17 @@ pub(crate) struct ClockState {
     pub running: bool,
     /// The set-time mailbox is empty (no request waiting for the game's next update).
     pub mailbox_free: bool,
+    /// The Night's Tide circle (TIDE-MAX); `None` when unreadable.
+    pub circle: Option<Circle>,
+}
+
+/// The circle's radii in metres (MEMORY_MAP §16): now, and the stage records the game built for the expedition.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Circle {
+    pub radius: f32,
+    pub day1_final: f32,
+    pub day2_first: f32,
+    pub day2_final: f32,
 }
 
 /// The play-area manager (`WorldPlayAreaManager`, an FD4 singleton re-created on area loads): the day clock and the circle.
@@ -349,6 +361,17 @@ impl<'m> PlayArea<'m> {
             speed: f32::from_bits(self.mem.read_u32(self.addr + PLAYAREA_SPEED)?),
             running: self.mem.read_u8(self.addr + PLAYAREA_RUNNING)? != 0,
             mailbox_free: mailbox.iter().all(|v| *v == Some(u32::MAX)),
+            circle: self.circle(),
+        })
+    }
+
+    fn circle(&self) -> Option<Circle> {
+        let f = |o: usize| self.mem.read_u32(self.addr + o).map(f32::from_bits);
+        Some(Circle {
+            radius: f(PLAYAREA_RADIUS)?,
+            day1_final: f(PLAYAREA_DAY1_FINAL_RADIUS)?,
+            day2_first: f(PLAYAREA_DAY2_FIRST_RADIUS)?,
+            day2_final: f(PLAYAREA_DAY2_FINAL_RADIUS)?,
         })
     }
 
@@ -425,6 +448,18 @@ mod tests {
         assert_eq!(c.time.to_string(), "22:58:07");
         assert!(c.running && c.mailbox_free);
         assert_eq!(c.speed, 2.0);
+        assert!(c.circle.is_none(), "radius fields unreadable");
+        // TIDE-MAX: the circle's radius now and the stage records.
+        m.put_u32(0x50_0000 + PLAYAREA_RADIUS, 40.025f32.to_bits());
+        m.put_u32(0x50_0000 + PLAYAREA_DAY1_FINAL_RADIUS, 0);
+        m.put_u32(0x50_0000 + PLAYAREA_DAY2_FIRST_RADIUS, 367.724f32.to_bits());
+        m.put_u32(0x50_0000 + PLAYAREA_DAY2_FINAL_RADIUS, 0);
+        let c = PlayArea::new(&m, 0x50_0000).clock().expect("clock");
+        let circle = c.circle.expect("circle");
+        assert_eq!(
+            (circle.radius, circle.day2_first, circle.day2_final),
+            (40.025, 367.724, 0.0)
+        );
         m.put_u64(0x50_0000 + PLAYAREA_CLOCK, 0);
         assert!(
             PlayArea::new(&m, 0x50_0000).clock().is_none(),

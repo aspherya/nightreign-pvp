@@ -15,6 +15,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 | **No click after Commence (MM-3g, MM-7):** the host's game makes its lobby by itself, no Steam window, everybody is marked ready, the expedition starts by itself | **Built, `mi-zero-click` PASS 3/3 on one PC (2026-11-05, two emulated instances)**. Not seen on real Steam: the joiner's link and whether any Steam notification shows (FS-HM1 item 9). The table menu stays open during the departure |
 | **Battle Royale card in the Roundtable expedition list** (UI-3): the last card, always available; Commence on it starts our queue, any other card is a normal vanilla expedition | **Works on one PC** (2026-11-02; the card is now told by the chosen target list, which also holds on other saves, 2026-11-05). Built into `regulation.bin` (instant). The Deep of Night checked (vanilla Commence). Open: the hawk crossing and other rules also run in normal expeditions (TASKS MODE-SCOPE); not seen on two PCs |
 | **Night's Tide death = defeated for good** (fixed 2026-11-07): told by the rain SpEffect on LOCAL, not by the last-attacker field (stale after a fight: a tide death respawned the player in a loop) | **`tide-defeat` PASS on one PC** |
+| **The final circle closes to a point (TIDE-MAX, no match timer):** `regulation.bin` final radius 40 → 0 m, tide damage vanilla; Night 2's circle reaches ~0.03 m at 23:59:59 and the tide ends the match. Day 2's first circle is 347.6 m (vanilla 367.7: the game derives it). The game's night-2 fallback (7507 after 600 s) ends nothing | **`tide-close-max` PASS on one PC** (branch `tide-close-max`); not seen on two PCs |
 | Downed rule: rival hits take 3 s off the bleed-out; teammates revive; rivals cannot revive rivals | **Works** (Nucleus). Not yet over real two-PC lag |
 | Hawk crossing at the start | **Works solo**, on by default; not run in an FS |
 | **Match rules (RW-1/2/4):** killed by a rival or the tide = **defeated for good** (body held; default `defeat_exit_secs = 0` = watch until the match ends, F10 leaves; a value above 0 shows the defeat screen after that many seconds; nobody respawns); killed by a mob, boss or fall = the game's own respawn; the match ends the moment one team is left, on any day; **free Day 1** (`day1_secs` = 1020, no tide, no night), Day 2 vanilla | **PASS on one PC** (`day1-free`, `defeat-mob`, `defeat-rival`, `match-win`, `match-win-end`, `match-loss`). Not seen on two PCs (FS-RW1, TESTING §6) |
@@ -35,7 +36,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Launcher app (LAUNCH-1, branch `launcher-app`):** `NightreignPvP.exe` (Tauri 2): first-run wizard (game folder, Seamless Co-op via Nexus, the mod from GitHub releases), update check, Play then the app closes. **Built, unit-tested and tried on a local staged release; not yet tried by Leonardo.** A draft: Leonardo creates the public releases repo; **no release is published before the final test session with more than 3 players** (RELEASE §5b).
 
-**Not built yet** (scope in PROJECT_SCOPE): A match time limit, final arena contraction and sudden death, Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
+**Not built yet** (scope in PROJECT_SCOPE): the most-kills tiebreak for edge cases (no timer, by decision), Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 
@@ -53,8 +54,8 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 **The list of 2026-11-03 is done on one PC** (Grace, pin beam, killfeed, the match start). What is left of it needs real Steam: a fresh zip and the next session with friends (FS-HM1, now with item 9).
 
 **Next (Leonardo, 2026-11-07):** the K/D scoreboard is built on one PC (PR #61); then the JPEXS spike for a more professional
-in-game UI (SCOREBOARD §8b, TASKS SB-5), then Arena (MODE-02, designed separately). The match timer is parked until he knows how long
-a match should last.
+in-game UI (SCOREBOARD §8b, TASKS SB-5), then Arena (MODE-02, designed separately). No match timer: the tide closes to a point instead (TIDE-MAX,
+2026-11-07).
 
 **Ongoing, Leonardo reports when he has the logs:** the sessions with friends: **FS-HM1** (TESTING §6, host migration on real Steam: `mi-host-migration` PASS on one PC, a crash on real Steam not proven; [HOST_MIGRATION.md](HOST_MIGRATION.md)), Duo / Trio rules between real players (`mi-duo-party` shows the party flow), SOLO-REVIVE (the vanilla revive item in Solo). Player count later, on good results. **Dropped:** card polish (Effective line, side panel, own icon). **Later:** normal expeditions (Leonardo has an idea), MODE-SCOPE, rest of matchmaking (MM-8, the 3-team Duo match), FS-RW1.
 

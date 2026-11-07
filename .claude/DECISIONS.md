@@ -95,3 +95,8 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
 - **K/D scoreboard in the match** (Leonardo, 2026-11-07): own numbers only, shown as the game's blinking centre message when the pause
   menu opens (Esc / pad Start); mob and fall deaths count as deaths. Not a separate key (no free pad button), not the key-guide text
   swap (tried, reverted). The professional version is a GFx edit of the game's menus with JPEXS, later (SCOREBOARD §8b).
+- **No match timer: the Night's Tide closes as far as possible** (Leonardo, 2026-11-07, after looking at how Fortnite, Apex and
+  Warzone end a match: none uses a fixed timer, the zone closes almost to nothing and that forces the end). The final circle of
+  Night 2 closes to a point (TIDE-MAX, `gamedata/playarea-rows.json`); the tide's damage stays vanilla (he finds it balanced).
+  "Most kills wins, then most HP" is only a tiebreak for edge cases (simultaneous deaths, a stalemate cap) and is not built.
+  Replaces PROJECT_SCOPE §1 "the final circle keeps the game's size (40 m)".

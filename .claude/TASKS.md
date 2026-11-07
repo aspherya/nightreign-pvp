@@ -227,6 +227,19 @@ Brain v1, levels, friends + bots: written out when they start (BOTS.md §3 holds
 
 **Built earlier, since replaced by the RW rules (2026-10-24, below):** M5-1..M5-4 (no boss, no minions, clock console; engine facts TECHNICAL_NOTES §4e/§4f, MEMORY_MAP §16/§17), the elimination rounds M5-5 / M5-6 / M6-1, M5-8 research and M5-9 Solo real death. What stays: `features/br_match/` (match state), `game/deathhold.rs` (keeps a defeated player dead; SpEffect 102130 = die at once, the comeback can be held and released). Rule decisions: `DECISIONS.md`. A Solo die-at-once rule is open again: see "Solo night death" below.
 
+### TIDE-MAX — The final Night's Tide circle closes as far as possible (no match timer)
+Owner: OPUS | Status: review (Leonardo: look at the final-circle photo) | Depends on: — | Phase: match end
+Goal: the zone forces the end of a match, as in Fortnite / Warzone, instead of a timer (DECISIONS 2026-11-07).
+Rules: [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md) §1 and §5: the final circle of Night 2 closes to a point; the tide's damage stays
+vanilla; the most-kills tiebreak and any timer are out of scope.
+Steps: (1) read every row of `PlayAreaCreateCommonParam` (MEMORY_MAP §16); (2) see what the game does at the night-2 fallback (600 s,
+7507) with several teams alive (`tide-close-lab`); (3) `secondCircleRadius` 40 → 0 in row 0 (`gamedata/playarea-rows.json`, sbwriter now
+writes `f32` fields and takes several rows files); (4) `clock` prints the live radius and the stage records.
+Acceptance: `tide-close-max` PASS on one PC (records: final 0.0, first 347.6 (vanilla 367.7: the game derives it from the final radius); radius about 0.03 m at the night cap; LOCAL in the tide, 99811;
+the tide defeats LOCAL at night) and `day1-free` PASS. Two-PC: the circle in a client's game (the circle is computed from the
+synced clock and the same regulation, so it should match `[HYPOTHESIS]`): next FS.
+Result: see testing-log 2026-11-07 "TIDE-MAX".
+
 ### M5-9 / M5-5 — superseded
 The elimination rounds (night = a round, losers held until the morning, die-at-once in Solo nights) were replaced on 2026-10-24 by the RW
 rules (DECISIONS "After the first real match"; section "Rework after the first real match" below). The hold (`game/deathhold.rs`) stays: it

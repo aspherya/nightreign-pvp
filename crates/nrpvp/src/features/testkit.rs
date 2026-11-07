@@ -109,6 +109,7 @@ impl WorldBuilder {
             speed,
             running: true,
             mailbox_free: true,
+            circle: None,
         });
         self
     }

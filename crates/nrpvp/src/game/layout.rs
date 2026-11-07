@@ -185,3 +185,13 @@ pub(crate) const PLAYAREA_SET_MINUTE: usize = 0x128;
 pub(crate) const PLAYAREA_SET_SECOND: usize = 0x12C;
 /// u8 1 while the clock advanced in the last update (0 = held: paused, a cutscene, a reset in progress).
 pub(crate) const PLAYAREA_RUNNING: usize = 0x130;
+/// f32 radius of the circle now (m). `tide-close-lab` 2026-11-07 (vanilla Day 2): 700 until 12:30, 527.6 at 14:20, 367.7 from
+/// 16:09, 198.4 at 22:12, 80.1 at 23:30, 40.025 at 23:59:59 (the night clock holds there, one second short of the final radius).
+pub(crate) const PLAYAREA_RADIUS: usize = 0x260;
+/// Per-day stage records of 0x20 bytes (x, 230, z, radius as f32 at +0x0C..+0x18 of each): Day 1 at +0x3C (initial, first-circle
+/// end, final), Day 2 at +0x9C. The radius fields: initial 700, final = `PlayAreaCreateCommonParam` row 0 `secondCircleRadius`
+/// (40 in vanilla), first-circle end about halfway between them (367.724 with 40, 347.586 with 0). `tide-close-lab` /
+/// `tide-close-max` 2026-11-07, unchanged from 07:00 to the night.
+pub(crate) const PLAYAREA_DAY1_FINAL_RADIUS: usize = 0x88;
+pub(crate) const PLAYAREA_DAY2_FIRST_RADIUS: usize = 0xC8;
+pub(crate) const PLAYAREA_DAY2_FINAL_RADIUS: usize = 0xE8;
