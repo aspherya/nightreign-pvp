@@ -25,6 +25,9 @@ pub(crate) enum Act {
     DropItems,
     /// KF-1: a line of the killfeed, from the victim's game (`features::killfeed::report`).
     KillFeed(super::killfeed::KillEvent),
+    /// FS7-8: a defeated player chose to leave the match (F10 or the defeat-exit timer): once back at the Roundtable the matchmaking
+    /// worker also leaves the Seamless Co-op lobby (`mm::ask_leave_session`).
+    LeaveSession,
 }
 
 /// Carry out the match rules' requests (the hold of a defeated player, a move, the game's flags, the clock's speed).
@@ -61,6 +64,10 @@ pub(super) fn run_acts(acts: Vec<Act>, t: Targets, mem: &dyn GameMem) {
             }
             Act::MenuGate(on) => {
                 menugate::set_active(on);
+                Ok(())
+            }
+            Act::LeaveSession => {
+                crate::mm::ask_leave_session();
                 Ok(())
             }
             Act::DeathHold(on) => {

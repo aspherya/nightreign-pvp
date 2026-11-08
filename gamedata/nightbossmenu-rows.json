@@ -1,5 +1,5 @@
 {
-  "_comment": "Param rows written into dist/gamedata/regulation.bin by scripts/build-gamedata.ps1 (tools/regulation = sbwriter, Smithbox's writer, from the pinned 1.03.3 regulation.bin). UI-3: the Battle Royale card in the expedition list. Row 9 of NightBossMenuParam is a hidden placeholder (its name text is empty); it is REPLACED with row 100's values and our texts (FMG ids 131152 name / 131153 description, gamedata/fmg-entries.json), always unlocked, sorted after row 100 (sort 300). A new row id (e.g. 101) does not show in the list (in-game test 2026-11-02). 'expect' = the vanilla values the build checks before writing; 'values' = the fields written (all 20, so the row does not depend on its old content).",
+  "_comment": "Param rows written into dist/gamedata/regulation.bin by scripts/build-gamedata.ps1 (tools/regulation = sbwriter, Smithbox's writer, from the pinned 1.03.3 regulation.bin). UI-3: the Battle Royale card in the expedition list. Row 9 of NightBossMenuParam is a hidden placeholder (its name text is empty); it is REPLACED with row 100's values and our texts (FMG ids 131152 name / 131153 description, gamedata/fmg-entries.json), always unlocked, sorted FIRST (sort 1; the smallest vanilla sortId is 10, row 0; FS7-2, Leonardo 2026-11-07). A new row id (e.g. 101) does not show in the list (in-game test 2026-11-02). 'expect' = the vanilla values the build checks before writing; 'values' = the fields written (all 20, so the row does not depend on its old content).",
   "params": [
     {
       "param": "NightBossMenuParam.param",
@@ -21,7 +21,7 @@
           },
           "values": {
             "unknown_0": 0, "expeditionNameId": 131152, "bossIconId": 41812, "unlockEventFlag": 0, "defeatEventFlag": 0,
-            "unknown_5": -1, "bossNameId": -1, "defeatedBossIconId": -1, "sortId": 310, "descriptionId": 131153,
+            "unknown_5": -1, "bossNameId": -1, "defeatedBossIconId": -1, "sortId": 1, "descriptionId": 131153,
             "expeditionBackgroundId": 40427, "effectiveAffinity1": 0, "effectiveAffinity2": 0,
             "depth1ChanceWeight": 0, "depth2ChanceWeight": 0, "depth3ChanceWeight": 0, "depth4ChanceWeight": 0, "depth5ChanceWeight": 0,
             "largeBossIconId": -1, "unk_00": 0

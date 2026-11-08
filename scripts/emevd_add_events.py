@@ -4,7 +4,7 @@ scripts/build-gamedata.ps1 (UI-2, OFF-4, M5-3).
 Usage: python emevd_add_events.py <file.emevd> <events.json>
 
 events.json: {"events": [{"id": 99100300, "flag": 10007100, "message": 99100200, "display": "dialog" | "blinking" | "status"}, ...]}
-Each event: IF Event Flag(MAIN, ON, flag) [3:0] -> display(message) [2007:1 | 2007:4 | 2007:3] -> Set Event Flag(flag, OFF) [2003:66] ->
+Each event: Set Network Sync State Disabled [2000:2] (FS7-1: per game) -> IF Event Flag(MAIN, ON, flag) [3:0] -> display(message) [2007:1 | 2007:4 | 2007:3] -> Set Event Flag(flag, OFF) [2003:66] ->
 END Restart [1000:4]. Event 0 gets one Initialize Event(slot 0, id) [2000:0] per event.
 OFF-4: instead of a message, an event may carry "bots": <table id> (the game's NPC bot start, 2003:97 with one s32, archive/research/OFF-3-bots.md)
 or "bots_clear": true (2003:98, no arguments). Neither is in DarkScript3's NR EMEDF; the argument layout comes from the bank 2003
@@ -145,6 +145,11 @@ def build_event_instrs(ev):
         return local_instrs(ev)
     flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')
     out = [(3, 0, struct.pack('<bBBxI', 0, 1, 0, flag))]
+    if kind is not None:
+        # FS7-1: a message is for this game's player only. Without Set Network Sync State Disabled (2000:2) a synced event that fires
+        # in one game fires in every game of the session, and each one shows ITS OWN copy of the text (friend session 2026-11-07:
+        # the spectator hint and the own K/D showed on every screen, with the other game's stale numbers).
+        out.insert(0, (2000, 2, struct.pack('<B3x', 0)))
     if 'bots' in ev:
         out.append((2003, 97, struct.pack('<i', ev['bots'])))
     elif ev.get('bots_clear'):

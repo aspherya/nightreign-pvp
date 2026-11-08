@@ -97,3 +97,7 @@ Read when you touch the area named in a bullet, or before debugging something od
   Equipment screen's bar is in `02_013_equip.gfx` (50 menu files hold a `KeyGuide`). Find the screen's own file first (re/GFX_UI.md).
 - **Backslashes in a scenario's TOML strings** (2026-11-07): `"dist\gamedata"` in a basic string is an escape error and the run stops
   at parse; write paths with `/` in `about` texts.
+- **Foreign files in `Game\` break every emulated run (2026-11-08):** an OnlineFix package (`winmm.dll` + `dlllist.txt` loader) made each
+  `nro` instance exit in ~6 s (`P-module failed: alive=false, 0 modules`). `nro` hard-links the game's files into `Z:\nro-instances\i*\game`
+  but never deletes one that left `Game\`, so remove such files there too. Check `Game\` for `winmm.dll`, `dlllist.txt`, `OnlineFix*`
+  when every launch dies early.

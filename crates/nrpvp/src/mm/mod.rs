@@ -218,6 +218,83 @@ pub(crate) fn local_players() -> usize {
     LOCAL_PLAYERS.load(Ordering::Relaxed)
 }
 
+/// FS7-8: a defeated player chose to leave the match; the worker leaves the Seamless Co-op lobby once back at the Roundtable.
+static LEAVE_SESSION: AtomicBool = AtomicBool::new(false);
+/// FS7-4: the own party's size as the worker last saw it (0 = unknown): the Seamless Co-op lobby's members, or the size of the own party
+/// of the last match while still in that match's lobby (strangers of a Solo match are no party).
+static PARTY_SIZE: AtomicUsize = AtomicUsize::new(0);
+
+/// Match rules (FS7-8): ask the worker to leave the Seamless Co-op lobby when the player is back at the Roundtable.
+pub(crate) fn ask_leave_session() {
+    if enabled() {
+        LEAVE_SESSION.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Worker (FS7-8): whether a leave was asked; `take` clears it.
+pub(crate) fn leave_session_asked(take: bool) -> bool {
+    if take {
+        LEAVE_SESSION.swap(false, Ordering::Relaxed)
+    } else {
+        LEAVE_SESSION.load(Ordering::Relaxed)
+    }
+}
+
+/// Worker (FS7-4): publish the own party's size.
+pub(crate) fn set_party_size(n: usize) {
+    PARTY_SIZE.store(n, Ordering::Relaxed);
+}
+
+/// Menu (FS7-4): the own party's size (`None`: the queue is off or the worker has not looked yet).
+pub(crate) fn party_size() -> Option<usize> {
+    match PARTY_SIZE.load(Ordering::Relaxed) {
+        0 => None,
+        n if enabled() => Some(n),
+        _ => None,
+    }
+}
+
+/// FS7-4 (pure): the own party's size: the Seamless Co-op lobby's member count, except in the lobby of the last match, where the
+/// other members are that match's rivals and the own party is the match's team size. No lobby = alone.
+pub(crate) fn party_of(sc: Option<(u64, u32)>, last_match: Option<(u64, usize)>) -> usize {
+    match (sc, last_match) {
+        (None, _) => 1,
+        (Some((id, _)), Some((m, size))) if id == m => size,
+        (Some((_, members)), _) => (members as usize).max(1),
+    }
+}
+
+#[cfg(test)]
+mod party_tests {
+    use super::party_of;
+
+    #[test]
+    fn the_party_is_the_lobby_except_in_the_last_match_lobby() {
+        assert_eq!(party_of(None, None), 1, "no lobby: alone");
+        assert_eq!(
+            party_of(Some((7, 2)), None),
+            2,
+            "an Invite Members party of two"
+        );
+        assert_eq!(
+            party_of(Some((7, 3)), Some((7, 1))),
+            1,
+            "back from a Solo match with two rivals in its lobby"
+        );
+        assert_eq!(
+            party_of(Some((7, 3)), Some((7, 2))),
+            2,
+            "a Duo match: the own pair"
+        );
+        assert_eq!(
+            party_of(Some((9, 3)), Some((7, 1))),
+            3,
+            "a new lobby after the match"
+        );
+        assert_eq!(party_of(Some((9, 0)), None), 1);
+    }
+}
+
 /// Worker: the local player's phase according to the last `team_type` the game loop read (`None` = never read / not 1 or 2).
 pub(crate) fn local_phase() -> Option<join::Phase> {
     join::Phase::from_team(LOCAL_TEAM.load(Ordering::Relaxed))

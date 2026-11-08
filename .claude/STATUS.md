@@ -52,6 +52,8 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 done), matchmaking is finished (Leonardo), killfeed, grace lock, spectate, defeat and the scoreboard work with real hits. Leonardo:
 the mod is close to done; nothing broke the game.
 
+**2026-11-08:** FS7-1/2/3/4/7/8 built on branch `fs7-small-fixes` (one PR); one-PC checks (`mi-msg-local`, `mi-bots-menu`, `mi-zero-click`) PASS; the next FS left.
+
 **Next: Leonardo's list from that session, TASKS "After the friend session of 2026-11-07" (FS7-1..7):** messages only on the own screen
 (also the stale K/D), Battle Royale card first, Bots Off at start, Solo/Duo/Trio from the party size, F10 also leaves the session, the trade ranking, a log line for
 the Solo instant death, then the respawn on the hawk (RE first). Then a new zip and Duo / Trio with friends (DUOTRIO-1, never tested on

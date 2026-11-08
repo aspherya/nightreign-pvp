@@ -161,6 +161,7 @@ impl MatchRule for Defeat {
             {
                 d.exit_sent = true;
                 out.flags.push((FLAG_LOSE, true));
+                out.acts.push(Act::LeaveSession);
                 out.lines.push(
                     "night_match: the defeat screen is asked for (back to the Roundtable)".into(),
                 );

@@ -51,14 +51,25 @@ line for the next session), FS7-7, then FS7-5 (needs RE). Owner of all: OPUS car
 
 | Card | What | State | Size |
 |---|---|---|---|
-| FS7-1 | Spectator hint and own K/D only on the own screen (also fixes the previous match's K/D) | Ready, cause found in code | Small |
-| FS7-2 | Battle Royale card first in the expedition list | Ready | Tiny |
-| FS7-3 | Bots switch Off at every game start | Ready | Small |
-| FS7-4 | Solo / Duo / Trio preselected from the party size | Ready | Small |
+| FS7-1 | Spectator hint and own K/D only on the own screen (also fixes the previous match's K/D) | **Built, `mi-msg-local` PASS** (2026-11-08) | Small |
+| FS7-2 | Battle Royale card first in the expedition list | **Built, `mi-bots-menu` + `mi-zero-click` PASS** | Tiny |
+| FS7-3 | Bots switch Off at every game start | **Built, `mi-bots-menu` PASS** (also re-set when the settings tab opens) | Small |
+| FS7-4 | Solo / Duo / Trio preselected from the party size | **Built**; next FS (a party at the table) | Small |
 | FS7-5 | Respawn on the hawk after a mob death | RE first (how to start a ride) | Large |
 | FS7-6 | Solo instant death at 0 HP (gauge: decided, stays hidden) | Log line first to prove the cause | Medium |
-| FS7-7 | Summary ranking after a trade | Ready | Small |
-| FS7-8 | F10 also leaves the Seamless Co-op lobby (the game session already does) | Ready | Small |
+| FS7-7 | Summary ranking after a trade | **Built** (the real cause: shifting team keys), unit test | Small |
+| FS7-8 | F10 also leaves the Seamless Co-op lobby (the game session already does) | **Built** (Solo only); next FS | Small |
+
+**Built 2026-11-08 on branch `fs7-small-fixes` (one PR):** FS7-1 `scripts/emevd_add_events.py` puts `Set Network Sync State Disabled`
+first in every display event, and the own-score text is reset to zeros when an expedition ends. FS7-2 `sortId` 1 (smallest vanilla 10);
+`nro` no longer presses `Up` to reach the card. FS7-3 / FS7-4 `menuflow::preset_menu` when the expedition menu opens (the queue idle):
+Bots Off at the first menu of a launch; Number of Players from `mm::party_size`, which the worker publishes from the Seamless Co-op
+lobby (in the last match's lobby: the match's own team size, so Solo rivals are no party). FS7-7: the summary groups teams by pairs seen
+with the same key **in the same tick** (`Feed::mates`); the key is a roster index that shifts when a player leaves, which merged a
+leaver with a survivor in both summaries of 2026-11-07. Left open: the decision and the summary can still disagree after a trade
+(elimination waits `OUT_DEAD_MS` for a rival's death, the summary uses the kill facts). FS7-8: `Act::LeaveSession` on F10 / the
+defeat-exit timer; back at the Roundtable the worker leaves the Seamless Co-op lobby (`QueueSteam::leave_sc`), **only in Solo** (a
+Duo / Trio lobby also holds the own party). Unit tests, clippy (both builds), gamedata and DLL build pass; one-PC checks PASS 2026-11-08 (testing-log); FS7-4 / FS7-7 / FS7-8 wait for the next FS.
 
 ### FS7-1 — Our messages only on the own screen (spectator hint, own K/D) + stale K/D
 Status: ready. Points 1 and 6 of Leonardo's list.

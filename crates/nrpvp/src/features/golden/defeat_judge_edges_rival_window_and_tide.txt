@@ -142,5 +142,6 @@ t=014800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 
 t=025799 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
           .
 t=025800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0] | clock 13:00:00 x72.90 | day2 | pos (10,20,30) | hits last Some((Env, 4000)) rival_age None | held
+          acts: LeaveSession
           flags: 10007412=ON
           log: night_match: the defeat screen is asked for (back to the Roundtable)

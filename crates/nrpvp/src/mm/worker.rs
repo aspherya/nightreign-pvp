@@ -148,6 +148,10 @@ pub(crate) struct Worker {
     quiet_seen_sup: u32,
     /// MM-4: see [`Setup::world_stale`].
     world_stale: Duration,
+    /// FS7-4: the Seamless Co-op lobby of the last match and the own party's size in it.
+    last_match: Option<(u64, usize)>,
+    /// FS7-4: when the party size is published next.
+    next_party: Instant,
 }
 
 impl Worker {
@@ -226,6 +230,8 @@ impl Worker {
             next_env: Instant::now(),
             guard_cache: None,
             exports_ok,
+            last_match: None,
+            next_party: Instant::now(),
         })
     }
 
@@ -477,6 +483,49 @@ impl Worker {
         }
     }
 
+    /// FS7-4: publish the own party's size once a second; FS7-8: leave the Seamless Co-op lobby once a player who left a match is
+    /// back at the Roundtable.
+    fn party_tick(&mut self, now: Instant) {
+        if let Some(m) = self.machine.match_lobby() {
+            self.last_match = Some(m);
+        }
+        if now < self.next_party {
+            return;
+        }
+        self.next_party = now + Duration::from_secs(1);
+        let at_roundtable = super::local_phase() == Some(super::join::Phase::Roundtable);
+        let sc = self.current_sc();
+        if at_roundtable && super::leave_session_asked(false) {
+            super::leave_session_asked(true);
+            // A Duo / Trio player stays: the lobby also holds the own party, which leaving would break up.
+            let own_party = self.last_match.map_or(1, |(_, size)| size);
+            match &sc {
+                Some((lobby, _, _)) if own_party > 1 => tracing::info!(
+                    "mm_queue: the player left the match (F10): the Seamless Co-op lobby {} is kept (party of {own_party})",
+                    idt(lobby.id())
+                ),
+                Some((lobby, _, n)) => {
+                    tracing::info!(
+                        "mm_queue: the player left the match (F10): leaving its Seamless Co-op lobby {} ({n} member(s))",
+                        idt(lobby.id())
+                    );
+                    self.steam.leave_sc(lobby);
+                    self.sc_seen = None;
+                    super::set_party_size(1);
+                    return;
+                }
+                None => tracing::info!(
+                    "mm_queue: the player left the match (F10): no Seamless Co-op lobby to leave"
+                ),
+            }
+        }
+        let p = super::party_of(
+            sc.as_ref().map(|(lobby, _, n)| (lobby.id(), *n)),
+            self.last_match,
+        );
+        super::set_party_size(p);
+    }
+
     /// One pass: commands, the machine, party following, override, status. Called every ~100 ms.
     pub(crate) fn tick(&mut self, now: Instant) {
         for c in super::take_cmds() {
@@ -505,6 +554,7 @@ impl Worker {
                 }
             }
         }
+        self.party_tick(now);
         let ov = self.machine.team_override();
         if ov != self.last_override {
             tracing::info!(

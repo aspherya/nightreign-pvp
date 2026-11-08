@@ -151,16 +151,58 @@ pub(crate) struct Feed {
     names: BTreeMap<u16, String>,
     teams: BTreeMap<u16, u64>,
     out: BTreeSet<u16>,
-    /// LOCAL's team.
-    mine: Option<u64>,
+    /// LOCAL's short id.
+    me: Option<u16>,
+    /// FS7-7: pairs seen in the same tick with the same team key (teammates). A team key from the rosters is an index that shifts
+    /// when a player leaves (friend session 2026-11-07: LOCAL went from team 1 to team 0, the key of the player who had left), so
+    /// keys of different ticks must not be compared.
+    mates: BTreeSet<(u16, u16)>,
+    /// The players seen so far in this tick, with their key.
+    this_tick: Vec<(u16, u64)>,
 }
 
 impl Feed {
+    /// A new tick of the player list: keys are compared only inside one tick.
+    pub(crate) fn begin_tick(&mut self) {
+        self.this_tick.clear();
+    }
+
     /// A player of the list this tick.
     pub(crate) fn see(&mut self, id: u16, team: u64, local: bool) {
         self.teams.insert(id, team);
         if local {
-            self.mine = Some(team);
+            self.me = Some(id);
+        }
+        for (other, key) in &self.this_tick {
+            if *key == team && *other != id {
+                self.mates.insert(((*other).min(id), (*other).max(id)));
+            }
+        }
+        self.this_tick.push((id, team));
+    }
+
+    /// Whether two participants were ever seen as teammates (one is the other included).
+    fn mates_with(&self, a: u16, b: u16) -> bool {
+        a == b || self.mates.contains(&(a.min(b), a.max(b)))
+    }
+
+    /// FS7-7: a participant's team for the summary: the smallest short id among everyone linked to it by [`Feed::mates`].
+    fn group_of(&self, id: u16) -> u16 {
+        let mut group = BTreeSet::from([id]);
+        loop {
+            let more: Vec<u16> = self
+                .mates
+                .iter()
+                .filter_map(|(a, b)| match (group.contains(a), group.contains(b)) {
+                    (true, false) => Some(*b),
+                    (false, true) => Some(*a),
+                    _ => None,
+                })
+                .collect();
+            if more.is_empty() {
+                return *group.first().unwrap_or(&id);
+            }
+            group.extend(more);
         }
     }
 
@@ -175,11 +217,11 @@ impl Feed {
     /// Everyone seen this expedition with their name and team (the end-of-match summary).
     pub(crate) fn rows(&self) -> Vec<scoreboard::Row> {
         self.teams
-            .iter()
-            .map(|(id, team)| scoreboard::Row {
+            .keys()
+            .map(|id| scoreboard::Row {
                 id: *id,
                 name: self.plain_name(*id),
-                team: *team,
+                team: u64::from(self.group_of(*id)),
             })
             .collect()
     }
@@ -195,7 +237,7 @@ impl Feed {
     /// A player's name in the colour of their side.
     fn who(&self, id: u16) -> String {
         let name = self.names.get(&id).map_or(NO_NAME, String::as_str);
-        let mine = self.mine.is_some() && self.teams.get(&id).copied() == self.mine;
+        let mine = self.me.is_some_and(|me| self.mates_with(me, id));
         let color = if mine { COLOR_MINE } else { COLOR_RIVAL };
         format!("<font color='{color}'>{name}</font>")
     }
@@ -317,6 +359,11 @@ impl Feature for KillFeed {
                 }
                 self.feed = Feed::default();
                 self.tally = scoreboard::Tally::default();
+                // FS7-1: the own-score text is this game's; a stale one must never show in the next match.
+                let _ = scoreboard::write_message(
+                    w.base,
+                    &scoreboard::message(scoreboard::Line::default()),
+                );
                 self.names_at = None;
                 self.in_match = false;
                 self.me = None;
@@ -334,6 +381,7 @@ impl Feature for KillFeed {
         if refresh {
             self.names_at = Some(Instant::now());
         }
+        self.feed.begin_tick();
         for f in w.fighters.iter().flatten() {
             let id = short_id(f.id);
             self.feed.see(id, f.team, f.local);
@@ -671,6 +719,32 @@ mod tests {
             plain(f.line(ev(KillKind::Tide, C, None))),
             "Ana was consumed by the tide"
         );
+    }
+
+    /// FS7-7, friend session 2026-11-07 (M2): three Solo players; when C leaves, the roster keys shift and LOCAL takes C's old key.
+    /// The summary must still keep everyone apart, and nobody becomes blue.
+    #[test]
+    fn shifted_team_keys_after_a_leave_do_not_make_teammates() {
+        let mut f = Feed::default();
+        let key = |t: u64| (1 << 63) | t;
+        f.begin_tick();
+        for (id, team) in [(C, 0), (A, 1), (B, 2)] {
+            f.see(id, key(team), id == A);
+            f.name(id, "x");
+        }
+        // C left: A and B are renumbered 0 and 1.
+        f.begin_tick();
+        f.see(A, key(0), true);
+        f.see(B, key(1), false);
+        let rows = f.rows();
+        let teams: BTreeSet<u64> = rows.iter().map(|r| r.team).collect();
+        assert_eq!(teams.len(), 3, "{rows:?}");
+        assert!(f
+            .line(ev(KillKind::Killed, C, Some(B)))
+            .unwrap()
+            .contains(&format!(
+                "<font color='{COLOR_RIVAL}'>x</font> killed <font color='{COLOR_RIVAL}'>x"
+            )));
     }
 
     #[test]

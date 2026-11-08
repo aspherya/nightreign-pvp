@@ -311,6 +311,9 @@ pub(crate) trait QueueSteam: LobbyText {
     fn leave(&mut self, lobby: &QueueLobby);
     /// Our own member value `nrpvp_q` on Seamless Co-op's lobby (empty string clears it). The only write we make there.
     fn set_sc_queue_value(&mut self, sc: &ScLobby, value: &str);
+    /// FS7-8: leave Seamless Co-op's lobby, as closing the game does (Steam `LeaveLobby` of our own membership; nothing in SC is
+    /// changed). Only after the player chose to leave a match (F10); the lobby owner then moves and the others' game migrates.
+    fn leave_sc(&mut self, sc: &ScLobby);
 
     // ---- MM-3: join methods. The ONLY other things ever done to Seamless Co-op's lobby (besides reads and `nrpvp_q` above). ----
     /// `ISteamUtils::GetAppID()`, 0 when unavailable.
@@ -759,6 +762,17 @@ impl QueueSteam for RealSteam {
         tracing::info!("mm_queue: Steam LeaveLobby({} (0x{:X}))", lobby.0, lobby.0);
     }
 
+    fn leave_sc(&mut self, sc: &ScLobby) {
+        let Some(f) = self.f.leave else { return };
+        // SAFETY: non-null ISteamMatchmaking*; `LeaveLobby(self, uint64)` on a lobby we are a member of (FS7-8).
+        unsafe { f(self.mmp(), sc.0) };
+        tracing::info!(
+            "mm_queue: Steam LeaveLobby({} (0x{:X})): left the Seamless Co-op lobby (FS7-8)",
+            sc.0,
+            sc.0
+        );
+    }
+
     fn set_sc_queue_value(&mut self, sc: &ScLobby, value: &str) {
         let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(KEY_SC_MEMBER), cs(value)) else {
             return;
@@ -1133,6 +1147,16 @@ pub(crate) mod fake {
             self.writes.push(Write::Leave(l.id()));
             let own = self.own;
             if let Some(x) = self.lobbies.get_mut(&l.id()) {
+                x.members.retain(|m| *m != own);
+                if x.owner == own {
+                    x.owner = x.members.first().copied().unwrap_or(0);
+                }
+            }
+        }
+        fn leave_sc(&mut self, sc: &ScLobby) {
+            self.writes.push(Write::Leave(sc.id()));
+            let own = self.own;
+            if let Some(x) = self.lobbies.get_mut(&sc.id()) {
                 x.members.retain(|m| *m != own);
                 if x.owner == own {
                     x.owner = x.members.first().copied().unwrap_or(0);

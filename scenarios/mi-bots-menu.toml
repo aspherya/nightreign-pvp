@@ -30,9 +30,11 @@ wait = { console = "pos", contains = "menu 0x200004", timeout_s = 5 }
 keys = "F2; wait 1500ms; Down; wait 600ms; Down; wait 600ms; Down; wait 1000ms"
 [[step]]
 screenshot = "bots_off"
-# The game remembers the switch between sessions: set it Off first (console), then Right turns it On as a player would.
+# FS7-3: the game saves the switch, but the mod sets it Off the first time the menu is seen after a launch.
 [[step]]
-console = "bots_switch off"
+wait_log = { contains = ["Bots switch reset to Off"], timeout_s = 10, since = "run" }
+[[step]]
+expect = { console = "bots_switch", contains = "Off" }
 [[step]]
 keys = "Right; wait 1000ms"
 [[step]]
@@ -48,9 +50,11 @@ keys = "wait 1000ms"
 screenshot = "solo"
 [[step]]
 expect_log = { contains = ["Bots row help texts in place", "No. of Password Players shows Bots Off / On"], since = "run" }
-# Back to the cards: the Battle Royale card is the last one (Up from the first), F selects it, F commences.
+# Back to the cards: the Battle Royale card is the first one since FS7-2 (the cursor opens there), F selects it, F commences.
 [[step]]
-keys = "F1; wait 1500ms; Up; wait 1000ms; F; wait 2000ms"
+keys = "F1; wait 1500ms; F; wait 2000ms"
+[[step]]
+expect = { console = "br_card", contains = "yes" }
 [[step]]
 screenshot = "card"
 [[step]]

@@ -44,6 +44,7 @@ impl MatchRule for Spectate {
         if world.leave_pressed && !d.exit_sent && !book.match_over {
             d.exit_sent = true;
             out.flags.push((FLAG_LOSE, true));
+            out.acts.push(Act::LeaveSession);
             out.lines.push(
                 "night_match: the leave key was pressed: the defeat screen is asked for".into(),
             );

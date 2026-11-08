@@ -427,6 +427,14 @@ impl Machine {
             .then_some(r.host != 0 && r.host == own)
     }
 
+    /// FS7-4: the Seamless Co-op lobby this ready match is bound to and the own party's size (the mode's team size).
+    pub(crate) fn match_lobby(&self) -> Option<(u64, usize)> {
+        let State::MatchReady(r) = &self.state else {
+            return None;
+        };
+        Some((r.gate.preferred_sc()?, r.ticket.mode.team_size()))
+    }
+
     /// MM-3: the worker only needs the (cheap but not free) Seamless Co-op lookup while a match is ready and `mm_join` is on.
     pub(crate) fn wants_sc(&self) -> bool {
         self.cfg.join && matches!(self.state, State::MatchReady(_))

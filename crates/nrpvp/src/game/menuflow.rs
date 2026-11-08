@@ -120,8 +120,58 @@ pub(crate) fn label_for_card(
 /// Number of Players byte values (`0x9EF3F0`: 2 → 130304 "Commence Solo Expedition", 1 → 130305 "Two-Player", else three).
 pub(crate) const PLAYERS_ONE: u8 = 2;
 pub(crate) const PLAYERS_TWO: u8 = 1;
-#[cfg_attr(not(test), allow(dead_code))] // the third value; `decide` treats it as "not one player"
 pub(crate) const PLAYERS_THREE: u8 = 0;
+
+/// FS7-4 (pure): the Number of Players byte for a party of `n` (Solo / Duo / Trio).
+pub(crate) fn players_for_party(n: usize) -> u8 {
+    match n {
+        0 | 1 => PLAYERS_ONE,
+        2 => PLAYERS_TWO,
+        _ => PLAYERS_THREE,
+    }
+}
+
+/// FS7-3 / FS7-4: the expedition menu just opened (`menu` = its object, freshly seen by the label hook), and again when its Matchmaking
+/// Settings tab first shows in this visit: opening that tab puts the saved values back over the menu's (seen 2026-11-08, run
+/// 1794100721: Trio and Bots On over our Solo and Off). In the first visit of a launch the Bots switch goes Off (the game saves it,
+/// Leonardo wants every launch to start without bots); every time, while the queue is idle, Number of Players is set from the own
+/// party's size. A choice the player makes after that is kept.
+fn preset_menu(menu: usize, bots_off: bool, when: &str) {
+    let mem = RealMem;
+    let Some(settings) = ExpeditionMenu::new(&mem, menu).settings() else {
+        return;
+    };
+    if bots_off && BOTS_MENU {
+        if settings.bots() == Some(true) {
+            match settings.set_bots(false) {
+                Ok(()) => tracing::info!("br_menu: Bots switch reset to Off ({when})"),
+                Err(e) => tracing::warn!("br_menu: Bots switch not reset: {e}"),
+            }
+        } else {
+            tracing::info!("br_menu: Bots switch reset to Off ({when}; it was Off)");
+        }
+    }
+    if crate::mm::phase() != crate::mm::PHASE_IDLE {
+        return;
+    }
+    let Some(n) = crate::mm::party_size() else {
+        return;
+    };
+    let want = players_for_party(n);
+    if settings.players() != Some(want) {
+        match settings.set_players(want) {
+            Ok(()) => tracing::info!(
+                "br_menu: Number of Players set to {} (party of {n}; {when})",
+                match want {
+                    PLAYERS_ONE => "Solo",
+                    PLAYERS_TWO => "Duo",
+                    _ => "Trio",
+                }
+            ),
+            Err(e) => tracing::warn!("br_menu: Number of Players not set: {e}"),
+        }
+    }
+}
 
 /// Our dialog texts (index into [`TEXTS`]).
 pub(crate) const T_SEARCHING: usize = 0;
@@ -538,9 +588,53 @@ fn run(base: usize) {
     let mut seen_swaps = 0u32;
     let mut next_resolve = Instant::now();
     let mut seen = 0u32;
+    // FS7-3 / FS7-4: the menu was open on the last pass; a preset waits for the label hook to see the newly opened menu.
+    let mut menu_was_open = false;
+    let mut preset_pending = false;
+    let mut first_menu = true;
+    // This visit's menu object, whether this visit resets Bots, and the Matchmaking Settings tab: the Bots row predicate's call count
+    // at the open (a higher count = the tab is drawn), when it was first seen and how many re-presets were done since.
+    let mut visit_menu = 0usize;
+    let mut visit_bots_off = false;
+    let mut tab_hits = 0u32;
+    let mut tab_seen: Option<Instant> = None;
+    let mut tab_done = 0usize;
+    const TAB_PRESET_AFTER_MS: [u64; 2] = [200, 800];
     loop {
         std::thread::sleep(Duration::from_millis(100));
         let now = Instant::now();
+        let menu_open = !IN_EXPEDITION.load(Ordering::Relaxed)
+            && super::menugate::menu_word(base) == Some(MENU_WORD_EXPEDITION);
+        if menu_open && !menu_was_open {
+            LAST_MENU.store(0, Ordering::Relaxed);
+            preset_pending = true;
+            visit_menu = 0;
+            tab_hits = PRED_HITS.load(Ordering::Relaxed);
+            tab_seen = None;
+            tab_done = 0;
+        }
+        menu_was_open = menu_open;
+        if preset_pending && menu_open {
+            let m = LAST_MENU.load(Ordering::Relaxed);
+            if m != 0 {
+                preset_pending = false;
+                preset_menu(m, first_menu, "menu opened");
+                visit_menu = m;
+                visit_bots_off = first_menu;
+                first_menu = false;
+            }
+        }
+        if menu_open && visit_menu != 0 && tab_done < TAB_PRESET_AFTER_MS.len() {
+            if tab_seen.is_none() && PRED_HITS.load(Ordering::Relaxed) > tab_hits {
+                tab_seen = Some(now);
+            }
+            if tab_seen.is_some_and(|t| {
+                t.elapsed() >= Duration::from_millis(TAB_PRESET_AFTER_MS[tab_done])
+            }) {
+                preset_menu(visit_menu, visit_bots_off, "settings tab shown");
+                tab_done += 1;
+            }
+        }
         let resolve_tick = now >= next_resolve;
         if resolve_tick {
             next_resolve = now + Duration::from_secs(2);
@@ -678,6 +772,15 @@ fn run(base: usize) {
 mod tests {
     use super::*;
     use crate::mm::PHASE_IDLE;
+
+    #[test]
+    fn the_party_size_picks_solo_duo_or_trio() {
+        assert_eq!(players_for_party(0), PLAYERS_ONE);
+        assert_eq!(players_for_party(1), PLAYERS_ONE);
+        assert_eq!(players_for_party(2), PLAYERS_TWO);
+        assert_eq!(players_for_party(3), PLAYERS_THREE);
+        assert_eq!(players_for_party(5), PLAYERS_THREE);
+    }
 
     #[test]
     fn idle_queues_the_mode_of_the_number_of_players() {

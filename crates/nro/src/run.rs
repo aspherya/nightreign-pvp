@@ -390,8 +390,8 @@ pub fn invite_members(st: &State, tries: u32) -> Result<String, String> {
 /// opens the expedition menu (the first key into a window that was in the back is sometimes lost: the menu word is checked and F
 /// retried), then F until the menu closes (the host: target, then Commence; a joiner: Commence, the host's target is already set).
 /// The party list then shows the player ready; the expedition loads when every member is. Success = the menu closed after F.
-/// `br_card`: select the Battle Royale card first (UI-3): it is the last card of the list and `Up` from the first card wraps to it
-/// (checked on screen 2026-11-02), so the F that sets the target picks it.
+/// `br_card`: the Battle Royale card (UI-3) is the first card of the list since FS7-2 (sortId 1) and the cursor opens on the first
+/// card (before FS7-2 `Up` from it wrapped to the last card, checked on screen 2026-11-02), so the F that sets the target picks it.
 pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
     let keys =
@@ -436,9 +436,7 @@ pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String>
             last = format!("attempt {attempt}: F did not open the expedition menu");
             continue;
         }
-        if br_card {
-            keys("Up; wait 800ms")?;
-        }
+        let _ = br_card; // FS7-2: the Battle Royale card is where the cursor opens; no key needed.
         for n in 1..=3 {
             keys("F; wait 2s")?;
             if menu()? == Some(0) {
@@ -453,8 +451,8 @@ pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String>
 }
 
 /// The player's whole way into the Solo queue, from anywhere at the Roundtable: to the table, the expedition menu, Matchmaking Settings (F2) where
-/// Number of Players is a ring the game keeps between runs (RIGHT until `br_card` reads Solo), back to the list (F1; `Up` wraps from the first
-/// card to the last one, Battle Royale), F picks it, which `br_card` confirms; F is Commence, F is OK on the game's dialog. The menu stays open
+/// Number of Players is a ring the game keeps between runs (RIGHT until `br_card` reads Solo), back to the list (F1; the cursor is on the
+/// first card, Battle Royale since FS7-2), F picks it, which `br_card` confirms; F is Commence, F is OK on the game's dialog. The menu stays open
 /// as for a player. Needs `br_menu`.
 pub fn queue_br(st: &State) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
@@ -494,7 +492,7 @@ pub fn queue_br(st: &State) -> Result<String, String> {
         }
         keys("RIGHT; wait 800ms")?;
     }
-    keys("F1; wait 1s; Up; wait 800ms; F; wait 1500ms")?;
+    keys("F1; wait 1s; F; wait 1500ms")?;
     let card = session::cmd(st, "br_card")?;
     if !card.contains("players byte 2") {
         return Err(format!("Number of Players is not Solo: {card}"));

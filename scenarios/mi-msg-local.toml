@@ -1,0 +1,174 @@
+name = "mi-msg-local"
+about = "FS7-1: our on-screen messages are per game. Two emulated instances in one Battle Royale expedition as rivals: player 1 opens its own score (score_show) and its spectator hint (flag 10007413); both show on player 1 and NOT on player 2 (screenshots score_p1 / score_p2 and hint_p1 / hint_p2, judged by eye). Before FS7-1 the events were synced: both screens showed the message, each with its own text"
+tags = ["mi", "hud"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running.
+# The verdict is the screenshots: score_p1 and hint_p1 show the blinking message, score_p2 and hint_p2 do not.
+# Run: nro run scenarios\mi-msg-local.toml
+
+[config]            # every instance
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_host_create = false   # never: a lobby made by the mod is not joinable (MATCHMAKING §8)
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so its queue lobby is the one instance 2 finds and joins (the lobby owner becomes the host).
+[[step]]
+instance = 1
+console = "mm_queue_solo"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 30 }
+
+[[step]]
+instance = 2
+console = "mm_queue_solo"
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 60 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "MATCH READY", timeout_s = 30 }
+
+[[step]]
+instance = 1
+navigate = "invite_members"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "mm_status", contains = "ALL PRESENT", timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+navigate = "commence_br"
+
+[[step]]
+instance = 2
+navigate = "commence_br"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "29    rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "hawk_drop"
+
+[[step]]
+instance = 2
+console = "hawk_drop"
+
+[[step]]
+instance = 1
+sleep_ms = 14000
+
+# Safe landing: kill the enemies near both players (wolves killed a player mid-test once).
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+console = "mob_kill"
+
+[[step]]
+instance = 2
+console = "mob_kill"
+
+[[step]]
+instance = 1
+mark = "before"
+
+[[step]]
+instance = 1
+console = "score_show"
+
+[[step]]
+instance = 1
+wait_log = { contains = ["scoreboard: own score shown"], timeout_s = 10, since = "mark:before" }
+
+[[step]]
+instance = 1
+screenshot = "score_p1"
+
+[[step]]
+instance = 2
+screenshot = "score_p2"
+
+[[step]]
+instance = 1
+sleep_ms = 6000
+
+[[step]]
+instance = 1
+console = "flag 10007413 1"
+
+[[step]]
+instance = 1
+sleep_ms = 800
+
+[[step]]
+instance = 1
+screenshot = "hint_p1"
+
+[[step]]
+instance = 2
+screenshot = "hint_p2"
+
+[[step]]
+instance = 2
+expect_log = { absent = ["scoreboard: own score shown", "panicked at"], since = "run" }
+
+[[step]]
+instance = 1
+expect_log = { absent = ["panicked at"], since = "run" }
