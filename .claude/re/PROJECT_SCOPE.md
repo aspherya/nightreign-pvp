@@ -17,9 +17,10 @@ Brief descriptions of each mode’s rules and basic structure.
 | ID | Mode | Description |
 |---|---|---|
 | `MODE-01` | **Battle Royale** | Explore Limveld, fight PvE enemies, and gather equipment before competing against rival players or teams. The last surviving player or team wins. |
-| `MODE-02` | **Arena** | Fight in the Nightlord arena in Solo (1v1), Duo (2v2), or Trio (3v3). The first player or team to win three rounds takes the match. |
+| `MODE-02` | **Arena** | Fight in the Nightlord arena in Solo (1v1), Duo (2v2), or Trio (3v3), with a loadout chosen at the Sparring Grounds. Best of 3: the first player or team to win two rounds takes the match. |
 
-**Arena is still under refinement and comes after the first release. Only Battle Royale is built and tested.** The code should be decoupled enough that a new mode is an assembly of existing modules.
+**Arena is in design (started 2026-11-08, before the Battle Royale release and the launcher are finished).** Battle Royale is the
+built and tested mode. The code should be decoupled enough that a new mode is an assembly of existing modules.
 
 ## Match Completion
 After either mode ends, the winner receives a victory screen. Every participant receives an expedition report and returns to Roundtable Hold.
@@ -31,9 +32,9 @@ After either mode ends, the winner receives a victory screen. Every participant 
 | `MATCH-01` | **Battle Royale** | Solo | 6 players, all competing individually | Be the last player alive |
 | `MATCH-02` | **Battle Royale** | Duo | 3 teams of 2 | Be the last team alive |
 | `MATCH-03` | **Battle Royale** | Trio | 2 teams of 3 | Be the last team alive |
-| `MATCH-04` | **Arena** | Solo | 1v1 | Win 3 rounds |
-| `MATCH-05` | **Arena** | Duo | 2v2 | Win 3 rounds |
-| `MATCH-06` | **Arena** | Trio | 3v3 | Win 3 rounds |
+| `MATCH-04` | **Arena** | Solo | 1v1 (or 1 vs 1 bot, offline) | Best of 3: win 2 rounds |
+| `MATCH-05` | **Arena** | Duo | 2v2 | Best of 3: win 2 rounds |
+| `MATCH-06` | **Arena** | Trio | 3v3 | Best of 3: win 2 rounds |
 
 ## Game Mode: Battle Royale (`MODE-01`)
 
@@ -114,11 +115,41 @@ When one player (or team) is the last standing:
 7. The last surviving player or team wins.
 8. Show **VICTORY ACHIEVED**, present the expedition report, and return everyone to Roundtable Hold.
 
-## Arena (`MODE-02`, later)
-Players begin inside the Nightlord arena, with no expedition phase.
-- Solo: 1v1; Duo: 2v2; Trio: 3v3.
-- Starting loadout: players start at level 15 with their default weapons at legendary tier.
-- Victory: the first player or team to win three rounds wins the match.
+## Game Mode: Arena (`MODE-02`, in design)
+
+A short PvP duel mode with no expedition: players land straight in a Nightlord's arena with a build they chose before the match.
+
+### 1. Decided (Leonardo, 2026-11-08)
+- **Entry:** a new card in the Roundtable expedition list, **right below the Battle Royale card**. Solo / Duo / Trio as for Battle
+  Royale: Solo = 1v1, Duo = 2v2, Trio = 3v3. Commence on the card starts the Arena queue.
+- **Bots:** an offline option to play against a bot, at least in 1v1 (Duo / Trio with bots is not needed for now).
+- **Place:** a Nightlord's arena (the final boss fight of an expedition), no expedition phase, no Day 1 / Day 2. Which one: below.
+- **Spawn:** the players (teams) start facing each other at a medium to long distance, never next to each other.
+- **Loadout from the Sparring Grounds:** in the Roundtable's training area, the **Sparring Equipment** lets a player take any weapon
+  and talisman. The player builds the loadout there; when an Arena match starts, they enter with that loadout.
+- **No loadout chosen:** the player enters with the Nightfarer's default weapon, at legendary tier.
+- **Upgrade:** every weapon a player brings is at its **maximum upgrade level**.
+- **Level:** every player is always **level 15**.
+- **Match:** best of 3 (the first player or team to win two rounds wins). Replaces "win three rounds" of the first draft.
+- **Arena:** always **Heolstor's** arena (the Night Aspect, the final Nightlord). Heolstor is not spawned; only the players are there.
+- **Between rounds:** everyone goes back to their spawn with full HP, FP and flasks, skill cooldown reset, a short countdown before
+  the fight. **The ultimate (Ultimate Art) gauge is NOT reset:** it keeps charging across the rounds.
+- **Round time limit: 3 minutes**, to be tuned in testing. At the limit the side with more HP (sum in teams) wins the round
+  `[the HP tiebreak is the agent's proposal, not objected to]`.
+- **Relics are ON:** each player brings their own relics. The point of Arena is to try any relic build with any weapons and talismans.
+- **Flasks:** everyone has the **game's maximum** flask count, refilled each round.
+- **Loadout = the whole inventory:** the player enters with everything they put in their inventory at the Sparring Grounds (not only
+  what is equipped). The first slice may bring only what is equipped / held; the whole inventory is the target.
+- **Match end:** the loser sees the defeat ending, the winner **VICTORY**; then both go back to the Roundtable **out of the match's
+  session**, free to search another match or do anything else.
+
+### 2. Agent's proposals Leonardo did not object to (2026-11-08; change them any time)
+| Topic | Rule |
+|---|---|
+| End of a round, Solo | 0 HP ends the round at once (a 15 s bleed-out with nobody to revive is only a wait) |
+| End of a round, Duo / Trio | Battle Royale downed rules (teammate revive, rival hit −3 s); the round ends when a whole team is down or defeated; defeated players spectate until the round ends |
+| Leaver | A player (team) who leaves loses the match; the rest win |
+| Matchmaking | A separate queue per mode; 2 / 4 / 6 players; Duo / Trio fill short parties like Battle Royale (MM-FILL); private code works too |
 
 ## Scope vs game today (kept in sync by the agent; 2026-11-01)
 
@@ -142,7 +173,7 @@ Players begin inside the Nightlord arena, with no expedition phase.
 | Time limit | **None by decision** (§5): the closing circle ends the match; the game itself has no limit (the night-2 fallback ends nothing) |
 | Final-circle stall-breaker | **Built** (TIDE-MAX): the final circle closes to a point (`tide-close-max`); the tide's damage is vanilla. Most-kills tiebreak not built |
 | Revive item behaviour in this ruleset | **Not tested** (TASKS SOLO-REVIVE) |
-| Arena | Not started, after the first release |
+| Arena | In design (2026-11-08): §Arena. A direct warp into Heolstor's arena works solo (ARENA-0 spike 1); default spawns ±30 m on x |
 
 ## References
 

@@ -431,7 +431,7 @@ Test routes: **1 PC** = automated scenario (`nro`, one game), **2 inst** = two r
 | D6 | Match ends when one team is left, even on Day 1 | RW-1 | **Done on 1 PC** (`match-win`, `match-win-end`, `match-loss`) | 2 inst with real defeats; FS |
 | D7 | Private match by password, outside matchmaking | RW-6 | Unit-tested only (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
 
-Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements come first, only simple work with a valid result). Order when picked up again (2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena comes after the first release.
+Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements come first, only simple work with a valid result). Order when picked up again (2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena is in design since 2026-11-08 (ARENA-0).
 
 ## Not built yet (Leonardo, 2026-11-01; rules in `re/PROJECT_SCOPE.md`)
 
@@ -447,8 +447,38 @@ PROJECT_SCOPE §1 wants a Solo kill at night to be a real death at once unless t
 ### TIMELIMIT-1 — Match time limit (idea)
 Owner: OPUS | Status: idea, no schedule. PROJECT_SCOPE §1: "if a match passes the maximum vanilla time everyone loses". Not built.
 
-### MODE-02 — Arena (later)
-Not for the first release (PROJECT_SCOPE). The refactor goal (phase 2 of the clean-up) is code decoupled enough that a new mode is an assembly of existing modules.
+### ARENA-0 — Arena feasibility spikes (Leonardo 2026-11-08; rules PROJECT_SCOPE §Arena)
+Owner: OPUS (RE) + HUMAN (in-game looks) | Status: **spike 1 PASS solo (2026-11-08, branch `arena-0-spike`); spike 1b next** | Depends on: none
+Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike before code. Findings: MEMORY_MAP §27.
+1. **Enter Heolstor's arena — PASS solo (2026-11-08, testing-log).** The vanilla Day 3 chain is not usable by flags (TRAPS); our event
+   99100900 (`gamedata/emevd-arena.json`, dev only) runs Warp Player `2003[93]`(m18_00_00_00, 18002200) on our flag 10007500 and took
+   Leonardo from Day 1 of a Night Aspect expedition into Heolstor's arena in ~1 s. Arena: flat, centred on (0, 0, 0), ≥ ±150 m.
+   **Arena card — shows (2026-11-08, testing-log):** `NightBossMenuParam` row 17 "Arena" (sortId 2, right after Battle Royale) is
+   listed by a hardware breakpoint on the card list loop (`arena_card hook`, MEMORY_MAP §28; dev, hwbp slot 1). **Commence on it → straight into an
+   empty Heolstor arena: PASS solo (2026-11-08, testing-log)**: the Commence handler remembers the Arena card, the main loop sets
+   flag 10007500 3 s after LOCAL appears; Heolstor is kept off by `gamedata/emevd-arena-m18.json` and his fight never starts (`emevd-arena-func.json`: no 7511, no boss bar, 3 min checked). The hook holds hwbp slot 1 only at
+   the Roundtable with the queue idle (the quiet invite needs it only after a match is found). Left: the player build (hook + event
+   files are dev only), a queue test with the menu open.
+   **For ARENA-1 (Arena queue, player build) — Leonardo 2026-11-08:** the hook must stay armed while an Arena search runs (else a
+   reopened menu loses the Arena card mid-search) and give slot 1 back only when a match is FOUND (the quiet invite's moment).
+   Acceptance then: `mi-zero-click` PASS with the hook in the build, plus a solo check: Arena chosen, search, close and reopen the
+   menu, the card is still there, Stop Searching works.
+   **1b (next):** (a) two `nro` instances, each warped (the event is per game; is the session kept, do both see each other?); (b) from
+   the Battle Royale / Arena card's expedition instead of Night Aspect (a save that never unlocked Heolstor); (c) Heolstor not spawned
+   (read `m18_00_00_00` events: what spawns him and what 7510 / 7512 / 7000 do there); (d) what ends the match from `m18`.
+2. **Spawn points and round reset** `[spawns chosen, reset UNKNOWN]`: default spawns A (−30, 0, 0) / B (+30, 0, 0), 60 m apart,
+   facing each other (agent's default, Leonardo: tune later); teleport, full restore of HP / FP / flasks / skill cooldown without a
+   map reload, **while the ultimate gauge is kept**; the game's maximum flask count.
+3. **Level 15** `[UNKNOWN]`: how the game sets a Nightfarer's level (level-up call vs. memory write, the stats derive from it).
+4. **Max upgrade / legendary** `[HYPOTHESIS: the rarity tier is the +N in the item id, MEMORY_MAP §24 "Weapon level survives"]`: the
+   top level per weapon, and whether a Nightfarer's unique default weapon has one.
+5. **Sparring loadout** `[UNKNOWN]`: what the Sparring Equipment changes (real inventory in the Roundtable or a training-only
+   override; is it gone on leaving the area?), how to read the **whole inventory** at Commence and give it at the arena start
+   (inventory add + equip vs. our map-item drop, `game/itemdrop.rs`). Relics stay ON: check that the expedition start applies them.
+6. **Leave the session after the match** `[partly known: FS7-8 "F10 also leaves the session"]`: winner VICTORY, loser defeat, then both
+   at the Roundtable out of the session.
+Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns; ARENA-2 rounds (best of 3) and the end screens; ARENA-3
+level 15 + loadout + max upgrade; ARENA-4 1v1 bot; ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)
 

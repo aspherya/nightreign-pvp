@@ -149,6 +149,8 @@ pub(crate) const MENU_SETTINGS_TARGETS_BEGIN: usize = 0x58;
 pub(crate) const MENU_SETTINGS_TARGETS_END: usize = 0x60;
 /// The row of our Battle Royale card (`gamedata/nightbossmenu-rows.json`).
 pub(crate) const BR_CARD_ROW: i32 = 9;
+/// ARENA-0: the Arena card, `NightBossMenuParam` row 17 (added by `gamedata/nightbossmenu-rows.json`, listed by `game::arenacard`).
+pub(crate) const ARENA_CARD_ROW: i32 = 17;
 
 // ---- The NPC bot manager, CSNpcBotMan (MEMORY_MAP §15; OFF-3 static reading, game 1.03.3) ----
 /// Singleton name in the FD4 map (slot `exe+0x3C0B518` in 1.03.3; found by name, never by address).

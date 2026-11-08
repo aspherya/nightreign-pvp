@@ -122,6 +122,11 @@ impl<'m> ExpeditionMenu<'m> {
     /// True when our Battle Royale card is among the targets chosen in the expedition list, false for any other choice, `None` when the
     /// menu cannot be read (`layout::MENU_SETTINGS_TARGETS_BEGIN`).
     pub(crate) fn is_battle_royale_card(&self) -> Option<bool> {
+        self.has_card(BR_CARD_ROW)
+    }
+
+    /// ARENA-0: whether card row `row` is among the chosen targets (same list and checks as [`Self::is_battle_royale_card`]).
+    pub(crate) fn has_card(&self, row: i32) -> Option<bool> {
         /// More targets than this is not a list (the game sends at most 20, `exe+0xDF9EB5`).
         const MAX_TARGETS: usize = 20;
         let s = self.mem.read_ptr(self.addr.checked_add(MENU_SETTINGS)?)?;
@@ -137,7 +142,7 @@ impl<'m> ExpeditionMenu<'m> {
             return None;
         }
         for i in 0..n {
-            if self.mem.read_u32(begin.checked_add(i * 4)?)? as i32 == BR_CARD_ROW {
+            if self.mem.read_u32(begin.checked_add(i * 4)?)? as i32 == row {
                 return Some(true);
             }
         }

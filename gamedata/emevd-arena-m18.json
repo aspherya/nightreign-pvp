@@ -1,0 +1,7 @@
+{
+  "_comment": "ARENA-0 spike 1b (.claude/re/MEMORY_MAP.md §27): Heolstor's arena with no Heolstor. Applied to event/m18_00_00_00.emevd.dcx (the Night Aspect arena; its event 0 starts Heolstor's own common_func events 90075700..90075930, used by no other map) by scripts/build-gamedata.ps1, dev only. Every second the boss characters are disabled with their AI (the M5-3 disable_chr lines): 18000800 and 18000801 (the two Heolstor entities its events use), group 18005800 and 18000810 (passed with them to 90075700). Unverified which one is the visible boss.",
+  "file": "event/m18_00_00_00.emevd.dcx",
+  "events": [
+    { "id": 99100901, "disable": [18000800, 18000801, 18005800, 18000810], "secs": 1.0 }
+  ]
+}

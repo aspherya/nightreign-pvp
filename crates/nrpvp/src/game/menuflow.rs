@@ -72,6 +72,15 @@ pub(crate) const BOTS_MENU: bool = true;
 /// The main loop says whether LOCAL is in an expedition (the Bots row's breakpoint is armed only in the Roundtable: in an expedition slot 0
 /// belongs to the death hold and the revive block).
 static IN_EXPEDITION: AtomicBool = AtomicBool::new(false);
+/// ARENA-0: a Commence was pressed with the Arena card chosen (the game starts a normal expedition; the main loop then warps into the
+/// arena). Taken once by [`take_arena_commence`].
+static ARENA_COMMENCE: AtomicBool = AtomicBool::new(false);
+
+/// ARENA-0: true once after a Commence on the Arena card.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn take_arena_commence() -> bool {
+    ARENA_COMMENCE.swap(false, Ordering::Relaxed)
+}
 
 /// Called by the main loop every tick.
 pub(crate) fn set_in_expedition(on: bool) {
@@ -426,7 +435,14 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
                 Ordering::Relaxed,
             );
             match d {
-                Decision::Pass => {}
+                Decision::Pass => {
+                    if ExpeditionMenu::new(&mem, (*ctx).R14 as usize)
+                        .has_card(crate::game::layout::ARENA_CARD_ROW)
+                        == Some(true)
+                    {
+                        ARENA_COMMENCE.store(true, Ordering::Relaxed);
+                    }
+                }
                 Decision::PassBots => crate::features::bots::set_bots_match(true),
                 Decision::PassMultiplayer => {
                     let _ = settings.set_players(PLAYERS_TWO);

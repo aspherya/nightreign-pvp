@@ -5,7 +5,7 @@
 
 ## 1. What the mod does today
 
-Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Arena (`MODE-02`) is wanted later, not for the first release.
+Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). **Arena (`MODE-02`) is in design since 2026-11-08** (PROJECT_SCOPE §Arena, TASKS ARENA-0), ahead of the BR release.
 
 | Feature | State |
 |---|---|
@@ -61,7 +61,9 @@ accept a player alone (or a pair in Trio) and fill the team with random players;
 the Solo instant death, then the respawn on the hawk (RE first). Then a new zip and Duo / Trio with friends (DUOTRIO-1, never tested on
 real PCs). Before that session collect **every** player's logs.
 
-**Later:** GFX-1/2 (in-game UI, SB-5), Arena (MODE-02), player count (HOST_MIGRATION), SOLO-REVIVE, MODE-SCOPE, MM-8, normal
+**Arena (MODE-02), started 2026-11-08:** rules in PROJECT_SCOPE §Arena. ARENA-0 spike 1 PASS solo: our warp event (flag 10007500) takes a player from an expedition into Heolstor's arena (`m18`) in ~1 s (branch `arena-0-spike`, MEMORY_MAP §27). **An "Arena" card now shows right after Battle Royale** (row 17 + a breakpoint on the card list loop, MEMORY_MAP §28; dev only). **Commence on the Arena card now lands the player in an empty Heolstor arena (solo PASS, 2026-11-08).** Next: two instances (the warp is per game), rounds, then the player build.
+
+**Later:** GFX-1/2 (in-game UI, SB-5), player count (HOST_MIGRATION), SOLO-REVIVE, MODE-SCOPE, MM-8, normal
 expeditions (Leonardo has an idea). No match timer: the tide closes to a point (TIDE-MAX).
 
 ## 4. Repository state

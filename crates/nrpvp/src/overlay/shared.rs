@@ -68,6 +68,9 @@ pub(crate) enum Command {
     /// RW-3 (dev only): `drop_gear [dry]`: what a defeat would drop, or drop it now without a defeat (`game::defeatdrop`).
     #[cfg(feature = "dev")]
     DropGear(bool),
+    /// ARENA-0 (dev only): `arena_card [0|1|hook|unhook]` (`game::arenacard::Req` code).
+    #[cfg(feature = "dev")]
+    ArenaCard(u8),
 }
 
 /// HAWK-3 console commands (`hawk_*`).

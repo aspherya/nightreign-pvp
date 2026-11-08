@@ -114,3 +114,14 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   not), and a tag through walls would mark the downed player's spot. **A teammate's gauge must still show** (teammates are not
   filtered; checked in DUOTRIO-1).
 - **Duo / Trio fill short parties with random players** (Leonardo, 2026-11-08; reverses "complete parties only" of 2026-10-19 in MM-6): a player alone, or a pair in Trio, is queued and gets random teammates, as players expect from a battle royale. Needed before the first release. Card MM-FILL (TASKS); it also closes the MM-6 gap that the match does not take its teams from the queue roster.
+- **Arena (MODE-02) development starts now** (Leonardo, 2026-11-08): before the Battle Royale release (which waits only for a match
+  with more than 3 players) and before the launcher. Reverses "Arena comes after the first release" (2026-11-01). Rules decided the
+  same day (PROJECT_SCOPE §Arena 1): a card right below Battle Royale, Solo / Duo / Trio = 1v1 / 2v2 / 3v3, an offline bot at least
+  in 1v1, always the Nightlord's arena, spawns facing each other at medium / long range, loadout taken from the Sparring Grounds'
+  Sparring Equipment (none = the Nightfarer's default weapon at legendary tier), every weapon at max upgrade, everyone level 15,
+  **best of 3** (replaces "win three rounds" of the first draft).
+- **Arena details** (Leonardo, 2026-11-08, PROJECT_SCOPE §Arena 1): **Heolstor's** arena, no boss; between rounds everything resets
+  **except the ultimate gauge**, which keeps charging across rounds; **3-minute rounds** (tuned in testing); **relics ON** (trying relic
+  + weapon + talisman builds is the point; the agent had proposed off); **maximum flask count** for everyone; the loadout is the
+  **whole inventory** from the Sparring Grounds (a first slice may bring only the equipped items); loser sees defeat, winner VICTORY,
+  then both return to the Roundtable out of the session.

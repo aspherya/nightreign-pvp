@@ -18,7 +18,9 @@
     "99100116": "_______________________________________________________________________________________________________________________",
     "99100117": "_______________________________________________________________________________________________________________________",
     "131152": "Battle Royale",
-    "131153": "Rival teams. One victor.\n\nDefeat the other teams, take what they drop and outlast them all: the last team standing wins. Day 1 is free of the Night's Tide, so make it count; from Day 2 the Tide closes in."
+    "131153": "Rival teams. One victor.\n\nDefeat the other teams, take what they drop and outlast them all: the last team standing wins. Day 1 is free of the Night's Tide, so make it count; from Day 2 the Tide closes in.",
+    "131154": "Arena",
+    "131155": "Face to face. Best of three.\n\nStraight into Heolstor's arena with the build you chose at the Sparring Grounds. Win two rounds to take the match."
   },
   "EventTextForMap_dlc01": {
     "99100600": "Spectating: mouse buttons or D-pad left / right switch player. F10 or the pause menu leaves the match.",

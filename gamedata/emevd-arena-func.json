@@ -1,0 +1,8 @@
+{
+  "_comment": "ARENA-0 (.claude/re/MEMORY_MAP.md §27): Heolstor's fight never starts in his arena. Applied to event/common_func.emevd.dcx by scripts/build-gamedata.ps1 (after emevd-nights-func.json), dev only. The 900757xx events are started only by m18_00_00_00 (Heolstor). 90075701 sets 7511 'Nightlord fight started' when a player comes near or 60 s after arrival (seen live 2026-11-08: 7511, 7530, 18005xxx and the boss bar 'The Shape of Night' with Heolstor disabled); 90075704 shows his health bar. Both get END.",
+  "file": "event/common_func.emevd.dcx",
+  "replace": [
+    { "id": 90075701, "body": "end" },
+    { "id": 90075704, "body": "end" }
+  ]
+}

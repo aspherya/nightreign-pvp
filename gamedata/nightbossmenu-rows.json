@@ -26,6 +26,18 @@
             "depth1ChanceWeight": 0, "depth2ChanceWeight": 0, "depth3ChanceWeight": 0, "depth4ChanceWeight": 0, "depth5ChanceWeight": 0,
             "largeBossIconId": -1, "unk_00": 0
           }
+        },
+        {
+          "id": 17,
+          "mode": "add",
+          "_comment": "ARENA-0 (2026-11-08): the Arena card. The menu (exe+0x9E9330, MEMORY_MAP §28) lists rows 0..9 by position, then one row per byte b of the Everdark rotation list (CSServerInterface+0x30, row b + 10), then row 100; row 17 shows only when the DLL puts byte 7 into that list. Same values as the Battle Royale card, our texts 131154 / 131155, sorted right after it.",
+          "values": {
+            "unknown_0": 0, "expeditionNameId": 131154, "bossIconId": 41812, "unlockEventFlag": 0, "defeatEventFlag": 0,
+            "unknown_5": -1, "bossNameId": -1, "defeatedBossIconId": -1, "sortId": 2, "descriptionId": 131155,
+            "expeditionBackgroundId": 40427, "effectiveAffinity1": 0, "effectiveAffinity2": 0,
+            "depth1ChanceWeight": 0, "depth2ChanceWeight": 0, "depth3ChanceWeight": 0, "depth4ChanceWeight": 0, "depth5ChanceWeight": 0,
+            "largeBossIconId": -1, "unk_00": 0
+          }
         }
       ]
     }

@@ -71,6 +71,8 @@ pub(crate) enum MainReq {
     ItemDrop(u32, u16, [i32; 3]),
     /// RW-3: `drop_gear [dry]`.
     DropGear(bool),
+    /// ARENA-0: `arena_card [0|1|hook|unhook]` (a `game::arenacard` request code).
+    ArenaCard(u8),
 }
 
 /// What a command does.
@@ -174,6 +176,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "net_verdict", args: "<boss> <team>", help: "NET-2: publish `boss <boss> was won by team <team>` (topic BOSS_VERDICT) to every other player; each machine records it once", run: net_verdict },
     Spec { name: "net_publish", args: "<topic> <key> <value>", help: "NET-2: publish any fact (numbers); same rules as net_verdict", run: net_publish },
     Spec { name: "net_status", args: "", help: "NET-1: data channel counters (sent, received, pongs, last round trip)", run: net_status },
+    Spec { name: "arena_card", args: "[0|1|hook|unhook]", help: "ARENA-0 research: the Everdark rotation list the expedition menu reads (CSServerInterface+0x30); 1 adds byte 7 (card row 17 as an Everdark card), 0 removes it; hook = an execute breakpoint (hwbp slot 1) on the list builder's first loop (exe+0x9E9665) that adds row 17 as a normal card when the menu opens, unhook frees it", run: arena_card },
     Spec { name: "item_drop", args: "<id hex> [count] [dx dy dz]", help: "RW-3 E1 research: drop ONE item on the ground with the game's own drop function exe+0x576110 (the red phantom's open) at LOCAL's position (+ optional offset in metres) on the game thread; reply = result and the MapItemMan slots that changed. Ids: weapon = plain id, accessory = 0x20000000|id, goods = 0x40000000|id", run: item_drop },
     Spec { name: "drop_gear", args: "[dry]", help: "RW-3 test aid: what a rival's defeat drops (LOCAL's equipped weapons, talismans and picked-up consumables) and whether this game is the host; without `dry` it drops it NOW at LOCAL's spot (the host makes the drop, the game shows it to everyone) without a defeat", run: drop_gear },
     Spec { name: "mm_open_lobby", args: "", help: "MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread)", run: |_| { crate::game::matchstart::request_lobby(); Ok(Act::Reply("mm_open_lobby: requested".into())) } },
@@ -181,7 +184,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "br_card", args: "", help: "UI-3 test aid: whether the Battle Royale card is the chosen target of the expedition menu (yes, no or unknown; needs br_menu), and its Number of Players byte (2 Solo, 1 Duo, 0 Trio)", run: |_| Ok(Act::Reply(format!("br_card: {}, players byte {}", match crate::game::menuflow::last_card_is_br() { Some(true) => "yes", Some(false) => "no", None => "unknown" }, crate::game::menuflow::last_players().map_or("unknown".to_string(), |p| p.to_string())))) },
     Spec { name: "exec_trace", args: "<slot 1..3> <rva hex|0>", help: "MM-7 research: log every run of exe+rva with its registers and the code addresses on its stack (hardware execute breakpoint; 0 frees the slot)", run: exec_trace },
     Spec { name: "rawcall", args: "<rva hex> [arg]", help: "NET-5 research: call exe+rva(arg) once on the game thread (one integer argument), reply with rax. Example: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0)", run: rawcall },
-    Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), in this game only", run: flag },
+    Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), 7508 / 7510 / 7521-7523 (Day 3 chain), 7525, in this game only", run: flag },
     Spec { name: "session", args: "", help: "HM-0 research: role, protocol state, limit, host and players of this game's CSSessionManager, with raw qwords (read-only)", run: |_| crate::game::sessionprobe::session_cmd().map(Act::Reply) },
     Spec { name: "mobs_raw", args: "[n]", help: "HM-0 research: the n nearest living enemies (default 4) with position and the raw network fields of their ChrIns (read-only)", run: |a| crate::game::teleport::mobs_raw_cmd(a).map(Act::Reply) },
     Spec { name: "hm_leave_lobbies", args: "", help: "HM-1 research: this game leaves every Steam lobby it has seen, so the lobby owner moves as it does on real Steam when a host dies. The game stays running; end it right after", run: |_| { crate::steam::probe::HM_LEAVE_LOBBIES.store(true, std::sync::atomic::Ordering::Relaxed); Ok(Act::Reply("hm_leave_lobbies: requested".into())) } },
@@ -913,6 +916,19 @@ fn flag(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::Flag(id, value)))
 }
 
+fn arena_card(args: &[String]) -> Result<Act, String> {
+    use crate::game::arenacard as a;
+    let req = match args.first().map(String::as_str) {
+        None => a::REQ_SHOW,
+        Some("1") => a::REQ_ADD,
+        Some("0") => a::REQ_REMOVE,
+        Some("hook") => a::REQ_HOOK,
+        Some("unhook") => a::REQ_UNHOOK,
+        Some(_) => return Err("argument must be 0, 1, hook or unhook".into()),
+    };
+    Ok(Act::Main(MainReq::ArenaCard(req)))
+}
+
 fn mm_join(args: &[String]) -> Result<Act, String> {
     use crate::mm::join::JoinCmd;
     let j = match args.first().map(String::as_str) {
@@ -1053,6 +1069,10 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
         MainReq::DropGear(dry) => {
             run(Command::DropGear(dry));
             crate::game::defeatdrop::reply()
+        }
+        MainReq::ArenaCard(want) => {
+            run(Command::ArenaCard(want));
+            crate::game::arenacard::reply()
         }
         MainReq::RawCall(rva, arg) => {
             run(Command::RawCall(rva, arg));
@@ -1332,6 +1352,25 @@ mod tests {
             ran.push(c)
         });
         assert_eq!(ran, vec![Command::Flag(7000, Some(true))]);
+    }
+
+    #[test]
+    fn arena_card_maps_to_its_command() {
+        use crate::game::arenacard as a;
+        assert!(matches!(
+            arena_card(&[]),
+            Ok(Act::Main(MainReq::ArenaCard(a::REQ_SHOW)))
+        ));
+        assert!(matches!(
+            arena_card(&["hook".into()]),
+            Ok(Act::Main(MainReq::ArenaCard(a::REQ_HOOK)))
+        ));
+        assert!(arena_card(&["2".into()]).is_err());
+        let mut ran = Vec::new();
+        answer(MainReq::ArenaCard(a::REQ_REMOVE), &snap(), &mut |c| {
+            ran.push(c)
+        });
+        assert_eq!(ran, vec![Command::ArenaCard(a::REQ_REMOVE)]);
     }
 
     #[test]

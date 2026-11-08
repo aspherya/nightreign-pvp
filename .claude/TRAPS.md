@@ -101,3 +101,12 @@ Read when you touch the area named in a bullet, or before debugging something od
   `nro` instance exit in ~6 s (`P-module failed: alive=false, 0 modules`). `nro` hard-links the game's files into `Z:\nro-instances\i*\game`
   but never deletes one that left `Game\`, so remove such files there too. Check `Game\` for `winmm.dll`, `dlllist.txt`, `OnlineFix*`
   when every launch dies early.
+- **Day 3 by flags (ARENA-0, 2026-11-08):** writing 7507 early makes `common` 1100 skip 7508 for the whole expedition (it checks 7507
+  once, at its own step); the manual Shelter warp (7523, `common` 1200) does nothing in a solo session; the Day 3 asset's warp
+  (`90005910`) fades to black and leaves the player in `m60` when reached by flags (game restart needed). Use our Warp Player event
+  (flag 10007500, MEMORY_MAP §27) instead.
+- **`tp` hops drift (2026-11-08):** several `tp` calls in a row land up to ~150 m off target when the moving origin (`PlayerIns+0x80`)
+  steps between calls; re-read `pos` and correct with one last hop. `PlayerIns+0x38` is not a reliable "current tile" after teleports;
+  the `item_drop` reply gives the game's own map id and local position.
+- **Expedition cards (2026-11-08):** a new `NightBossMenuParam` row never shows by itself: the list takes rows at positions 0..9, the
+  Everdark rotation (hidden offline) and row 100 only (MEMORY_MAP §28). And a hardware READ watch on a param row crashes the game.

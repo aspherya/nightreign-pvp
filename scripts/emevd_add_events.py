@@ -134,7 +134,38 @@ def mirror_instrs(ev):
     ]
 
 
+def warp_instrs(ev):
+    """ARENA-0: a per-game warp. When our flag goes ON, this game's player is warped to entity `entity` of map `warp`
+    ([area, block, region, index], e.g. [18, 0, 0, 0] = m18_00_00_00) with Warp Player 2003:93, the instruction the Spirit Shelter's
+    `m12` event 12002099 and `common` 1200 use (args: u8 area, u8 block, u8 region, u8 index, u32 entity). Then the event restarts."""
+    flag, (a, b, r, i), entity = ev['flag'], ev['warp'], ev['entity']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        set_flag(flag, False),
+        (2003, 93, struct.pack('<BBBBI', a, b, r, i, entity)),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
+def disable_instrs(ev):
+    """ARENA-0: keep characters off. Every `secs` the listed entities (characters or character groups) get the same two lines as
+    the M5-3 "disable_chr" body (2004:5 and 2004:1 with state 0: the character and its AI disabled), so a game event that enables
+    them again is undone within `secs`. Runs as long as the map is loaded."""
+    out = []
+    for e in ev['disable']:
+        out.append((2004, 5, struct.pack('<iB3x', e, 0)))
+        out.append((2004, 1, struct.pack('<iB3x', e, 0)))
+    out.append((1001, 0, struct.pack('<f', float(ev.get('secs', 1.0)))))
+    out.append((1000, 4, struct.pack('<B3x', 1)))
+    return out
+
+
 def build_event_instrs(ev):
+    if 'disable' in ev:
+        return disable_instrs(ev)
+    if 'warp' in ev:
+        return warp_instrs(ev)
     if 'mirror' in ev:
         return mirror_instrs(ev)
     if 'night_end' in ev:

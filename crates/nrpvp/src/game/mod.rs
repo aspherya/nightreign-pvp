@@ -25,6 +25,8 @@ pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod gamemem;
 pub(crate) mod gametoast;
+#[cfg(feature = "dev")]
+pub(crate) mod arenacard;
 pub(crate) mod hawk;
 pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;
@@ -520,6 +522,9 @@ fn watch(
         }
         // BOT-5: the Bots row's breakpoint stays in the Roundtable.
         menuflow::set_in_expedition(world.in_expedition());
+        // ARENA-0 (dev): the Arena card's list hook and the warp after a Commence on it.
+        #[cfg(feature = "dev")]
+        arenacard::tick(base, world.in_expedition(), world.local.is_some());
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]
@@ -576,6 +581,8 @@ fn watch(
                 Command::ItemDrop(id, n, off) => itemdrop::aid(base, id, n, off),
                 #[cfg(feature = "dev")]
                 Command::DropGear(dry) => defeatdrop::aid(base, world.local, dry),
+                #[cfg(feature = "dev")]
+                Command::ArenaCard(req) => arenacard::console_cmd(base, req),
                 Command::Bots(b) => {
                     if let Some(f) = features.get_mut::<BotsFeature>() {
                         f.request(
@@ -748,6 +755,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         Command::ItemDrop(..) => {}
         #[cfg(feature = "dev")]
         Command::DropGear(..) => {}
+        #[cfg(feature = "dev")]
+        Command::ArenaCard(..) => {}
         // MM-2: only hands the request to the Steam worker thread (a bounded queue push); never calls Steam here.
         Command::MmQueue(mode) => {
             if !crate::mm::send(crate::mm::Cmd::Queue(mode)) {

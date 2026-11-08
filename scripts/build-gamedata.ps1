@@ -52,6 +52,8 @@ $pinnedEmevd = @{
     'event/m10_00_00_00.emevd.dcx' = 'A4D87CAEBE834496F66B958E1FCDE0190006CB97ACE6805AB1A02A00C642D55B'
     'event/common.emevd.dcx'       = '0018635B07959514CD9F1DF4E4889959B649C04E175567E6D8A8E2F11B0E2805'
     'event/common_func.emevd.dcx'  = '374186FCC2782FA9EABCEEE4F8ADA8854C50DB309CC7D476D262EF3B7B105794'
+    # event\m18_00_00_00.emevd.dcx of game 1.03.3 (ARENA-0: Heolstor's arena).
+    'event/m18_00_00_00.emevd.dcx' = '685531433FB79CB955E9D6B864098128E9DBD0097610E5AA6B3C1FDCC1A4FED4'
 }
 # Our event scripts (each names its target in "file"), applied in this order; Dev = left out of the player copy.
 $eventsFiles = @(
@@ -59,7 +61,13 @@ $eventsFiles = @(
     # BOT-5 (2026-11-06): the bot events are a player feature (Bots On in Matchmaking Settings), so no longer dev-only.
     @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json'); Dev = $false },
     @{ Path = (Join-Path $repo 'gamedata\emevd-nights.json'); Dev = $false },
-    @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json'); Dev = $false }
+    @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json'); Dev = $false },
+    # ARENA-0 (2026-11-08): the warp to Heolstor's arena (our flag 10007500), dev only until the Arena mode is built.
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena.json'); Dev = $true },
+    # ARENA-0 1b: Heolstor kept off in his arena (m18), dev only.
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-m18.json'); Dev = $true },
+    # ARENA-0: Heolstor's fight never starts (no 7511, no boss bar), dev only.
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-func.json'); Dev = $true }
 )
 $outPlayer = Join-Path $repo 'dist\gamedata-player'
 

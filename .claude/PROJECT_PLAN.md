@@ -44,7 +44,7 @@ Each row says what the game or our tests already give us, and what has to be fou
 | F15 | Mode selection in Roundtable Hold | SC already edits that menu | Our own menu entry or a panel toggle; all clients agreeing on the mode | Medium |
 | F17 | Sites of Grace blocked while a player is engaged in PvP (no HP / flask restore) | Grace behaviour is vanilla | **Built (GRACE-1):** game flag 7525 ("all bonfires disabled") ON per game while engaged; no hook needed (MEMORY_MAP §26) | Medium |
 | F18 | Match time limit: past the maximum vanilla time everyone loses | - | Not built (TASKS TIMELIMIT-1, idea) | Low |
-| F19 | Arena mode (MODE-02), later | Nightlord arena exists | Decoupled modules first (refactor); not for the first release | - |
+| F19 | Arena mode (MODE-02): 1v1 / 2v2 / 3v3 in the Nightlord arena, Sparring loadout, level 15, best of 3 | Nightlord arena and the Day 3 warp exist; the Sparring Equipment exists | Enter the arena with no boss, rounds, level and loadout control (TASKS ARENA-0) `[UNKNOWN]` | High |
 | F16 | Install and launch for normal players | Friend kit with a script | A launcher | Medium |
 
 ## 3. Public queues and initial player cap
