@@ -193,12 +193,48 @@ rules follow "this expedition came from our card" and which stay always on; the 
 
 ### MM-6 — Duo and Squad with rivals: Steam ID → expedition player
 Owner: OPUS to card in detail | Status: **started 2026-11-02**: the menu queues Duo / Trio (`br_menu`), a Duo party of 2 reaches an expedition as teammates (`mi-duo-party`); open: the 6-player 3-team match, Trio, messages for a party member / no party, the roster → team mapping with several teams | Settles: S9 U7
-Match sizes (Leonardo, 2026-10-19): Duo = 3 teams of 2, Squad = 2 teams of 3, always 6 players; complete parties only.
+Match sizes (Leonardo, 2026-10-19): Duo = 3 teams of 2, Squad = 2 teams of 3, always 6 players. ~~Complete parties only~~: since
+2026-11-08 a short party is filled with random players (MM-FILL, DECISIONS).
 With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapped to expedition players on every client.
 
 **Direction 2026-10-21:** no Steam window on any screen, everyone arrives ready and the match starts itself, the host is invisible and chosen by the matchmaker; host leaving = host migration (HOST_MIGRATION.md).
 
 **Done 2026-11-05: MM-3g and MM-7** (`mi-zero-click` PASS 3/3; `game/matchstart.rs`, MEMORY_MAP §12). Their real-Steam check is FS-HM1 item 9. Left as polish, no card: the table menu stays open during the departure. Cards removed; text in git.
+
+### MM-FILL — Duo / Trio fill a short party with random players (before the first release)
+Owner: OPUS (spec, review) → SONNET/implementer → FS | Status: card written 2026-11-08, not started | Depends on: MM-6 roster → team
+mapping (part B below, which premade Duo / Trio with more than one team need anyway) | Phase: before release (Leonardo 2026-11-08)
+Goal: a player alone (or a party of 2 in Trio) who picks Duo / Trio and presses Commence is queued and gets random teammates, as in
+any battle royale; today `build_party` (`mm/machine.rs`) refuses with "Duo needs a Seamless Co-op party".
+Context: MATCHMAKING.md §3–§4; `mm/machine.rs` (`build_party`, ticket report, MATCH READY roster), `mm/proto.rs` (`RosterEntry`,
+tickets), `rules/teams.rs`, `game/combat_state` (`team_key`), re/MEMORY_MAP.md §12 and line "Each player's Steam ID inside the game" (U7, open).
+**Why it is not only a queue change** `[VERIFIED: code 2026-11-08]`: in the match the teams are **not** taken from the queue roster.
+Every game sorts the session player ids (`ChrIns+0x78`) and chunks them by `team_size` (`rules/teams.rs::assign_teams`). With one team
+(`mi-duo-party`, 2 players) that is right by luck; with 3 teams of 2 a premade pair or a filled pair can be split. So the fill needs
+the roster's team to reach the match (part B).
+Steps:
+- **A. Queue packing (small, pure logic + FakeSteam).** Allow a short party (Duo: size 1; Trio: size 1 or 2; Solo unchanged). The queue
+  owner packs tickets into teams of `team_size` (a party is never split; largest parties first, ties by Steam id) and writes a team
+  number per member in `roster` (`id:party:team`, bump `proto`). A lobby only takes a ticket it can still pack: the owner publishes the
+  biggest party it can still fit (e.g. `fit`), searchers filter `fit >= my size` (numerical filter; check FakeSteam and
+  `steam_api64.dll` have `AddRequestLobbyListNumericalFilter`). Trio is the only mode where packing can fail (2+2+2); Duo always packs.
+  The Seamless Co-op party lobby of a short party still travels as one ticket (the leader queues, as today).
+- **B. Roster team → match team (medium, no RE planned).** Each game writes its own session id (slot 0 = local, MEMORY_MAP) and its
+  roster team number as **member data on the Seamless Co-op lobby** (`nrpvp_pid`, `nrpvp_team`) once the expedition loads; every game
+  builds `id → team` from the members and uses it for `team_no` instead of the chunking; chunking stays the fallback when a member has
+  not written it. `[HYPOTHESIS]` our member data on SC's lobby is harmless to SC and the session id is stable for the whole
+  expedition: check both first (one log line each, `mi-duo-party`). Host migration must keep the mapping (HOST_MIGRATION.md).
+  Fallback if member data on SC's lobby is refused: RE U7 (Steam id of a ChrSet player).
+- **C. After the match.** Random teammates leave each other's Seamless Co-op lobby as Solo players do (FS7-8 `leave_sc`); a premade
+  party member stays with the own party. Status lines for "Searching for teammates...".
+Deliverables: `mm/machine.rs`, `mm/proto.rs`, the team source in `game/combat_state` / `rules/teams.rs`, unit tests, a scenario,
+MATCHMAKING.md §3–§4 (Duo / Trio flow, new keys), CONSOLE.md if a command changes.
+Acceptance: unit tests for packing (Duo 1+1+2+2, Trio 2+1+3, Trio refuses a third 2) and for `id → team` with shifted ids;
+`mi-duo-fill` (NRO-MI, two single instances pick Duo, `mm_max_players = 2`) reaches the expedition as teammates with `team from roster`
+in both logs; `mi-duo-party` still PASS. **FS (needs 4+ players):** 2 teams of 2 where one team is filled, and a premade pair against
+a filled pair; teammates are allies, rivals are hostile, teams match the roster on every game.
+Out of scope: skill-based matching, choosing teammates, the 6-player size in the player zip (still the pre-release flag), bots as teammates.
+Result: —
 
 ### MM-8 — Host chosen by the matchmaker (best connection)
 Owner: OPUS (spec) → SONNET/implementer → FS | Status: idea only (matchmaking declared finished, DECISIONS 2026-11-07) | Depends: —

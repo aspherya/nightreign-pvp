@@ -34,7 +34,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Launcher app (LAUNCH-1, branch `launcher-app`):** `NightreignPvP.exe` (Tauri 2): first-run wizard (game folder, Seamless Co-op via Nexus, the mod from GitHub releases), update check, Play then the app closes. **Built, unit-tested and tried on a local staged release; not yet tried by Leonardo.** A draft: Leonardo creates the public releases repo; **no release is published before the final test session with more than 3 players** (RELEASE §5b).
 
-**Not built yet** (scope in PROJECT_SCOPE): the most-kills tiebreak for edge cases (no timer, by decision), Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6).
+**Not built yet** (scope in PROJECT_SCOPE): the most-kills tiebreak for edge cases (no timer, by decision), Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6) with random players filling a short party (MM-FILL, before release).
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 

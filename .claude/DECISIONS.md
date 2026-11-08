@@ -113,3 +113,4 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   for the others. Why keep it: as in Apex / Warzone the downed pose is the signal; the bleed-out time is a teammate's tool (revive or
   not), and a tag through walls would mark the downed player's spot. **A teammate's gauge must still show** (teammates are not
   filtered; checked in DUOTRIO-1).
+- **Duo / Trio fill short parties with random players** (Leonardo, 2026-11-08; reverses "complete parties only" of 2026-10-19 in MM-6): a player alone, or a pair in Trio, is queued and gets random teammates, as players expect from a battle royale. Needed before the first release. Card MM-FILL (TASKS); it also closes the MM-6 gap that the match does not take its teams from the queue roster.
