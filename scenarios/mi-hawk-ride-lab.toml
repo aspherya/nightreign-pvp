@@ -1,0 +1,67 @@
+name = "mi-hawk-ride-lab"
+about = "FS7-5 lab (no verdict that matters): can the mod start a hawk ride for LOCAL standing on the ground (377 answered 1 = tree hawk, the off-route fall held for 20 s)? Positions and photos during the ride: does it lift off, how high, does it move, and where it drops"
+tags = ["mi", "lab"]
+# One emulated-Steam instance (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running.
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+[[step]]
+console = "god 1"
+[[step]]
+sleep_ms = 8000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "ground"
+[[step]]
+console = "hawk_ride tree 20 150"
+[[step]]
+wait_log = { contains = ["FS7-5 ride started"], timeout_s = 10, since = "run" }
+[[step]]
+sleep_ms = 1500
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "ride_1s"
+[[step]]
+sleep_ms = 3000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "ride_4s"
+[[step]]
+sleep_ms = 6000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "ride_10s"
+[[step]]
+wait_log = { contains = ["FS7-5 ride hold over"], timeout_s = 20, since = "run" }
+[[step]]
+sleep_ms = 2000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "falling"
+[[step]]
+sleep_ms = 12000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "landed"
+[[step]]
+console = "hawk_trace"
+[[step]]
+expect_log = { absent = ["panicked at"], since = "run" }

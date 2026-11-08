@@ -1084,7 +1084,7 @@ fn every_act_variant_appears_in_the_goldens() {
         }
     }
     for v in [
-        "Teleport(",
+        "HawkRespawn(",
         "Follow(",
         "GameFlag(",
         "DeathHold(true)",

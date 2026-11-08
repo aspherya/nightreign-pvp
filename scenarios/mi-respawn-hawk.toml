@@ -1,0 +1,52 @@
+name = "mi-respawn-hawk"
+about = "FS7-5: a mob death (RW-2) respawns LOCAL in the air on a hawk: 150 m above the respawn point, a tree-hawk ride the player steers and leaves with F / Alt; after 15 s the mod drops a player still riding, and the vanilla separation fall lands them unhurt (not defeated)"
+tags = ["mi", "rules"]
+# One emulated-Steam instance (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running.
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+navigate = "expedition"
+god = false   # a mob death is the point: no god mode
+[[step]]
+puppets = 3
+[[step]]
+puppet_ring = 6
+[[step]]
+console = "flag 10007420 1"
+[[step]]
+console = "hp0"
+[[step]]
+wait_log = { contains = "died to an enemy", timeout_s = 40, since = "run" }
+[[step]]
+wait_log = { contains = ["respawn on the hawk", "FS7-5 ride started"], timeout_s = 60, since = "run" }
+[[step]]
+console = "god 1"
+[[step]]
+sleep_ms = 4000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "air"
+[[step]]
+wait_log = { contains = ["FS7-5 ride time over: the hawk drops the player now"], timeout_s = 25, since = "run" }
+[[step]]
+sleep_ms = 15000
+[[step]]
+console = "pos"
+[[step]]
+screenshot = "landed"
+[[step]]
+expect = { console = "night_status", contains = ["LOCAL in", "mob deaths 1"], absent = ["defeated"] }
+[[step]]
+expect_log = { contains = ["died to an enemy"], absent = ["defeated by", "start step HELD", "panicked at", "HawkRespawn"], since = "run" }

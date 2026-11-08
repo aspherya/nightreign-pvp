@@ -89,6 +89,9 @@ pub(crate) enum HawkCmd {
     Start(u8),
     /// HAWK-4 polish: the hawk's x1.3 speed during a dive.
     Boost(bool),
+    /// FS7-5 probe: start a ride for LOCAL now (377 answered `kind`: 1 tree, 4 start) with no fall for `secs` seconds, after lifting
+    /// LOCAL by the third value (metres; 0 = where it stands).
+    Ride(u8, u32, u32),
     /// Everything off and the game's switch back.
     Off,
     /// Only the state line.

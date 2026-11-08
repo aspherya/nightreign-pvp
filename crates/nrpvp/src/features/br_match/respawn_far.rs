@@ -1,4 +1,5 @@
 //! RW-7: after a mob's death, LOCAL is moved to the pool place farthest from the other living players. The pool is recorded on Day 1.
+//! FS7-5: every such respawn then starts in the air on a hawk ride above that place ([`Act::HawkRespawn`]).
 
 use std::collections::VecDeque;
 
@@ -125,8 +126,11 @@ impl MatchRule for RespawnFar {
                 .clock
                 .is_none_or(|c| !before(c.time, TIDE_FROM) || c.time.h >= 20);
         if circle_open {
-            out.lines
-                .push("night_match: respawn left to the game (the circle is closing)".into());
+            out.acts.push(Act::HawkRespawn(None));
+            out.lines.push(
+                "night_match: respawn left to the game (the circle is closing); on the hawk from there"
+                    .into(),
+            );
             return;
         }
         let others: Vec<[f32; 3]> = fighters
@@ -142,6 +146,7 @@ impl MatchRule for RespawnFar {
                 .fold(f32::INFINITY, f32::min)
         });
         if here_far.is_some_and(|d| d >= FAR_ENOUGH) {
+            out.acts.push(Act::HawkRespawn(None));
             out.lines.push(format!(
                 "night_match: respawned {:.0} m from the nearest player; no move",
                 here_far.unwrap_or(0.0)
@@ -150,7 +155,7 @@ impl MatchRule for RespawnFar {
         }
         match farthest_place(&self.places, &others) {
             Some((p, d)) if here_far.is_none_or(|h| d > h) => {
-                out.acts.push(Act::Teleport(p));
+                out.acts.push(Act::HawkRespawn(Some(p)));
                 out.lines.push(format!(
                     "night_match: respawn moved to ({:.1}, {:.1}, {:.1}), {d:.0} m from the nearest player (was {})",
                     p[0],
@@ -159,10 +164,13 @@ impl MatchRule for RespawnFar {
                     here_far.map_or("?".into(), |h| format!("{h:.0} m"))
                 ));
             }
-            _ => out.lines.push(
-                "night_match: respawn stays where the game put it (no better place recorded)"
-                    .into(),
-            ),
+            _ => {
+                out.acts.push(Act::HawkRespawn(None));
+                out.lines.push(
+                    "night_match: respawn stays where the game put it (no better place recorded)"
+                        .into(),
+                );
+            }
         }
     }
 
@@ -204,7 +212,11 @@ mod tests {
         back.positions[1] = Some([10.0, 0.0, 0.0]);
         run(&mut c, 12_000, &back);
         let (acts, _, lines) = run(&mut c, 12_000 + RESPAWN_MOVE_DELAY_MS, &back);
-        assert_eq!(acts, vec![Act::Teleport([1000.0, 0.0, 0.0])], "{lines:?}");
+        assert_eq!(
+            acts,
+            vec![Act::HawkRespawn(Some([1000.0, 0.0, 0.0]))],
+            "{lines:?}"
+        );
     }
 
     #[test]
@@ -223,7 +235,11 @@ mod tests {
         back.positions[1] = Some([900.0, 0.0, 0.0]);
         run(&mut c, 12_000, &back);
         let (acts, _, _) = run(&mut c, 15_100, &back);
-        assert!(acts.is_empty());
+        assert_eq!(
+            acts,
+            vec![Act::HawkRespawn(None)],
+            "FS7-5: no move, but on the hawk"
+        );
     }
 
     #[test]

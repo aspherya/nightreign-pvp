@@ -60,6 +60,7 @@ t=001800 in: [6001*:hp0/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09
 t=015000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
           .
 t=060000 in: [6001*:hp240/s0 6002:hp240/s0 6003:hp240/s0 6004:hp240/s0] | clock 09:00:00 x17.06 | pos (10,20,30)
+          acts: HawkRespawn(None)
           log: night_match: respawned inf m from the nearest player; no move
 
 == 2 v 2 win: the other team is out (day1_secs 1020, defeat_exit_secs 20, spectate false)

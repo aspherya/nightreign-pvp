@@ -4,13 +4,11 @@
 
 use super::Targets;
 use crate::game::gamemem::GameMem;
-use crate::game::{deathhold, defeatdrop, flags, menugate, spawn, views};
+use crate::game::{deathhold, defeatdrop, flags, hawk, menugate, spawn, views};
 
 /// What the match rules ask the main loop to do (besides our flags, which go through [`super::Ctx::flags`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Act {
-    /// Move LOCAL to this world position.
-    Teleport([f32; 3]),
     /// RW-1: move the defeated, invisible body next to the watched player (10 times a second, so the move is not logged).
     Follow([f32; 3]),
     /// Write one of the game's flags (`game::flags::MATCH_WRITABLE`).
@@ -28,6 +26,9 @@ pub(crate) enum Act {
     /// FS7-8: a defeated player chose to leave the match (F10 or the defeat-exit timer): once back at the Roundtable the matchmaking
     /// worker also leaves the Seamless Co-op lobby (`mm::ask_leave_session`).
     LeaveSession,
+    /// FS7-5: a mob-death respawn starts in the air on a hawk: LOCAL goes [`hawk::RESPAWN_LIFT`] above this world position (`None` =
+    /// where it stands) and a tree-hawk ride starts (`game::hawk::request_ride`).
+    HawkRespawn(Option<[f32; 3]>),
 }
 
 /// Carry out the match rules' requests (the hold of a defeated player, a move, the game's flags, the clock's speed).
@@ -35,17 +36,6 @@ pub(super) fn run_acts(acts: Vec<Act>, t: Targets, mem: &dyn GameMem) {
     let (local, base, play_area) = (t.local, t.base, t.play_area);
     for a in acts {
         let r: Result<(), &'static str> = match a {
-            Act::Teleport(to) => match local.map(|p| spawn::teleport(p, base, to)) {
-                Some(Ok(from)) => {
-                    tracing::info!(
-                        "night_match: moved LOCAL from world ({:.1}, {:.1}, {:.1}) to ({:.1}, {:.1}, {:.1})",
-                        from[0], from[1], from[2], to[0], to[1], to[2]
-                    );
-                    Ok(())
-                }
-                Some(Err(e)) => Err(e),
-                None => Err("no local player"),
-            },
             Act::Follow(to) => match local.map(|p| spawn::teleport(p, base, to)) {
                 Some(Ok(_)) => Ok(()),
                 Some(Err(e)) => Err(e),
@@ -66,6 +56,22 @@ pub(super) fn run_acts(acts: Vec<Act>, t: Targets, mem: &dyn GameMem) {
                 menugate::set_active(on);
                 Ok(())
             }
+            Act::HawkRespawn(at) => match local {
+                Some(p) => match at.or_else(|| spawn::world_position_of(p, p, base)) {
+                    Some(t) => {
+                        let to = [t[0], t[1] + hawk::RESPAWN_LIFT, t[2]];
+                        spawn::teleport(p, base, to).map(|_| {
+                            hawk::request_ride(1, hawk::RESPAWN_RIDE_SECS);
+                            tracing::info!(
+                                "night_match: respawn on the hawk at ({:.1}, {:.1}, {:.1}), {:.0} m up",
+                                to[0], to[1], to[2], hawk::RESPAWN_LIFT
+                            );
+                        })
+                    }
+                    None => Err("position unreadable"),
+                },
+                None => Err("no local player"),
+            },
             Act::LeaveSession => {
                 crate::mm::ask_leave_session();
                 Ok(())

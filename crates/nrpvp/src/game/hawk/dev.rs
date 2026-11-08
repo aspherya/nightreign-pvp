@@ -3,13 +3,11 @@
 
 use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use super::*;
 use crate::overlay::shared::HawkCmd;
 
-/// How long `hawk_drop` keeps answering "route ended" (the script may read it a few frames late).
-const DROP_HOLD: Duration = Duration::from_millis(1500);
 /// `hawk_trace all`: ids below this are tracked; an id that changes more than [`NOISY`] times in one tick is muted.
 const ALL_IDS: usize = 2048;
 const NOISY: u32 = 8;
@@ -150,6 +148,19 @@ pub(crate) fn command(cmd: HawkCmd, base: usize, size: usize) {
                 "HAWK-4 boost {}: dives fly at the hawk's x1.3 speed",
                 if on { "ON" } else { "OFF" }
             );
+        }
+        HawkCmd::Ride(kind, secs, rise) => {
+            drop(c);
+            let local = LOCAL.load(Ordering::Relaxed);
+            if rise > 0 && local != 0 {
+                // Probe: lift LOCAL first (one move, straight up), then ask the ride while it falls.
+                let r = crate::game::spawn::world_position_of(local, local, base).map(|p| {
+                    crate::game::spawn::teleport(local, base, [p[0], p[1] + rise as f32, p[2]])
+                });
+                tracing::info!("FS7-5 lift {rise} m before the ride: {r:?}");
+            }
+            request_ride(i32::from(kind), secs);
+            c = ctl();
         }
         HawkCmd::Off => {
             CRUISE.store(false, Ordering::Relaxed);

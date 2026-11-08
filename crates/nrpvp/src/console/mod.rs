@@ -216,6 +216,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "hawk_start", args: "0|1|2", help: "HAWK-4: ride start: 0 show the tree start animation, 1 cut it (default), 2 vanilla start then tree ride 2 s later", run: hawk_start },
     Spec { name: "hawk_boost", args: "0|1", help: "HAWK-4: dives fly at the hawk's x1.3 speed (1, default) or normal speed (0)", run: hawk_boost },
     Spec { name: "hawk_off", args: "", help: "HAWK-3: everything off and the game's env switch put back", run: |_| Ok(Act::Main(MainReq::Hawk(HawkCmd::Off))) },
+    Spec { name: "hawk_ride", args: "[tree|start] [secs] [rise]", help: "FS7-5: start a hawk ride for LOCAL now (377 answered 1 tree / 4 start once), no fall for secs (default tree 30), after lifting LOCAL rise metres (default 0)", run: hawk_ride },
     Spec { name: "mm_join", args: "link|invite|direct|unlock_public|unlock_invisible|relock", help: "one join-method attempt for the ready match (dev, mm_join = true)", run: mm_join },
     Spec { name: "mm_sc_create", args: "", help: "create a lobby the game's way and see if Seamless Co-op adopts it (dev, mm_sc_create = true)", run: |_| Ok(mm(Command::MmScCreate, "SC lobby create test")) },
     Spec { name: "mm_quiet_test", args: "", help: "suppress the Steam invite window for 60 s (dev, mm_quiet_invite = true)", run: |_| Ok(mm(Command::MmQuietTest, "quiet invite test")) },
@@ -525,6 +526,31 @@ fn hawk_start(args: &[String]) -> Result<Act, String> {
         _ => return Err("expected 0, 1 or 2".into()),
     };
     Ok(Act::Main(MainReq::Hawk(HawkCmd::Start(m))))
+}
+
+fn hawk_ride(args: &[String]) -> Result<Act, String> {
+    let kind = match args.first().map(String::as_str) {
+        None | Some("tree") => 1,
+        Some("start") => 4,
+        _ => return Err("usage: hawk_ride [tree|start] [secs] [rise]".into()),
+    };
+    let secs = match args.get(1) {
+        None => 30,
+        Some(s) => s
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=600).contains(n))
+            .ok_or("secs must be 1..600")?,
+    };
+    let rise = match args.get(2) {
+        None => 0,
+        Some(s) => s
+            .parse::<u32>()
+            .ok()
+            .filter(|n| *n <= 400)
+            .ok_or("rise must be 0..400 m")?,
+    };
+    Ok(Act::Main(MainReq::Hawk(HawkCmd::Ride(kind, secs, rise))))
 }
 
 fn hawk_boost(args: &[String]) -> Result<Act, String> {

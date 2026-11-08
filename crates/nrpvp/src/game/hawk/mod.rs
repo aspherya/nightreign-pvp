@@ -110,6 +110,20 @@ static SKIP_ANIM: AtomicBool = AtomicBool::new(false);
 /// Mode 2: the hook saw a vanilla start (4); the main loop arms [`SWITCH_NOW`] after [`LATE_SWITCH`].
 static VANILLA_START: AtomicBool = AtomicBool::new(false);
 static SWITCH_NOW: AtomicBool = AtomicBool::new(false);
+/// How long a drop keeps answering "route ended" (the script may read it a few frames late).
+const DROP_HOLD: Duration = Duration::from_millis(1500);
+/// FS7-5: a respawn after a mob's death starts this high above the respawn point, on a tree-hawk ride that ends by itself after
+/// [`RESPAWN_RIDE_SECS`] (lab 2026-11-08, run 1794104707: lifted 150 m the ride holds y ~199 and flies on with no route, showing
+/// the game's own "Hold F: Descend / Alt: Disembark").
+pub(crate) const RESPAWN_LIFT: f32 = 150.0;
+pub(crate) const RESPAWN_RIDE_SECS: u32 = 15;
+/// FS7-5: LOCAL's `GetBirdMovementDirectionTime` (394) asks: the hawk states ask it every frame, so a count that moves = on a hawk.
+static DIR_ASKS: AtomicU64 = AtomicU64::new(0);
+/// FS7-5: a ride asked for LOCAL on the ground: the 377 answer to give once (0 = none), how many were given, and whether the off-route
+/// time (384) is held below the fall limit (the ride has no route, so the vanilla tree loop would drop the player after 2 s).
+static RIDE_REQ: AtomicI32 = AtomicI32::new(0);
+static RIDES_ANSWERED: AtomicU64 = AtomicU64::new(0);
+static RIDE_HOLD: AtomicBool = AtomicBool::new(false);
 /// Parity of the rider's `GetSpEffectID(99230)` calls during a dive (speed check, then exits check).
 static BOOST_PARITY: AtomicBool = AtomicBool::new(false);
 static BOOSTS_ANSWERED: AtomicU64 = AtomicU64::new(0);
@@ -162,6 +176,11 @@ struct Ctl {
     skip_since: Option<Instant>,
     vanilla_since: Option<Instant>,
     native_trees_logged: u64,
+    /// FS7-5: when the asked ride's no-fall hold ends, and the answers already logged.
+    ride_until: Option<Instant>,
+    rides_logged: u64,
+    /// [`DIR_ASKS`] at the last tick.
+    dir_seen: u64,
     reply: String,
 }
 
@@ -182,8 +201,25 @@ static CTL: Mutex<Ctl> = Mutex::new(Ctl {
     skip_since: None,
     vanilla_since: None,
     native_trees_logged: 0,
+    ride_until: None,
+    rides_logged: 0,
+    dir_seen: 0,
     reply: String::new(),
 });
+
+/// FS7-5: start a hawk ride for LOCAL where it stands: the next `GetBirdEventID` (377) LOCAL's script asks is answered `kind` (1 tree
+/// hawk, 4 start hawk) once, and for `secs` the off-route time is held below the fall limit; then the vanilla loop drops the player
+/// (or the player drops earlier with the tree-hawk buttons).
+pub(crate) fn request_ride(kind: i32, secs: u32) {
+    let mut c = ctl();
+    c.want = true;
+    c.ride_until = Some(Instant::now() + Duration::from_secs(u64::from(secs)));
+    RIDE_HOLD.store(true, Ordering::Relaxed);
+    // A free ride: the start ride's cruise lock (stick hidden) must not carry over from the match start.
+    PHASE.store(PHASE_NONE, Ordering::Relaxed);
+    RIDE_REQ.store(kind, Ordering::Relaxed);
+    tracing::info!("FS7-5 ride asked: 377 = {kind} once for LOCAL, no fall for {secs} s");
+}
 
 /// Whether the hook's overrides act on `chr`: LOCAL once known, else the rider (or anyone while no rider is known yet: a ride's
 /// first frames can come before the main loop has picked one).
@@ -232,8 +268,18 @@ unsafe extern "system" fn env_hook(id: u32, l: usize, chr: usize, r9: usize) -> 
         return v;
     };
     record_caller(chr, col, ans);
+    if id == ID_BIRD_DIRECTION_TIME && mine {
+        DIR_ASKS.fetch_add(1, Ordering::Relaxed);
+    }
     match id {
         ID_BIRD_EVENT => {
+            if mine && LOCAL.load(Ordering::Relaxed) != 0 {
+                let r = RIDE_REQ.swap(0, Ordering::Relaxed);
+                if r != 0 {
+                    RIDES_ANSWERED.fetch_add(1, Ordering::Relaxed);
+                    return r as u32 as u64;
+                }
+            }
             if DROP.load(Ordering::Relaxed) && is_rider {
                 DROPS_ANSWERED.fetch_add(1, Ordering::Relaxed);
                 return EVENT_ROUTE_END as u64;
@@ -271,6 +317,9 @@ unsafe extern "system" fn env_hook(id: u32, l: usize, chr: usize, r9: usize) -> 
                 && PHASE.load(Ordering::Relaxed) == PHASE_DIVE
                 && ans >= ESCAPE_FALL =>
         {
+            return (ESCAPE_FALL - 1) as u64;
+        }
+        ID_BIRD_ESCAPE_TIME if mine && RIDE_HOLD.load(Ordering::Relaxed) && ans >= ESCAPE_FALL => {
             return (ESCAPE_FALL - 1) as u64;
         }
         _ => {}
@@ -552,6 +601,27 @@ fn log_callers(c: &mut Ctl, local: Option<usize>) {
 /// Log phase changes and end the dive after its time (stop capping 384, so the vanilla tree loop drops the player); close the
 /// start-animation skip window; arm the late switch.
 fn phase_tick(c: &mut Ctl) {
+    let rides = RIDES_ANSWERED.load(Ordering::Relaxed);
+    if rides != c.rides_logged {
+        c.rides_logged = rides;
+        tracing::info!("FS7-5 ride started: LOCAL's script got the ride answer ({rides} so far)");
+    }
+    let dir = DIR_ASKS.load(Ordering::Relaxed);
+    let riding = dir != c.dir_seen;
+    c.dir_seen = dir;
+    if c.ride_until.is_some_and(|t| Instant::now() >= t) {
+        c.ride_until = None;
+        RIDE_HOLD.store(false, Ordering::Relaxed);
+        RIDE_REQ.store(0, Ordering::Relaxed);
+        if riding {
+            // The ride has no route, so it never ends by itself: "route ended" starts the vanilla separation fall.
+            DROP.store(true, Ordering::Relaxed);
+            c.drop_until = Some(Instant::now() + DROP_HOLD);
+            tracing::info!("FS7-5 ride time over: the hawk drops the player now");
+        } else {
+            tracing::info!("FS7-5 ride time over: the player is already off the hawk");
+        }
+    }
     if SKIP_ANIM.load(Ordering::Relaxed) {
         let since = *c.skip_since.get_or_insert_with(|| {
             tracing::info!("HAWK-4 tree start: skipping the start animation");

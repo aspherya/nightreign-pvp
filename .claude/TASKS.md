@@ -55,7 +55,7 @@ line for the next session), FS7-7, then FS7-5 (needs RE). Owner of all: OPUS car
 | FS7-2 | Battle Royale card first in the expedition list | **Built, `mi-bots-menu` + `mi-zero-click` PASS** | Tiny |
 | FS7-3 | Bots switch Off at every game start | **Built, `mi-bots-menu` PASS** (also re-set when the settings tab opens) | Small |
 | FS7-4 | Solo / Duo / Trio preselected from the party size | **Built**; next FS (a party at the table) | Small |
-| FS7-5 | Respawn on the hawk after a mob death | RE first (how to start a ride) | Large |
+| FS7-5 | Respawn on the hawk after a mob death | **Built, `mi-respawn-hawk` PASS** (2026-11-08; 150 m up, 15 s steerable ride) | Large |
 | FS7-6 | Solo instant death at 0 HP (gauge: decided, stays hidden) | Log line first to prove the cause | Medium |
 | FS7-7 | Summary ranking after a trade | **Built** (the real cause: shifting team keys), unit test | Small |
 | FS7-8 | F10 also leaves the Seamless Co-op lobby (the game session already does) | **Built** (Solo only); next FS | Small |
@@ -103,13 +103,12 @@ choice the player makes in that visit is kept. Acceptance: `mi-duo-party` gains 
 before any press; a one-game run reads `players byte 2`.
 
 ### FS7-5 — Respawn on the hawk after a mob death
-Status: RE first. Leonardo: after a non-player death the respawn should be the start hawk again ("as if you started the match again"),
-replacing RW-7's far respawn. Known: the start ride is a player script state; `game/hawk/` already steers it (cruise, dive, start cut) and
-answers `GetBirdEventID` (TECHNICAL_NOTES §4b, PROJECT_PLAN §13); how to **start** a ride for LOCAL at will is UNKNOWN. Step 1 (Opus,
-budget one session): find what starts the start ride at the landing (the script request or the event that puts LOCAL on the bird) and
-whether it can be called after a respawn; stop and report if it needs more. Step 2: on RW-2's respawn, start the ride (hawk rules as at
-the start, dive where you want). Acceptance: scenario `respawn-hawk` (like `defeat-mob`: `hp0` by a mob → respawn → `HAWK-4 phase none
--> cruise` and a landing); `defeat-mob` still PASS. Out of scope: a hawk after a rival defeat (that is defeat for good).
+Status: **built 2026-11-08 (branch `fs7-5-hawk-respawn`), `mi-respawn-hawk` PASS**; next FS: how it feels with real players. Leonardo chose the
+Warzone-Resurgence model (a short steerable redeploy from the air, not the match-start crossing: the start hawk cannot be started again,
+TECHNICAL_NOTES §4b). Every mob-death respawn (RW-2; RW-7 still picks the place far from rivals) puts LOCAL 150 m above it on a
+tree-hawk ride (`Act::HawkRespawn`, `hawk::request_ride`); the player steers and leaves with F / Alt; after 15 s the mod drops a
+player still riding (377 = 2, vanilla separation fall, no damage). Open: a ride near the map edge can fly out over the void before
+the 15 s drop (not seen; check in the FS), the tunable values are constants (`RESPAWN_LIFT`, `RESPAWN_RIDE_SECS`).
 
 ### FS7-6 — Solo: instant death at 0 HP, and the downed rival's gauge
 Status: step 1 ready. Point 7. Evidence (Leonardo's and fuso's logs): both of Leonardo's deaths, **as a client**, were a kill with no
