@@ -43,6 +43,95 @@ Result: (filled in after execution: what happened, evidence, follow-ups)
 
 ---
 
+## After the friend session of 2026-11-07 (Leonardo's list; first priority; evidence in testing-log 2026-11-07 "Friend session FS-HM1 (part)")
+
+Leonardo (2026-11-07): the mod is close to done; nothing broke the game; the list below is cosmetic or odd bugs. Duo / Trio still untested
+with friends. Suggested order: FS7-1 (two of the seven points), FS7-2, FS7-3, FS7-4 (small, one PR together is fine), FS7-6 step 1 (a log
+line for the next session), FS7-7, then FS7-5 (needs RE). Owner of all: OPUS cards → SONNET/implementer → OPUS review; acceptance per card.
+
+| Card | What | State | Size |
+|---|---|---|---|
+| FS7-1 | Spectator hint and own K/D only on the own screen (also fixes the previous match's K/D) | Ready, cause found in code | Small |
+| FS7-2 | Battle Royale card first in the expedition list | Ready | Tiny |
+| FS7-3 | Bots switch Off at every game start | Ready | Small |
+| FS7-4 | Solo / Duo / Trio preselected from the party size | Ready | Small |
+| FS7-5 | Respawn on the hawk after a mob death | RE first (how to start a ride) | Large |
+| FS7-6 | Solo instant death at 0 HP (gauge: decided, stays hidden) | Log line first to prove the cause | Medium |
+| FS7-7 | Summary ranking after a trade | Ready | Small |
+| FS7-8 | F10 also leaves the Seamless Co-op lobby (the game session already does) | Ready | Small |
+
+### FS7-1 — Our messages only on the own screen (spectator hint, own K/D) + stale K/D
+Status: ready. Points 1 and 6 of Leonardo's list.
+Cause `[HYPOTHESIS, from code]`: the display events built by `scripts/emevd_add_events.py` (`display` = `blinking` / `dialog` / `status`, e.g.
+99100806 flag 10007413 spectator hint, 99100807 flag 10007414 own score, 99100310 flag 10007110 summary) do **not** start with
+`Set Network Sync State Disabled` (2000:2), unlike our per-game events (`local_instrs`, `speffect_instrs`). So one game's display is shown
+on every game, and each game shows **its own** text entry: the receiving game's 99100601 still holds what it wrote last, often in the
+previous match (point 6). The own tally itself resets correctly (log).
+Steps: (1) add 2000:2 first in every display event (`build_event_instrs`), rebuild gamedata; (2) when an expedition starts, rewrite 99100601
+with `Kills: 0 | Deaths: 0` (defensive); (3) if (1) does not stop it, fall back to the toast path (`gametoast`, local by construction).
+Acceptance: new scenario `mi-msg-local` (two instances in one expedition, like `mi-killfeed`): P1 `flag 10007414 1` and `flag 10007413 1`
+→ screenshot of both; P1 shows the message, P2 does not; `score-bots`, `spectate`, `score-bots-end` still PASS. Next FS: nobody sees
+another player's spectator hint or score.
+
+### FS7-2 — Battle Royale card first in the expedition list
+Status: ready. `gamedata/nightbossmenu-rows.json` row 9 `sortId` 310 (after The Deep of Night, 300) → below the smallest vanilla `sortId`
+(read every row first with `sbwriter dump`). The card is recognised by the chosen target list, not by its place (MEMORY_MAP §13), so
+nothing else should change. Acceptance: one-PC screenshot of the list with the card first (extend the card lab or `mi-bots-menu`), and
+`mi-zero-click` + `mi-bots-menu` PASS. Check which card the cursor starts on.
+
+### FS7-3 — Bots switch Off at every game start
+Status: ready. The game saves the "No. of Password Players" byte (`MENU_SETTINGS_BOTS`, layout.rs), so Bots: On survives a restart. The
+first time `menuflow` sees the expedition menu after a launch, write Off (`settings.set_bots(false)`) and log it; later changes in the
+same launch stay. Acceptance: scenario `bots-off-at-start` (`bots_switch on`, restart the game, open the menu → log `Bots switch reset to
+Off`, `bots_switch` reads Off).
+
+### FS7-4 — Solo / Duo / Trio preselected from the party size
+Status: ready. When the expedition menu opens, set the Number of Players byte (`MENU_SETTINGS_PLAYERS`: 2 Solo, 1 Duo, 0 Trio) from the
+Seamless Co-op party at the Roundtable (members of the SC lobby we are in, the count `mm_queue` already reads; no lobby = Solo); a
+choice the player makes in that visit is kept. Acceptance: `mi-duo-party` gains `br_card` → `players byte 1` on both after the invite and
+before any press; a one-game run reads `players byte 2`.
+
+### FS7-5 — Respawn on the hawk after a mob death
+Status: RE first. Leonardo: after a non-player death the respawn should be the start hawk again ("as if you started the match again"),
+replacing RW-7's far respawn. Known: the start ride is a player script state; `game/hawk/` already steers it (cruise, dive, start cut) and
+answers `GetBirdEventID` (TECHNICAL_NOTES §4b, PROJECT_PLAN §13); how to **start** a ride for LOCAL at will is UNKNOWN. Step 1 (Opus,
+budget one session): find what starts the start ride at the landing (the script request or the event that puts LOCAL on the bird) and
+whether it can be called after a respawn; stop and report if it needs more. Step 2: on RW-2's respawn, start the ride (hawk rules as at
+the start, dive where you want). Acceptance: scenario `respawn-hawk` (like `defeat-mob`: `hp0` by a mob → respawn → `HAWK-4 phase none
+-> cruise` and a landing); `defeat-mob` still PASS. Out of scope: a hawk after a rival defeat (that is defeat for good).
+
+### FS7-6 — Solo: instant death at 0 HP, and the downed rival's gauge
+Status: step 1 ready. Point 7. Evidence (Leonardo's and fuso's logs): both of Leonardo's deaths, **as a client**, were a kill with no
+downed state; fuso and Samuka, each **the host** at that moment, went downed first. Pattern `[HYPOTHESIS, 4 cases]`: only the host's own
+player can be downed by a rival. Also a down is short under fire: four rival hits took fuso's bleed-out 10.8 s → 0 in about a second
+(3 s each, T-039 `rival_hit_seconds`), so even a real down can look instant; Leonardo may want a smaller penalty. Candidate causes, none proven: the player script's direct-death rule (TECHNICAL_NOTES
+§4 "Who decides downed or dead": solo play, no hero, SpEffect 102130), our die-at-once flag 10007420 left ON in a save (TRAPS), or many
+rival hits in a row on a downed player (3 s off each, T-039). Step 1: a player-build log line when LOCAL reaches 0 HP: downed or direct
+death, the SpEffects of interest (102130, revive items 540155 / 6999100 / 6999500 / 8970061), flag 10007420, the last attacker, host or
+client. Step 2 (after the next session's logs, or a two-instance repro with `rival_hit` + `hp0` as host and as client): fix only if it
+is ours. The gauge: **decided, stays hidden for rivals** (DECISIONS 2026-11-07, with the RCA); nothing to build. Open question for
+Leonardo, no change yet: lower `rival_hit_seconds` (3 s per hit on a downed player) to 1-1.5 s.
+
+### FS7-7 — The end after a trade (both kill each other)
+Status: ready, small. M2 ended with Leonardo and Samuka killing each other 2 s apart: `match decided ... (this game's player lost)`, but
+the summary ranked Leonardo `1.`, fuso `1.`, Samuka `2.`. Write the rule (SCOREBOARD §3: last to fall places higher; a true tie = shared
+place) and a golden timeline for the trade; the summary order must agree with the decision.
+
+### FS7-8 — F10 while defeated also leaves the session
+Status: ready (DECISIONS 2026-11-07). Evidence (fuso, host in M2): F10 at 19:35:15 left the **game session** 10 s later (`role host ->
+other -> none`) and the others migrated at once, but fuso **stayed in the Seamless Co-op lobby**: Leonardo's `mm_join: gate` lines list all
+3 `sc_members` from 19:35 to 19:37:44, until fuso quit the game (his `SC lobby ... gone` at 19:38:12). That is the "still in the
+session at the Roundtable" Leonardo saw. The game session part already works (the migration follows at once). Missing: after
+the F10 exit reaches the Roundtable, also leave the Seamless Co-op lobby the way `hm_leave_lobbies` does in `mi-host-migration` (Steam
+`LeaveLobby` of the SC lobby), so the leaver is out of the party and can queue again. Check first on two instances that the leaver's own game stays sound
+(no title screen, Commence works). Acceptance: scenario `mi-f10-leave` (three instances like `mi-host-migration`: P1 host defeated by a
+rival → F10 → P1 `role ... -> none` and back at the Roundtable; P2 / P3 `role client -> host` / `client -> client` with the new id and
+still in the expedition; P1 queues again). Clients pressing F10 leave the same way.
+
+Logs of that session: Leonardo's and fuso's are in `.claude/experiments/FS-2026-11-07/`; Samuka's are missing (not needed for any card).
+
+---
+
 ## PvP rules
 
 **Done 2026-10-22: T-040 and T-041 accepted** (Leonardo: "worked very well"; TESTING §3). A rival's hit on a downed player is now
@@ -102,7 +191,7 @@ With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapp
 **Done 2026-11-05: MM-3g and MM-7** (`mi-zero-click` PASS 3/3; `game/matchstart.rs`, MEMORY_MAP §12). Their real-Steam check is FS-HM1 item 9. Left as polish, no card: the table menu stays open during the departure. Cards removed; text in git.
 
 ### MM-8 — Host chosen by the matchmaker (best connection)
-Owner: OPUS (spec) → SONNET/implementer → FS | Status: ready | Depends: —
+Owner: OPUS (spec) → SONNET/implementer → FS | Status: idea only (matchmaking declared finished, DECISIONS 2026-11-07) | Depends: —
 Today the queue lobby owner becomes host (luck). Each member publishes its Steam ping location (`ISteamNetworkingUtils`
 `GetLocalPingLocation` → member data); the owner picks the member with the lowest worst-case estimated ping to the others
 (`EstimatePingTimeBetweenTwoLocations`), ties by Steam id, and writes `host`. FakeSteam tests for the pick; the player never sees who
@@ -110,10 +199,9 @@ hosts. Verify the Steam API calls exist in the game's `steam_api64.dll` first.
 
 ## Host migration and 12 players (top priority: migration first, player count later; Leonardo 2026-11-02; plan and budgets in [HOST_MIGRATION.md](HOST_MIGRATION.md))
 
-### HM-1 — Host migration: read it on real Steam
-Owner: HUMAN (session) then OPUS | Status: **everything one PC can show is done (`mi-host-migration` PASS, HOST_MIGRATION §1a). Open: FS-HM1, TESTING §6, with a fresh zip**
-Past a budget in HOST_MIGRATION §6: stop and ask Leonardo.
-Out of scope: more than 6 players, NET-7.
+**HM-1 done 2026-11-07:** host migration works on real Steam with 3 players (two migrations in one match, the match went on; testing-log
+2026-11-07, Leonardo confirmed). Card removed. Left for a later session (no card): Day 2 started by a migrated host (FS-HM1 item 4) and a
+defeat drop made by a migrated host (item 5). Next on this line: player count, when Leonardo asks.
 
 ## Own networking (NET; decided 2026-10-30, design and gates in [NETWORKING.md](NETWORKING.md))
 
@@ -300,7 +388,8 @@ Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements c
 
 ### DUOTRIO-1 — First Duo and Trio tests (Leonardo 2026-11-02; now the official Duo / Trio work)
 Owner: HUMAN + OPUS | Status: **in progress**: `mi-duo-party` (party, queue, expedition as `ally`) PASS 2026-11-02; next scenarios on that base (two teammates): runes shared, revive, HUD / pins of a teammate, a teammate's defeat; then a puppet team scenario for 2 vs 2 / win by team | Depends on: none
-Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.
+Duo / Trio have never been tested by us (teams of 2 and 3, teammate revive, shared runes, HUD filter, win by team). **Must check:
+a downed teammate shows the near-death gauge** (rivals' stays hidden, DECISIONS 2026-11-07). Write `mi-duo-sc` (NRO-MI) and a 4-puppet team scenario; list what breaks. MM-6 covers matchmaking for teams.
 
 ### SOLO-REVIVE — Solo night death with a revive item (BACKLOG, Leonardo 2026-11-02)
 Owner: OPUS | Status: idea, no schedule (DECISIONS 2026-11-01)

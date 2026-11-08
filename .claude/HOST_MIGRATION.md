@@ -11,7 +11,7 @@ Tags: `[VERIFIED: how]`, `[SOURCE: link]`, `[HYPOTHESIS]`, UNKNOWN. **ER** = Eld
 2. **Under the new host:** players stay together, enemy deaths reach both games, the clock follows the host, and the host's night end gives Day 2 on the other game.
 3. **Why it looked impossible:** our last-team rule ended the match (with 2 players, the only size played with friends so far, that is even correct), and the emulator keeps a killed host as lobby owner, so a kill alone never starts the migration.
 4. **A defeated host who leaves with F10 works with nothing simulated:** the game leaves the lobby itself and a client is promoted about 11 s later (§1a). Emulated Steam still.
-5. **Not proven: real Steam after a crash.** In the kill tests the trigger was simulated: the host calls `LeaveLobby` just before it dies. Steam's documentation says ownership moves when the owner leaves `[SOURCE]`. Whether it moves within the game's grace time after a crash is UNKNOWN. **This is the decisive open test: runbook FS-HM1, TESTING §6.**
+5. **Works on real Steam with 3 players** `[VERIFIED: friend session 2026-11-07, testing-log]`: the host left, 21 s after its defeat, and the survivors' logs show `session: role client -> client` with the new host id; the match went on for 2 minutes with fights, then a second migration followed (`role client -> host`) when the new host left. **An abrupt exit is covered too:** in the third match the host (Leonardo) pressed Alt-F4 right after the landing, his game closed, and the two others played on (seen by them on a call; their logs pending). A host who uses F10 instead goes to the Roundtable but stays in the session and keeps hosting (TASKS FS7-8). Not seen: Day 2 run by a migrated host, the grace-time values of §7, a Task Manager kill.
 
 ## 1. What happens when the host dies
 
@@ -148,7 +148,7 @@ Estimates are `[HYPOTHESIS]`. **Past a budget: stop and ask Leonardo.**
 
 | # | Unknown | How to find out |
 |---|---|---|
-| 1 | **Does the owner move on real Steam after a crash, and within the grace time?** | HM-1e |
+| 1 | ~~Does the owner move on real Steam after a crash, and within the grace time?~~ **Yes** for a quit and for Alt-F4 (friend session 2026-11-07, §0 point 5); a Task Manager kill not tried | done |
 | 2 | Value of `+0x49C`, state of bit 1 of `+0x60` on real Steam | HM-1e |
 | 3 | Does SC interfere with the owner change on real Steam? Under the emulator it did not | HM-1e |
 | 4 | Who runs an enemy | When a real fight shows a problem |

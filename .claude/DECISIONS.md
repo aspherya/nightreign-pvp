@@ -100,3 +100,16 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   Night 2 closes to a point (TIDE-MAX, `gamedata/playarea-rows.json`); the tide's damage stays vanilla (he finds it balanced).
   "Most kills wins, then most HP" is only a tiebreak for edge cases (simultaneous deaths, a stalemate cap) and is not built.
   Replaces PROJECT_SCOPE §1 "the final circle keeps the game's size (40 m)".
+- **Matchmaking is finished** (Leonardo, 2026-11-07, after the 3-player friend session): the zero-click flow (Commence, nothing else,
+  no Steam window, no Steam notification) is how it was wanted from the start; no more changes planned. MM-8 (host by best connection)
+  and the 3-team Duo match stay ideas, not work.
+- **F10 while defeated also leaves the session** (Leonardo, 2026-11-07): today a host who presses F10 goes to the Roundtable but stays
+  in the session (and stays host) while the others play; leaving should take the player out of the session at once (TASKS FS7-8).
+- **A downed rival's near-death gauge stays hidden** (Leonardo on Claude's advice, 2026-11-07). Report (friend session 2026-11-07):
+  in Solo a downed rival showed no gauge. RCA: the RW-9 HUD filter (`game/hudfilter.rs`, since 2026-10-27) hides every rival's party bar
+  and name tag so their position does not show through walls; the gauge over a downed character is drawn by that same name-tag element
+  `[HYPOTHESIS: not yet seen with the filter off; check: two instances, a downed rival, `rivalhud 0` → the gauge shows]`. The removal of
+  the locked-on target's name tag (2026-11-06, it clashed with the HP bar and buffs) only affects the one target, so it is not the cause
+  for the others. Why keep it: as in Apex / Warzone the downed pose is the signal; the bleed-out time is a teammate's tool (revive or
+  not), and a tag through walls would mark the downed player's spot. **A teammate's gauge must still show** (teammates are not
+  filtered; checked in DUOTRIO-1).
