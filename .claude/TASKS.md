@@ -56,7 +56,7 @@ line for the next session), FS7-7, then FS7-5 (needs RE). Owner of all: OPUS car
 | FS7-3 | Bots switch Off at every game start | **Built, `mi-bots-menu` PASS** (also re-set when the settings tab opens) | Small |
 | FS7-4 | Solo / Duo / Trio preselected from the party size | **Built**; next FS (a party at the table) | Small |
 | FS7-5 | Respawn on the hawk after a mob death | **Built, `mi-respawn-hawk` PASS** (2026-11-08; 150 m up, 15 s steerable ride) | Large |
-| FS7-6 | Solo instant death at 0 HP (gauge: decided, stays hidden) | Log line first to prove the cause | Medium |
+| FS7-6 | Solo instant death at 0 HP (gauge: decided, stays hidden) | **Fixed** (branch `fs7-6-die-flag`): our test flag 10007420 left ON in Leonardo's save, now cleared at every expedition start | Small |
 | FS7-7 | Summary ranking after a trade | **Built** (the real cause: shifting team keys), unit test | Small |
 | FS7-8 | F10 also leaves the Seamless Co-op lobby (the game session already does) | **Built** (Solo only); next FS | Small |
 
@@ -110,17 +110,17 @@ tree-hawk ride (`Act::HawkRespawn`, `hawk::request_ride`); the player steers and
 player still riding (377 = 2, vanilla separation fall, no damage). Open: a ride near the map edge can fly out over the void before
 the 15 s drop (not seen; check in the FS), the tunable values are constants (`RESPAWN_LIFT`, `RESPAWN_RIDE_SECS`).
 
-### FS7-6 — Solo: instant death at 0 HP, and the downed rival's gauge
-Status: step 1 ready. Point 7. Evidence (Leonardo's and fuso's logs): both of Leonardo's deaths, **as a client**, were a kill with no
-downed state; fuso and Samuka, each **the host** at that moment, went downed first. Pattern `[HYPOTHESIS, 4 cases]`: only the host's own
-player can be downed by a rival. Also a down is short under fire: four rival hits took fuso's bleed-out 10.8 s → 0 in about a second
-(3 s each, T-039 `rival_hit_seconds`), so even a real down can look instant; Leonardo may want a smaller penalty. Candidate causes, none proven: the player script's direct-death rule (TECHNICAL_NOTES
-§4 "Who decides downed or dead": solo play, no hero, SpEffect 102130), our die-at-once flag 10007420 left ON in a save (TRAPS), or many
-rival hits in a row on a downed player (3 s off each, T-039). Step 1: a player-build log line when LOCAL reaches 0 HP: downed or direct
-death, the SpEffects of interest (102130, revive items 540155 / 6999100 / 6999500 / 8970061), flag 10007420, the last attacker, host or
-client. Step 2 (after the next session's logs, or a two-instance repro with `rival_hit` + `hp0` as host and as client): fix only if it
-is ours. The gauge: **decided, stays hidden for rivals** (DECISIONS 2026-11-07, with the RCA); nothing to build. Open question for
-Leonardo, no change yet: lower `rival_hit_seconds` (3 s per hit on a downed player) to 1-1.5 s.
+### FS7-6 — Solo: instant death at 0 HP
+Status: **built 2026-11-08 (branch `fs7-6-die-flag`), `mi-respawn-hawk` shows the reset**; Leonardo's save is fixed by his first match on the new build. Not a game rule and not host / client: **Leonardo's own save had our
+die-at-once flag 10007420 ON**, so his character carried SpEffect 102130 (die at once, no downed state, TECHNICAL_NOTES §4) in the
+friend session. Evidence: fuso, a client in M1, went downed on all 5 of his mob deaths (`T-040 LOCAL state 0 -> 1`); Leonardo's log
+has no downed state at all; the dev scenarios `defeat-mob`, `defeat-rival`, `score-bots` run on Leonardo's real Steam account and set
+`flag 10007420 1` (last 2026-11-07 16:37 UTC, `set ON (was ON)`), and our flag group is saved (TRAPS). The mod's own reset when an
+expedition ends never runs: it reads `world.night`, which is only filled inside an expedition (`World::after_combat`), so it is
+always `None` at that tick. Fix: clear 10007420 when an expedition starts (the player build never sets it; scenarios set it after
+entering), log it, golden test; remove the dead reset. Acceptance: unit/golden test + `defeat-mob` still PASS. The downed rival's
+gauge: decided, stays hidden (DECISIONS 2026-11-07). Open question for Leonardo, no change: `rival_hit_seconds` 3 s per hit on a
+downed player (4 quick hits end a 15 s bleed-out).
 
 ### FS7-7 — The end after a trade (both kill each other)
 Status: ready, small. M2 ended with Leonardo and Samuka killing each other 2 s apart: `match decided ... (this game's player lost)`, but

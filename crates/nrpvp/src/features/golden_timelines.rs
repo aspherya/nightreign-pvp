@@ -1002,12 +1002,12 @@ fn leaving_the_expedition_resets_the_rules() {
     s.tick(100, &dead);
     s.tick(900, &dead.clone().held());
     s.tick(9_900, &dead.clone().held());
-    s.note("Roundtable, the die flag still ON: hold off, menu off, flag off, one line");
-    let rt = dead_me().flags(|f| f.our_die = true).roundtable();
+    s.note("Roundtable: hold off, menu off, one line (the night flags are not read here)");
+    let rt = dead_me().roundtable();
     s.tick(10_000, &rt);
     s.tick(10_100, &rt);
-    s.note("a new expedition starts clean: a mob death is judged again, a team count starts again");
-    s.tick(20_000, &ffa3(240, 0));
+    s.note("a new expedition starts clean: the die flag left ON in the save goes off (FS7-6), a mob death is judged again, a team count starts again");
+    s.tick(20_000, &ffa3(240, 0).flags(|f| f.our_die = true));
     s.tick(21_000, &ffa3(0, 0));
     s.tick(21_800, &ffa3(0, 0));
 

@@ -255,9 +255,6 @@ impl Match {
                 }
                 out.acts.push(Act::DeathHold(false));
                 out.acts.push(Act::MenuGate(false));
-                if world.night.is_some_and(|n| n.our_die) {
-                    flags.push((FLAG_DIE, false));
-                }
                 out.lines
                     .push("night_match: out of the expedition; rules reset".into());
             }
@@ -267,6 +264,16 @@ impl Match {
         let (Some(nf), Some(local)) = (world.night, local) else {
             return (out.acts, out.lines);
         };
+        // FS7-6: the die-at-once flag is a test aid only (no rule of the player build sets it), but our flag group is saved with the
+        // character: a test run on the same account left it ON and the player died with no downed state in a real match. Clear it as
+        // the expedition starts (the night flags are read only inside one, so the end of an expedition cannot see it). A scenario that
+        // wants it sets it after this first tick.
+        if !self.book.in_expedition && nf.our_die {
+            flags.push((FLAG_DIE, false));
+            out.lines.push(
+                "night_match: die-at-once flag 10007420 was ON from the save; switched off".into(),
+            );
+        }
         self.book.in_expedition = true;
         let bots: Vec<Fighter> = world.rival_bots().map(bot_fighter).collect();
         let t = Tick {

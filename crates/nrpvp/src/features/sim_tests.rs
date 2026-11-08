@@ -9,7 +9,8 @@
 //! the scenarios). The scenario -> test list is in `orchestrator/SCENARIOS.md` ("Headless twins").
 //!
 //! The scenario console commands map to events like this: `hp0` = LOCAL at 0 HP, `rival_hit` = `rival_hit(age)`, `puppet_hp n 0`
-//! = that rival at 0 HP, `flag 10007420 1` = `NightFlags::our_die` (kept for fidelity), `sleep_ms` = the next tick's time.
+//! = that rival at 0 HP, `flag 10007420 1` = not modelled (the rules never read it; since FS7-6 the first expedition tick switches a
+//! saved ON off, and the scenarios set it after that tick), `sleep_ms` = the next tick's time.
 
 use super::br_match::{Match, FLAG_LOSE, FLAG_SPECTATE_HINT, FLAG_WIN};
 use super::testkit::*;
@@ -20,7 +21,6 @@ fn arena(me_hp: u32, puppets: [u32; 3]) -> WorldBuilder {
     WorldBuilder::new()
         .local(HOST, me_hp, 0)
         .local_pos(Some(([0.0, 0.0, 0.0], true)))
-        .flags(|f| f.our_die = true)
         .other(P2, puppets[0], 0)
         .at([500.0, 10.0, 0.0])
         .other(P3, puppets[1], 0)
