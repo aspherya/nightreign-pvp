@@ -202,8 +202,11 @@ With more than one team in a Duo/Squad match the roster (Steam IDs) must be mapp
 **Done 2026-11-05: MM-3g and MM-7** (`mi-zero-click` PASS 3/3; `game/matchstart.rs`, MEMORY_MAP §12). Their real-Steam check is FS-HM1 item 9. Left as polish, no card: the table menu stays open during the departure. Cards removed; text in git.
 
 ### MM-FILL — Duo / Trio fill a short party with random players (before the first release)
-Owner: OPUS (spec, review) → SONNET/implementer → FS | Status: card written 2026-11-08, not started | Depends on: MM-6 roster → team
-mapping (part B below, which premade Duo / Trio with more than one team need anyway) | Phase: before release (Leonardo 2026-11-08)
+Owner: OPUS (spec, review) → SONNET/implementer → FS | Status: **built 2026-11-08 (branch `mm-fill`, parts A+B+C), `mi-duo-fill`
+PASS; left: the FS checks below** | Depends on: MM-6 roster → team mapping (part B below, which premade Duo / Trio with more than one team need anyway) | Phase: before release (Leonardo 2026-11-08)
+**Built:** A `mm/pack.rs` + `fit` / `bounce` keys; B `nrpvp_pid` on the SC lobby → `mm::roster_teams` → `build_view` (partial map =
+unknown players neutral; duplicate ids, i.e. Roundtable ids, = no map); C a lone Duo / Trio player leaves the match lobby back at the
+Roundtable. Not seen yet: 3 teams, Trio, a bounce on real Steam, part C (needs a finished match), a premade pair against a filled pair.
 Goal: a player alone (or a party of 2 in Trio) who picks Duo / Trio and presses Commence is queued and gets random teammates, as in
 any battle royale; today `build_party` (`mm/machine.rs`) refuses with "Duo needs a Seamless Co-op party".
 Context: MATCHMAKING.md §3–§4; `mm/machine.rs` (`build_party`, ticket report, MATCH READY roster), `mm/proto.rs` (`RosterEntry`,

@@ -22,6 +22,9 @@ pub(crate) struct RosterView {
     pub(crate) summary: String,
     /// Sorted (id, is_local) pairs: the view is re-logged only when this changes.
     pub(crate) key: Vec<(Option<u64>, bool)>,
+    /// Where the teams came from: `0` ids sorted and chunked, `1` the queue roster (MM-FILL), `2` ids because the roster map is incomplete.
+    /// The view is re-logged when this changes too.
+    pub(crate) source: u8,
 }
 
 /// An id of 0 is treated as unreadable: it is what an unfilled object would hold (every observed id is
@@ -31,13 +34,15 @@ pub(super) fn usable_id(id: Option<u64>) -> Option<u64> {
 }
 
 /// Build the view for `players` (address, id read from ChrIns+0x78) with `local` the LOCAL PlayerIns.
-/// Rosters come from `assign_teams` over the ids, so every client computes the same ones. If any id is
+/// Rosters come from the queue roster (`roster_teams`: session id -> team, MM-FILL) when it is there and covers EVERY player;
+/// otherwise from `assign_teams` over the ids, so every client computes the same ones. If any id is
 /// unreadable or two players share an id, nothing can be trusted: everyone except LOCAL is a rival
-/// (fail open to free-for-all) and `warning` says why.
+/// (fail open to free-for-all) and `warning` says why. Bots live in another ChrSet, not in `players`, so they never block the map.
 pub(crate) fn build_view(
     players: &[(usize, Option<u64>)],
     local: Option<usize>,
     team_size: usize,
+    roster_teams: Option<&HashMap<u64, u8>>,
 ) -> RosterView {
     let mut view = RosterView::default();
     for &(a, id) in players {
@@ -79,12 +84,34 @@ pub(crate) fn build_view(
         view.warning = Some(msg);
         return view;
     }
-    let ids: Vec<PlayerId> = readable.iter().map(|&v| PlayerId(v)).collect();
-    let rosters = assign_teams(&ids, team_size);
     let local_id = local
         .and_then(|l| players.iter().find(|(a, _)| *a == l))
         .and_then(|&(_, id)| usable_id(id))
         .map(PlayerId);
+    let mut tag = "ids";
+    if let Some(map) = roster_teams {
+        let known = readable.iter().filter(|id| map.contains_key(id)).count();
+        if !readable.is_empty() && known == readable.len() {
+            return roster_view(view, players, local_id, map);
+        }
+        // mi-duo-fill 2026-11-08: the ids change when the expedition loads and each game republishes its own about 1-4 s later.
+        // Until then sorted-id chunking can split a team (3 teams of 2), so a player the map does not know yet is neutral (no
+        // relation: never hostile, never written as a rival) instead of a guessed rival or ally.
+        if !map.is_empty() {
+            let mut v = roster_view(view, players, local_id, map);
+            v.source = 2;
+            v.summary = format!(
+                "teams (roster map {known}/{}, others neutral): {}",
+                readable.len(),
+                v.summary.trim_start_matches("teams (roster): ")
+            );
+            return v;
+        }
+        view.source = 2;
+        tag = "ids, roster map";
+    }
+    let ids: Vec<PlayerId> = readable.iter().map(|&v| PlayerId(v)).collect();
+    let rosters = assign_teams(&ids, team_size);
     for &(a, id) in players {
         let Some(pid) = usable_id(id).map(PlayerId) else {
             continue;
@@ -119,7 +146,74 @@ pub(crate) fn build_view(
             format!("team {} = [{}]", t.0, m.join(", "))
         })
         .collect();
-    view.summary = format!("teams: {}", parts.join(", "));
+    view.summary = match roster_teams {
+        Some(map) => {
+            let known = readable.iter().filter(|id| map.contains_key(id)).count();
+            format!(
+                "teams ({tag} {known}/{}): {}",
+                readable.len(),
+                parts.join(", ")
+            )
+        }
+        None => format!("teams: {}", parts.join(", ")),
+    };
+    view
+}
+
+/// MM-FILL: the view when the queue roster maps every player: teams and relations from it.
+fn roster_view(
+    mut view: RosterView,
+    players: &[(usize, Option<u64>)],
+    local_id: Option<PlayerId>,
+    map: &HashMap<u64, u8>,
+) -> RosterView {
+    view.source = 1;
+    let local_team = local_id.and_then(|l| map.get(&l.0).copied());
+    let mut teams: std::collections::BTreeMap<u8, Vec<u64>> = std::collections::BTreeMap::new();
+    for &(a, id) in players {
+        let Some(pid) = usable_id(id) else { continue };
+        if local_id.is_some_and(|l| l.0 == pid) {
+            view.relation.insert(a, Relation::Local);
+        }
+        let Some(&t) = map.get(&pid) else { continue };
+        view.team_no.insert(a, t);
+        teams.entry(t).or_default().push(pid);
+        if let Some(l) = local_id {
+            let rel = if pid == l.0 {
+                Some(Relation::Local)
+            } else {
+                // LOCAL not mapped yet (partial map): nobody is a rival or an ally yet.
+                local_team.map(|lt| {
+                    if lt == t {
+                        Relation::Ally
+                    } else {
+                        Relation::Rival
+                    }
+                })
+            };
+            if let Some(rel) = rel {
+                view.relation.insert(a, rel);
+            }
+        }
+    }
+    let parts: Vec<String> = teams
+        .iter_mut()
+        .map(|(t, ids)| {
+            ids.sort_unstable();
+            let m: Vec<String> = ids
+                .iter()
+                .map(|p| {
+                    if Some(*p) == local_id.map(|l| l.0) {
+                        format!("0x{p:X}(LOCAL)")
+                    } else {
+                        format!("0x{p:X}")
+                    }
+                })
+                .collect();
+            format!("team {t} = [{}]", m.join(", "))
+        })
+        .collect();
+    view.summary = format!("teams (roster): {}", parts.join(", "));
     view
 }
 

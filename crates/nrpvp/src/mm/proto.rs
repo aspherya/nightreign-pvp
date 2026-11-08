@@ -1,15 +1,16 @@
 //! MM-2: the data protocol of the queue lobby (pure text handling, unit-tested).
 //!
 //! Queue lobby data (written by the owner only): `nrpvp=1`, `mode`, `proto`, `game`, `sc`, `need` (players for a match),
-//! later `merge_to` (this lobby dissolves: everyone searches again), and at match time `host`, `roster`, `state=go`.
+//! later `merge_to` (this lobby dissolves: everyone searches again), `fit` (MM-FILL: the biggest party the lobby can still take),
+//! `bounce` (MM-FILL: party ids that no longer pack and must leave), and at match time `host`, `roster`, `state=go`.
 //! Per-member data on the queue lobby: `nrpvp_party` (party leader's Steam id, = own id for Solo) and `nrpvp_size`.
 //! Member value on Seamless Co-op's lobby (ours only): `nrpvp_q` = `<queue lobby id>:<mode>:<party size>`.
 
 use super::Mode;
 use crate::steam::queue::SearchFilters;
 
-/// Protocol version tag (`proto=1`).
-pub(crate) const PROTO: u32 = 2;
+/// Protocol version tag (`proto=3`; 3 = MM-FILL: roster entries carry the team).
+pub(crate) const PROTO: u32 = 3;
 pub(crate) const K_MODE: &str = "mode";
 pub(crate) const K_PROTO: &str = "proto";
 pub(crate) const K_GAME: &str = "game";
@@ -21,6 +22,12 @@ pub(crate) const K_STATE: &str = "state";
 pub(crate) const K_HOST: &str = "host";
 pub(crate) const K_ROSTER: &str = "roster";
 pub(crate) const K_MERGE: &str = "merge_to";
+/// MM-FILL (owner writes): the biggest party size the lobby can still take and still pack into teams. Missing = the team size.
+pub(crate) const K_FIT: &str = "fit";
+/// MM-FILL (owner writes): comma separated party ids whose tickets no longer pack; those parties leave and search again.
+pub(crate) const K_BOUNCE: &str = "bounce";
+/// Value of `bounce` once nobody is bounced (an empty value is not written to Steam).
+pub(crate) const BOUNCE_NONE: &str = "none";
 /// MM-3 (host writes): the Seamless Co-op lobby id, `present=<n>/<total>`, and the Steam ids the host invited (comma separated).
 pub(crate) const K_SC_LOBBY: &str = crate::steam::queue::KEY_PUBLISHED_SC;
 pub(crate) const K_PRESENT: &str = "present";
@@ -76,19 +83,20 @@ pub(crate) fn search_filters(t: &Tags, slots: u32) -> SearchFilters {
     }
 }
 
-/// One roster line entry: a player and the party they queued with.
+/// One roster line entry: a player, the party they queued with and the team (0-based) the queue owner packed that party into.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct RosterEntry {
     pub id: u64,
     pub party: u64,
+    pub team: u8,
 }
 
-/// `id:party,id:party` sorted by id, so every client writes and prints the same text.
+/// `id:party:team,...` sorted by id, so every client writes and prints the same text.
 pub(crate) fn encode_roster(entries: &[RosterEntry]) -> String {
     let mut e = entries.to_vec();
     e.sort();
     e.iter()
-        .map(|r| format!("{}:{}", r.id, r.party))
+        .map(|r| format!("{}:{}:{}", r.id, r.party, r.team))
         .collect::<Vec<_>>()
         .join(",")
 }
@@ -96,10 +104,13 @@ pub(crate) fn encode_roster(entries: &[RosterEntry]) -> String {
 pub(crate) fn parse_roster(s: &str) -> Vec<RosterEntry> {
     s.split(',')
         .filter_map(|p| {
-            let (a, b) = p.split_once(':')?;
+            let mut it = p.split(':');
+            let (a, b, c) = (it.next()?, it.next()?, it.next()?);
+            it.next().is_none().then_some(())?;
             Some(RosterEntry {
                 id: a.trim().parse().ok()?,
                 party: b.trim().parse().ok()?,
+                team: c.trim().parse().ok()?,
             })
         })
         .collect()
@@ -121,8 +132,25 @@ pub(crate) struct TicketReport {
     pub incomplete_parties: Vec<u64>,
     /// Members whose ticket is not published yet.
     pub unknown: u32,
-    /// The roster of the complete tickets, sorted.
+    /// The roster of the complete tickets, sorted (team 0: the owner fills the teams in with `pack`).
     pub roster: Vec<RosterEntry>,
+    /// Every published party with its declared size, complete or not, sorted by party id (MM-FILL: room is reserved for a party
+    /// whose members are still arriving).
+    pub parties: Vec<(u64, u32)>,
+}
+
+impl TicketReport {
+    /// `(party id, size)` of the complete tickets only.
+    pub(crate) fn complete_tickets(&self) -> Vec<(u64, u32)> {
+        let mut v: Vec<(u64, u32)> = Vec::new();
+        for r in &self.roster {
+            match v.iter_mut().find(|t| t.0 == r.party) {
+                Some(t) => t.1 += 1,
+                None => v.push((r.party, 1)),
+            }
+        }
+        v
+    }
 }
 
 /// Group members by party. A ticket is complete when as many members carry its party id as its declared size.
@@ -141,10 +169,14 @@ pub(crate) fn tickets(members: &[(u64, Option<(u64, u32)>)]) -> TicketReport {
             .filter_map(|m| m.1.map(|t| t.1))
             .max()
             .unwrap_or(1);
+        r.parties.push((p, size));
         if of_party.len() as u32 >= size {
             r.complete_players += of_party.len() as u32;
-            r.roster
-                .extend(of_party.iter().map(|m| RosterEntry { id: m.0, party: p }));
+            r.roster.extend(of_party.iter().map(|m| RosterEntry {
+                id: m.0,
+                party: p,
+                team: 0,
+            }));
         } else {
             r.incomplete_parties.push(p);
         }
@@ -221,7 +253,7 @@ mod tests {
         );
         assert_eq!(t[0].1, "1");
         assert_eq!(t[1].1, "solo");
-        assert_eq!(t[2].1, "2");
+        assert_eq!(t[2].1, "3");
         assert_eq!(t[6].1, "public");
         let f = search_filters(&tags(), 1);
         assert_eq!(f.strings, t);
@@ -231,20 +263,40 @@ mod tests {
     #[test]
     fn roster_round_trips_and_is_sorted() {
         let r = [
-            RosterEntry { id: 30, party: 30 },
-            RosterEntry { id: 10, party: 10 },
-            RosterEntry { id: 20, party: 10 },
+            RosterEntry {
+                id: 30,
+                party: 30,
+                team: 1,
+            },
+            RosterEntry {
+                id: 10,
+                party: 10,
+                team: 0,
+            },
+            RosterEntry {
+                id: 20,
+                party: 10,
+                team: 0,
+            },
         ];
         let text = encode_roster(&r);
-        assert_eq!(text, "10:10,20:10,30:30");
+        assert_eq!(text, "10:10:0,20:10:0,30:30:1");
         assert_eq!(parse_roster(&text).len(), 3);
         assert_eq!(encode_roster(&parse_roster(&text)), text);
         assert!(parse_roster("").is_empty());
         assert_eq!(
-            parse_roster("1:2,junk,3:x,4:5"),
+            parse_roster("1:2:0,junk,3:x:1,4:5:2,6:7,8:9:1:2"),
             vec![
-                RosterEntry { id: 1, party: 2 },
-                RosterEntry { id: 4, party: 5 }
+                RosterEntry {
+                    id: 1,
+                    party: 2,
+                    team: 0
+                },
+                RosterEntry {
+                    id: 4,
+                    party: 5,
+                    team: 2
+                }
             ]
         );
     }
@@ -255,7 +307,8 @@ mod tests {
         let r = tickets(&m);
         assert_eq!(r.complete_players, 2);
         assert!(r.incomplete_parties.is_empty() && r.unknown == 0);
-        assert_eq!(encode_roster(&r.roster), "1:1,2:2");
+        assert_eq!(encode_roster(&r.roster), "1:1:0,2:2:0");
+        assert_eq!(r.parties, vec![(1, 1), (2, 1)]);
     }
 
     #[test]
@@ -266,8 +319,11 @@ mod tests {
             (r.complete_players, r.incomplete_parties.clone()),
             (0, vec![1])
         );
+        // The room for the missing member stays reserved.
+        assert_eq!(r.parties, vec![(1, 2)]);
         let both = [(1, Some((1, 2))), (2, Some((1, 2)))];
         assert_eq!(tickets(&both).complete_players, 2);
+        assert_eq!(tickets(&both).complete_tickets(), vec![(1, 2)]);
         // Two duos plus an unpublished member.
         let m = [
             (1, Some((1, 2))),

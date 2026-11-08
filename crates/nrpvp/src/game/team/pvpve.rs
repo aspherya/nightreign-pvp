@@ -103,15 +103,23 @@ impl TeamCtl {
             // VERIFIED on NR 1.3.3.0 by FS-0/FS-1 for 2 players, see TECHNICAL_NOTES §4.
             .map(|&p| (p, mem::read::<u64>(p + CHR_P2P_HANDLE)))
             .collect();
-        build_view(&players, res.local, self.team_size_now())
+        // MM-FILL part B: tell the queue worker our own session id (it publishes it as `nrpvp_pid`) and take the roster's teams from it.
+        let local_id = res
+            .local
+            .and_then(|l| players.iter().find(|(a, _)| *a == l))
+            .and_then(|&(_, id)| super::roster::usable_id(id));
+        crate::mm::set_local_pid(local_id);
+        let map = crate::mm::roster_teams();
+        build_view(&players, res.local, self.team_size_now(), map.as_ref())
     }
 
     /// T-026: log the rosters once per change of the player set.
     pub(super) fn note_roster(&mut self, view: &RosterView) {
-        if self.last_roster_key.as_ref() == Some(&view.key) {
+        if self.last_roster_key.as_ref() == Some(&view.key) && self.last_roster_src == view.source {
             return;
         }
         self.last_roster_key = Some(view.key.clone());
+        self.last_roster_src = view.source;
         if view.warning.is_some() {
             tracing::warn!("{}", view.summary);
         } else {

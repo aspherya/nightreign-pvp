@@ -11,7 +11,7 @@
 //! - The match ends on Leave, when the local player is back at the Roundtable after an expedition (`join::Phase`, 5 s debounce), or when,
 //!   after an expedition, the player has been in no Seamless Co-op lobby of the match for 15 s outside the Expedition phase (MM-3a).
 //!
-//! Only these things are ever done to SC's lobby: reads, our member value `nrpvp_q` (MM-2), `InviteUserToLobby`, `JoinLobby` (method c),
+//! Only these things are ever done to SC's lobby: reads, our member values `nrpvp_q` (MM-2) and `nrpvp_pid` (MM-FILL part B), `InviteUserToLobby`, `JoinLobby` (method c),
 //! and `SetLobbyType` from a dev button (method d). No `SetLobbyData`, `LeaveLobby`, `SetLobbyJoinable`, kick or owner change exists
 //! for it: the types in `steam::queue` do not allow them.
 
@@ -1075,10 +1075,12 @@ mod tests {
                 RosterEntry {
                     id: HOST,
                     party: HOST,
+                    team: 0,
                 },
                 RosterEntry {
                     id: JOINER,
                     party: JOINER,
+                    team: 0,
                 },
             ],
             host_name: "h".into(),
@@ -2034,10 +2036,12 @@ mod host_create_tests {
                 RosterEntry {
                     id: HOST,
                     party: HOST,
+                    team: 0,
                 },
                 RosterEntry {
                     id: JOINER,
                     party: JOINER,
+                    team: 0,
                 },
             ],
             host_name: "h".into(),
@@ -2398,7 +2402,11 @@ mod multi_tests {
             lobby: Some(QueueLobby::for_test(Q)),
             roster: ids(n)
                 .into_iter()
-                .map(|id| RosterEntry { id, party: id })
+                .map(|id| RosterEntry {
+                    id,
+                    party: id,
+                    team: 0,
+                })
                 .collect(),
             host_name: "h".into(),
             host: HOST,

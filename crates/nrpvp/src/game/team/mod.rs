@@ -67,6 +67,8 @@ pub(crate) struct TeamCtl {
     pvpve_written: HashSet<usize>,
     /// T-026: key of the roster view last logged (log once per change).
     last_roster_key: Option<Vec<(Option<u64>, bool)>>,
+    /// MM-FILL: [`roster::RosterView::source`] of the view last logged.
+    last_roster_src: u8,
     pvpve_team: u8,
     pvpve_every: Duration,
     next_pvpve: Instant,
@@ -177,6 +179,7 @@ impl TeamCtl {
             team_size: cfg.team_size_usize(),
             pvpve_written: HashSet::new(),
             last_roster_key: None,
+            last_roster_src: 0,
             pvpve_team: cfg.pvpve_team,
             pvpve_every: Duration::from_millis(cfg.pvpve_interval_ms),
             next_pvpve: now,

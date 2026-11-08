@@ -932,7 +932,7 @@ fn synth(ordinals: &[u64], local: usize, size: usize) -> Synth {
         .enumerate()
         .map(|(i, &n)| (0x1000 * (i + 1), Some(pid(n))))
         .collect();
-    let view = build_view(&players, Some(players[local].0), size);
+    let view = build_view(&players, Some(players[local].0), size, None);
     (players, view)
 }
 
@@ -999,7 +999,7 @@ fn mm_team_size_override_changes_the_rosters_only_when_set() {
     let (players, _) = synth(&[1, 2, 3, 4], 0, configured);
     let at = |ov: usize| {
         let size = crate::mm::pick_team_size(configured, ov);
-        build_view(&players, Some(players[0].0), size)
+        build_view(&players, Some(players[0].0), size, None)
     };
     // No override (queue off, or not MATCH READY): free-for-all as configured.
     assert_eq!(at(0).relation[&players[1].0], Relation::Rival);
@@ -1013,6 +1013,7 @@ fn mm_team_size_override_changes_the_rosters_only_when_set() {
         &players2,
         Some(players2[0].0),
         crate::mm::pick_team_size(2, 1),
+        None,
     );
     assert_eq!(solo.relation[&players2[1].0], Relation::Rival);
 }
@@ -1049,7 +1050,7 @@ fn unreadable_or_duplicate_ids_fail_open_to_free_for_all() {
         (0x2000, None),
         (0x3000, Some(pid(3))),
     ];
-    let view = build_view(&players, Some(0x1000), 2);
+    let view = build_view(&players, Some(0x1000), 2, None);
     assert!(view.warning.is_some());
     assert!(view.summary.starts_with("teams: WARNING"));
     assert_eq!(view.relation[&0x1000], Relation::Local);
@@ -1060,16 +1061,16 @@ fn unreadable_or_duplicate_ids_fail_open_to_free_for_all() {
     assert_eq!(plan.writes, vec![0x2000, 0x3000]);
 
     let dup = vec![(0x1000, Some(pid(1))), (0x2000, Some(pid(1)))];
-    let view = build_view(&dup, Some(0x1000), 1);
+    let view = build_view(&dup, Some(0x1000), 1, None);
     assert!(view.warning.as_deref().unwrap_or("").contains("same id"));
     assert_eq!(view.relation[&0x2000], Relation::Rival);
 
     // An id of 0 counts as unreadable.
     let zero = vec![(0x1000, Some(pid(1))), (0x2000, Some(0))];
-    assert!(build_view(&zero, Some(0x1000), 1).warning.is_some());
+    assert!(build_view(&zero, Some(0x1000), 1, None).warning.is_some());
 
     // No local player: nobody is written in the rivals scheme.
-    let none = build_view(&dup, None, 1);
+    let none = build_view(&dup, None, 1, None);
     assert!(plan_all_at_2(Scheme::Rivals, &dup, &none).writes.is_empty());
 }
 
@@ -1079,18 +1080,18 @@ fn roster_summary_matches_the_log_format_and_key_tracks_changes() {
         (0x1000, Some(0x6001_FFFF_FFFFu64)),
         (0x2000, Some(0x6002_FFFF_FFFF)),
     ];
-    let v = build_view(&players, Some(0x1000), 1);
+    let v = build_view(&players, Some(0x1000), 1, None);
     assert_eq!(
         v.summary,
         "teams: team 0 = [0x6001FFFFFFFF(LOCAL)], team 1 = [0x6002FFFFFFFF]"
     );
-    let v2 = build_view(&players, Some(0x1000), 2);
+    let v2 = build_view(&players, Some(0x1000), 2, None);
     assert_eq!(
         v2.summary,
         "teams: team 0 = [0x6001FFFFFFFF(LOCAL), 0x6002FFFFFFFF]"
     );
-    assert_eq!(v.key, build_view(&players, Some(0x1000), 1).key);
-    assert_ne!(v.key, build_view(&players, Some(0x2000), 1).key);
+    assert_eq!(v.key, build_view(&players, Some(0x1000), 1, None).key);
+    assert_ne!(v.key, build_view(&players, Some(0x2000), 1, None).key);
     assert_eq!(
         crate::overlay::shared::short_id(Some(0x6001_FFFF_FFFF)),
         "0x6001.."
@@ -1253,4 +1254,88 @@ fn snap_back_is_refused_without_vtables_and_absent_in_the_player_build() {
     f.objs[2][..8].copy_from_slice(&(VT_ENEMY as u64).to_le_bytes());
     d.pos_write("F6");
     assert_eq!(get3(&f, 2, 0x6C0), [9.0, 9.0, 9.0]);
+}
+
+// ---- MM-FILL part B: teams from the queue roster ----
+
+/// `(ordinal, team)` -> session id -> team (the ids `synth` makes).
+fn roster_map(pairs: &[(u64, u8)]) -> HashMap<u64, u8> {
+    pairs.iter().map(|&(n, t)| (pid(n), t)).collect()
+}
+
+#[test]
+fn a_complete_roster_map_decides_the_teams_where_chunking_would_split_a_pair() {
+    // Session ids 1..6; sorted-id chunking of 2 would make [1,2] [3,4] [5,6]. The roster paired 1+4, 2+6, 3+5.
+    let (players, _) = synth(&[1, 2, 3, 4, 5, 6], 0, 2);
+    let map = roster_map(&[(1, 0), (4, 0), (2, 1), (6, 1), (3, 2), (5, 2)]);
+    let ids = build_view(&players, Some(players[0].0), 2, None);
+    assert_eq!(ids.relation[&players[1].0], Relation::Ally, "chunking: 1+2");
+    let v = build_view(&players, Some(players[0].0), 2, Some(&map));
+    assert_eq!(v.source, 1);
+    assert!(v.summary.starts_with("teams (roster):"), "{}", v.summary);
+    assert_eq!(v.relation[&players[0].0], Relation::Local);
+    assert_eq!(
+        v.relation[&players[3].0],
+        Relation::Ally,
+        "id 4 is 1's pair"
+    );
+    assert_eq!(v.relation[&players[1].0], Relation::Rival);
+    assert_eq!(v.relation[&players[5].0], Relation::Rival);
+    assert_eq!(v.team_no[&players[0].0], 0);
+    assert_eq!(v.team_no[&players[5].0], 1);
+    assert_eq!(v.team_no[&players[4].0], 2);
+}
+
+#[test]
+fn an_incomplete_roster_map_leaves_unknown_players_neutral_and_says_so() {
+    let (players, _) = synth(&[1, 2, 3, 4], 0, 2);
+    let map = roster_map(&[(1, 0), (4, 0), (2, 1)]);
+    let v = build_view(&players, Some(players[0].0), 2, Some(&map));
+    assert_eq!(v.source, 2);
+    assert!(
+        v.summary.starts_with("teams (roster map 3/4, others neutral):"),
+        "{}",
+        v.summary
+    );
+    // The map, not chunking (which would pair 1+2): 4 is the ally, 2 the rival, 3 not known yet = no relation (never hostile).
+    assert_eq!(v.relation[&players[3].0], Relation::Ally);
+    assert_eq!(v.relation[&players[1].0], Relation::Rival);
+    assert!(!v.relation.contains_key(&players[2].0), "3 is neutral");
+    // LOCAL itself not mapped yet (its id just changed): LOCAL stays LOCAL, nobody is a rival or an ally.
+    let other = roster_map(&[(2, 1), (3, 1)]);
+    let u = build_view(&players, Some(players[0].0), 2, Some(&other));
+    assert_eq!(u.relation[&players[0].0], Relation::Local);
+    assert_eq!(u.relation.len(), 1, "{:?}", u.relation);
+    // An empty map (nobody published yet): today's chunking, said so.
+    let empty = HashMap::new();
+    let e = build_view(&players, Some(players[0].0), 2, Some(&empty));
+    assert!(
+        e.summary.starts_with("teams (ids, roster map 0/4):"),
+        "{}",
+        e.summary
+    );
+    // No map at all: exactly today's text.
+    let none = build_view(&players, Some(players[0].0), 2, None);
+    assert!(
+        none.summary.starts_with("teams: team 0"),
+        "{}",
+        none.summary
+    );
+    assert_eq!(none.source, 0);
+    // An unreadable id still wins over any map.
+    let bad = vec![(0x1000, Some(1)), (0x2000, None)];
+    let w = build_view(&bad, Some(0x1000), 2, Some(&map));
+    assert!(w.warning.is_some());
+}
+
+#[test]
+fn solo_gives_the_same_result_with_or_without_the_roster_map() {
+    let (players, _) = synth(&[7, 3, 9], 0, 1);
+    let map = roster_map(&[(3, 0), (7, 1), (9, 2)]);
+    let a = build_view(&players, Some(players[0].0), 1, None);
+    let b = build_view(&players, Some(players[0].0), 1, Some(&map));
+    for (p, _) in &players {
+        assert_eq!(a.relation[p], b.relation[p]);
+    }
+    assert_eq!(b.relation[&players[1].0], Relation::Rival);
 }

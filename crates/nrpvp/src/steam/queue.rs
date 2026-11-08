@@ -33,6 +33,9 @@ pub(crate) const KEY_SC_TYPE: &str = "nrsc_lobby_type";
 pub(crate) const KEY_SC_VERSION: &str = "nrsc_lobby_version";
 /// Our member key on SC's lobby: the queue lobby the party leader sits in (the only write we make on SC's lobby).
 pub(crate) const KEY_SC_MEMBER: &str = "nrpvp_q";
+/// MM-FILL part B: our second member key on SC's lobby: the local session player id (`ChrIns+0x78`, decimal), so every game can map
+/// Steam id -> session id -> roster team.
+pub(crate) const KEY_SC_PID: &str = "nrpvp_pid";
 pub(crate) const KEY_TAG: &str = "nrpvp";
 /// MM-3: queue lobby data (written by the host/owner) naming the host's Seamless Co-op lobby.
 pub(crate) const KEY_PUBLISHED_SC: &str = "sc_lobby";
@@ -311,6 +314,8 @@ pub(crate) trait QueueSteam: LobbyText {
     fn leave(&mut self, lobby: &QueueLobby);
     /// Our own member value `nrpvp_q` on Seamless Co-op's lobby (empty string clears it). The only write we make there.
     fn set_sc_queue_value(&mut self, sc: &ScLobby, value: &str);
+    /// MM-FILL part B: our own member value `nrpvp_pid` on Seamless Co-op's lobby (empty string clears it). The only other write there.
+    fn set_sc_pid_value(&mut self, sc: &ScLobby, value: &str);
     /// FS7-8: leave Seamless Co-op's lobby, as closing the game does (Steam `LeaveLobby` of our own membership; nothing in SC is
     /// changed). Only after the player chose to leave a match (F10); the lobby owner then moves and the others' game migrates.
     fn leave_sc(&mut self, sc: &ScLobby);
@@ -785,6 +790,18 @@ impl QueueSteam for RealSteam {
         );
     }
 
+    fn set_sc_pid_value(&mut self, sc: &ScLobby, value: &str) {
+        let (Some(f), Ok(k), Ok(v)) = (self.f.set_member_data, cs(KEY_SC_PID), cs(value)) else {
+            return;
+        };
+        // SAFETY: as `set_sc_queue_value`. The key is the fixed constant `nrpvp_pid`.
+        unsafe { f(self.mmp(), sc.0, k.as_ptr(), v.as_ptr()) };
+        tracing::info!(
+            "mm_team: Steam SetLobbyMemberData(SC lobby {}, {KEY_SC_PID:?}, {value:?})",
+            sc.0
+        );
+    }
+
     fn app_id(&self) -> u32 {
         match (self.j.app_id, self.utils) {
             // SAFETY: non-null ISteamUtils*; `uint32 GetAppID(self)` (steam_api_flat.h).
@@ -925,6 +942,7 @@ pub(crate) mod fake {
         MemberData(u64, String, String),
         Leave(u64),
         ScValue(u64, String),
+        ScPid(u64, String),
         Join(u64),
         Create(i32),
         Search(SearchFilters),
@@ -998,6 +1016,7 @@ pub(crate) mod fake {
                     | Write::MemberData(l, ..)
                     | Write::Leave(l)
                     | Write::ScValue(l, _)
+                    | Write::ScPid(l, _)
                     | Write::Invite(l, _)
                     | Write::SetType(l, _)
                     | Write::JoinSc(l) => *l == lobby,
@@ -1167,6 +1186,11 @@ pub(crate) mod fake {
             self.writes.push(Write::ScValue(sc.id(), v.into()));
             let own = self.own;
             self.set_member(sc.id(), own, KEY_SC_MEMBER, v);
+        }
+        fn set_sc_pid_value(&mut self, sc: &ScLobby, v: &str) {
+            self.writes.push(Write::ScPid(sc.id(), v.into()));
+            let own = self.own;
+            self.set_member(sc.id(), own, KEY_SC_PID, v);
         }
         fn app_id(&self) -> u32 {
             self.app_id

@@ -10,7 +10,8 @@ Pins: game 1.03.3 (exe 1.3.3.0), SC v1.1.3, me3 0.11.0.
 
 **Match size (decided by Leonardo 2026-10-19): every match has 6 players**, Seamless Co-op's cap. Solo = 6 players, each on their own;
 Duo = 3 teams of 2; Squad (trio) = 2 teams of 3. Until the first release the player zip uses 2-player matches so two people can test
-(pre-release flag, §6). Only Solo exists today.
+(pre-release flag, §6). Duo / Squad (MM-FILL, 2026-11-08): a short party (one player, or a pair in Squad) queues too and the queue
+fills the teams with random players; a party is never split (packing in §4).
 
 There is no server of ours. Players who press the button meet in a hidden **Steam lobby** (the *queue lobby*) that our mod creates
 and tags, so other copies of the mod can find it through Steam's lobby search. When enough players are in it, its owner becomes the
@@ -49,6 +50,11 @@ All Steam calls run on our own worker thread through the game's `steam_api64.dll
 | 9 | each mod | 2 s later marks its player ready, the host sending the settings first (Battle Royale card, row 9). All ready: the game departs by itself, about a minute to the expedition | `In match` |
 | 10 | everyone | Back at the Roundtable after the expedition: the match is over, queue idle again | `Not in a queue` |
 
+Teams (MM-FILL part B): in the match the teams come from the roster's `team` numbers (via `nrpvp_pid`, §4), not from sorting the session ids.
+After the match (part C): a player who queued Duo / Trio **alone** leaves that match's Seamless Co-op lobby once back at the Roundtable
+(log `back from a Duo match with random teammates: leaving its Seamless Co-op lobby`); its members are randoms and rivals, who would
+otherwise follow the lobby owner's next queue as a party (`sync_party`). The menu keeps the mode. A premade party stays (as before).
+
 Time in FS-MM3: queue to match found 4 s, Invite Members to joiner in the lobby 3 s, loaded in 6 s later.
 FS-UI2 (2026-10-21, player zip, table menu, 3 rounds, each PC host at least once): second Commence to MATCH READY under 1 s; match
 ready to the host's Invite Members 11–12 s; invite to ALL PRESENT 8–9 s; both players entered the expedition within about 1 s of each
@@ -62,17 +68,24 @@ after the second Commence. The Commence paths are in `re/MEMORY_MAP.md` §13.
 |---|---|---|
 | `nrpvp` | creator | `1` (marks our lobbies) |
 | `mode` | creator | `solo` / `duo` / `squad` |
-| `proto` | creator | protocol version, `2`. Bump it when the lobby format changes, so old and new builds never meet |
+| `proto` | creator | protocol version, `3` (3 = roster carries the team). Bump it when the lobby format changes, so old and new builds never meet |
 | `game` | creator | `1.3.3.0` |
 | `sc` | creator | SC version, `1.1.3` |
 | `need` | creator | players per match (`mm_max_players`) |
 | `room` | creator | RW-6 private match: hash of `private_code` (`p-…`); absent = public. Part of the search filter, so different codes never meet |
 | `merge_to` | owner | lobby id this one dissolves into (step 3) |
-| `host`, `roster`, `state=go` | owner | host Steam id; `party:member` pairs; the match is on |
+| `fit` | owner | MM-FILL: the biggest party size (0..=team size) the lobby can still take and still pack into teams; rewritten when the tickets change. Missing on a fresh lobby = team size. Not a search filter: a searcher reads it from the candidate and skips a lobby with `fit` < its party size |
+| `bounce` | owner | MM-FILL: party ids whose tickets no longer pack (two parties joined at once); those parties leave and search again. `none` once nobody is bounced. The highest party id goes first; the owner's own party never |
+| `host`, `roster`, `state=go` | owner | host Steam id; `id:party:team` entries (`team` is 0-based, from the packing); the match is on |
 | `sc_lobby`, `present`, `invited` | host | the SC lobby to join; `n/N` in it; who was invited |
-| member `nrpvp_party`, `nrpvp_size` | each member | party leader and size (Duo/Squad tickets) |
+| member `nrpvp_party`, `nrpvp_size` | each member | party leader and size (Duo/Squad tickets; size 1 for a lone player, or a pair in Squad) |
+| member `nrpvp_pid` (on **Seamless Co-op's** lobby) | each member | MM-FILL part B: the player's own session id (`ChrIns+0x78`, decimal), written while MATCH READY and cleared when the match ends. Every game maps `pid -> roster team` through the members' Steam ids and uses it in the match instead of chunking sorted ids; a partial map keeps players it does not know yet **neutral** (never rivals; log `teams (roster map k/n, others neutral)`), an empty one = the old chunking. The ids are local at the Roundtable (every game is `0x6001…`, re/MEMORY_MAP) and shared only in the expedition, so two members with the same id = no map; in the expedition each game republishes and the map is complete ~1–4 s after the load `[VERIFIED: mi-duo-fill 2026-11-08]` |
 
-Search filters = `nrpvp, mode, proto, game, sc, need, room` equal, free slots ≥ party size, worldwide. Players with different mod settings
+**Packing (MM-FILL, `mm/pack.rs`):** `teams = ceil(need / team size)`. Tickets are sorted by size (largest first) then party id and each goes into the lowest
+team with room, so every client gets the same teams; a party is never split. The owner starts only when the complete tickets pack (the early start
+after `mm_fill_wait_s` may leave a short team) and writes each player's team into `roster`. In Squad, 2+2+2 does not pack; Duo always packs.
+
+Search filters = `nrpvp, mode, proto, game, sc, need, room` equal, free slots ≥ party size, worldwide; then each candidate's `fit` ≥ party size (checked on the candidate's lobby data, no extra Steam call). Players with different mod settings
 (`mm_max_players`) or versions never see each other.
 
 The SC lobby carries `inviteParam = "0"` (written by the game) plus SC's `nrsc_lobby_type = "nrsc_ynx3_seamless_master_lobby"` and

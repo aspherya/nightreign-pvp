@@ -34,7 +34,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 
 **Launcher app (LAUNCH-1, branch `launcher-app`):** `NightreignPvP.exe` (Tauri 2): first-run wizard (game folder, Seamless Co-op via Nexus, the mod from GitHub releases), update check, Play then the app closes. **Built, unit-tested and tried on a local staged release; not yet tried by Leonardo.** A draft: Leonardo creates the public releases repo; **no release is published before the final test session with more than 3 players** (RELEASE §5b).
 
-**Not built yet** (scope in PROJECT_SCOPE): the most-kills tiebreak for edge cases (no timer, by decision), Solo die-at-once with a revive item, Duo/Trio matchmaking (MM-6) with random players filling a short party (MM-FILL, before release).
+**Not built yet** (scope in PROJECT_SCOPE): the most-kills tiebreak for edge cases (no timer, by decision), Solo die-at-once with a revive item.
 
 **Known bug:** the game crashes on quit (0xC0000374, heap corruption) on most runs since 2026-10-10; not proven to be Seamless Co-op's. Runs end with `nro stop` (kill) for this reason.
 
@@ -52,7 +52,9 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). Are
 done), matchmaking is finished (Leonardo), killfeed, grace lock, spectate, defeat and the scoreboard work with real hits. Leonardo:
 the mod is close to done; nothing broke the game.
 
-**2026-11-08:** FS7-1/2/3/4/7/8 built on branch `fs7-small-fixes` (one PR); one-PC checks (`mi-msg-local`, `mi-bots-menu`, `mi-zero-click`) PASS; the next FS left. **FS7-5 (respawn on the hawk) built on branch `fs7-5-hawk-respawn`, `mi-respawn-hawk` PASS.**
+**2026-11-08:** FS7-1..8 merged (#65–#67); their real-Steam checks wait for the next FS. **MM-FILL built (branch `mm-fill`, PR):** Duo / Trio
+accept a player alone (or a pair in Trio) and fill the team with random players; the match now takes its teams from the queue roster
+(also needed by premade Duo / Trio with 3 teams); `mi-duo-fill`, `mi-duo-party`, `mi-zero-click` PASS. Needs an FS with 4+ players.
 
 **Next: Leonardo's list from that session, TASKS "After the friend session of 2026-11-07" (FS7-1..7):** messages only on the own screen
 (also the stale K/D), Battle Royale card first, Bots Off at start, Solo/Duo/Trio from the party size, F10 also leaves the session, the trade ranking, a log line for

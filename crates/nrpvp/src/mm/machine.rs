@@ -20,12 +20,13 @@ mod gate;
 
 use self::gate::{Env, Gate};
 use super::join::{JoinAuto, Phase};
+use super::pack;
 use super::proto::{self, QValue, RosterEntry, Tags};
 use super::Mode;
 use crate::steam::probe::Event;
 use crate::steam::queue::{
     CallData, CallKind, CallPoll, JoinTarget, QueueLobby, QueueSteam, ScLobby, KEY_SC_MEMBER,
-    KEY_TAG,
+    KEY_SC_PID, KEY_TAG,
 };
 
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
@@ -45,7 +46,8 @@ pub(crate) fn idt(v: u64) -> String {
     format!("{v} (0x{v:X})")
 }
 
-/// Who queues. Solo: just us. Duo/Squad: the Seamless Co-op party; only its leader (the SC lobby owner) queues.
+/// Who queues. Solo: just us. Duo/Squad (MM-FILL): the Seamless Co-op party of 1..=team size members, or just us with no party;
+/// only its leader (the SC lobby owner) queues. A party shorter than the team is filled with random players by the queue.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Party {
     /// The party leader's Steam id (our own id for Solo).
@@ -55,39 +57,50 @@ pub(crate) struct Party {
     pub sc: Option<ScLobby>,
 }
 
+/// MM-FILL part B (pure): `(session id, Steam id, team)` sorted by session id. At the Roundtable every game sees itself as the first
+/// player (mi-duo-fill 2026-11-08: both games published 0x6001FFFFFFFF); the ids only agree across games in the expedition. Two
+/// members with one id = the ids are still local ones, so the map must not be used.
+pub(crate) fn ids_are_shared(map: &[(u64, u64, u8)]) -> bool {
+    map.windows(2).all(|w| w[0].0 != w[1].0)
+}
+
 /// Decide the party for a queue request. `sc` is `(the SC lobby we are in, its owner, its member count)` if there is one.
 pub(crate) fn build_party(
     mode: Mode,
     own: u64,
     sc: Option<(ScLobby, u64, u32)>,
 ) -> Result<Party, String> {
+    let alone = Party {
+        id: own,
+        size: 1,
+        leader: true,
+        sc: None,
+    };
     if mode == Mode::Solo {
-        return Ok(Party {
-            id: own,
-            size: 1,
-            leader: true,
-            sc: None,
-        });
+        return Ok(alone);
     }
-    let want = mode.team_size() as u32;
+    // MM-FILL: no Seamless Co-op lobby = a party of one; the queue fills the team with random players.
     let Some((lobby, owner, members)) = sc else {
-        return Err(format!(
-            "{} needs a Seamless Co-op party: invite your party through Invite Members first (no SC lobby known)",
-            mode.label()
-        ));
+        return Ok(alone);
     };
     if owner != own {
         return Err("only the party leader (owner of the Seamless Co-op lobby) queues; the leader's queue brings you along".to_string());
     }
-    if members != want {
+    let max = mode.team_size() as u32;
+    if members > max {
         return Err(format!(
-            "the party has {members} member(s); {} needs exactly {want}",
+            "the party has {members} member(s); {} takes at most {max}",
             mode.label()
         ));
     }
+    if members <= 1 {
+        // Alone in the Seamless Co-op lobby: a ticket of one with no party to bring along (nobody follows `nrpvp_q`, which is
+        // then never published). The follow logic (`sync_party`) only exists for a leader with other members.
+        return Ok(alone);
+    }
     Ok(Party {
         id: own,
-        size: want,
+        size: members,
         leader: true,
         sc: Some(lobby),
     })
@@ -219,6 +232,10 @@ pub(crate) struct Machine {
     left_note: Option<String>,
     /// MM-4: since when the player has been away from the Roundtable while Searching / InQueue.
     away_since: Option<Instant>,
+    /// MM-FILL part B: the Seamless Co-op lobby and session id we last wrote as `nrpvp_pid` (to rewrite on change, clear at the end).
+    pid_pub: Option<(ScLobby, u64)>,
+    /// MM-FILL part B: the `(session id, steam id, team)` map last published to the game loop.
+    team_map: Option<Vec<(u64, u64, u8)>>,
 }
 
 impl Machine {
@@ -236,6 +253,80 @@ impl Machine {
             ignore_q: None,
             left_note: None,
             away_since: None,
+            pid_pub: None,
+            team_map: None,
+        }
+    }
+
+    /// MM-FILL part B: while MATCH READY, publish our session id as `nrpvp_pid` on the Seamless Co-op lobby and build `session id -> roster
+    /// team` from every member's `nrpvp_pid` (members whose Steam id is in the roster). Outside a match both are cleared. Cheap; the
+    /// worker calls it every tick.
+    pub(crate) fn team_tick(&mut self, api: &mut dyn QueueSteam, local_pid: Option<u64>) {
+        let State::MatchReady(r) = &self.state else {
+            self.team_clear(api);
+            return;
+        };
+        if !self.cfg.join {
+            return;
+        }
+        // No Seamless Co-op lobby right now (before it exists, or a host migration in between): keep what is published.
+        let Some(sc) = self.env.sc.clone() else {
+            return;
+        };
+        if let Some(pid) = local_pid {
+            if self.pid_pub.as_ref().map(|(l, p)| (l.id(), *p)) != Some((sc.id(), pid)) {
+                api.set_sc_pid_value(&sc, &pid.to_string());
+                self.pid_pub = Some((sc.clone(), pid));
+            }
+        }
+        let mut map: Vec<(u64, u64, u8)> = Vec::new();
+        for i in 0..api.member_count(sc.id()).clamp(0, 64) {
+            let m = api.member_by_index(sc.id(), i);
+            let Some(entry) = r.roster.iter().find(|e| e.id == m) else {
+                continue;
+            };
+            let pid: u64 = api
+                .member_data(sc.id(), m, KEY_SC_PID)
+                .trim()
+                .parse()
+                .unwrap_or(0);
+            if pid != 0 {
+                map.push((pid, m, entry.team));
+            }
+        }
+        map.sort_unstable();
+        if self.team_map.as_ref() == Some(&map) {
+            return;
+        }
+        let n = r.roster.len();
+        if !ids_are_shared(&map) {
+            tracing::info!(
+                "mm_team: {} member(s) published the same session id (ids are not shared yet, Roundtable); no roster team map",
+                map.len()
+            );
+            super::set_roster_teams(None);
+            self.team_map = Some(map);
+            return;
+        }
+        for (pid, m, team) in &map {
+            tracing::info!(
+                "mm_team: pid 0x{pid:X} = {} team {team} ({}/{n} mapped)",
+                idt(*m),
+                map.len()
+            );
+        }
+        super::set_roster_teams(Some(map.iter().map(|&(p, _, t)| (p, t)).collect()));
+        self.team_map = Some(map);
+    }
+
+    /// MM-FILL part B: the match is over (or never was): clear our `nrpvp_pid` and the published map.
+    fn team_clear(&mut self, api: &mut dyn QueueSteam) {
+        if let Some((sc, _)) = self.pid_pub.take() {
+            api.set_sc_pid_value(&sc, "");
+        }
+        if self.team_map.take().is_some() {
+            tracing::info!("mm_team: the match is over; the roster team map is cleared");
+            super::set_roster_teams(None);
         }
     }
 
@@ -428,11 +519,15 @@ impl Machine {
     }
 
     /// FS7-4: the Seamless Co-op lobby this ready match is bound to and the own party's size (the mode's team size).
-    pub(crate) fn match_lobby(&self) -> Option<(u64, usize)> {
+    pub(crate) fn match_lobby(&self) -> Option<super::LastMatch> {
         let State::MatchReady(r) = &self.state else {
             return None;
         };
-        Some((r.gate.preferred_sc()?, r.ticket.mode.team_size()))
+        Some(super::LastMatch {
+            sc: r.gate.preferred_sc()?,
+            team: r.ticket.mode.team_size(),
+            party: r.ticket.party.size as usize,
+        })
     }
 
     /// MM-3: the worker only needs the (cheap but not free) Seamless Co-op lookup while a match is ready and `mm_join` is on.
@@ -497,7 +592,7 @@ impl Machine {
             );
             return;
         }
-        if party.size as usize != mode.team_size() {
+        if party.size == 0 || party.size as usize > mode.team_size() {
             let e = format!("party of {} does not fit {}", party.size, mode.label());
             tracing::warn!("mm_queue: {e}");
             self.last_error = Some(e);
@@ -1011,7 +1106,14 @@ impl Machine {
     }
 
     /// Why `id` cannot be used as a queue lobby for `tags` needing `slots` free slots, or `Ok`.
-    fn eligibility(api: &dyn QueueSteam, id: u64, tags: &Tags, slots: u32) -> Result<(), String> {
+    /// `size` is our own party size, checked against the lobby's `fit` (MM-FILL).
+    fn eligibility(
+        api: &dyn QueueSteam,
+        id: u64,
+        tags: &Tags,
+        slots: u32,
+        size: u32,
+    ) -> Result<(), String> {
         if JoinTarget::candidate(api, id).is_err() {
             return Err("no nrpvp=1 tag or it is Seamless Co-op's lobby".into());
         }
@@ -1035,6 +1137,12 @@ impl Machine {
         if !api.lobby_data(id, proto::K_MERGE).is_empty() {
             return Err("dissolving (merge_to set)".into());
         }
+        // MM-FILL: the owner publishes the biggest party the lobby can still pack; a fresh lobby has not published it yet.
+        let fit = api.lobby_data(id, proto::K_FIT);
+        let fit: u32 = fit.trim().parse().unwrap_or(tags.mode.team_size() as u32);
+        if fit < size {
+            return Err(format!("fit={fit}, our party has {size}"));
+        }
         let members = api.member_count(id);
         if members < 0 || members as u32 + slots > tags.need {
             return Err(format!("no room: {members} member(s), need {} free", slots));
@@ -1048,7 +1156,7 @@ impl Machine {
         api: &dyn QueueSteam,
         count: u32,
         tags: &Tags,
-        slots: u32,
+        (slots, size): (u32, u32),
         skip: u64,
         below: Option<u64>,
     ) -> Vec<u64> {
@@ -1064,7 +1172,7 @@ impl Machine {
             if below.is_some_and(|b| id >= b) {
                 continue;
             }
-            match Self::eligibility(api, id, tags, slots) {
+            match Self::eligibility(api, id, tags, slots, size) {
                 Ok(()) => {
                     tracing::info!(
                         "mm_queue: candidate lobby {}: owner={} members={} limit={}",
@@ -1099,7 +1207,14 @@ impl Machine {
             return self.fail_to_idle("internal: a party follower started a search".into());
         }
         let tags = self.tags(ticket.mode);
-        let cands = self.candidates(api, count, &tags, ticket.party.size, 0, None);
+        let cands = self.candidates(
+            api,
+            count,
+            &tags,
+            (ticket.party.size, ticket.party.size),
+            0,
+            None,
+        );
         if let Some(&id) = cands.first() {
             if let Ok(target) = JoinTarget::candidate(api, id) {
                 return match api.begin_join(&target) {
@@ -1239,6 +1354,18 @@ impl Machine {
             return self.lost_lobby(api, t, now);
         }
 
+        // 4b. MM-FILL: the owner named our party: its ticket no longer packs into teams. Leave and search again.
+        if proto::parse_ids(&api.lobby_data(id, proto::K_BOUNCE)).contains(&iq.ticket.party.id) {
+            tracing::info!(
+                "mm_queue: lobby {} bounced our party {} (its ticket no longer packs into teams); leaving and searching again",
+                idt(id),
+                idt(iq.ticket.party.id)
+            );
+            api.leave(&iq.lobby);
+            let t = iq.ticket.clone();
+            return self.lost_lobby(api, t, now);
+        }
+
         // 5. Tickets.
         let members: Vec<(u64, Option<(u64, u32)>)> = member_ids
             .iter()
@@ -1276,13 +1403,23 @@ impl Machine {
             iq.second_since = None;
         }
         if owner {
+            let team_size = iq.ticket.mode.team_size() as u32;
+            let teams = pack::teams_for(self.cfg.need, team_size);
+            // 5b. MM-FILL: keep `fit` (the biggest party still welcome) and `bounce` (parties that no longer pack) up to date.
+            self.publish_fit(api, &iq, &members, &report, team_size, teams);
             // 6a. Full of complete tickets, or the fill wait is over and the lobby holds at least `min`: close and start.
+            // The complete tickets must pack into teams (a short team is fine here); the roster carries each player's team.
             let clean = report.incomplete_parties.is_empty() && report.unknown == 0;
             let full = report.complete_players >= self.cfg.need;
             let waited = iq
                 .second_since
                 .is_some_and(|t| now.saturating_duration_since(t) >= self.cfg.fill_wait);
-            if clean && (full || (waited && report.complete_players >= self.cfg.min)) {
+            let packed = if clean && (full || (waited && report.complete_players >= self.cfg.min)) {
+                pack::pack(&report.complete_tickets(), team_size, teams)
+            } else {
+                None
+            };
+            if let Some(packed) = packed {
                 if !full {
                     tracing::info!(
                         "mm_queue: starting with {} of {} players: the fill wait of {} s is over and the minimum is {}",
@@ -1294,11 +1431,15 @@ impl Machine {
                 }
                 api.set_joinable(&iq.lobby, false);
                 api.set_data(&iq.lobby, proto::K_HOST, &own.to_string());
-                api.set_data(
-                    &iq.lobby,
-                    proto::K_ROSTER,
-                    &proto::encode_roster(&report.roster),
-                );
+                let roster: Vec<RosterEntry> = report
+                    .roster
+                    .iter()
+                    .map(|r| RosterEntry {
+                        team: packed.iter().find(|p| p.0 == r.party).map_or(0, |p| p.1),
+                        ..*r
+                    })
+                    .collect();
+                api.set_data(&iq.lobby, proto::K_ROSTER, &proto::encode_roster(&roster));
                 api.set_data(&iq.lobby, proto::K_STATE, proto::STATE_GO);
                 return self.become_ready(api, *iq, now);
             }
@@ -1306,6 +1447,48 @@ impl Machine {
             return self.heartbeat(api, iq, now);
         }
         State::InQueue(iq)
+    }
+
+    /// MM-FILL (owner): write `fit` and `bounce` on the queue lobby when they change. Parties still arriving keep their room
+    /// reserved; members without a published ticket count as singles. The owner's own party is never bounced.
+    fn publish_fit(
+        &self,
+        api: &mut dyn QueueSteam,
+        iq: &InQueue,
+        members: &[(u64, Option<(u64, u32)>)],
+        report: &proto::TicketReport,
+        team_size: u32,
+        teams: u32,
+    ) {
+        let id = iq.lobby.id();
+        let mut all = report.parties.clone();
+        let mut fixed = vec![iq.ticket.party.id];
+        for m in members.iter().filter(|m| m.1.is_none()) {
+            all.push((m.0, 1));
+            fixed.push(m.0);
+        }
+        let out = pack::bounce(&all, team_size, teams, &fixed);
+        all.retain(|t| !out.contains(&t.0));
+        let fit = pack::fit(&all, team_size, self.cfg.need).to_string();
+        if api.lobby_data(id, proto::K_FIT) != fit {
+            api.set_data(&iq.lobby, proto::K_FIT, &fit);
+        }
+        let bounce = if out.is_empty() {
+            proto::BOUNCE_NONE.to_string()
+        } else {
+            proto::encode_ids(&out)
+        };
+        let cur = api.lobby_data(id, proto::K_BOUNCE);
+        // A lobby that never bounced anybody has no key; do not write `none` over nothing.
+        if cur != bounce && !(cur.is_empty() && out.is_empty()) {
+            if !out.is_empty() {
+                tracing::info!(
+                    "mm_queue: tickets of lobby {} no longer pack into {teams} team(s) of {team_size}; bouncing party {bounce}",
+                    idt(id)
+                );
+            }
+            api.set_data(&iq.lobby, proto::K_BOUNCE, &bounce);
+        }
     }
 
     fn heartbeat(&mut self, api: &mut dyn QueueSteam, mut iq: Box<InQueue>, now: Instant) -> State {
@@ -1344,7 +1527,14 @@ impl Machine {
                 if let Some(count) = count {
                     iq.hb = None;
                     let tags = self.tags(iq.ticket.mode);
-                    let lower = self.candidates(api, count, &tags, iq.members, id, Some(id));
+                    let lower = self.candidates(
+                        api,
+                        count,
+                        &tags,
+                        (iq.members, iq.ticket.party.size),
+                        id,
+                        Some(id),
+                    );
                     if let Some(&target) = lower.first() {
                         tracing::info!(
                             "mm_queue: duplicate lobby: {} is lower than ours ({}); dissolving ours into it",
@@ -1385,10 +1575,11 @@ impl Machine {
         );
         for r in &roster {
             tracing::info!(
-                "mm_queue: roster member {} ({}) party={}{}",
+                "mm_queue: roster member {} ({}) party={} team={}{}",
                 idt(r.id),
                 api.persona(r.id),
                 idt(r.party),
+                r.team,
                 if r.id == api.own_id() { "  <- me" } else { "" }
             );
         }
@@ -1443,7 +1634,7 @@ mod tests {
         vec![
             ("nrpvp", "1"),
             ("mode", "solo"),
-            ("proto", "2"),
+            ("proto", "3"),
             ("game", "1.3.3.0"),
             ("sc", "1.1.3"),
             ("need", "2"),
@@ -1517,7 +1708,7 @@ mod tests {
             &[
                 ("nrpvp", "1"),
                 ("mode", "duo"),
-                ("proto", "2"),
+                ("proto", "3"),
                 ("game", "1.3.3.0"),
                 ("sc", "1.1.3"),
                 ("need", "2"),
@@ -1638,7 +1829,7 @@ mod tests {
         assert_eq!(s.lobby_data(id, "state"), "go");
         assert_eq!(s.lobby_data(id, "host"), ME.to_string());
         let roster = s.lobby_data(id, "roster");
-        assert_eq!(roster, format!("{ME}:{ME},{OTHER}:{OTHER}"));
+        assert_eq!(roster, format!("{ME}:{ME}:0,{OTHER}:{OTHER}:1"));
         assert!(s.writes.contains(&Write::Joinable(id, false)));
         assert_eq!(m.team_override(), Some(1));
         assert!(
@@ -2046,7 +2237,7 @@ mod tests {
         );
         assert_eq!(
             s.lobby_data(id, "roster"),
-            format!("{ME}:{ME},{OTHER}:{OTHER},7003:7003")
+            format!("{ME}:{ME}:0,{OTHER}:{OTHER}:1,7003:7003:2")
         );
         assert_eq!(s.lobby_data(id, "host"), ME.to_string());
     }
@@ -2244,18 +2435,32 @@ mod tests {
                 sc: None
             })
         );
-        assert!(build_party(Mode::Duo, ME, None)
-            .unwrap_err()
-            .contains("Seamless Co-op party"));
+        // MM-FILL: no party = a ticket of one, the queue fills the team.
+        assert_eq!(
+            build_party(Mode::Duo, ME, None),
+            Ok(Party {
+                id: ME,
+                size: 1,
+                leader: true,
+                sc: None
+            })
+        );
+        assert_eq!(build_party(Mode::Squad, ME, None).map(|p| p.size), Ok(1));
+        // Alone in the Seamless Co-op lobby: a ticket of one, no party to bring along.
+        let lone = build_party(Mode::Squad, ME, Some((sc.clone(), ME, 1))).expect("lone");
+        assert_eq!((lone.size, lone.sc), (1, None));
+        // A pair in Trio is a ticket of two and keeps the SC lobby (the follower follows `nrpvp_q`).
+        let pair = build_party(Mode::Squad, ME, Some((sc.clone(), ME, 2))).expect("pair");
+        assert_eq!((pair.size, pair.sc.clone()), (2, Some(sc.clone())));
         assert!(build_party(Mode::Duo, ME, Some((sc.clone(), OTHER, 2)))
             .unwrap_err()
             .contains("party leader"));
         assert!(build_party(Mode::Duo, ME, Some((sc.clone(), ME, 3)))
             .unwrap_err()
-            .contains("exactly 2"));
-        assert!(build_party(Mode::Squad, ME, Some((sc.clone(), ME, 2)))
+            .contains("at most 2"));
+        assert!(build_party(Mode::Squad, ME, Some((sc.clone(), ME, 4)))
             .unwrap_err()
-            .contains("exactly 3"));
+            .contains("at most 3"));
         let p = build_party(Mode::Squad, ME, Some((sc.clone(), ME, 3))).expect("squad");
         assert_eq!((p.size, p.leader, p.sc), (3, true, Some(sc)));
     }
@@ -2265,7 +2470,12 @@ mod tests {
         let mut s = FakeSteam::new(ME);
         let mut m = Machine::new(cfg());
         let t = Instant::now();
-        m.queue(&mut s, Mode::Duo, solo(ME), t);
+        // A party bigger than the team does not fit (MM-FILL: a smaller one does).
+        let big = Party {
+            size: 3,
+            ..solo(ME)
+        };
+        m.queue(&mut s, Mode::Duo, big, t);
         assert!(m.is_idle() && m.status().line.contains("does not fit"));
         m.queue(&mut s, Mode::Solo, solo(ME), t);
         let searches = s
@@ -2281,5 +2491,257 @@ mod tests {
                 .count(),
             searches
         );
+    }
+
+    // ---- MM-FILL: short parties are packed into teams ----
+
+    /// Queue lobby tags for another mode / size.
+    fn tags_for(mode: &'static str, need: &'static str) -> Vec<(&'static str, &'static str)> {
+        tag_data()
+            .into_iter()
+            .map(|(k, v)| match k {
+                "mode" => (k, mode),
+                "need" => (k, need),
+                _ => (k, v),
+            })
+            .collect()
+    }
+
+    /// Members of one party enter the lobby with the ticket `(party, size)` published.
+    fn join_party(s: &mut FakeSteam, id: u64, party: u64, size: u32, who: &[u64]) {
+        for &w in who {
+            s.lobbies.get_mut(&id).expect("lobby").members.push(w);
+            s.set_member(id, w, "nrpvp_party", &party.to_string());
+            s.set_member(id, w, "nrpvp_size", &size.to_string());
+        }
+    }
+
+    fn pair_of(me: u64) -> Party {
+        Party {
+            size: 2,
+            ..solo(me)
+        }
+    }
+
+    #[test]
+    fn a_lone_duo_player_is_filled_and_the_roster_carries_the_teams() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(4, 2, false));
+        let mut t = Instant::now();
+        let party =
+            build_party(Mode::Duo, ME, None).expect("a Duo with no party is a ticket of one");
+        m.queue(&mut s, Mode::Duo, party, t);
+        let id = owner_in_queue_after(&mut m, &mut s, &mut t);
+        secs(&mut m, &mut s, &mut t, 1);
+        assert_eq!(
+            s.lobby_data(id, "fit"),
+            "2",
+            "an empty Duo lobby takes a pair"
+        );
+        join_party(&mut s, id, 7003, 2, &[7003, 7004]);
+        secs(&mut m, &mut s, &mut t, 1);
+        assert_eq!(
+            s.lobby_data(id, "fit"),
+            "1",
+            "a pair and a single: only a single left"
+        );
+        assert!(matches!(m.state, State::InQueue(_)));
+        join_solo(&mut s, id, OTHER);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert!(matches!(m.state, State::MatchReady(_)));
+        assert_eq!(s.lobby_data(id, "fit"), "0");
+        // The pair is team 0; the two singles share team 1.
+        assert_eq!(
+            s.lobby_data(id, "roster"),
+            format!("{ME}:{ME}:1,{OTHER}:{OTHER}:1,7003:7003:0,7004:7003:0")
+        );
+        assert_eq!(s.lobby_data(id, "bounce"), "", "nobody was bounced");
+    }
+
+    #[test]
+    fn a_searcher_skips_a_lobby_whose_fit_is_smaller_than_its_party() {
+        let mut low = tags_for("squad", "6");
+        low.push(("fit", "1"));
+        let mut s = FakeSteam::new(ME);
+        s.add_lobby(600, OTHER, 6, &[OTHER, 7003, 7004, 7005], &low);
+        // Fresh lobby, no `fit` yet: it takes a whole team.
+        s.add_lobby(700, OTHER, 6, &[OTHER], &tags_for("squad", "6"));
+        s.auto_search = Some(vec![600, 700]);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Squad, pair_of(ME), t);
+        run(&mut m, &mut s, &mut t, |m| {
+            matches!(m.state, State::InQueue(_))
+        });
+        assert!(s.writes.contains(&Write::Join(700)), "{:?}", s.writes);
+        assert!(!s.writes.contains(&Write::Join(600)));
+        // A single is welcome in the lobby with fit=1.
+        let mut s = FakeSteam::new(ME);
+        s.add_lobby(600, OTHER, 6, &[OTHER, 7003, 7004, 7005], &low);
+        s.auto_search = Some(vec![600]);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Squad, solo(ME), t);
+        run(&mut m, &mut s, &mut t, |m| {
+            matches!(m.state, State::InQueue(_))
+        });
+        assert!(s.writes.contains(&Write::Join(600)), "{:?}", s.writes);
+    }
+
+    #[test]
+    fn tickets_that_do_not_pack_bounce_the_latest_party_and_never_start() {
+        let mut s = FakeSteam::new(ME);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        let mut t = Instant::now();
+        m.queue(&mut s, Mode::Squad, pair_of(ME), t);
+        let id = owner_in_queue_after(&mut m, &mut s, &mut t);
+        // Three pairs at once (two joined while the `fit` they saw was stale): 2+2+2 does not pack into 2 teams of 3.
+        join_party(&mut s, id, ME, 2, &[8001]);
+        join_party(&mut s, id, 7002, 2, &[7002, 7012]);
+        join_party(&mut s, id, 7003, 2, &[7003, 7013]);
+        secs(&mut m, &mut s, &mut t, 3);
+        assert!(
+            matches!(m.state, State::InQueue(_)),
+            "six complete players, but the tickets do not pack"
+        );
+        assert_eq!(s.lobby_data(id, "bounce"), "7003", "the highest party goes");
+        assert_eq!(s.lobby_data(id, "fit"), "1");
+        // The bounced pair leaves; the key clears; two singles complete the match.
+        s.lobbies
+            .get_mut(&id)
+            .expect("lobby")
+            .members
+            .retain(|x| *x != 7003 && *x != 7013);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert_eq!(s.lobby_data(id, "bounce"), "none");
+        join_solo(&mut s, id, 7098);
+        join_solo(&mut s, id, 7099);
+        secs(&mut m, &mut s, &mut t, 2);
+        assert!(matches!(m.state, State::MatchReady(_)));
+        // Pairs first (lowest party id first), then the singles in the room that is left.
+        let roster = s.lobby_data(id, "roster");
+        for want in [
+            format!("{ME}:{ME}:0"),
+            format!("8001:{ME}:0"),
+            "7002:7002:1".to_string(),
+            "7012:7002:1".to_string(),
+            "7098:7098:0".to_string(),
+            "7099:7099:1".to_string(),
+        ] {
+            assert!(roster.split(',').any(|e| e == want), "{want} in {roster}");
+        }
+        assert_eq!(roster.split(',').count(), 6);
+    }
+
+    #[test]
+    fn a_bounced_member_leaves_and_searches_again() {
+        let t = Instant::now();
+        let in_queue = |party: u64, size: u32| {
+            State::InQueue(Box::new(InQueue {
+                ticket: Ticket {
+                    mode: Mode::Squad,
+                    party: Party {
+                        id: party,
+                        size,
+                        leader: true,
+                        sc: None,
+                    },
+                },
+                lobby: QueueLobby::for_test(77),
+                next_eval: t,
+                hb: None,
+                next_hb: t + Duration::from_secs(3600),
+                incomplete_since: None,
+                members: 0,
+                second_since: None,
+            }))
+        };
+        let mut d = tags_for("squad", "6");
+        d.push(("bounce", "7003"));
+        let mut s = FakeSteam::new(7003);
+        s.add_lobby(77, ME, 6, &[ME, 7003, 7013], &d);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        m.state = in_queue(7003, 2);
+        m.tick(&mut s, t);
+        assert!(s.writes.contains(&Write::Leave(77)), "{:?}", s.writes);
+        assert!(matches!(m.state, State::Searching { .. }));
+        // A party that is not named stays.
+        let mut s = FakeSteam::new(7002);
+        s.add_lobby(77, ME, 6, &[ME, 7002], &d);
+        let mut m = Machine::new(cfg_n(6, 2, false));
+        m.state = in_queue(7002, 1);
+        m.tick(&mut s, t);
+        assert!(matches!(m.state, State::InQueue(_)));
+    }
+
+    #[test]
+    fn the_worker_maps_session_ids_to_roster_teams_from_the_sc_lobby_members() {
+        const SC: u64 = 5555;
+        let mut s = FakeSteam::new(ME);
+        let mut c = cfg_n(2, 2, false);
+        c.join = true;
+        let mut m = Machine::new(c);
+        let mut t = Instant::now();
+        let id = owner_in_queue(&mut m, &mut s, &mut t);
+        join_solo(&mut s, id, OTHER);
+        run(&mut m, &mut s, &mut t, |m| {
+            matches!(m.state, State::MatchReady(_))
+        });
+        // Not in a match yet at the SC lobby: nothing is written.
+        s.add_lobby(
+            SC,
+            ME,
+            6,
+            &[ME, OTHER, 9999],
+            &[(KEY_SC_TYPE, "nrsc_ynx3_seamless_master_lobby")],
+        );
+        let sc = ScLobby::verify(&s, SC).expect("sc lobby");
+        m.team_tick(&mut s, Some(111));
+        assert!(
+            !s.writes.iter().any(|w| matches!(w, Write::ScPid(..))),
+            "no SC lobby known yet"
+        );
+        m.set_env(Some(sc), Ok(()), None, 0);
+        m.team_tick(&mut s, Some(111));
+        assert!(s.writes.contains(&Write::ScPid(SC, "111".into())));
+        // Only our own value so far (the other member has not written theirs): a partial map.
+        assert_eq!(m.team_map, Some(vec![(111, ME, 0)]));
+        // The other member publishes theirs; a stranger with a pid is not in the roster and is ignored.
+        s.set_member(SC, OTHER, "nrpvp_pid", "555");
+        s.set_member(SC, 9999, "nrpvp_pid", "777");
+        m.team_tick(&mut s, Some(111));
+        assert_eq!(m.team_map, Some(vec![(111, ME, 0), (555, OTHER, 1)]));
+        // Written once; rewritten when the id changes (host migration, loading screen).
+        let writes = |s: &FakeSteam| {
+            s.writes
+                .iter()
+                .filter(|w| matches!(w, Write::ScPid(..)))
+                .count()
+        };
+        m.team_tick(&mut s, Some(111));
+        assert_eq!(writes(&s), 1);
+        m.team_tick(&mut s, Some(222));
+        assert_eq!(writes(&s), 2);
+        assert_eq!(m.team_map, Some(vec![(222, ME, 0), (555, OTHER, 1)]));
+        assert!(ids_are_shared(m.team_map.as_deref().unwrap_or(&[])));
+        // Roundtable ids are local (mi-duo-fill 2026-11-08: both games published 0x6001FFFFFFFF): one id twice = no map.
+        s.set_member(SC, OTHER, "nrpvp_pid", "222");
+        m.team_tick(&mut s, Some(222));
+        assert!(
+            !ids_are_shared(m.team_map.as_deref().unwrap_or(&[])),
+            "duplicate ids: no map is published"
+        );
+        s.set_member(SC, OTHER, "nrpvp_pid", "555");
+        m.team_tick(&mut s, Some(222));
+        assert_eq!(m.team_map, Some(vec![(222, ME, 0), (555, OTHER, 1)]));
+        // The match ends: the value and the map are cleared.
+        m.leave(&mut s, "test", t);
+        m.team_tick(&mut s, Some(222));
+        assert_eq!(s.writes.last(), Some(&Write::ScPid(SC, String::new())));
+        assert_eq!(m.team_map, None);
+        // Only member values were written on SC's lobby.
+        for w in s.writes_to(SC) {
+            assert!(matches!(w, Write::ScPid(..) | Write::ScValue(..)), "{w:?}");
+        }
     }
 }

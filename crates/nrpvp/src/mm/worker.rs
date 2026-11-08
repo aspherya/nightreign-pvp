@@ -148,8 +148,10 @@ pub(crate) struct Worker {
     quiet_seen_sup: u32,
     /// MM-4: see [`Setup::world_stale`].
     world_stale: Duration,
-    /// FS7-4: the Seamless Co-op lobby of the last match and the own party's size in it.
-    last_match: Option<(u64, usize)>,
+    /// FS7-4: the Seamless Co-op lobby of the last match, its team size and the own party's size in it.
+    last_match: Option<super::LastMatch>,
+    /// MM-FILL part C: the team size of the Duo / Trio match whose lobby we left (random teammates): the menu keeps that mode.
+    left_fill: Option<usize>,
     /// FS7-4: when the party size is published next.
     next_party: Instant,
 }
@@ -231,6 +233,7 @@ impl Worker {
             guard_cache: None,
             exports_ok,
             last_match: None,
+            left_fill: None,
             next_party: Instant::now(),
         })
     }
@@ -486,8 +489,10 @@ impl Worker {
     /// FS7-4: publish the own party's size once a second; FS7-8: leave the Seamless Co-op lobby once a player who left a match is
     /// back at the Roundtable.
     fn party_tick(&mut self, now: Instant) {
-        if let Some(m) = self.machine.match_lobby() {
+        let in_match = self.machine.match_lobby();
+        if let Some(m) = in_match {
             self.last_match = Some(m);
+            self.left_fill = None;
         }
         if now < self.next_party {
             return;
@@ -495,10 +500,30 @@ impl Worker {
         self.next_party = now + Duration::from_secs(1);
         let at_roundtable = super::local_phase() == Some(super::join::Phase::Roundtable);
         let sc = self.current_sc();
+        // MM-FILL part C: back from a Duo / Trio match with random teammates: leave that match's lobby (its members are not a party).
+        if super::leave_after_fill(
+            at_roundtable,
+            !self.machine.is_idle(),
+            sc.as_ref().map(|(lobby, _, _)| lobby.id()),
+            self.last_match,
+        ) {
+            if let (Some((lobby, _, n)), Some(m)) = (&sc, self.last_match) {
+                tracing::info!(
+                    "mm_queue: back from a {} match with random teammates: leaving its Seamless Co-op lobby {} ({n} member(s))",
+                    if m.team == 2 { "Duo" } else { "Trio" },
+                    idt(lobby.id())
+                );
+                self.steam.leave_sc(lobby);
+                self.sc_seen = None;
+                self.left_fill = Some(m.team);
+                super::set_party_size(m.team);
+                return;
+            }
+        }
         if at_roundtable && super::leave_session_asked(false) {
             super::leave_session_asked(true);
-            // A Duo / Trio player stays: the lobby also holds the own party, which leaving would break up.
-            let own_party = self.last_match.map_or(1, |(_, size)| size);
+            // A premade Duo / Trio party stays: the lobby also holds the own party, which leaving would break up.
+            let own_party = self.last_match.map_or(1, |m| m.party);
             match &sc {
                 Some((lobby, _, _)) if own_party > 1 => tracing::info!(
                     "mm_queue: the player left the match (F10): the Seamless Co-op lobby {} is kept (party of {own_party})",
@@ -519,10 +544,19 @@ impl Worker {
                 ),
             }
         }
-        let p = super::party_of(
-            sc.as_ref().map(|(lobby, _, n)| (lobby.id(), *n)),
-            self.last_match,
-        );
+        // MM-FILL part C: after leaving a match with random teammates the menu keeps that match's mode until a new party forms.
+        let p = match (&sc, self.left_fill) {
+            (None, Some(team)) => team,
+            _ => {
+                if sc.is_some() {
+                    self.left_fill = None;
+                }
+                super::party_of(
+                    sc.as_ref().map(|(lobby, _, n)| (lobby.id(), *n)),
+                    self.last_match.map(|m| (m.sc, m.team)),
+                )
+            }
+        };
         super::set_party_size(p);
     }
 
@@ -537,6 +571,7 @@ impl Worker {
         let away = away_from_roundtable(super::world_state(self.world_stale));
         self.machine.world_tick(&mut self.steam, away, now);
         self.machine.tick(&mut self.steam, now);
+        self.machine.team_tick(&mut self.steam, super::local_pid());
         self.quiet_tick(now);
         self.auto_tick(now);
         if self.sc_create.as_ref().is_some_and(|c| c.running()) {

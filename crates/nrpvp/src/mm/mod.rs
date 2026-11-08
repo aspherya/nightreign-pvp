@@ -13,6 +13,7 @@
 pub(crate) mod guard;
 pub(crate) mod join;
 pub(crate) mod machine;
+pub(crate) mod pack;
 pub(crate) mod proto;
 pub(crate) mod sccreate;
 pub(crate) mod ui_msg;
@@ -113,6 +114,10 @@ static LOCAL_TEAM: AtomicU8 = AtomicU8::new(0);
 static LOCAL_AT_MS: AtomicU64 = AtomicU64::new(0);
 /// MM-3f: how many players the local ChrSet held at the game loop's last read (0 = never read).
 static LOCAL_PLAYERS: AtomicUsize = AtomicUsize::new(0);
+/// MM-FILL part B: the local player's session id (`ChrIns+0x78`) as the game loop last read it (0 = unknown). Only written while enabled.
+static LOCAL_PID: AtomicU64 = AtomicU64::new(0);
+/// MM-FILL part B: session player id -> roster team, built by the worker while MATCH READY (`None` outside a match).
+static ROSTER_TEAMS: Mutex<Option<std::collections::HashMap<u64, u8>>> = Mutex::new(None);
 /// UI-1: the queue phase, written by the worker every tick, read lock-free (also from the Commence exception handler).
 static PHASE: AtomicU8 = AtomicU8::new(PHASE_IDLE);
 pub(crate) const PHASE_IDLE: u8 = 0;
@@ -192,6 +197,36 @@ pub(crate) fn status() -> Status {
     lock(&hub().status).clone()
 }
 
+/// Game loop (MM-FILL part B): the local player's session id, `None` when unreadable. Logs every change.
+pub(crate) fn set_local_pid(pid: Option<u64>) {
+    if !enabled() {
+        return;
+    }
+    let new = pid.unwrap_or(0);
+    let old = LOCAL_PID.swap(new, Ordering::Relaxed);
+    if old != new {
+        tracing::info!("mm_team: local pid 0x{new:X} (changed from 0x{old:X})");
+    }
+}
+
+/// Worker (MM-FILL part B): the local session id the game loop stored, `None` while unknown.
+pub(crate) fn local_pid() -> Option<u64> {
+    Some(LOCAL_PID.load(Ordering::Relaxed)).filter(|&p| p != 0)
+}
+
+/// Worker (MM-FILL part B): publish (or clear) the session id -> roster team map.
+pub(crate) fn set_roster_teams(map: Option<std::collections::HashMap<u64, u8>>) {
+    *lock(&ROSTER_TEAMS) = map;
+}
+
+/// Game loop (MM-FILL part B): session player id -> team from the queue roster; `None` outside a match.
+pub(crate) fn roster_teams() -> Option<std::collections::HashMap<u64, u8>> {
+    if !enabled() {
+        return None;
+    }
+    lock(&ROSTER_TEAMS).clone()
+}
+
 /// Worker: set (`Some(n)`) or clear (`None`) the team-size override. Set on `MatchReady`, cleared on leave / back to Idle.
 pub(crate) fn set_team_override(n: Option<usize>) {
     TEAM_OVERRIDE.store(n.unwrap_or(0), Ordering::SeqCst);
@@ -254,6 +289,17 @@ pub(crate) fn party_size() -> Option<usize> {
     }
 }
 
+/// FS7-4 / MM-FILL: the last match as the worker remembers it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct LastMatch {
+    /// The match's Seamless Co-op lobby.
+    pub sc: u64,
+    /// The mode's team size (1 Solo, 2 Duo, 3 Trio).
+    pub team: usize,
+    /// The own ticket's party size (MM-FILL: 1 for a player whose teammates were random).
+    pub party: usize,
+}
+
 /// FS7-4 (pure): the own party's size: the Seamless Co-op lobby's member count, except in the lobby of the last match, where the
 /// other members are that match's rivals and the own party is the match's team size. No lobby = alone.
 pub(crate) fn party_of(sc: Option<(u64, u32)>, last_match: Option<(u64, usize)>) -> usize {
@@ -264,9 +310,61 @@ pub(crate) fn party_of(sc: Option<(u64, u32)>, last_match: Option<(u64, usize)>)
     }
 }
 
+/// MM-FILL part C (pure): leave the last match's Seamless Co-op lobby once back at the Roundtable after a Duo / Trio match the
+/// player queued for alone. Its other members are random teammates and rivals; staying would make them follow the lobby owner's
+/// next queue (`sync_party`) as if they were a party. Solo keeps today's behaviour (a Solo ticket never publishes `nrpvp_q`), and a
+/// premade party stays together.
+pub(crate) fn leave_after_fill(
+    at_roundtable: bool,
+    in_match: bool,
+    sc: Option<u64>,
+    last: Option<LastMatch>,
+) -> bool {
+    at_roundtable
+        && !in_match
+        && matches!((sc, last), (Some(id), Some(m)) if id == m.sc && m.team > 1 && m.party == 1)
+}
+
 #[cfg(test)]
 mod party_tests {
-    use super::party_of;
+    use super::{leave_after_fill, party_of, LastMatch};
+
+    #[test]
+    fn a_lone_duo_or_trio_player_leaves_the_match_lobby_back_at_the_roundtable() {
+        let lone_duo = LastMatch {
+            sc: 7,
+            team: 2,
+            party: 1,
+        };
+        assert!(leave_after_fill(true, false, Some(7), Some(lone_duo)));
+        assert!(
+            !leave_after_fill(true, true, Some(7), Some(lone_duo)),
+            "not while the match is on"
+        );
+        assert!(
+            !leave_after_fill(false, false, Some(7), Some(lone_duo)),
+            "only at the Roundtable"
+        );
+        assert!(
+            !leave_after_fill(true, false, Some(9), Some(lone_duo)),
+            "a new lobby (an invite after the match) is kept"
+        );
+        assert!(!leave_after_fill(true, false, None, Some(lone_duo)));
+        assert!(!leave_after_fill(true, false, Some(7), None));
+        let pair = LastMatch { party: 2, ..lone_duo };
+        assert!(
+            !leave_after_fill(true, false, Some(7), Some(pair)),
+            "a premade pair stays"
+        );
+        let solo = LastMatch {
+            team: 1,
+            ..lone_duo
+        };
+        assert!(
+            !leave_after_fill(true, false, Some(7), Some(solo)),
+            "Solo unchanged"
+        );
+    }
 
     #[test]
     fn the_party_is_the_lobby_except_in_the_last_match_lobby() {
