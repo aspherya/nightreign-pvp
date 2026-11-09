@@ -387,7 +387,8 @@ impl Worker {
                 self.machine
                     .leave(&mut self.steam, "user pressed Leave", now);
             }
-            Cmd::Queue(mode) => {
+            Cmd::Queue(mode) | Cmd::QueueArena(mode) => {
+                let arena = matches!(c, Cmd::QueueArena(_));
                 if !self.machine.is_idle() {
                     tracing::info!("mm_queue: Queue {} ignored: not idle", mode.label());
                     return;
@@ -405,7 +406,9 @@ impl Worker {
                 let own = self.steam.own_id();
                 let sc = self.current_sc();
                 match build_party(mode, own, sc) {
-                    Ok(party) => self.machine.queue(&mut self.steam, mode, party, now),
+                    Ok(party) => self
+                        .machine
+                        .queue_kind(&mut self.steam, mode, party, arena, now),
                     Err(e) => self.refuse(e),
                 }
             }
@@ -601,6 +604,7 @@ impl Worker {
             self.last_override = ov;
         }
         super::set_phase(self.machine.phase_code());
+        super::set_arena_match(self.machine.arena_match());
         // UI-2: one on-screen message per change of the queue view.
         let view = self.machine.queue_view();
         if self.last_view.as_ref() != Some(&view) {

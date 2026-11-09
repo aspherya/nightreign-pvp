@@ -129,6 +129,15 @@ fn local() -> Result<(usize, usize), String> {
     Ok((chr, phys))
 }
 
+/// ARENA-1: LOCAL's world position in metres (`None` with no world or no LOCAL).
+pub(crate) fn local_world_pos() -> Option<[f32; 3]> {
+    let (chr, phys) = local().ok()?;
+    Some(world_of(
+        read3(phys + PHYSICS_POS)?,
+        read3(chr + PLAYER_ORIGIN)?,
+    ))
+}
+
 /// `pos`: LOCAL's world position, physics position and the orientation candidate.
 pub(crate) fn pos_cmd() -> Result<String, String> {
     let (chr, phys) = local()?;

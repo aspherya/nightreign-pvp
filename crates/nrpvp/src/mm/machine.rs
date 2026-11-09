@@ -236,11 +236,17 @@ pub(crate) struct Machine {
     pid_pub: Option<(ScLobby, u64)>,
     /// MM-FILL part B: the `(session id, steam id, team)` map last published to the game loop.
     team_map: Option<Vec<(u64, u64, u8)>>,
+    /// ARENA-1: the Battle Royale `need` / `min` from the settings; `cfg.need` / `cfg.min` follow the kind of the current queue.
+    br_need_min: (u32, u32),
+    /// ARENA-1: the current (or last) queue is for the Arena.
+    arena: bool,
 }
 
 impl Machine {
     pub(crate) fn new(cfg: MachineCfg) -> Machine {
         Machine {
+            br_need_min: (cfg.need, cfg.min),
+            arena: false,
             cfg,
             state: State::Idle,
             orphans: Vec::new(),
@@ -256,6 +262,50 @@ impl Machine {
             pid_pub: None,
             team_map: None,
         }
+    }
+
+    /// ARENA-1: a match found by an Arena queue is on (MATCH READY, which lasts until the players are back at the Roundtable).
+    pub(crate) fn arena_match(&self) -> bool {
+        self.arena && matches!(self.state, State::MatchReady(_))
+    }
+
+    /// ARENA-1 (pure): players per match and the smallest match for a queue of this kind. The Arena is always full teams, two of
+    /// them (Solo 1v1 = 2 players); Battle Royale keeps the settings.
+    pub(crate) fn need_min(arena: bool, mode: Mode, br: (u32, u32)) -> (u32, u32) {
+        if arena {
+            let n = 2 * mode.team_size() as u32;
+            (n, n)
+        } else {
+            br
+        }
+    }
+
+    /// ARENA-1: [`Self::queue`] for the Arena (`arena` true) or Battle Royale.
+    pub(crate) fn queue_kind(
+        &mut self,
+        api: &mut dyn QueueSteam,
+        mode: Mode,
+        party: Party,
+        arena: bool,
+        now: Instant,
+    ) {
+        if self.is_idle() {
+            self.arena = arena;
+            (self.cfg.need, self.cfg.min) = Self::need_min(arena, mode, self.br_need_min);
+        }
+        self.queue_inner(api, mode, party, now);
+    }
+
+    /// A Battle Royale queue ([`Self::queue_kind`] with `arena` false; the tests' entry point).
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn queue(
+        &mut self,
+        api: &mut dyn QueueSteam,
+        mode: Mode,
+        party: Party,
+        now: Instant,
+    ) {
+        self.queue_kind(api, mode, party, false, now);
     }
 
     /// MM-FILL part B: while MATCH READY, publish our session id as `nrpvp_pid` on the Seamless Co-op lobby and build `session id -> roster
@@ -554,6 +604,11 @@ impl Machine {
     fn tags(&self, mode: Mode) -> Tags {
         Tags {
             mode,
+            kind: if self.arena {
+                proto::KIND_ARENA
+            } else {
+                proto::KIND_BR
+            },
             game: self.cfg.game.clone(),
             sc: self.cfg.sc.clone(),
             need: self.cfg.need,
@@ -577,13 +632,7 @@ impl Machine {
     // ---- user commands ----
 
     /// Start queuing. Ignored (logged) unless Idle.
-    pub(crate) fn queue(
-        &mut self,
-        api: &mut dyn QueueSteam,
-        mode: Mode,
-        party: Party,
-        now: Instant,
-    ) {
+    fn queue_inner(&mut self, api: &mut dyn QueueSteam, mode: Mode, party: Party, now: Instant) {
         if !self.is_idle() {
             tracing::info!(
                 "mm_queue: queue {} ignored: already {}",
@@ -602,8 +651,9 @@ impl Machine {
         self.left_note = None;
         self.away_since = None;
         tracing::info!(
-            "mm_queue: queue requested: mode={} party_leader={} size={} leader={} sc_lobby={:?} need={}",
+            "mm_queue: queue requested: mode={} kind={} party_leader={} size={} leader={} sc_lobby={:?} need={}",
             mode.label(),
+            if self.arena { "arena" } else { "br" },
             idt(party.id),
             party.size,
             party.leader,
@@ -1119,6 +1169,7 @@ impl Machine {
         }
         let expect = [
             (proto::K_MODE, tags.mode.label().to_string()),
+            (proto::K_KIND, tags.kind.to_string()),
             (proto::K_PROTO, proto::PROTO.to_string()),
             (proto::K_GAME, tags.game.clone()),
             (proto::K_SC, tags.sc.clone()),
@@ -1634,7 +1685,8 @@ mod tests {
         vec![
             ("nrpvp", "1"),
             ("mode", "solo"),
-            ("proto", "3"),
+            ("kind", "br"),
+            ("proto", "4"),
             ("game", "1.3.3.0"),
             ("sc", "1.1.3"),
             ("need", "2"),
@@ -1708,7 +1760,8 @@ mod tests {
             &[
                 ("nrpvp", "1"),
                 ("mode", "duo"),
-                ("proto", "3"),
+                ("kind", "br"),
+                ("proto", "4"),
                 ("game", "1.3.3.0"),
                 ("sc", "1.1.3"),
                 ("need", "2"),
@@ -2743,5 +2796,13 @@ mod tests {
         for w in s.writes_to(SC) {
             assert!(matches!(w, Write::ScPid(..) | Write::ScValue(..)), "{w:?}");
         }
+    }
+
+    #[test]
+    fn an_arena_queue_needs_two_full_teams_and_battle_royale_keeps_the_settings() {
+        assert_eq!(Machine::need_min(true, Mode::Solo, (6, 2)), (2, 2));
+        assert_eq!(Machine::need_min(true, Mode::Duo, (6, 2)), (4, 4));
+        assert_eq!(Machine::need_min(true, Mode::Squad, (6, 2)), (6, 6));
+        assert_eq!(Machine::need_min(false, Mode::Solo, (6, 2)), (6, 2));
     }
 }

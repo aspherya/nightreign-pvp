@@ -62,6 +62,8 @@ impl Mode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Cmd {
     Queue(Mode),
+    /// ARENA-1: queue for an Arena match (lobby kind `arena`, two full teams).
+    QueueArena(Mode),
     Leave,
     /// MM-3 (dev buttons): one join method attempt.
     Join(join::JoinCmd),
@@ -125,6 +127,25 @@ pub(crate) const PHASE_IDLE: u8 = 0;
 pub(crate) const PHASE_SEARCHING: u8 = 1;
 /// MATCH READY (the match exists; the host starts the expedition).
 pub(crate) const PHASE_MATCHED: u8 = 2;
+
+/// ARENA-1: a match found by an Arena queue is on (written by the worker every tick).
+static ARENA_MATCH: AtomicBool = AtomicBool::new(false);
+
+/// Worker (ARENA-1): publish whether the current match is an Arena match.
+pub(crate) fn set_arena_match(on: bool) {
+    ARENA_MATCH.store(on, Ordering::Relaxed);
+}
+
+/// Game loop (ARENA-1): the current match is an Arena match (false when the queue is off).
+pub(crate) fn arena_match() -> bool {
+    enabled() && ARENA_MATCH.load(Ordering::Relaxed)
+}
+
+/// Game loop (ARENA-1): LOCAL's roster team (0-based) in the current match, from the session id map (`None` until it is known).
+pub(crate) fn local_roster_team() -> Option<u8> {
+    let pid = local_pid()?;
+    roster_teams()?.get(&pid).copied()
+}
 
 /// Worker: publish the queue phase.
 pub(crate) fn set_phase(p: u8) {
@@ -351,7 +372,10 @@ mod party_tests {
         );
         assert!(!leave_after_fill(true, false, None, Some(lone_duo)));
         assert!(!leave_after_fill(true, false, Some(7), None));
-        let pair = LastMatch { party: 2, ..lone_duo };
+        let pair = LastMatch {
+            party: 2,
+            ..lone_duo
+        };
         assert!(
             !leave_after_fill(true, false, Some(7), Some(pair)),
             "a premade pair stays"

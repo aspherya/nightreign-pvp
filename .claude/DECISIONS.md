@@ -125,3 +125,9 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   + weapon + talisman builds is the point; the agent had proposed off); **maximum flask count** for everyone; the loadout is the
   **whole inventory** from the Sparring Grounds (a first slice may bring only the equipped items); loser sees defeat, winner VICTORY,
   then both return to the Roundtable out of the session.
+  **Session after an Arena match** (Leonardo, 2026-11-08): random players leave the session when they return to the Roundtable;
+  players who are Steam friends or came in through a direct invite stay together. Today nobody leaves: the game's SC lobby outlives
+  the match (MATCHMAKING "Old SC lobby still around"), not an emulation artifact. Built with spike 6 / ARENA-2.
+  Checked after the fact (agent, 2026-11-08): Heolstor's `m18` is also the simplest Nightlord arena to use: `m19` is shared by the
+  other Nightlords (3× the event script), `m16*` are DLC arenas, `m12` is the Shelter. Open risk is its size (~300 m across, large
+  for a 1v1): answer with our own boundary if a real fight shows kiting, not another map (the warp target is one line of data).

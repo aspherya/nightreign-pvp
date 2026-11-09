@@ -1,6 +1,6 @@
 //! MM-2: the data protocol of the queue lobby (pure text handling, unit-tested).
 //!
-//! Queue lobby data (written by the owner only): `nrpvp=1`, `mode`, `proto`, `game`, `sc`, `need` (players for a match),
+//! Queue lobby data (written by the owner only): `nrpvp=1`, `mode`, `kind` (ARENA-1: `br` / `arena`), `proto`, `game`, `sc`, `need` (players for a match),
 //! later `merge_to` (this lobby dissolves: everyone searches again), `fit` (MM-FILL: the biggest party the lobby can still take),
 //! `bounce` (MM-FILL: party ids that no longer pack and must leave), and at match time `host`, `roster`, `state=go`.
 //! Per-member data on the queue lobby: `nrpvp_party` (party leader's Steam id, = own id for Solo) and `nrpvp_size`.
@@ -9,9 +9,13 @@
 use super::Mode;
 use crate::steam::queue::SearchFilters;
 
-/// Protocol version tag (`proto=3`; 3 = MM-FILL: roster entries carry the team).
-pub(crate) const PROTO: u32 = 3;
+/// Protocol version tag (`proto=4`; 3 = MM-FILL: roster entries carry the team; 4 = ARENA-1: the `kind` tag).
+pub(crate) const PROTO: u32 = 4;
 pub(crate) const K_MODE: &str = "mode";
+/// ARENA-1: which mode the match is for, `br` or `arena`; part of the search filter, so the two queues never meet.
+pub(crate) const K_KIND: &str = "kind";
+pub(crate) const KIND_BR: &str = "br";
+pub(crate) const KIND_ARENA: &str = "arena";
 pub(crate) const K_PROTO: &str = "proto";
 pub(crate) const K_GAME: &str = "game";
 pub(crate) const K_SC: &str = "sc";
@@ -40,6 +44,8 @@ pub(crate) const M_SIZE: &str = "nrpvp_size";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Tags {
     pub mode: Mode,
+    /// ARENA-1: [`KIND_BR`] or [`KIND_ARENA`].
+    pub kind: &'static str,
     pub game: String,
     pub sc: String,
     pub need: u32,
@@ -66,6 +72,7 @@ pub(crate) fn tag_pairs(t: &Tags) -> Vec<(String, String)> {
     vec![
         (crate::steam::queue::KEY_TAG.to_string(), "1".to_string()),
         (K_MODE.to_string(), t.mode.label().to_string()),
+        (K_KIND.to_string(), t.kind.to_string()),
         (K_PROTO.to_string(), PROTO.to_string()),
         (K_GAME.to_string(), t.game.clone()),
         (K_SC.to_string(), t.sc.clone()),
@@ -236,6 +243,7 @@ mod tests {
     fn tags() -> Tags {
         Tags {
             mode: Mode::Solo,
+            kind: KIND_BR,
             game: "1.3.3.0".into(),
             sc: "1.1.3".into(),
             need: 2,
@@ -249,12 +257,13 @@ mod tests {
         let keys: Vec<&str> = t.iter().map(|p| p.0.as_str()).collect();
         assert_eq!(
             keys,
-            vec!["nrpvp", "mode", "proto", "game", "sc", "need", "room"]
+            vec!["nrpvp", "mode", "kind", "proto", "game", "sc", "need", "room"]
         );
         assert_eq!(t[0].1, "1");
         assert_eq!(t[1].1, "solo");
-        assert_eq!(t[2].1, "3");
-        assert_eq!(t[6].1, "public");
+        assert_eq!(t[2].1, "br");
+        assert_eq!(t[3].1, "4");
+        assert_eq!(t[7].1, "public");
         let f = search_filters(&tags(), 1);
         assert_eq!(f.strings, t);
         assert_eq!(f.slots, 1);

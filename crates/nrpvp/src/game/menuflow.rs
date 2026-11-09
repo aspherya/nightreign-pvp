@@ -72,16 +72,6 @@ pub(crate) const BOTS_MENU: bool = true;
 /// The main loop says whether LOCAL is in an expedition (the Bots row's breakpoint is armed only in the Roundtable: in an expedition slot 0
 /// belongs to the death hold and the revive block).
 static IN_EXPEDITION: AtomicBool = AtomicBool::new(false);
-/// ARENA-0: a Commence was pressed with the Arena card chosen (the game starts a normal expedition; the main loop then warps into the
-/// arena). Taken once by [`take_arena_commence`].
-static ARENA_COMMENCE: AtomicBool = AtomicBool::new(false);
-
-/// ARENA-0: true once after a Commence on the Arena card.
-#[cfg_attr(not(feature = "dev"), allow(dead_code))]
-pub(crate) fn take_arena_commence() -> bool {
-    ARENA_COMMENCE.swap(false, Ordering::Relaxed)
-}
-
 /// Called by the main loop every tick.
 pub(crate) fn set_in_expedition(on: bool) {
     IN_EXPEDITION.store(on, Ordering::Relaxed);
@@ -196,7 +186,11 @@ pub(crate) const T_BOTS_SOLO: usize = 7;
 pub(crate) const T_HELP_ROW: usize = 8;
 pub(crate) const T_HELP_ON: usize = 9;
 pub(crate) const T_HELP_OFF: usize = 10;
-const N_TEXTS: usize = 11;
+/// ARENA-1: Commence on the Arena card (Solo) starts the Arena search.
+pub(crate) const T_ARENA_SEARCHING: usize = 11;
+/// ARENA-1: the Arena card with Duo / Trio (ARENA-5).
+pub(crate) const T_ARENA_SOLO: usize = 12;
+const N_TEXTS: usize = 13;
 const TEXT_UNITS: usize = 256;
 
 /// Requests from the handler to the thread.
@@ -206,6 +200,8 @@ pub(crate) const REQ_LEAVE: u8 = 2;
 /// Duo / Trio (the matchmaker's `Mode::Duo` / `Mode::Squad`): the Seamless Co-op party queues, led by the owner of its lobby.
 pub(crate) const REQ_QUEUE_DUO: u8 = 3;
 pub(crate) const REQ_QUEUE_TRIO: u8 = 4;
+/// ARENA-1: an Arena queue, Solo (1v1).
+pub(crate) const REQ_QUEUE_ARENA_SOLO: u8 = 5;
 
 /// What a Commence press does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,6 +244,38 @@ pub(crate) fn decide_for_card(
         };
     }
     decide(players, phase, mm_on, mode)
+}
+
+/// ARENA-1 (pure): a Commence on the Arena card with the queue idle starts the Arena search (Solo only for now); `None` = not the
+/// Arena card, not idle (Stop Searching and a found match go through [`decide_for_card`] as for Battle Royale) or Offline (the game's
+/// own solo expedition, as any other card).
+pub(crate) fn decide_arena(
+    arena_card: Option<bool>,
+    players: u8,
+    phase: u8,
+    mm_on: bool,
+    mode: GameMode,
+) -> Option<Decision> {
+    if arena_card != Some(true) || phase != crate::mm::PHASE_IDLE || mode != GameMode::BattleRoyale
+    {
+        return None;
+    }
+    Some(if !mm_on {
+        Decision::Dialog {
+            text: T_OFF,
+            request: REQ_NONE,
+        }
+    } else if players == PLAYERS_ONE {
+        Decision::Dialog {
+            text: T_ARENA_SEARCHING,
+            request: REQ_QUEUE_ARENA_SOLO,
+        }
+    } else {
+        Decision::Dialog {
+            text: T_ARENA_SOLO,
+            request: REQ_NONE,
+        }
+    })
 }
 
 /// MM-3g + MM-7: once a match is found it starts by itself, so a Commence pressed in the moment before the player is in the host's lobby must
@@ -325,6 +353,11 @@ Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Bots (beta): an offline training mode. On: you alone against 5 AI Nightfarers, no other players, starts at once.".to_string(),
         "Bots On: Commence starts an offline training match, Solo against 5 AI bots (no other players).".to_string(),
         "Bots Off: Commence searches for players (the online Battle Royale).".to_string(),
+        "Arena: searching for an opponent (Solo, 1 vs 1).
+The match starts by itself in the Nightlord's arena.
+To stop, press Stop Searching.".to_string(),
+        "The Arena is Solo (1 vs 1) for now.
+Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
     ]
 }
 
@@ -421,8 +454,13 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
             let mode = crate::features::mode::current();
+            let arena_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize)
+                .has_card(crate::game::layout::ARENA_CARD_ROW);
             let d = while_starting(
-                decide_for_card(br_card, players, phase, crate::mm::enabled(), mode, bots),
+                decide_arena(arena_card, players, phase, crate::mm::enabled(), mode)
+                    .unwrap_or_else(|| {
+                        decide_for_card(br_card, players, phase, crate::mm::enabled(), mode, bots)
+                    }),
                 phase,
                 crate::mm::auto_start(),
             );
@@ -435,14 +473,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
                 Ordering::Relaxed,
             );
             match d {
-                Decision::Pass => {
-                    if ExpeditionMenu::new(&mem, (*ctx).R14 as usize)
-                        .has_card(crate::game::layout::ARENA_CARD_ROW)
-                        == Some(true)
-                    {
-                        ARENA_COMMENCE.store(true, Ordering::Relaxed);
-                    }
-                }
+                Decision::Pass => {}
                 Decision::PassBots => crate::features::bots::set_bots_match(true),
                 Decision::PassMultiplayer => {
                     let _ = settings.set_players(PLAYERS_TWO);
@@ -533,6 +564,15 @@ pub(crate) fn last_card_is_br() -> Option<bool> {
     match LAST_MENU.load(Ordering::Relaxed) {
         0 => None,
         menu => ExpeditionMenu::new(&RealMem, menu).is_battle_royale_card(),
+    }
+}
+
+/// ARENA-1: whether the card selected right now is the Arena card (`None`: no menu known). Console `br_card`.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn last_card_is_arena() -> Option<bool> {
+    match LAST_MENU.load(Ordering::Relaxed) {
+        0 => None,
+        menu => ExpeditionMenu::new(&RealMem, menu).has_card(crate::game::layout::ARENA_CARD_ROW),
     }
 }
 
@@ -753,6 +793,17 @@ fn run(base: usize) {
                 tracing::info!(
                     "br_menu: Commence -> queue {} ({})",
                     mode.label(),
+                    if ok {
+                        "sent"
+                    } else {
+                        "NOT sent: queue off or full"
+                    }
+                );
+            }
+            REQ_QUEUE_ARENA_SOLO => {
+                let ok = crate::mm::send(crate::mm::Cmd::QueueArena(crate::mm::Mode::Solo));
+                tracing::info!(
+                    "br_menu: Commence on the Arena card -> queue Arena Solo ({})",
                     if ok {
                         "sent"
                     } else {
@@ -1038,5 +1089,52 @@ mod tests {
         assert!(rows.contains("\"descriptionId\": 131153"));
         assert!(texts.contains("\"131152\": \"Battle Royale\""));
         assert!(texts.contains("\"131153\": "));
+    }
+
+    #[test]
+    fn the_arena_card_starts_the_arena_search_solo_only() {
+        use crate::mm::PHASE_IDLE;
+        let bro = GameMode::BattleRoyale;
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, true, bro),
+            Some(Decision::Dialog {
+                text: T_ARENA_SEARCHING,
+                request: REQ_QUEUE_ARENA_SOLO
+            })
+        );
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_TWO, PHASE_IDLE, true, bro),
+            Some(Decision::Dialog {
+                text: T_ARENA_SOLO,
+                request: REQ_NONE
+            })
+        );
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, false, bro),
+            Some(Decision::Dialog {
+                text: T_OFF,
+                request: REQ_NONE
+            })
+        );
+        assert_eq!(
+            decide_arena(Some(false), PLAYERS_ONE, PHASE_IDLE, true, bro),
+            None,
+            "another card"
+        );
+        assert_eq!(
+            decide_arena(None, PLAYERS_ONE, PHASE_IDLE, true, bro),
+            None,
+            "menu unreadable"
+        );
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_SEARCHING, true, bro),
+            None,
+            "Stop Searching goes the Battle Royale way"
+        );
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, true, GameMode::Offline),
+            None,
+            "Offline: the game's own expedition"
+        );
     }
 }

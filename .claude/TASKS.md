@@ -448,7 +448,7 @@ PROJECT_SCOPE §1 wants a Solo kill at night to be a real death at once unless t
 Owner: OPUS | Status: idea, no schedule. PROJECT_SCOPE §1: "if a match passes the maximum vanilla time everyone loses". Not built.
 
 ### ARENA-0 — Arena feasibility spikes (Leonardo 2026-11-08; rules PROJECT_SCOPE §Arena)
-Owner: OPUS (RE) + HUMAN (in-game looks) | Status: **spike 1 PASS solo (2026-11-08, branch `arena-0-spike`); spike 1b next** | Depends on: none
+Owner: OPUS (RE) + HUMAN (in-game looks) | Status: **spike 1 PASS solo; spike 1b (a)(c)(d) PASS with two instances (2026-11-08, branch `arena-0-spike`); (b) and spikes 2-6 left** | Depends on: none
 Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike before code. Findings: MEMORY_MAP §27.
 1. **Enter Heolstor's arena — PASS solo (2026-11-08, testing-log).** The vanilla Day 3 chain is not usable by flags (TRAPS); our event
    99100900 (`gamedata/emevd-arena.json`, dev only) runs Warp Player `2003[93]`(m18_00_00_00, 18002200) on our flag 10007500 and took
@@ -463,9 +463,11 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
    reopened menu loses the Arena card mid-search) and give slot 1 back only when a match is FOUND (the quiet invite's moment).
    Acceptance then: `mi-zero-click` PASS with the hook in the build, plus a solo check: Arena chosen, search, close and reopen the
    menu, the card is still there, Stop Searching works.
-   **1b (next):** (a) two `nro` instances, each warped (the event is per game; is the session kept, do both see each other?); (b) from
-   the Battle Royale / Arena card's expedition instead of Night Aspect (a save that never unlocked Heolstor); (c) Heolstor not spawned
-   (read `m18_00_00_00` events: what spawns him and what 7510 / 7512 / 7000 do there); (d) what ends the match from `m18`.
+   **1b:** (c) and (d) **done statically (2026-11-08, MEMORY_MAP §27)**: Heolstor is a map character (no spawn event; our disable
+   holds), only his death (7512) ends an `m18` match, so the Arena ends it with our per-game endings (flags 10007411 / 10007412).
+   **(a) + (d) PASS live (2026-11-08, two instances, testing-log):** both players warped from one BR expedition stay in one
+   session in the arena, in sync, and can hit each other; WIN / LOSE banners play per game in `m18` and both return to the
+   Roundtable. Left: (b) a save that never unlocked Heolstor (the warp loads the map file every install has `[HYPOTHESIS]`).
 2. **Spawn points and round reset** `[spawns chosen, reset UNKNOWN]`: default spawns A (−30, 0, 0) / B (+30, 0, 0), 60 m apart,
    facing each other (agent's default, Leonardo: tune later); teleport, full restore of HP / FP / flasks / skill cooldown without a
    map reload, **while the ultimate gauge is kept**; the game's maximum flask count.
@@ -477,7 +479,7 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
    (inventory add + equip vs. our map-item drop, `game/itemdrop.rs`). Relics stay ON: check that the expedition start applies them.
 6. **Leave the session after the match** `[partly known: FS7-8 "F10 also leaves the session"]`: winner VICTORY, loser defeat, then both
    at the Roundtable out of the session.
-Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns; ARENA-2 rounds (best of 3) and the end screens; ARENA-3
+Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens; ARENA-3
 level 15 + loadout + max upgrade; ARENA-4 1v1 bot; ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)

@@ -63,20 +63,101 @@ pub(crate) fn plan(bytes: &[u8], room: usize, want: Option<bool>) -> Plan {
 
 /// Our flag that warps this game's player into Heolstor's arena (event 99100900, `gamedata/emevd-arena.json`).
 const FLAG_WARP: u32 = 10_007_500;
-/// After a Commence on the Arena card: how long LOCAL stands in the expedition before the warp.
+/// ARENA-1: how long LOCAL stands in the expedition of an Arena match before the warp.
 const WARP_AFTER_MS: u64 = 3_000;
+/// Heolstor's arrival point 18002200 in world metres (MEMORY_MAP §27, game 1.03.3) and how near LOCAL must be to count as arrived.
+const ARRIVAL: [f32; 3] = [12.2, 1.3, 83.6];
+const ARRIVED_WITHIN_M: f32 = 15.0;
+/// How long LOCAL stands at the arrival point before the move to its spawn (a move right after a load is undone by the spawn, TRAPS).
+const SETTLE_MS: u64 = 3_000;
+/// Give up placing after this long past the warp (the warp failed or the map is another one).
+const PLACE_TIMEOUT_MS: u64 = 60_000;
+/// Spawns A (roster team 0) and B (team 1): 30 m apart on the arena's x axis (Leonardo 2026-11-08: 60 m was too far), facing each other
+/// (MEMORY_MAP §27).
+/// In this game yaw +90 faces -x (`teleport::quat_of_yaw`; seen live 2026-11-08: yaw 90 at A turned the player away from B), so A
+/// (x -15) looks to +x with yaw -90 and B with yaw +90.
+const SPAWNS: [([f32; 3], f32); 2] = [([-15.0, 3.0, 0.0], -90.0), ([15.0, 3.0, 0.0], 90.0)];
+
+/// ARENA-1: where this game is in the Arena entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// No Arena match.
+    Idle,
+    /// An Arena match is on: warp once LOCAL has been in the expedition [`WARP_AFTER_MS`].
+    WaitWarp,
+    /// Warped: move LOCAL to its spawn once it has stood at the arrival point [`SETTLE_MS`].
+    WaitArrival,
+    /// Placed (or gave up) for this match.
+    Done,
+}
+
+/// What the main loop does this tick (pure; tested).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Act {
+    Nothing,
+    Warp,
+    Place,
+    GiveUp,
+}
+
+/// One step of the Arena entry (pure). `held_ms`: how long the current condition has held (LOCAL in the expedition while
+/// [`Entry::WaitWarp`], LOCAL at the arrival point while [`Entry::WaitArrival`]); `since_warp_ms`: time since the warp.
+pub(crate) fn step(
+    e: Entry,
+    arena_match: bool,
+    held_ms: Option<u64>,
+    since_warp_ms: u64,
+) -> (Entry, Act) {
+    match (e, arena_match) {
+        (_, false) => (Entry::Idle, Act::Nothing),
+        (Entry::Idle, true) => (Entry::WaitWarp, Act::Nothing),
+        (Entry::WaitWarp, true) if held_ms.is_some_and(|h| h >= WARP_AFTER_MS) => {
+            (Entry::WaitArrival, Act::Warp)
+        }
+        (Entry::WaitArrival, true) if held_ms.is_some_and(|h| h >= SETTLE_MS) => {
+            (Entry::Done, Act::Place)
+        }
+        (Entry::WaitArrival, true) if since_warp_ms >= PLACE_TIMEOUT_MS => {
+            (Entry::Done, Act::GiveUp)
+        }
+        (e, true) => (e, Act::Nothing),
+    }
+}
+
+/// ARENA-1: our flags that turn this game's camera (events 99100910..99100913, `gamedata/emevd-arena.json`: Set Camera Angle Y 0 /
+/// 90 / 180 / 270), and the one each spawn uses so the camera looks at the other spawn. `[HYPOTHESIS: the event's Y angle uses the
+/// same degrees as the player's yaw, so A (yaw -90) takes 270 and B (yaw 90) takes 90]`; check in game (`flag 1000751x 1`).
+const CAMERA_FLAGS: [u32; 2] = [10_007_513, 10_007_511];
+
+/// The spawn of a roster team (pure): team 0 A, every other team B (`None` = unknown: A).
+pub(crate) fn spawn_for(team: Option<u8>) -> ([f32; 3], f32) {
+    SPAWNS[usize::from(team.is_some_and(|t| t > 0))]
+}
+
+fn near(a: [f32; 3], b: [f32; 3], m: f32) -> bool {
+    let d: f32 = (0..3).map(|i| (a[i] - b[i]) * (a[i] - b[i])).sum();
+    d.sqrt() <= m
+}
 
 /// Main-loop state of [`tick`].
-static PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-static SINCE: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+struct EntryState {
+    entry: Entry,
+    held_since: Option<std::time::Instant>,
+    warped_at: Option<std::time::Instant>,
+}
+static STATE: Mutex<EntryState> = Mutex::new(EntryState {
+    entry: Entry::Idle,
+    held_since: None,
+    warped_at: None,
+});
 
-/// Main loop, every tick. (1) The list hook holds hwbp slot 1 only at the Roundtable with no queue running: the quiet invite takes the
-/// same slot only after a match is found, so the two never need it at once. (2) After a Commence on the Arena card, once LOCAL has
-/// been in the expedition [`WARP_AFTER_MS`], set [`FLAG_WARP`] once.
+/// Main loop, every tick. (1) The list hook holds hwbp slot 1 at the Roundtable while the queue is idle or searching (a menu reopened
+/// mid-search keeps the Arena card); it gives the slot back once a match is found, when the quiet invite needs it. (2) ARENA-1: in an
+/// Arena match, warp into Heolstor's arena 3 s into the expedition, then put LOCAL on its team's spawn, facing the other.
 pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
-    use std::sync::atomic::Ordering;
-    let idle = crate::mm::phase() == crate::mm::PHASE_IDLE;
-    if !in_expedition && idle {
+    let phase = crate::mm::phase();
+    let menu_time = phase == crate::mm::PHASE_IDLE || phase == crate::mm::PHASE_SEARCHING;
+    if !in_expedition && menu_time {
         if !hook::armed() {
             if let Err(e) = hook::arm(base) {
                 hook::note_once(&e);
@@ -85,30 +166,66 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
     } else if hook::armed() {
         hook::disarm();
     }
-    if crate::game::menuflow::take_arena_commence() {
-        PENDING.store(true, Ordering::Relaxed);
-        tracing::info!("arena_card: Commence on the Arena card; the warp follows {WARP_AFTER_MS} ms into the expedition");
-    }
-    if !PENDING.load(Ordering::Relaxed) {
-        return;
-    }
-    let mut since = SINCE
+    let arena = crate::mm::arena_match();
+    let mut st = STATE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if !(in_expedition && local) {
-        *since = None;
-        return;
-    }
-    let t = *since.get_or_insert_with(std::time::Instant::now);
-    if t.elapsed().as_millis() as u64 >= WARP_AFTER_MS {
-        PENDING.store(false, Ordering::Relaxed);
-        *since = None;
-        match crate::game::flags::set(base, FLAG_WARP, true) {
-            Ok(_) => {
-                tracing::info!("arena_card: flag {FLAG_WARP} ON: warping into Heolstor's arena")
-            }
-            Err(e) => tracing::warn!("arena_card: flag {FLAG_WARP} not set: {e}"),
+    let now = std::time::Instant::now();
+    let holds = match st.entry {
+        Entry::WaitWarp => in_expedition && local,
+        Entry::WaitArrival => {
+            local
+                && crate::game::teleport::local_world_pos()
+                    .is_some_and(|p| near(p, ARRIVAL, ARRIVED_WITHIN_M))
         }
+        _ => false,
+    };
+    if holds {
+        st.held_since.get_or_insert(now);
+    } else {
+        st.held_since = None;
+    }
+    let held_ms = st.held_since.map(|t| t.elapsed().as_millis() as u64);
+    let since_warp_ms = st.warped_at.map_or(0, |t| t.elapsed().as_millis() as u64);
+    let (next, act) = step(st.entry, arena, held_ms, since_warp_ms);
+    if next != st.entry {
+        tracing::info!("arena: entry {:?} -> {next:?}", st.entry);
+        st.held_since = None;
+        st.entry = next;
+    }
+    match act {
+        Act::Nothing => {}
+        Act::Warp => {
+            st.warped_at = Some(now);
+            match crate::game::flags::set(base, FLAG_WARP, true) {
+                Ok(_) => {
+                    tracing::info!("arena: flag {FLAG_WARP} ON: warping into Heolstor's arena")
+                }
+                Err(e) => tracing::warn!("arena: flag {FLAG_WARP} not set: {e}"),
+            }
+        }
+        Act::Place => {
+            let team = crate::mm::local_roster_team();
+            let (to, yaw) = spawn_for(team);
+            let args: Vec<String> = [to[0], to[1], to[2], yaw]
+                .iter()
+                .map(|v| v.to_string())
+                .collect();
+            let side = usize::from(team.is_some_and(|t| t > 0));
+            match crate::game::teleport::tp_cmd(&args) {
+                Ok(r) => {
+                    if let Err(e) = crate::game::flags::set(base, CAMERA_FLAGS[side], true) {
+                        tracing::warn!("arena: camera flag {} not set: {e}", CAMERA_FLAGS[side]);
+                    }
+                    tracing::info!("arena: roster team {team:?} -> spawn ({to:?}, yaw {yaw}): {r}")
+                }
+                Err(e) => tracing::warn!("arena: roster team {team:?}: spawn move failed: {e}"),
+            }
+        }
+        Act::GiveUp => tracing::warn!(
+            "arena: no arrival at Heolstor's arena within {} s of the warp; LOCAL left where it is",
+            PLACE_TIMEOUT_MS / 1000
+        ),
     }
 }
 
@@ -365,5 +482,53 @@ mod tests {
         assert_eq!(plan(&[0, 7, 3], 0, Some(false)), Plan::Remove(1));
         assert_eq!(plan(&[0, 3], 0, Some(false)), Plan::Nothing);
         assert_eq!(plan(&[0, 3], 5, None), Plan::Nothing);
+    }
+
+    #[test]
+    fn the_arena_entry_warps_once_then_places_once() {
+        use Act::*;
+        use Entry::*;
+        assert_eq!(step(Idle, false, None, 0), (Idle, Nothing));
+        assert_eq!(step(Idle, true, None, 0), (WaitWarp, Nothing));
+        assert_eq!(step(WaitWarp, true, Some(2_999), 0), (WaitWarp, Nothing));
+        assert_eq!(
+            step(WaitWarp, true, None, 0),
+            (WaitWarp, Nothing),
+            "not in the expedition yet"
+        );
+        assert_eq!(step(WaitWarp, true, Some(3_000), 0), (WaitArrival, Warp));
+        assert_eq!(
+            step(WaitArrival, true, None, 10_000),
+            (WaitArrival, Nothing),
+            "still loading"
+        );
+        assert_eq!(step(WaitArrival, true, Some(3_000), 12_000), (Done, Place));
+        assert_eq!(step(WaitArrival, true, None, 60_000), (Done, GiveUp));
+        assert_eq!(
+            step(Done, true, Some(99_999), 0),
+            (Done, Nothing),
+            "once per match"
+        );
+        assert_eq!(
+            step(Done, false, None, 0),
+            (Idle, Nothing),
+            "the match is over"
+        );
+        assert_eq!(
+            step(WaitWarp, false, Some(5_000), 0),
+            (Idle, Nothing),
+            "a BR match never warps"
+        );
+    }
+
+    #[test]
+    fn team_zero_takes_spawn_a_the_other_team_spawn_b_facing_each_other() {
+        assert_eq!(spawn_for(Some(0)), ([-15.0, 3.0, 0.0], -90.0));
+        assert_eq!(spawn_for(Some(1)), ([15.0, 3.0, 0.0], 90.0));
+        assert_eq!(spawn_for(None), spawn_for(Some(0)));
+        // Both spawns are within one `tp` (100 m) of the arrival point.
+        for (p, _) in SPAWNS {
+            assert!(near(p, ARRIVAL, 100.0));
+        }
     }
 }

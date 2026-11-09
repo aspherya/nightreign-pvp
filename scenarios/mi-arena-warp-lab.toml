@@ -1,0 +1,220 @@
+name = "mi-arena-warp-lab"
+about = "ARENA-0 spike 1b (a) + (d), lab: two emulated instances reach one Battle Royale expedition the zero-click way (as mi-zero-click), then each game runs its own warp to Heolstor's arena (our flag 10007500, event 99100900, dev gamedata). Shows whether the session survives the per-game warp and whether both games list and see each other in m18 (players, players_pos, screenshots), then whether our per-game endings play there: player 1 WIN (flag 10007411: banner 4000, 10 s, 7000), player 2 LOSE (flag 10007412: banner 4010, 10 s, 7001)"
+tags = ["mi", "lab"]
+# Two emulated-Steam instances (MULTI-INSTANCE.md 20): Steam closed, `nro desk` running. Needs the DEV gamedata (the warp, Heolstor off
+# and his fight off are dev-only event files, scripts\build-gamedata.ps1).
+# Run: nro run scenarios\mi-arena-warp-lab.toml
+
+[config]            # every instance, as mi-zero-click
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_auto_start = true
+br_menu = true
+mm_host_create = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+[[step]]
+instance = 1
+navigate = "queue_br"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 20 }
+
+[[step]]
+instance = 2
+navigate = "queue_br"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 240, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait = { console = "players", contains = ["me", "rival"], timeout_s = 30, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "players", contains = ["me", "rival"], timeout_s = 30, every_ms = 1000 }
+
+# Let the spawn settle (a move right after the load is undone by the spawn, TRAPS).
+[[step]]
+instance = 1
+keys = "wait 10000ms"
+
+[[step]]
+instance = 1
+console = "players_pos"
+
+[[step]]
+instance = 1
+mark = "warp"
+
+[[step]]
+instance = 2
+mark = "warp"
+
+# (a) Each game warps its own player: the event is per game. Host first, then the joiner a moment later.
+[[step]]
+instance = 1
+console = "flag 10007500 1"
+
+[[step]]
+instance = 2
+console = "flag 10007500 1"
+
+[[step]]
+instance = 1
+wait_log = { contains = ["new WorldChrMan instance"], timeout_s = 60, since = "mark:warp" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["new WorldChrMan instance"], timeout_s = 60, since = "mark:warp" }
+
+[[step]]
+instance = 1
+keys = "wait 10000ms"
+
+# Where is each player (arrival point 18002200 = world (12.2, 1.3, 83.6), MEMORY_MAP 27) and how many players does each game hold?
+[[step]]
+instance = 1
+console = "pos"
+
+[[step]]
+instance = 2
+console = "pos"
+
+[[step]]
+instance = 1
+console = "status"
+
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 1
+console = "players_pos"
+
+[[step]]
+instance = 2
+console = "players_pos"
+
+[[step]]
+instance = 1
+console = "mm_status"
+
+[[step]]
+instance = 1
+screenshot = "p1_arena"
+
+[[step]]
+instance = 2
+screenshot = "p2_arena"
+
+# Face to face at the default spawns A / B (tp is at most 100 m per call; both arrive near (12, 1, 84)).
+[[step]]
+instance = 1
+console = "tp -30 3 0 90"
+
+[[step]]
+instance = 2
+console = "tp 30 3 0 -90"
+
+[[step]]
+instance = 1
+keys = "wait 3000ms"
+
+[[step]]
+instance = 1
+console = "players_pos"
+
+[[step]]
+instance = 2
+console = "players_pos"
+
+[[step]]
+instance = 1
+screenshot = "p1_facing"
+
+[[step]]
+instance = 2
+screenshot = "p2_facing"
+
+# The verdict lines of (a): both games still list 2 players, one of them the rival.
+[[step]]
+instance = 1
+expect = { console = "players", contains = ["me", "rival"] }
+
+[[step]]
+instance = 2
+expect = { console = "players", contains = ["me", "rival"] }
+
+# (d) Our per-game endings in m18: player 1 wins, player 2 loses.
+[[step]]
+instance = 1
+mark = "end"
+
+[[step]]
+instance = 1
+console = "flag 10007411 1"
+
+[[step]]
+instance = 2
+console = "flag 10007412 1"
+
+[[step]]
+instance = 1
+keys = "wait 3000ms"
+
+[[step]]
+instance = 1
+screenshot = "p1_banner"
+
+[[step]]
+instance = 2
+screenshot = "p2_banner"
+
+[[step]]
+instance = 1
+keys = "wait 12000ms"
+
+[[step]]
+instance = 1
+console = "flag 7000"
+
+[[step]]
+instance = 2
+console = "flag 7001"
+
+[[step]]
+instance = 1
+screenshot = "p1_end"
+
+[[step]]
+instance = 2
+screenshot = "p2_end"

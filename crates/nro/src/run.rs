@@ -455,6 +455,16 @@ pub fn commence(st: &State, tries: u32, br_card: bool) -> Result<String, String>
 /// first card, Battle Royale since FS7-2), F picks it, which `br_card` confirms; F is Commence, F is OK on the game's dialog. The menu stays open
 /// as for a player. Needs `br_menu`.
 pub fn queue_br(st: &State) -> Result<String, String> {
+    queue_card(st, false)
+}
+
+/// ARENA-1: as [`queue_br`] on the Arena card, the second card of the list (sortId 2): DOWN from the first card, checked with `br_card`
+/// (`arena yes`) before Commence.
+pub fn queue_arena(st: &State) -> Result<String, String> {
+    queue_card(st, true)
+}
+
+fn queue_card(st: &State, arena: bool) -> Result<String, String> {
     let pid = st.live_pid().ok_or("the game is not running")?;
     let keys =
         |seq: &str| crate::desk::request(serde_json::json!({"op": "keys", "pid": pid, "seq": seq}));
@@ -492,16 +502,31 @@ pub fn queue_br(st: &State) -> Result<String, String> {
         }
         keys("RIGHT; wait 800ms")?;
     }
-    keys("F1; wait 1s; F; wait 1500ms")?;
+    keys("F1; wait 1s")?;
+    if arena {
+        keys("DOWN; wait 800ms")?;
+    }
+    keys("F; wait 1500ms")?;
     let card = session::cmd(st, "br_card")?;
     if !card.contains("players byte 2") {
         return Err(format!("Number of Players is not Solo: {card}"));
     }
-    if !card.contains("yes") {
-        return Err(format!("the Battle Royale card was not picked: {card}"));
+    let picked = if arena {
+        card.contains("arena yes")
+    } else {
+        card.starts_with("br_card: yes") || card.contains("\"br_card: yes")
+    };
+    if !picked {
+        return Err(format!(
+            "the {} card was not picked: {card}",
+            if arena { "Arena" } else { "Battle Royale" }
+        ));
     }
     keys("F; wait 2s; F; wait 1s")?;
-    Ok("the Battle Royale card picked; Commence pressed".to_string())
+    Ok(format!(
+        "the {} card picked; Commence pressed",
+        if arena { "Arena" } else { "Battle Royale" }
+    ))
 }
 
 fn step_name(s: &Step) -> String {
@@ -656,8 +681,9 @@ fn step_plain(st: &State, s: &Step, god: bool) -> Result<(bool, String), String>
             "commence" => commence(st, 3, false).map(|r| (true, r)),
             "commence_br" => commence(st, 3, true).map(|r| (true, r)),
             "queue_br" => queue_br(st).map(|r| (true, r)),
+            "queue_arena" => queue_arena(st).map(|r| (true, r)),
             other => Err(format!(
-                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence, commence_br, queue_br)"
+                "unknown navigate target {other:?} (known: title_to_world, expedition, invite_members, commence, commence_br, queue_br, queue_arena)"
             )),
         },
         Step::SleepMs(m) => {

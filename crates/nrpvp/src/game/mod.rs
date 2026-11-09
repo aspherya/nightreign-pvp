@@ -9,6 +9,8 @@
 //! `crate::features` (R3 rest), which shrinks this file.
 
 #[cfg(feature = "dev")]
+pub(crate) mod arenacard;
+#[cfg(feature = "dev")]
 pub(crate) mod bartrace;
 #[cfg(feature = "dev")]
 pub(crate) mod botscan;
@@ -25,8 +27,6 @@ pub(crate) mod flagwatch;
 pub(crate) mod fmg;
 pub(crate) mod gamemem;
 pub(crate) mod gametoast;
-#[cfg(feature = "dev")]
-pub(crate) mod arenacard;
 pub(crate) mod hawk;
 pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;

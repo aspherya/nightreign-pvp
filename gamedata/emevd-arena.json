@@ -1,7 +1,49 @@
 {
-  "_comment": "ARENA-0 (TASKS ARENA-0, .claude/re/PROJECT_SCOPE.md §Arena): warps for the Arena mode. Applied to event/common.emevd.dcx by scripts/build-gamedata.ps1. warp = [area, block, region, index] of the target map, entity = a point in it (Warp Player 2003:93, as the Spirit Shelter's m12 event 12002099 uses to send the party to the Nightlord: 18 / 18002200 for the Night Aspect card). Per game: our flag 10007500 ON warps this game's player to Heolstor's arena (m18_00_00_00, 18002200), then the flag is cleared and the event waits again (dev console: flag 10007500 1).",
+  "_comment": "ARENA-0 (TASKS ARENA-0, .claude/re/PROJECT_SCOPE.md \u00a7Arena): warps for the Arena mode. Applied to event/common.emevd.dcx by scripts/build-gamedata.ps1. warp = [area, block, region, index] of the target map, entity = a point in it (Warp Player 2003:93, as the Spirit Shelter's m12 event 12002099 uses to send the party to the Nightlord: 18 / 18002200 for the Night Aspect card). Per game: our flag 10007500 ON warps this game's player to Heolstor's arena (m18_00_00_00, 18002200), then the flag is cleared and the event waits again (dev console: flag 10007500 1). ARENA-1: 99100910..99100913 turn this game's camera (Set Camera Angle 2008:4, X 5, Y 0 / 90 / 180 / 270) when our flag 10007510..10007513 goes ON; the DLL picks one per spawn after the move (dev console: flag 1000751x 1).",
   "file": "event/common.emevd.dcx",
   "events": [
-    { "id": 99100900, "flag": 10007500, "warp": [18, 0, 0, 0], "entity": 18002200 }
+    {
+      "id": 99100900,
+      "flag": 10007500,
+      "warp": [
+        18,
+        0,
+        0,
+        0
+      ],
+      "entity": 18002200
+    },
+    {
+      "id": 99100910,
+      "flag": 10007510,
+      "camera": [
+        5.0,
+        0
+      ]
+    },
+    {
+      "id": 99100911,
+      "flag": 10007511,
+      "camera": [
+        5.0,
+        90
+      ]
+    },
+    {
+      "id": 99100912,
+      "flag": 10007512,
+      "camera": [
+        5.0,
+        180
+      ]
+    },
+    {
+      "id": 99100913,
+      "flag": 10007513,
+      "camera": [
+        5.0,
+        270
+      ]
+    }
   ]
 }

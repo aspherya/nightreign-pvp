@@ -148,6 +148,19 @@ def warp_instrs(ev):
     ]
 
 
+def camera_instrs(ev):
+    """ARENA-1: turn this game's camera. When our flag goes ON: Set Camera Angle 2008:4 (f32 X angle, f32 Y angle, as `m18` event
+    18002600 uses right after its short warp), the flag goes OFF, the event restarts. Per game (network sync off)."""
+    flag, (x, y) = ev['flag'], ev['camera']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        set_flag(flag, False),
+        (2008, 4, struct.pack('<ff', float(x), float(y))),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
 def disable_instrs(ev):
     """ARENA-0: keep characters off. Every `secs` the listed entities (characters or character groups) get the same two lines as
     the M5-3 "disable_chr" body (2004:5 and 2004:1 with state 0: the character and its AI disabled), so a game event that enables
@@ -166,6 +179,8 @@ def build_event_instrs(ev):
         return disable_instrs(ev)
     if 'warp' in ev:
         return warp_instrs(ev)
+    if 'camera' in ev:
+        return camera_instrs(ev)
     if 'mirror' in ev:
         return mirror_instrs(ev)
     if 'night_end' in ev:
