@@ -191,6 +191,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "mobs_dump", args: "", help: "HM-1 research: every enemy this game holds, sorted by handle, into the log (handle:npc:hp:x,z), with a hash in the reply, to compare two games (read-only)", run: |_| crate::game::teleport::mobs_dump_cmd().map(Act::Reply) },
     Spec { name: "grace_go", args: "[skip] [npc]", help: "GRACE-1 test aid: put this game's player 1.5 m from the nearest Site of Grace (or the skip-th nearest)", run: |a| crate::game::teleport::grace_go_cmd(a).map(Act::Reply) },
     Spec { name: "grace_status", args: "", help: "GRACE-1 test aid: this game's player's HP and the game's all-bonfires-disabled flag 7525", run: |_| crate::game::teleport::grace_status_cmd().map(Act::Reply) },
+    Spec { name: "ult", args: "[empty|full]", help: "Arena test aid: this game's player's Ultimate Art charge (now / needed), or empty / fill it", run: |a| crate::game::ultgauge::cmd(a).map(Act::Reply) },
     Spec { name: "hp_set", args: "<n>", help: "GRACE-1 test aid: write this game's player's HP", run: |a| crate::game::teleport::hp_set_cmd(a).map(Act::Reply) },
     Spec { name: "players_pos", args: "", help: "HM-0 research: world position of every character in the player list, to compare what two games see (read-only)", run: |_| crate::game::teleport::players_pos_cmd().map(Act::Reply) },
     Spec { name: "players", args: "", help: "every player in this game's ChrSet: slot, session pN, id, team value, relation", run: |_| Ok(Act::Main(MainReq::Players)) },

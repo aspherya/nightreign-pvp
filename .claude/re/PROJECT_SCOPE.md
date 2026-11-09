@@ -133,7 +133,8 @@ A short PvP duel mode with no expedition: players land straight in a Nightlord's
 - **Match:** best of 3 (the first player or team to win two rounds wins). Replaces "win three rounds" of the first draft.
 - **Arena:** always **Heolstor's** arena (the Night Aspect, the final Nightlord). Heolstor is not spawned; only the players are there.
 - **Between rounds:** everyone goes back to their spawn with full HP, FP and flasks, skill cooldown reset, a short countdown before
-  the fight. **The ultimate (Ultimate Art) gauge is NOT reset:** it keeps charging across the rounds.
+  the fight. **The ultimate (Ultimate Art) is available only in the last round** (Leonardo, 2026-11-08; replaces "the gauge
+  keeps charging across the rounds"): empty and held empty in rounds 1 and 2, full at the start of round 3 (a 2-0 match has none).
 - **Round time limit: 3 minutes**, to be tuned in testing. At the limit the side with more HP (sum in teams) wins the round
   `[the HP tiebreak is the agent's proposal, not objected to]`.
 - **Relics are ON:** each player brings their own relics. The point of Arena is to try any relic build with any weapons and talismans.

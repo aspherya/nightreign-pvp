@@ -66,6 +66,8 @@ pub(crate) mod texttrace;
 pub(crate) mod toastfilter;
 #[cfg(feature = "dev")]
 pub(crate) mod toasttrace;
+#[cfg(feature = "dev")]
+pub(crate) mod ultgauge;
 pub(crate) mod views;
 #[cfg(feature = "dev")]
 pub(crate) mod vpad;

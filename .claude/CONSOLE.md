@@ -127,6 +127,7 @@ The source of truth is the registry in `crates/nrpvp/src/console/mod.rs` (`help`
 | `grace_go [skip] [npc]` | | GRACE-1 test aid: stand 1.5 m from the nearest Site of Grace. Dev only |
 | `grace_status` | | GRACE-1 test aid: LOCAL's HP and flag 7525. Dev only |
 | `hp_set <n>` | | GRACE-1 test aid: write LOCAL's HP. Dev only |
+| `ult` | `[empty\|full]` | Arena test aid (MEMORY_MAP §11 "Ultimate charge"): LOCAL's Ultimate Art charge now / needed in `[[PlayerIns+0x1B8]+0x148]`, or set it empty / full. Logs `ult:`. Dev only |
 | `players_pos` | | HM-0 research: world position of every character in the player list, to compare what two games see. Read-only, dev only |
 | `mm_open_lobby` | | MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread). Dev only |
 | `expedition_start` | `[leader] [players byte] [target]` | MM-7: this player is ready, as Commence does in a party; with `leader` it sends the settings first. Players byte 0 by default, target row, negative for none. Dev only |

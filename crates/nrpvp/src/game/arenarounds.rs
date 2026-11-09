@@ -74,6 +74,8 @@ pub(crate) enum Do {
     FadeInFrozen,
     Revive,
     Reset,
+    /// Fill LOCAL's ultimate (the reset before round 3).
+    UltFull,
     Win,
     Lose,
 }
@@ -118,6 +120,12 @@ impl Rounds {
 
     fn decided(&self) -> bool {
         self.won >= ROUNDS_TO_WIN || self.lost >= ROUNDS_TO_WIN
+    }
+
+    /// The ultimate is held empty in rounds 1 and 2 (DECISIONS "Ultimate only in the last round"): from the start of the match until
+    /// two rounds are played. Round 3 starts with it full ([`Do::UltFull`]) and leaves it alone.
+    pub(crate) fn ult_held(&self) -> bool {
+        !matches!(self.phase, Phase::Off | Phase::MatchOver) && self.won + self.lost < 2
     }
 
     /// One tick (pure). `on`: an Arena match is on and LOCAL stands in the arena. `rival` is `None` when this game sees no rival.
@@ -195,6 +203,9 @@ impl Rounds {
                 if stage == 1 && t >= RESET_AFTER_MS {
                     stage = 2;
                     out.push(Do::Reset);
+                    if self.won + self.lost == 2 && !self.decided() {
+                        out.push(Do::UltFull);
+                    }
                 }
                 if stage == 2 && t >= FADE_IN_MS {
                     if self.decided() {
@@ -294,6 +305,12 @@ pub(crate) fn tick(base: usize, world: &World) {
                 *lock(&PLACE_SINCE) = Some(Instant::now());
                 tracing::info!("arena_rounds: reset: recovery, estus, back to the spawn");
             }
+            Do::UltFull => match super::ultgauge::set(local_addr, 1.0) {
+                Ok((b, a)) => {
+                    tracing::info!("arena_rounds: round 3: ultimate filled ({b:.1} -> {a:.1})")
+                }
+                Err(e) => tracing::warn!("arena_rounds: ultimate not filled: {e}"),
+            },
             Do::Win | Do::Lose => {
                 set_flag(base, if d == Do::Win { FLAG_WIN } else { FLAG_LOSE });
                 tracing::info!(
@@ -302,6 +319,19 @@ pub(crate) fn tick(base: usize, world: &World) {
                     rounds.won,
                     rounds.lost
                 );
+            }
+        }
+    }
+    // The ultimate stays empty until round 3 (only written when it holds a charge).
+    if on && rounds.ult_held() {
+        if let Some((_, now, _)) = super::ultgauge::read(local_addr) {
+            if now > 0.0 {
+                match super::ultgauge::set(local_addr, 0.0) {
+                    Ok((b, _)) => {
+                        tracing::debug!("arena_rounds: ultimate held empty ({b:.1} -> 0)")
+                    }
+                    Err(e) => tracing::warn!("arena_rounds: ultimate not emptied: {e}"),
+                }
             }
         }
     }
@@ -431,6 +461,44 @@ mod tests {
             r.step(t + 9_000, true, UP, Some(DOWN)).is_empty(),
             "decided once"
         );
+    }
+
+    #[test]
+    fn the_ultimate_is_held_in_rounds_one_and_two_and_filled_for_round_three() {
+        let mut r = Rounds::default();
+        assert!(!r.ult_held(), "no match");
+        let mut t = start(&mut r);
+        assert!(r.ult_held(), "round 1");
+        // Round 1 won, round 2 lost: 1-1.
+        r.step(t, true, UP, Some(DOWN));
+        r.step(t + 1_000, true, UP, Some(DOWN));
+        assert_eq!(r.step(t + 5_000, true, UP, Some(UP)), vec![Do::Reset]);
+        r.step(t + 6_000, true, UP, Some(UP));
+        r.step(t + 6_050, true, UP, Some(UP));
+        assert!(r.ult_held(), "round 2");
+        t += 10_000;
+        r.step(t, true, DOWN, Some(UP));
+        r.step(t + 1_000, true, DOWN, Some(UP));
+        assert_eq!(
+            r.step(t + 5_000, true, UP, Some(UP)),
+            vec![Do::Reset, Do::UltFull],
+            "the reset before round 3 fills it"
+        );
+        assert!(!r.ult_held(), "round 3 is free");
+    }
+
+    #[test]
+    fn a_two_nil_match_never_fills_the_ultimate() {
+        let mut r = Rounds::default();
+        let mut t = start(&mut r);
+        for _ in 0..2 {
+            r.step(t, true, UP, Some(DOWN));
+            r.step(t + 1_000, true, UP, Some(DOWN));
+            assert!(!r.step(t + 5_000, true, UP, Some(UP)).contains(&Do::UltFull));
+            r.step(t + 6_000, true, UP, Some(UP));
+            r.step(t + 6_050, true, UP, Some(UP));
+            t += 10_000;
+        }
     }
 
     #[test]

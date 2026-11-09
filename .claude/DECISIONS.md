@@ -125,6 +125,9 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   + weapon + talisman builds is the point; the agent had proposed off); **maximum flask count** for everyone; the loadout is the
   **whole inventory** from the Sparring Grounds (a first slice may bring only the equipped items); loser sees defeat, winner VICTORY,
   then both return to the Roundtable out of the session.
+  **Ultimate only in the last round** (Leonardo, 2026-11-08, after ARENA-2's fights, where the gauge never charged in the arena):
+  rounds 1 and 2 have no ultimate (the gauge held empty), round 3 starts with it full. Replaces "the gauge keeps charging across
+  rounds" above. Agent's note: simpler than charging it, and it makes the deciding round special; a 2-0 match never sees an ultimate.
   **Session after an Arena match** (Leonardo, 2026-11-08): random players leave the session when they return to the Roundtable;
   players who are Steam friends or came in through a direct invite stay together. Today nobody leaves: the game's SC lobby outlives
   the match (MATCHMAKING "Old SC lobby still around"), not an emulation artifact. Built with spike 6 / ARENA-2.

@@ -129,6 +129,11 @@ fn local() -> Result<(usize, usize), String> {
     Ok((chr, phys))
 }
 
+/// LOCAL's PlayerIns (vtable-checked through its physics module).
+pub(crate) fn local_chr() -> Result<usize, String> {
+    local().map(|(chr, _)| chr)
+}
+
 /// ARENA-1: LOCAL's world position in metres (`None` with no world or no LOCAL).
 pub(crate) fn local_world_pos() -> Option<[f32; 3]> {
     let (chr, phys) = local().ok()?;
