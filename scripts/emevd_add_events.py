@@ -161,6 +161,31 @@ def camera_instrs(ev):
     ]
 
 
+def fade_instrs(ev):
+    """ARENA-2: when our flag goes ON, Fade to Black 2004:77 for this game's screen (f32 ratio: 1 black, 0 clear; f32 seconds;
+    u8 freeze the player; f32 freeze delay, -1 = none; as `m18` 18002500 / 18002601 use it), the flag goes OFF, restart."""
+    flag, (ratio, secs, freeze) = ev['flag'], ev['fade']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        set_flag(flag, False),
+        (2004, 77, struct.pack('<ffB3xf', float(ratio), float(secs), 1 if freeze else 0, -1.0)),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
+def refill_instrs(ev):
+    """ARENA-2: when our flag goes ON, Refill Estus 2004:87 (no arguments) for this game's player, the flag goes OFF, restart."""
+    flag = ev['flag']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        set_flag(flag, False),
+        (2004, 87, b''),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
 def disable_instrs(ev):
     """ARENA-0: keep characters off. Every `secs` the listed entities (characters or character groups) get the same two lines as
     the M5-3 "disable_chr" body (2004:5 and 2004:1 with state 0: the character and its AI disabled), so a game event that enables
@@ -181,6 +206,10 @@ def build_event_instrs(ev):
         return warp_instrs(ev)
     if 'camera' in ev:
         return camera_instrs(ev)
+    if ev.get('refill_estus'):
+        return refill_instrs(ev)
+    if 'fade' in ev:
+        return fade_instrs(ev)
     if 'mirror' in ev:
         return mirror_instrs(ev)
     if 'night_end' in ev:

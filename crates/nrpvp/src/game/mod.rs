@@ -11,6 +11,8 @@
 #[cfg(feature = "dev")]
 pub(crate) mod arenacard;
 #[cfg(feature = "dev")]
+pub(crate) mod arenarounds;
+#[cfg(feature = "dev")]
 pub(crate) mod bartrace;
 #[cfg(feature = "dev")]
 pub(crate) mod botscan;
@@ -525,6 +527,9 @@ fn watch(
         // ARENA-0 (dev): the Arena card's list hook and the warp after a Commence on it.
         #[cfg(feature = "dev")]
         arenacard::tick(base, world.in_expedition(), world.local.is_some());
+        // ARENA-2 (dev): best-of-3 rounds in an Arena match.
+        #[cfg(feature = "dev")]
+        arenarounds::tick(base, &world);
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.
         #[cfg(feature = "dev")]

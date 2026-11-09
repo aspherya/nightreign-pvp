@@ -63,6 +63,9 @@ pub(crate) fn plan(bytes: &[u8], room: usize, want: Option<bool>) -> Plan {
 
 /// Our flag that warps this game's player into Heolstor's arena (event 99100900, `gamedata/emevd-arena.json`).
 const FLAG_WARP: u32 = 10_007_500;
+/// ARENA-2: our flag that turns this game's screen black at once with the player frozen (event 99100918): set at the warp and again
+/// at the arrival (a map load may clear it), so nobody sees the move to the spawns; `arenarounds` fades back in.
+const FLAG_BLACK: u32 = 10_007_518;
 /// ARENA-1: how long LOCAL stands in the expedition of an Arena match before the warp.
 const WARP_AFTER_MS: u64 = 3_000;
 /// Heolstor's arrival point 18002200 in world metres (MEMORY_MAP §27, game 1.03.3) and how near LOCAL must be to count as arrived.
@@ -181,6 +184,12 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
         _ => false,
     };
     if holds {
+        if st.held_since.is_none() && st.entry == Entry::WaitArrival {
+            if let Err(e) = crate::game::flags::set(base, FLAG_BLACK, true) {
+                tracing::warn!("arena: flag {FLAG_BLACK} not set: {e}");
+            }
+            tracing::info!("arena: arrived; screen black until the spawn move is done");
+        }
         st.held_since.get_or_insert(now);
     } else {
         st.held_since = None;
@@ -197,6 +206,9 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
         Act::Nothing => {}
         Act::Warp => {
             st.warped_at = Some(now);
+            if let Err(e) = crate::game::flags::set(base, FLAG_BLACK, true) {
+                tracing::warn!("arena: flag {FLAG_BLACK} not set: {e}");
+            }
             match crate::game::flags::set(base, FLAG_WARP, true) {
                 Ok(_) => {
                     tracing::info!("arena: flag {FLAG_WARP} ON: warping into Heolstor's arena")
@@ -205,28 +217,53 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
             }
         }
         Act::Place => {
-            let team = crate::mm::local_roster_team();
-            let (to, yaw) = spawn_for(team);
-            let args: Vec<String> = [to[0], to[1], to[2], yaw]
-                .iter()
-                .map(|v| v.to_string())
-                .collect();
-            let side = usize::from(team.is_some_and(|t| t > 0));
-            match crate::game::teleport::tp_cmd(&args) {
-                Ok(r) => {
-                    if let Err(e) = crate::game::flags::set(base, CAMERA_FLAGS[side], true) {
-                        tracing::warn!("arena: camera flag {} not set: {e}", CAMERA_FLAGS[side]);
-                    }
-                    tracing::info!("arena: roster team {team:?} -> spawn ({to:?}, yaw {yaw}): {r}")
-                }
-                Err(e) => tracing::warn!("arena: roster team {team:?}: spawn move failed: {e}"),
-            }
+            place(base, false);
         }
         Act::GiveUp => tracing::warn!(
             "arena: no arrival at Heolstor's arena within {} s of the warp; LOCAL left where it is",
             PLACE_TIMEOUT_MS / 1000
         ),
     }
+}
+
+/// ARENA-1 / ARENA-2: put LOCAL on its roster team's spawn, facing the other spawn, and turn the camera that way. Any distance (a
+/// reset between rounds starts wherever the round ended). `force`: write the heading even over a tilted rotation (mid-attack).
+/// `true` when the move was written.
+pub(crate) fn place(base: usize, force: bool) -> bool {
+    let team = crate::mm::local_roster_team();
+    let (to, yaw) = spawn_for(team);
+    let args: Vec<String> = [to[0], to[1], to[2], yaw]
+        .iter()
+        .map(|v| v.to_string())
+        .collect();
+    let side = usize::from(team.is_some_and(|t| t > 0));
+    let moved = if force {
+        crate::game::teleport::tp_force(&args)
+    } else {
+        crate::game::teleport::tp_far(&args)
+    };
+    match moved {
+        Ok(r) => {
+            if let Err(e) = crate::game::flags::set(base, CAMERA_FLAGS[side], true) {
+                tracing::warn!("arena: camera flag {} not set: {e}", CAMERA_FLAGS[side]);
+            }
+            tracing::info!("arena: roster team {team:?} -> spawn ({to:?}, yaw {yaw}): {r}");
+            true
+        }
+        Err(e) => {
+            tracing::warn!("arena: roster team {team:?}: spawn move failed (force {force}): {e}");
+            false
+        }
+    }
+}
+
+/// ARENA-2: LOCAL stands on its spawn in the arena (the entry is done for this match).
+pub(crate) fn placed() -> bool {
+    STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .entry
+        == Entry::Done
 }
 
 /// Console request codes (`arena_card`, `arena_card 1`, `0`, `hook`, `unhook`).

@@ -577,6 +577,8 @@ impl Machine {
             sc: r.gate.preferred_sc()?,
             team: r.ticket.mode.team_size(),
             party: r.ticket.party.size as usize,
+            arena: self.arena,
+            private: !self.cfg.room.is_empty(),
         })
     }
 

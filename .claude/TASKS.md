@@ -479,7 +479,7 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
    (inventory add + equip vs. our map-item drop, `game/itemdrop.rs`). Relics stay ON: check that the expedition start applies them.
 6. **Leave the session after the match** `[partly known: FS7-8 "F10 also leaves the session"]`: winner VICTORY, loser defeat, then both
    at the Roundtable out of the session.
-Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens; ARENA-3
+Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens (**done 2026-11-08**, testing-log; open: the ultimate gauge never charged in the arena, one near-death message before "fight"); ARENA-3
 level 15 + loadout + max upgrade; ARENA-4 1v1 bot; ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)

@@ -163,15 +163,22 @@ pub(crate) fn pos_cmd() -> Result<String, String> {
 
 /// `tp <x> <y> <z> [yaw]`: put LOCAL at that world position (metres) and, with a yaw, turn it to face that heading.
 pub(crate) fn tp_cmd(args: &[String]) -> Result<String, String> {
-    tp_inner(args, true)
+    tp_inner(args, true, true)
 }
 
 /// `tp` without the distance limit (the orb test aid walks to a place the boss kill loaded; dev only).
 pub(crate) fn tp_far(args: &[String]) -> Result<String, String> {
-    tp_inner(args, false)
+    tp_inner(args, false, true)
 }
 
-fn tp_inner(args: &[String], limited: bool) -> Result<String, String> {
+/// ARENA-2: as [`tp_far`], but the heading is written even when `Physics+0x50` holds a tilted rotation (mid-attack it is not a pure
+/// rotation about y; seen live 2026-11-08 at a reset between Arena rounds). The field is the player's orientation: ARENA-1 wrote it on
+/// every spawn and the players turned as asked (MEMORY_MAP §27).
+pub(crate) fn tp_force(args: &[String]) -> Result<String, String> {
+    tp_inner(args, false, false)
+}
+
+fn tp_inner(args: &[String], limited: bool, check_heading: bool) -> Result<String, String> {
     let (to, yaw) = parse_target(args)?;
     let (chr, phys) = local()?;
     let p = read3(phys + PHYSICS_POS).ok_or("position unreadable")?;
@@ -182,7 +189,7 @@ fn tp_inner(args: &[String], limited: bool) -> Result<String, String> {
         dist(world_of(p, o), to)
     };
     // The heading is only written over a value that reads as a rotation about y (the field is a HYPOTHESIS until then).
-    if yaw.is_some() {
+    if yaw.is_some() && check_heading {
         let q = [
             mem::read::<f32>(phys + PHYSICS_ORIENT).unwrap_or(f32::NAN),
             mem::read::<f32>(phys + PHYSICS_ORIENT + 4).unwrap_or(f32::NAN),

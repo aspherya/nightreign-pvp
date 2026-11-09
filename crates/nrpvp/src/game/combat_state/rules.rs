@@ -219,7 +219,9 @@ impl Core {
         if self.dev {
             lines.extend(events.iter().map(Event::line));
         }
-        let exempt = now_ms < self.exempt_until_ms;
+        // ARENA-2: in an Arena match the loser of a round gets up on purpose (our get-up write): no re-down at the UP transition
+        // (rule v1) nor during the get-up (`getup_step`). The downed rule stays: a rival's hit must not revive a downed player.
+        let exempt = now_ms < self.exempt_until_ms || crate::mm::arena_match();
         if exempt {
             self.pending = None;
         } else {
@@ -485,7 +487,11 @@ impl Core {
         subjects: &[Subject],
         mem: &mut dyn CombatMem,
     ) -> Vec<String> {
-        if !self.early_redown || self.getup_done || self.policy != RevivePolicy::Redown {
+        if !self.early_redown
+            || self.getup_done
+            || self.policy != RevivePolicy::Redown
+            || crate::mm::arena_match()
+        {
             return Vec::new();
         }
         let into = now_ms.saturating_sub(*self.getup_since_ms.get_or_insert(now_ms));

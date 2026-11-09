@@ -231,7 +231,8 @@ fn free_slot() -> Option<usize> {
 pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
     let mut st = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     let local = combat.local_state();
-    let want = enabled() && local.is_some_and(|(_, s)| s == 1);
+    // ARENA-2: the loser of an Arena round gets up through this very check; never block it there.
+    let want = enabled() && !crate::mm::arena_match() && local.is_some_and(|(_, s)| s == 1);
     if want {
         let (addr, _) = local.unwrap_or_default();
         LOCAL.store(addr, Ordering::Relaxed);

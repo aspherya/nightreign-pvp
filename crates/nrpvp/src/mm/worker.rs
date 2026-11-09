@@ -512,8 +512,14 @@ impl Worker {
         ) {
             if let (Some((lobby, _, n)), Some(m)) = (&sc, self.last_match) {
                 tracing::info!(
-                    "mm_queue: back from a {} match with random teammates: leaving its Seamless Co-op lobby {} ({n} member(s))",
-                    if m.team == 2 { "Duo" } else { "Trio" },
+                    "mm_queue: back from a {} match with random players: leaving its Seamless Co-op lobby {} ({n} member(s))",
+                    if m.arena {
+                        "public Arena"
+                    } else if m.team == 2 {
+                        "Duo"
+                    } else {
+                        "Trio"
+                    },
                     idt(lobby.id())
                 );
                 self.steam.leave_sc(lobby);

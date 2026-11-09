@@ -338,6 +338,10 @@ impl Feature for MatchFeature {
     }
 
     fn tick(&mut self, world: &World, ctx: &mut Ctx) {
+        // ARENA-2: an Arena match has its own rules (`game::arenarounds`); a down there is a lost round, not a defeat.
+        if crate::mm::arena_match() {
+            return;
+        }
         let now_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         self.core.book.count_off = !elimination::COUNT.load(Ordering::Relaxed);
         self.core.book.spectate = spectate::spectate_now(self.spectate_cfg);

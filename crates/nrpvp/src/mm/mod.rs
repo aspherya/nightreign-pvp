@@ -319,6 +319,10 @@ pub(crate) struct LastMatch {
     pub team: usize,
     /// The own ticket's party size (MM-FILL: 1 for a player whose teammates were random).
     pub party: usize,
+    /// ARENA-2: the match came from an Arena queue.
+    pub arena: bool,
+    /// ARENA-2: a private match (room code): the players arranged it together.
+    pub private: bool,
 }
 
 /// FS7-4 (pure): the own party's size: the Seamless Co-op lobby's member count, except in the lobby of the last match, where the
@@ -334,7 +338,8 @@ pub(crate) fn party_of(sc: Option<(u64, u32)>, last_match: Option<(u64, usize)>)
 /// MM-FILL part C (pure): leave the last match's Seamless Co-op lobby once back at the Roundtable after a Duo / Trio match the
 /// player queued for alone. Its other members are random teammates and rivals; staying would make them follow the lobby owner's
 /// next queue (`sync_party`) as if they were a party. Solo keeps today's behaviour (a Solo ticket never publishes `nrpvp_q`), and a
-/// premade party stays together.
+/// premade party stays together. ARENA-2: after a public Arena match every player leaves too (its rival is a random player; Leonardo
+/// 2026-11-08: only friends who arranged the match stay together, here a private match).
 pub(crate) fn leave_after_fill(
     at_roundtable: bool,
     in_match: bool,
@@ -343,7 +348,8 @@ pub(crate) fn leave_after_fill(
 ) -> bool {
     at_roundtable
         && !in_match
-        && matches!((sc, last), (Some(id), Some(m)) if id == m.sc && m.team > 1 && m.party == 1)
+        && matches!((sc, last), (Some(id), Some(m)) if id == m.sc
+            && ((m.team > 1 && m.party == 1) || (m.arena && !m.private)))
 }
 
 #[cfg(test)]
@@ -356,6 +362,8 @@ mod party_tests {
             sc: 7,
             team: 2,
             party: 1,
+            arena: false,
+            private: false,
         };
         assert!(leave_after_fill(true, false, Some(7), Some(lone_duo)));
         assert!(
@@ -387,6 +395,26 @@ mod party_tests {
         assert!(
             !leave_after_fill(true, false, Some(7), Some(solo)),
             "Solo unchanged"
+        );
+        let arena = LastMatch {
+            arena: true,
+            ..solo
+        };
+        assert!(
+            leave_after_fill(true, false, Some(7), Some(arena)),
+            "a public Arena match: the rival was random"
+        );
+        assert!(
+            !leave_after_fill(true, true, Some(7), Some(arena)),
+            "not while the Arena match is on"
+        );
+        let friends = LastMatch {
+            private: true,
+            ..arena
+        };
+        assert!(
+            !leave_after_fill(true, false, Some(7), Some(friends)),
+            "a private Arena match stays together"
         );
     }
 
