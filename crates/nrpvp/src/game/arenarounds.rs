@@ -13,6 +13,10 @@
 //!   10007410, Refill Estus 2004:87 on flag 10007514; the ultimate gauge is not touched) and puts it on its spawn
 //!   ([`super::arenacard::place`]). At [`FADE_IN_MS`] the screen comes back, the player is free, the next round starts. A round counts
 //!   a down only once both players have been seen up.
+//! - **Round time limit ([`ROUND_LIMIT_MS`], ARENA-3).** A round with no down by then goes to the side with more HP in percent of
+//!   its maximum (a draw within [`DRAW_WITHIN`]: nobody scores, the round is played again). The **host** judges and publishes the
+//!   verdict (`net::bus` topic `ARENA_ROUND`, key = the bout number, value 1 host won / 2 host lost / 3 draw) so both games agree;
+//!   the other game takes it, or judges by itself after [`VERDICT_WAIT_MS`] more without one.
 //! - **First to [`ROUNDS_TO_WIN`].** The last round ends the same way (both reset at their spawns), but the screen comes back with the
 //!   players still frozen and the endings play: WIN in the winner's game (flag 10007411: banner 4000, 10 s, 7000), LOSE in the
 //!   loser's (10007412: banner 4010, 10 s, 7001).
@@ -24,6 +28,12 @@ use crate::game::world::World;
 
 /// Rounds a player needs to win the match (best of 3).
 pub(crate) const ROUNDS_TO_WIN: u8 = 2;
+/// ARENA-3: a round with no down ends after this long (PROJECT_SCOPE §Arena: 3 minutes, to be tuned).
+pub(crate) const ROUND_LIMIT_MS: u64 = 180_000;
+/// The non-host game waits this long past the limit for the host's verdict, then judges by itself.
+pub(crate) const VERDICT_WAIT_MS: u64 = 3_000;
+/// HP fractions closer than this are a draw.
+pub(crate) const DRAW_WITHIN: f32 = 0.005;
 /// From LOCAL placed on its spawn to the first fade-in (the move and the camera turn are done by then).
 pub(crate) const START_FADE_IN_MS: u64 = 1_000;
 /// From the down: fade to black (0.5 s) and freeze.
@@ -76,6 +86,8 @@ pub(crate) enum Do {
     Reset,
     /// Fill LOCAL's ultimate (the reset before round 3).
     UltFull,
+    /// The host's verdict on a timed-out bout (key, outcome from the host's side) for the other game.
+    Verdict(u8, Outcome),
     Win,
     Lose,
 }
@@ -96,11 +108,93 @@ impl Seen {
     }
 }
 
+/// How a bout ended for LOCAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Won,
+    Lost,
+    Draw,
+}
+
+impl Outcome {
+    /// The bus value from the host's side (1 won, 2 lost, 3 draw).
+    pub(crate) fn wire(self) -> u32 {
+        match self {
+            Outcome::Won => 1,
+            Outcome::Lost => 2,
+            Outcome::Draw => 3,
+        }
+    }
+
+    /// The other game's outcome from the host's bus value.
+    pub(crate) fn from_host_wire(v: u32) -> Option<Outcome> {
+        match v {
+            1 => Some(Outcome::Lost),
+            2 => Some(Outcome::Won),
+            3 => Some(Outcome::Draw),
+            _ => None,
+        }
+    }
+}
+
+/// ARENA-3: what the round timer needs from the world this tick.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Timer {
+    /// This game is the session host (it judges).
+    pub host: bool,
+    /// `(LOCAL, rival)` HP as a fraction of each one's maximum.
+    pub hp: Option<(f32, f32)>,
+    /// The host's verdict for the current bout, as LOCAL's outcome.
+    pub verdict: Option<Outcome>,
+    /// The round limit; 0 = [`ROUND_LIMIT_MS`] (the console's `arena_limit` sets a shorter one for tests).
+    pub limit_ms: u64,
+}
+
+/// Console override of the round limit (ms; 0 = the default).
+static LIMIT_OVERRIDE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// `arena_limit [secs]`: set (0 = back to the default) or show the round limit.
+pub(crate) fn limit_cmd(args: &[String]) -> Result<String, String> {
+    use std::sync::atomic::Ordering;
+    if let Some(a) = args.first() {
+        let s: u64 = a.parse().map_err(|_| "seconds must be a number")?;
+        LIMIT_OVERRIDE_MS.store(s * 1000, Ordering::Relaxed);
+    }
+    let v = LIMIT_OVERRIDE_MS.load(Ordering::Relaxed);
+    Ok(format!(
+        "arena_limit: {} s{}",
+        if v == 0 { ROUND_LIMIT_MS } else { v } / 1000,
+        if v == 0 {
+            " (default)"
+        } else {
+            " (console override)"
+        }
+    ))
+}
+
+/// The time-limit judgement (pure): more HP in percent wins, a near tie or unknown HP is a draw.
+pub(crate) fn judge(hp: Option<(f32, f32)>) -> Outcome {
+    match hp {
+        Some((l, r)) if (l - r).abs() >= DRAW_WITHIN => {
+            if l > r {
+                Outcome::Won
+            } else {
+                Outcome::Lost
+            }
+        }
+        _ => Outcome::Draw,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Rounds {
     pub won: u8,
     pub lost: u8,
     pub phase: Phase,
+    /// When the current round's fight started (its fade-in).
+    pub fight_since_ms: u64,
+    /// Bouts ended so far, draws included (the verdict key).
+    pub bouts: u8,
 }
 
 impl Default for Rounds {
@@ -109,6 +203,8 @@ impl Default for Rounds {
             won: 0,
             lost: 0,
             phase: Phase::Off,
+            fight_since_ms: 0,
+            bouts: 0,
         }
     }
 }
@@ -128,13 +224,26 @@ impl Rounds {
         !matches!(self.phase, Phase::Off | Phase::MatchOver) && self.won + self.lost < 2
     }
 
-    /// One tick (pure). `on`: an Arena match is on and LOCAL stands in the arena. `rival` is `None` when this game sees no rival.
+    /// One tick with no round timer input (pure; the tests of the down rules).
+    #[cfg(test)]
     pub(crate) fn step(
         &mut self,
         now_ms: u64,
         on: bool,
         local: Seen,
         rival: Option<Seen>,
+    ) -> Vec<Do> {
+        self.step_timed(now_ms, on, local, rival, Timer::default())
+    }
+
+    /// One tick (pure). `on`: an Arena match is on and LOCAL stands in the arena. `rival` is `None` when this game sees no rival.
+    pub(crate) fn step_timed(
+        &mut self,
+        now_ms: u64,
+        on: bool,
+        local: Seen,
+        rival: Option<Seen>,
+        timer: Timer,
     ) -> Vec<Do> {
         if !on {
             *self = Rounds::default();
@@ -151,6 +260,7 @@ impl Rounds {
                     return Vec::new();
                 }
                 self.phase = Phase::Fighting { armed: false };
+                self.fight_since_ms = now_ms;
                 vec![Do::FadeIn, Do::Message("Round 1: fight!".into())]
             }
             Phase::Fighting { armed: false } => {
@@ -160,30 +270,57 @@ impl Rounds {
                 Vec::new()
             }
             Phase::Fighting { armed: true } => {
-                let lost = if local.down {
-                    true
+                let mut out = Vec::new();
+                let (outcome, timed) = if local.down {
+                    (Outcome::Lost, false)
                 } else if rival.down {
-                    false
+                    (Outcome::Won, false)
                 } else {
-                    return Vec::new();
+                    let t = now_ms.saturating_sub(self.fight_since_ms);
+                    let limit = if timer.limit_ms == 0 {
+                        ROUND_LIMIT_MS
+                    } else {
+                        timer.limit_ms
+                    };
+                    let o = if let Some(v) = timer.verdict {
+                        v
+                    } else if t < limit {
+                        return Vec::new();
+                    } else if timer.host {
+                        let o = judge(timer.hp);
+                        out.push(Do::Verdict(self.bouts + 1, o));
+                        o
+                    } else if t >= limit + VERDICT_WAIT_MS {
+                        judge(timer.hp)
+                    } else {
+                        return Vec::new();
+                    };
+                    (o, true)
                 };
-                if lost {
-                    self.lost += 1;
-                } else {
-                    self.won += 1;
+                self.bouts += 1;
+                match outcome {
+                    Outcome::Won => self.won += 1,
+                    Outcome::Lost => self.lost += 1,
+                    Outcome::Draw => {}
                 }
                 self.phase = Phase::RoundOver {
-                    lost,
+                    lost: outcome == Outcome::Lost,
                     at_ms: now_ms,
                     stage: 0,
                 };
-                vec![Do::Message(format!(
-                    "Round {}: you {} ({}-{})",
-                    self.round_no(),
-                    if lost { "lost" } else { "won" },
+                let what = match outcome {
+                    Outcome::Won => "you won",
+                    Outcome::Lost => "you lost",
+                    Outcome::Draw => "draw, played again",
+                };
+                out.push(Do::Message(format!(
+                    "Round {}: {}{what} ({}-{})",
+                    self.round_no() + u8::from(outcome == Outcome::Draw),
+                    if timed { "time! " } else { "" },
                     self.won,
                     self.lost
-                ))]
+                )));
+                out
             }
             Phase::RoundOver { lost, at_ms, stage } => {
                 let t = now_ms.saturating_sub(at_ms);
@@ -218,6 +355,7 @@ impl Rounds {
                         });
                     } else {
                         self.phase = Phase::Fighting { armed: false };
+                        self.fight_since_ms = now_ms;
                         out.push(Do::FadeIn);
                         out.push(Do::Message(format!(
                             "Round {}: fight!",
@@ -235,6 +373,17 @@ impl Rounds {
 }
 
 static STATE: Mutex<Option<(Rounds, Instant)>> = Mutex::new(None);
+/// The host's verdicts received this match: `(bout key, LOCAL's outcome)`.
+static VERDICTS: Mutex<Vec<(u32, Outcome)>> = Mutex::new(Vec::new());
+
+/// A player's HP as a fraction of its maximum (`PlayerGameData+0x10` / `+0x14`, MEMORY_MAP §29).
+fn hp_fraction(player: usize) -> Option<f32> {
+    let pgd = super::mem::read::<usize>(player + crate::game::layout::PLAYER_GAMEDATA)
+        .filter(|p| super::mem::is_ptr(*p))?;
+    let hp = super::mem::read::<u32>(pgd + 0x10)?;
+    let max = super::mem::read::<u32>(pgd + 0x14).filter(|m| *m > 0)?;
+    Some(hp as f32 / max as f32)
+}
 /// When the last get-up write was made, and since when a reset move is waiting (main loop only).
 static LAST_REVIVE: Mutex<Option<Instant>> = Mutex::new(None);
 static PLACE_SINCE: Mutex<Option<Instant>> = Mutex::new(None);
@@ -257,18 +406,42 @@ pub(crate) fn tick(base: usize, world: &World) {
     let now_ms = start.elapsed().as_millis() as u64;
     let mut local = None;
     let mut rival = None;
+    let mut rival_addr = None;
     for f in world.fighters.iter().flatten() {
         if f.local {
             local = Some((f.addr, Seen::of(f.state, f.hp)));
         } else if rival.is_none() {
             rival = Some(Seen::of(f.state, f.hp));
+            rival_addr = Some(f.addr);
         }
     }
     let Some((local_addr, local_seen)) = local else {
         return;
     };
+    // ARENA-3: the host's verdicts on timed-out bouts (key = bout number).
+    let mut verdicts = lock(&VERDICTS);
+    if !on {
+        verdicts.clear();
+    }
+    for r in crate::net::bus::take(crate::net::bus::topic::ARENA_ROUND) {
+        if let Some(o) = Outcome::from_host_wire(r.fact.value) {
+            tracing::info!(
+                "arena_rounds: the host's verdict for bout {}: {o:?} for us",
+                r.fact.key
+            );
+            verdicts.push((r.fact.key, o));
+        }
+    }
+    let next_bout = u32::from(rounds.bouts) + 1;
+    let timer = Timer {
+        host: super::defeatdrop::is_host(base),
+        hp: hp_fraction(local_addr).zip(rival_addr.and_then(hp_fraction)),
+        verdict: verdicts.iter().find(|v| v.0 == next_bout).map(|v| v.1),
+        limit_ms: LIMIT_OVERRIDE_MS.load(std::sync::atomic::Ordering::Relaxed),
+    };
+    drop(verdicts);
     let before = rounds.phase;
-    let dos = rounds.step(now_ms, on, local_seen, rival);
+    let dos = rounds.step_timed(now_ms, on, local_seen, rival, timer);
     if !on {
         *lock(&PLACE_SINCE) = None;
     }
@@ -311,6 +484,16 @@ pub(crate) fn tick(base: usize, world: &World) {
                 }
                 Err(e) => tracing::warn!("arena_rounds: ultimate not filled: {e}"),
             },
+            Do::Verdict(key, o) => {
+                let sent = crate::net::bus::publish(
+                    crate::net::bus::topic::ARENA_ROUND,
+                    u32::from(key),
+                    o.wire(),
+                );
+                tracing::info!(
+                    "arena_rounds: bout {key} timed out: {o:?} for the host (published {sent})"
+                );
+            }
             Do::Win | Do::Lose => {
                 set_flag(base, if d == Do::Win { FLAG_WIN } else { FLAG_LOSE });
                 tracing::info!(
@@ -541,5 +724,115 @@ mod tests {
         r.step(t, true, UP, Some(DOWN));
         assert!(r.step(t + 100, false, UP, Some(UP)).is_empty());
         assert_eq!(r, Rounds::default());
+    }
+
+    fn timed(host: bool, hp: Option<(f32, f32)>, verdict: Option<Outcome>) -> Timer {
+        Timer {
+            host,
+            hp,
+            verdict,
+            limit_ms: 0,
+        }
+    }
+
+    #[test]
+    fn the_host_judges_a_timed_out_round_by_hp_percent_and_publishes_it() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        let at = |d| t0 + d;
+        assert!(r
+            .step_timed(
+                at(ROUND_LIMIT_MS - 1),
+                true,
+                UP,
+                Some(UP),
+                timed(true, Some((0.6, 0.4)), None)
+            )
+            .is_empty());
+        let out = r.step_timed(
+            at(ROUND_LIMIT_MS),
+            true,
+            UP,
+            Some(UP),
+            timed(true, Some((0.6, 0.4)), None),
+        );
+        assert_eq!(out[0], Do::Verdict(1, Outcome::Won));
+        assert!(matches!(&out[1], Do::Message(m) if m.contains("time!") && m.contains("you won")));
+        assert_eq!((r.won, r.lost, r.bouts), (1, 0, 1));
+    }
+
+    #[test]
+    fn the_other_game_takes_the_hosts_verdict_or_judges_itself_after_the_wait() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        // No verdict yet: waits past the limit.
+        assert!(r
+            .step_timed(
+                t0 + ROUND_LIMIT_MS + 100,
+                true,
+                UP,
+                Some(UP),
+                timed(false, Some((0.9, 0.1)), None)
+            )
+            .is_empty());
+        // The host's verdict wins over its own HP view.
+        r.step_timed(
+            t0 + ROUND_LIMIT_MS + 200,
+            true,
+            UP,
+            Some(UP),
+            timed(false, Some((0.9, 0.1)), Some(Outcome::Lost)),
+        );
+        assert_eq!((r.won, r.lost), (0, 1));
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        r.step_timed(
+            t0 + ROUND_LIMIT_MS + VERDICT_WAIT_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(false, Some((0.9, 0.1)), None),
+        );
+        assert_eq!((r.won, r.lost), (1, 0));
+    }
+
+    #[test]
+    fn a_draw_scores_nothing_and_the_round_is_played_again() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        let out = r.step_timed(
+            t0 + ROUND_LIMIT_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(true, Some((0.5, 0.502)), None),
+        );
+        assert_eq!(out[0], Do::Verdict(1, Outcome::Draw));
+        assert_eq!((r.won, r.lost, r.bouts), (0, 0, 1));
+        assert!(matches!(&out[1], Do::Message(m) if m.contains("Round 1") && m.contains("draw")));
+        assert_eq!(judge(None), Outcome::Draw);
+        assert_eq!(
+            Outcome::from_host_wire(Outcome::Won.wire()),
+            Some(Outcome::Lost)
+        );
+    }
+
+    #[test]
+    fn a_down_before_the_limit_still_ends_the_round_normally() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        let out = r.step_timed(
+            t0 + 10_000,
+            true,
+            UP,
+            Some(DOWN),
+            timed(true, Some((0.1, 0.9)), None),
+        );
+        assert!(matches!(&out[0], Do::Message(m) if !m.contains("time!") && m.contains("you won")));
     }
 }

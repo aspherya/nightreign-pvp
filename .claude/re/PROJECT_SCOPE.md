@@ -136,7 +136,11 @@ A short PvP duel mode with no expedition: players land straight in a Nightlord's
   the fight. **The ultimate (Ultimate Art) is available only in the last round** (Leonardo, 2026-11-08; replaces "the gauge
   keeps charging across the rounds"): empty and held empty in rounds 1 and 2, full at the start of round 3 (a 2-0 match has none).
 - **Round time limit: 3 minutes**, to be tuned in testing. At the limit the side with more HP (sum in teams) wins the round
-  `[the HP tiebreak is the agent's proposal, not objected to]`.
+  `[the HP tiebreak is the agent's proposal, not objected to]`. Built (ARENA-3, 2026-11-09): HP in percent of each player's
+  maximum; within 0.5 % it is a draw, nobody scores and the round is played again `[agent's choice]`; the host judges and sends the
+  verdict so both games agree.
+- **No item drops (Leonardo, 2026-11-09):** a down or a lost match never drops a player's items (the Battle Royale defeat drop,
+  RW-3, stays off in Arena; today the Arena match skips the BR rules that ask for it, `features/br_match`).
 - **Relics are ON:** each player brings their own relics. The point of Arena is to try any relic build with any weapons and talismans.
 - **Flasks:** everyone has the **game's maximum** flask count, refilled each round.
 - **Loadout = the whole inventory:** the player enters with everything they put in their inventory at the Sparring Grounds (not only

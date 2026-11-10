@@ -110,3 +110,7 @@ Read when you touch the area named in a bullet, or before debugging something od
   the `item_drop` reply gives the game's own map id and local position.
 - **Expedition cards (2026-11-08):** a new `NightBossMenuParam` row never shows by itself: the list takes rows at positions 0..9, the
   Everdark rotation (hidden offline) and row 100 only (MEMORY_MAP §28). And a hardware READ watch on a param row crashes the game.
+- **`rawcall` into the game's equip function crashed the game** (ARENA-3 spike, 2026-11-09): `rawcall 1F3430 <EquipGameData> 0 <index> 1`
+  from our main loop killed the process at once, while the add-item call (`give`) was fine. The equip path rebuilds the character
+  model (`exe+0x1F11A0`); call such functions only from the game's own thread (the RW-3 drop needed a breakpoint for the same reason,
+  `game/itemdrop.rs`), and never in a run you cannot lose.

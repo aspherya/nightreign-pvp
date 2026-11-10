@@ -157,7 +157,7 @@ static STATE: Mutex<EntryState> = Mutex::new(EntryState {
 /// Main loop, every tick. (1) The list hook holds hwbp slot 1 at the Roundtable while the queue is idle or searching (a menu reopened
 /// mid-search keeps the Arena card); it gives the slot back once a match is found, when the quiet invite needs it. (2) ARENA-1: in an
 /// Arena match, warp into Heolstor's arena 3 s into the expedition, then put LOCAL on its team's spawn, facing the other.
-pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
+pub(crate) fn tick(base: usize, in_expedition: bool, local: bool, at_roundtable: bool) {
     let phase = crate::mm::phase();
     let menu_time = phase == crate::mm::PHASE_IDLE || phase == crate::mm::PHASE_SEARCHING;
     if !in_expedition && menu_time {
@@ -169,6 +169,9 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
     } else if hook::armed() {
         hook::disarm();
     }
+    // ARENA-3: remember the Sparring loadout while the player can still change it: at the Roundtable proper, never on a load screen
+    // (the expedition start wipes the loadout before the expedition counts as entered; a capture there took the starting kit).
+    super::arenaloadout::capture_tick(base, at_roundtable && menu_time && local);
     let arena = crate::mm::arena_match();
     let mut st = STATE
         .lock()
@@ -218,6 +221,8 @@ pub(crate) fn tick(base: usize, in_expedition: bool, local: bool) {
         }
         Act::Place => {
             place(base, false);
+            // ARENA-3: level 15 and the captured loadout at max upgrade, on the game's thread.
+            super::arenaloadout::apply(base);
         }
         Act::GiveUp => tracing::warn!(
             "arena: no arrival at Heolstor's arena within {} s of the warp; LOCAL left where it is",

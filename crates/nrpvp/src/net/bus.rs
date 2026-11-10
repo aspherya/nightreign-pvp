@@ -37,13 +37,19 @@ pub(crate) mod topic {
     pub(crate) const ITEM_DROP: u16 = 5;
     /// KF-1: one line of the killfeed (`features::killfeed::encode`), published by the victim's machine only.
     pub(crate) const KILL_FEED: u16 = 6;
+    /// ARENA-3: the host's verdict on an Arena bout that hit the time limit. `key` = the bout number (draws included), `value` = 1
+    /// the host won, 2 the host lost, 3 draw (`game::arenarounds::Outcome::wire`). Published by the host only.
+    pub(crate) const ARENA_ROUND: u16 = 7;
     /// Dev tests (console `net_publish`).
     #[allow(dead_code)] // used by the dev console and tests
     pub(crate) const TEST: u16 = 0xF000;
 
     /// Topics this build understands: a fact of any other topic is dropped (not recorded, not acked). Add yours here too.
     pub(crate) fn known(t: u16) -> bool {
-        matches!(t, BOSS_VERDICT | ORB_CLAIM | ITEM_DROP | KILL_FEED | TEST)
+        matches!(
+            t,
+            BOSS_VERDICT | ORB_CLAIM | ITEM_DROP | KILL_FEED | ARENA_ROUND | TEST
+        )
     }
 }
 

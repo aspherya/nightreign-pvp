@@ -471,16 +471,25 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
 2. **Spawn points and round reset** `[spawns chosen, reset UNKNOWN]`: default spawns A (−30, 0, 0) / B (+30, 0, 0), 60 m apart,
    facing each other (agent's default, Leonardo: tune later); teleport, full restore of HP / FP / flasks / skill cooldown without a
    map reload, **while the ultimate gauge is kept**; the game's maximum flask count.
-3. **Level 15** `[UNKNOWN]`: how the game sets a Nightfarer's level (level-up call vs. memory write, the stats derive from it).
-4. **Max upgrade / legendary** `[HYPOTHESIS: the rarity tier is the +N in the item id, MEMORY_MAP §24 "Weapon level survives"]`: the
+3. **Level 15** (**found 2026-11-09, MEMORY_MAP §29**): the game's setter `exe+0x209E20(PGD, level)` writes `+0x68` and recalculates the
+   attributes; only the grace level-up menu calls it. Left: call it with 15 in the arena and check HP / FP refill and that it holds.
+4. **Max upgrade / legendary** (**answered 2026-11-09, MEMORY_MAP §29**): rarity is a fixed weapon field; the upgrade level is the id's last two digits and its maximum is the top `ReinforceParamWeapon` row of the weapon's `reinforceTypeId` set (common +3 .. legendary +0; Nightfarer items +14), readable from the param in memory. Was: the
    top level per weapon, and whether a Nightfarer's unique default weapon has one.
-5. **Sparring loadout** `[UNKNOWN]`: what the Sparring Equipment changes (real inventory in the Roundtable or a training-only
-   override; is it gone on leaving the area?), how to read the **whole inventory** at Commence and give it at the arena start
-   (inventory add + equip vs. our map-item drop, `game/itemdrop.rs`). Relics stay ON: check that the expedition start applies them.
+5. **Sparring loadout** (**answered 2026-11-09, MEMORY_MAP §29**): the Sparring Equipment gives real inventory items; the
+   expedition start wipes them. Read at Commence: the six hand slots' ids and their instances' `+0x18` (custom row) / `+0x1C`
+   (skill), the quick slots, the consumables. Give after the warp, on the game's thread: add -> equip -> write `+0x18` / `+0x1C`
+   (verified: Uchigatana with Seppuku, staff with spells, +3 with Seppuku). Left: passives (`+0x20..`, none seen yet), whether the
+   HUD needs a refresh after our equip, relics applied after the warp.
 6. **Leave the session after the match** `[partly known: FS7-8 "F10 also leaves the session"]`: winner VICTORY, loser defeat, then both
    at the Roundtable out of the session.
-Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens (**done 2026-11-08**, testing-log; open: the ultimate gauge never charged in the arena, one near-death message before "fight"); ARENA-3
-level 15 + loadout + max upgrade; ARENA-4 1v1 bot; ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
+Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens (**done 2026-11-08**, testing-log; the ultimate only in the last round works, #73, Leonardo 2026-11-08; open: one near-death message before "fight", the 3-minute round limit + HP tiebreak is not built); ARENA-3
+level 15 + loadout + max upgrade + round limit (**done 2026-11-09**, solo + `mi-arena-loadout` PASS, testing-log; open: passives, the flask
+count, the quick-slot order, the player build); ARENA-4 1v1 bot; ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
+
+### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
+Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's
+list holds ~609 entries in an expedition (553 relics, MEMORY_MAP §29), so a rival kill drops only the equipped weapons. Fix: the
+bound `invspy` uses (`used <= 0x1000`, keep the `+0x3BC == 0x180` check). Acceptance: `mi-rw3-items` PASS and a unit test.
 
 ## Rework after the first real match (RW; Leonardo's notes 2026-10-24, rules in DECISIONS)
 

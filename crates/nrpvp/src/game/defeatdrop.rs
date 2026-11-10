@@ -27,17 +27,17 @@ const SESSION_STATE: usize = 0xC;
 const STATE_HOST: u32 = 3;
 /// Equipment ids inside `PlayerGameData`: `+0x1D8` block, then the six weapon ids (left 1, right 1, left 2, right 2, left 3, right 3)
 /// `[VERIFIED: peek on two games, MEMORY_MAP §24]`.
-const GEAR_BLOCK: usize = 0x1D8;
-const WEAPON_IDS: usize = 0x134;
-const WEAPON_SLOTS: usize = 6;
+pub(crate) const GEAR_BLOCK: usize = 0x1D8;
+pub(crate) const WEAPON_IDS: usize = 0x134;
+pub(crate) const WEAPON_SLOTS: usize = 6;
 /// Empty slot placeholders: -1, 0 and the unarmed weapon (110000).
 const UNARMED: u32 = 110_000;
 /// The inventory list (`[VERIFIED live, MEMORY_MAP §24]`): a header at `PlayerGameData+0x3B8` (`u32` used entries, `u32` capacity,
 /// the array pointer at `+0x18`); entries are 0x14 bytes `[handle, item id, quantity, sort id, flags]`, the first is the flask.
-const INV_HEADER: usize = 0x3B8;
-const INV_ARRAY: usize = 0x18;
-const INV_ENTRY: usize = 0x14;
-const INV_CAP: usize = 0x180;
+pub(crate) const INV_HEADER: usize = 0x3B8;
+pub(crate) const INV_ARRAY: usize = 0x18;
+pub(crate) const INV_ENTRY: usize = 0x14;
+pub(crate) const INV_CAP: usize = 0x180;
 /// Per kind: the game's own record holds up to 6 weapons, 5 talismans and 10 consumables.
 const MAX_TALISMANS: usize = 5;
 const MAX_CONSUMABLES: usize = 10;

@@ -1293,7 +1293,8 @@ fn an_incomplete_roster_map_leaves_unknown_players_neutral_and_says_so() {
     let v = build_view(&players, Some(players[0].0), 2, Some(&map));
     assert_eq!(v.source, 2);
     assert!(
-        v.summary.starts_with("teams (roster map 3/4, others neutral):"),
+        v.summary
+            .starts_with("teams (roster map 3/4, others neutral):"),
         "{}",
         v.summary
     );

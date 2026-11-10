@@ -381,6 +381,15 @@ static FMG: AtomicUsize = AtomicUsize::new(0);
 static SLOT: AtomicUsize = AtomicUsize::new(0);
 static REQUEST: AtomicU8 = AtomicU8::new(REQ_NONE);
 static PRESSES: AtomicU32 = AtomicU32::new(0);
+/// ARENA-3: Commence presses the game itself runs (any `Pass*` decision): the expedition start follows, and it wipes the Sparring
+/// loadout while the player still stands at the Roundtable (MEMORY_MAP §29).
+static GAME_COMMENCES: AtomicU32 = AtomicU32::new(0);
+
+/// ARENA-3: how many Commence presses the game has run so far.
+#[cfg_attr(not(feature = "dev"), allow(dead_code))]
+pub(crate) fn game_commences() -> u32 {
+    GAME_COMMENCES.load(Ordering::Relaxed)
+}
 /// Last press: players byte, phase and decision code (for the log).
 static LAST: AtomicU64 = AtomicU64::new(0);
 
@@ -472,6 +481,9 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
                     | decision_code(d),
                 Ordering::Relaxed,
             );
+            if !matches!(d, Decision::Dialog { .. }) {
+                GAME_COMMENCES.fetch_add(1, Ordering::Relaxed);
+            }
             match d {
                 Decision::Pass => {}
                 Decision::PassBots => crate::features::bots::set_bots_match(true),

@@ -61,10 +61,16 @@ pub(crate) enum Command {
     Flag(u32, Option<bool>),
     /// NET-5 research (dev only): call `exe+rva(arg)` on the main loop (`game::rawcall`).
     #[cfg(feature = "dev")]
-    RawCall(u32, u32),
+    RawCall(u32, [u64; 4]),
     /// RW-3 E1 (dev only): drop one item at LOCAL's position with the game's drop function (`game::itemdrop`).
     #[cfg(feature = "dev")]
     ItemDrop(u32, u16, [i32; 3]),
+    /// ARENA-3 research (dev only): `give <id> [qty] [slot]`: the game's add-item call on LOCAL's inventory (`game::invspy::give`).
+    #[cfg(feature = "dev")]
+    Give(u32, u32, Option<u8>),
+    /// ARENA-3 (dev only): `arena_loadout apply` (`game::arenaloadout::apply`).
+    #[cfg(feature = "dev")]
+    ArenaLoadout,
     /// RW-3 (dev only): `drop_gear [dry]`: what a defeat would drop, or drop it now without a defeat (`game::defeatdrop`).
     #[cfg(feature = "dev")]
     DropGear(bool),

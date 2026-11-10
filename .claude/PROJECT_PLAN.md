@@ -169,6 +169,9 @@ shorten the clock" idea applies there and is deferred to team play. Rule v1 (re-
 Nothing here is built without a task card. Items already done or decided (menu entry, queues, team values, friendly fire, grace
 interaction, the downed rule) were dropped; their history is in git.
 
+- **Saved Arena loadouts** (Leonardo, 2026-11-09: wanted later as quality of life, not now: no UI for it). Named builds (weapon ids,
+  ashes, consumables) chosen without going back to the Sparring Grounds. A JSON/TOML file next to `nrpvp.toml` is enough (no
+  database); needs an in-game picker first (GFX work). Related: restoring the last loadout at the Roundtable after a match.
 - **Downed gauge flicker on a rival hit** (2026-10-12, Leonardo: fine for now). The game applies the hit to the gauge, then the mod puts it
   back on its next 50 ms pass, on both screens. Ideas, none tested: (a) run only the downed check on a faster pass (5–10 ms); (b) hook the
   function that applies revive damage and skip it for rivals. (b) would also close the "one hit removes the whole bar" gap and the

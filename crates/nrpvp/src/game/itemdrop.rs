@@ -69,6 +69,11 @@ static QUEUE: Mutex<Queue> = Mutex::new(Queue {
     jobs: Vec::new(),
     base: 0,
 });
+
+/// ARENA-3: any other call that must run on the game's own thread (the add-item / equip calls allocate like the drop does). It gets
+/// the exe base. Carried by the same breakpoint as the drops.
+pub(crate) type Call = Box<dyn FnOnce(usize) + Send>;
+static CALLS: Mutex<Vec<(Call, &'static str, Instant)>> = Mutex::new(Vec::new());
 static LAST: Mutex<String> = Mutex::new(String::new());
 static FRAME_ADDR: AtomicUsize = AtomicUsize::new(0);
 /// Jobs the game thread has finished (for the console aid's wait).
@@ -121,11 +126,26 @@ pub(crate) fn queue(base: usize, job: Job) {
     q.jobs.push((job, Instant::now()));
 }
 
+/// ARENA-3: run `f` on the game thread within a frame or two (the same carrier as the drops); `tag` names it in the log.
+pub(crate) fn queue_call(base: usize, tag: &'static str, f: Call) {
+    QUEUE.lock().unwrap_or_else(PoisonError::into_inner).base = base;
+    tracing::info!("itemdrop: queued a game-thread call ({tag})");
+    CALLS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push((f, tag, Instant::now()));
+}
+
 /// Main loop, every pass: arm the breakpoint while jobs wait, release it afterwards, give up on a job the game thread never took.
 pub(crate) fn pump() {
     let (waiting, oldest) = {
         let q = QUEUE.lock().unwrap_or_else(PoisonError::into_inner);
-        (q.jobs.len(), q.jobs.first().map(|j| j.1))
+        let c = CALLS.lock().unwrap_or_else(PoisonError::into_inner);
+        let oldest = match (q.jobs.first().map(|j| j.1), c.first().map(|j| j.2)) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
+        (q.jobs.len() + c.len(), oldest)
     };
     let mut a = ARM.lock().unwrap_or_else(PoisonError::into_inner);
     if waiting > 0 {
@@ -135,8 +155,11 @@ pub(crate) fn pump() {
         }
         if oldest.is_some_and(|t| t.elapsed() > GIVE_UP) {
             let mut q = QUEUE.lock().unwrap_or_else(PoisonError::into_inner);
-            let lost = q.jobs.len();
+            let mut c = CALLS.lock().unwrap_or_else(PoisonError::into_inner);
+            let lost = q.jobs.len() + c.len();
             q.jobs.clear();
+            c.clear();
+            drop(c);
             drop(q);
             record(format!(
                 "itemdrop: the game thread never reached exe+{RVA_FRAME:#X} in {} s: {lost} job(s) dropped",
@@ -199,6 +222,17 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             for (job, _) in jobs {
                 run_job(base, &job);
                 DONE.fetch_add(1, Ordering::SeqCst);
+            }
+            let calls = match CALLS.try_lock() {
+                Ok(mut c) => std::mem::take(&mut *c),
+                Err(_) => Vec::new(),
+            };
+            for (call, tag, _) in calls {
+                tracing::info!(
+                    "itemdrop: game-thread call ({tag}) on tid {}",
+                    GetCurrentThreadId()
+                );
+                call(frame - RVA_FRAME);
             }
             (*ctx).EFlags |= EFLAGS_RF;
             return EXCEPTION_CONTINUE_EXECUTION;

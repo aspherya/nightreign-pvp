@@ -11,6 +11,8 @@
 #[cfg(feature = "dev")]
 pub(crate) mod arenacard;
 #[cfg(feature = "dev")]
+pub(crate) mod arenaloadout;
+#[cfg(feature = "dev")]
 pub(crate) mod arenarounds;
 #[cfg(feature = "dev")]
 pub(crate) mod bartrace;
@@ -34,6 +36,10 @@ pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;
 pub(crate) mod image;
 pub(crate) mod input;
+#[cfg(feature = "dev")]
+pub(crate) mod inventory;
+#[cfg(feature = "dev")]
+pub(crate) mod invspy;
 pub(crate) mod itemdrop;
 pub(crate) mod layout;
 pub(crate) mod maphide;
@@ -47,6 +53,8 @@ pub(crate) mod menutrace;
 pub(crate) mod multi_instance;
 pub(crate) mod multiplay;
 pub(crate) mod orbclaim;
+#[cfg(feature = "dev")]
+pub(crate) mod params;
 pub(crate) mod poswrite;
 pub(crate) mod puppet;
 #[cfg(feature = "dev")]
@@ -528,7 +536,12 @@ fn watch(
         menuflow::set_in_expedition(world.in_expedition());
         // ARENA-0 (dev): the Arena card's list hook and the warp after a Commence on it.
         #[cfg(feature = "dev")]
-        arenacard::tick(base, world.in_expedition(), world.local.is_some());
+        arenacard::tick(
+            base,
+            world.in_expedition(),
+            world.local.is_some(),
+            world.place == Some(views::Place::Roundtable),
+        );
         // ARENA-2 (dev): best-of-3 rounds in an Arena match.
         #[cfg(feature = "dev")]
         arenarounds::tick(base, &world);
@@ -586,6 +599,10 @@ fn watch(
                 Command::RawCall(rva, arg) => rawcall::call(base, rva, arg),
                 #[cfg(feature = "dev")]
                 Command::ItemDrop(id, n, off) => itemdrop::aid(base, id, n, off),
+                #[cfg(feature = "dev")]
+                Command::Give(id, n, slot) => invspy::give(base, world.local, id, n, slot),
+                #[cfg(feature = "dev")]
+                Command::ArenaLoadout => arenaloadout::apply(base),
                 #[cfg(feature = "dev")]
                 Command::DropGear(dry) => defeatdrop::aid(base, world.local, dry),
                 #[cfg(feature = "dev")]
@@ -760,6 +777,10 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         Command::RawCall(..) => {}
         #[cfg(feature = "dev")]
         Command::ItemDrop(..) => {}
+        #[cfg(feature = "dev")]
+        Command::Give(..) => {}
+        #[cfg(feature = "dev")]
+        Command::ArenaLoadout => {}
         #[cfg(feature = "dev")]
         Command::DropGear(..) => {}
         #[cfg(feature = "dev")]

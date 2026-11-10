@@ -66,9 +66,13 @@ pub(crate) enum MainReq {
     /// M5-4: `flag <id> [0|1]` reads or writes an event flag; the reply is the flag line.
     Flag(u32, Option<bool>),
     /// NET-5 research: `rawcall <rva hex> [arg]`.
-    RawCall(u32, u32),
+    RawCall(u32, [u64; 4]),
     /// RW-3 E1: `item_drop <id hex> [count] [dx dy dz]`.
     ItemDrop(u32, u16, [i32; 3]),
+    /// ARENA-3: `arena_loadout apply`.
+    ArenaLoadout,
+    /// ARENA-3 research: `give <id hex> [qty] [slot]`.
+    Give(u32, u32, Option<u8>),
     /// RW-3: `drop_gear [dry]`.
     DropGear(bool),
     /// ARENA-0: `arena_card [0|1|hook|unhook]` (a `game::arenacard` request code).
@@ -178,12 +182,17 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "net_status", args: "", help: "NET-1: data channel counters (sent, received, pongs, last round trip)", run: net_status },
     Spec { name: "arena_card", args: "[0|1|hook|unhook]", help: "ARENA-0 research: the Everdark rotation list the expedition menu reads (CSServerInterface+0x30); 1 adds byte 7 (card row 17 as an Everdark card), 0 removes it; hook = an execute breakpoint (hwbp slot 1) on the list builder's first loop (exe+0x9E9665) that adds row 17 as a normal card when the menu opens, unhook frees it", run: arena_card },
     Spec { name: "item_drop", args: "<id hex> [count] [dx dy dz]", help: "RW-3 E1 research: drop ONE item on the ground with the game's own drop function exe+0x576110 (the red phantom's open) at LOCAL's position (+ optional offset in metres) on the game thread; reply = result and the MapItemMan slots that changed. Ids: weapon = plain id, accessory = 0x20000000|id, goods = 0x40000000|id", run: item_drop },
+    Spec { name: "inv", args: "[mark|diff]", help: "ARENA-3 research: LOCAL's level, runes, equipped weapon ids and inventory entries; `mark` keeps PlayerGameData and the inventory, `diff` lists what changed since (read only, pipe thread; full lists in the log as `inv:`)", run: |a| crate::game::invspy::cmd(a).map(Act::Reply) },
+    Spec { name: "give", args: "<id hex> [qty] [slot]", help: "ARENA-3 research: add an item to LOCAL's inventory with the game's own add-item call (exe+0x1F05F0) and, with a slot 0..5 (L1 R1 L2 R2 L3 R3), equip it there (exe+0x1F3430); both run on the game's thread (MEMORY_MAP §29). A weapon not in a hand slot does not show in Nightreign. Logs `give:`", run: give },
+    Spec { name: "arena_limit", args: "[secs]", help: "ARENA-3: the Arena round time limit (default 180 s; a value sets a shorter one for tests in this game, 0 = back to the default). At the limit the host judges by HP percent and sends the verdict", run: |a| crate::game::arenarounds::limit_cmd(a).map(Act::Reply) },
+    Spec { name: "arena_loadout", args: "[apply]", help: "ARENA-3: the loadout captured at the Roundtable for the Arena (weapons per slot with their custom row and skill, goods); `apply` gives it now (level 15, max upgrade, skills, goods, recovery) as the arena spawn does, e.g. in a normal expedition", run: arena_loadout },
+    Spec { name: "gaitem", args: "[handle hex]", help: "ARENA-3 research: dump the game's instance (GaitemIns) of an item handle, or of each hand slot's weapon, as u32 words (read only, pipe thread; also logged as `gaitem:`)", run: |a| crate::game::invspy::gaitem_cmd(a).map(Act::Reply) },
     Spec { name: "drop_gear", args: "[dry]", help: "RW-3 test aid: what a rival's defeat drops (LOCAL's equipped weapons, talismans and picked-up consumables) and whether this game is the host; without `dry` it drops it NOW at LOCAL's spot (the host makes the drop, the game shows it to everyone) without a defeat", run: drop_gear },
     Spec { name: "mm_open_lobby", args: "", help: "MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread)", run: |_| { crate::game::matchstart::request_lobby(); Ok(Act::Reply("mm_open_lobby: requested".into())) } },
     Spec { name: "expedition_start", args: "[leader] [players byte] [target]", help: "MM-7: this player is ready, as Commence does in a party, with no menu (next frame, game thread); with `leader` it first sends the settings to the party. Players byte: 2 one, 1 two, 0 three (default). Target: the card's number, negative for none", run: expedition_start },
     Spec { name: "br_card", args: "", help: "UI-3 test aid: whether the Battle Royale card is the chosen target of the expedition menu (yes, no or unknown; needs br_menu), and its Number of Players byte (2 Solo, 1 Duo, 0 Trio); ARENA-1: also whether the Arena card is chosen", run: |_| { let yn = |v: Option<bool>| match v { Some(true) => "yes", Some(false) => "no", None => "unknown" }; Ok(Act::Reply(format!("br_card: {}, players byte {}, arena {}", yn(crate::game::menuflow::last_card_is_br()), crate::game::menuflow::last_players().map_or("unknown".to_string(), |p| p.to_string()), yn(crate::game::menuflow::last_card_is_arena())))) } },
     Spec { name: "exec_trace", args: "<slot 1..3> <rva hex|0>", help: "MM-7 research: log every run of exe+rva with its registers and the code addresses on its stack (hardware execute breakpoint; 0 frees the slot)", run: exec_trace },
-    Spec { name: "rawcall", args: "<rva hex> [arg]", help: "NET-5 research: call exe+rva(arg) once on the game thread (one integer argument), reply with rax. Example: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0)", run: rawcall },
+    Spec { name: "rawcall", args: "<rva hex> [arg1..arg4]", help: "NET-5 / ARENA-3 research: call exe+rva(args) once on the game thread (up to 4 integer arguments: decimal, 0x hex, or `pgd` = LOCAL's PlayerGameData), reply with rax. Examples: `rawcall F18D30 0` = CSAutoControlAPI::SignIn(0); `rawcall 209E20 pgd 15` = SetLevel(15)", run: rawcall },
     Spec { name: "flag", args: "<id> [0|1]", help: "M5-4 research: read any event flag; write ours (10007000..=10007999) or the game's 7000 (win), 7001 (loss), 7502 / 7507 (night 1 / 2 done), 7508 / 7510 / 7521-7523 (Day 3 chain), 7525, in this game only", run: flag },
     Spec { name: "session", args: "", help: "HM-0 research: role, protocol state, limit, host and players of this game's CSSessionManager, with raw qwords (read-only)", run: |_| crate::game::sessionprobe::session_cmd().map(Act::Reply) },
     Spec { name: "mobs_raw", args: "[n]", help: "HM-0 research: the n nearest living enemies (default 4) with position and the raw network fields of their ChrIns (read-only)", run: |a| crate::game::teleport::mobs_raw_cmd(a).map(Act::Reply) },
@@ -843,6 +852,52 @@ fn item_drop(args: &[String]) -> Result<Act, String> {
     Ok(Act::Main(MainReq::ItemDrop(id, count, off)))
 }
 
+fn arena_loadout(args: &[String]) -> Result<Act, String> {
+    match args.first().map(String::as_str) {
+        None => Ok(Act::Reply(match crate::game::arenaloadout::captured() {
+            None => "arena_loadout: nothing captured (the Roundtable, queue idle or searching, captures every 2 s)".into(),
+            Some(l) => format!(
+                "arena_loadout: weapons {:?}; goods {:?}",
+                l.weapons
+                    .iter()
+                    .map(|w| format!("slot {} {:08X} custom {:08X} skill {}", w.slot, w.id, w.custom, w.skill as i32))
+                    .collect::<Vec<_>>(),
+                l.goods
+                    .iter()
+                    .map(|(id, n)| format!("{id:08X}x{n}"))
+                    .collect::<Vec<_>>()
+            ),
+        })),
+        Some("apply") => Ok(Act::Main(MainReq::ArenaLoadout)),
+        Some(o) => Err(format!("unknown argument {o:?}")),
+    }
+}
+
+fn give(args: &[String]) -> Result<Act, String> {
+    let id = args
+        .first()
+        .and_then(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok())
+        .ok_or("id must be hex")?;
+    let qty = match args.get(1) {
+        None => 1,
+        Some(a) => a
+            .parse::<u32>()
+            .ok()
+            .filter(|n| (1..=99).contains(n))
+            .ok_or("qty must be 1..99")?,
+    };
+    let slot = match args.get(2) {
+        None => None,
+        Some(a) => Some(
+            a.parse::<u8>()
+                .ok()
+                .filter(|s| *s < 6)
+                .ok_or("slot must be 0..5 (L1 R1 L2 R2 L3 R3)")?,
+        ),
+    };
+    Ok(Act::Main(MainReq::Give(id, qty, slot)))
+}
+
 fn drop_gear(args: &[String]) -> Result<Act, String> {
     match args {
         [] => Ok(Act::Main(MainReq::DropGear(false))),
@@ -896,11 +951,25 @@ fn rawcall(args: &[String]) -> Result<Act, String> {
         .first()
         .and_then(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok())
         .ok_or("rva must be hex")?;
-    let arg = match args.get(1) {
-        None => 0,
-        Some(a) => a.parse::<u32>().map_err(|_| "arg must be a number")?,
-    };
-    Ok(Act::Main(MainReq::RawCall(rva, arg)))
+    if args.len() > 5 {
+        return Err("at most 4 arguments".into());
+    }
+    let mut argv = [0u64; 4];
+    for (slot, a) in argv.iter_mut().zip(args.iter().skip(1)) {
+        *slot = rawcall_arg(a)?;
+    }
+    Ok(Act::Main(MainReq::RawCall(rva, argv)))
+}
+
+/// One `rawcall` argument: decimal, `0x` hex, or `pgd` (LOCAL's `PlayerGameData`, read now on the pipe thread).
+fn rawcall_arg(a: &str) -> Result<u64, String> {
+    if a == "pgd" {
+        return crate::game::invspy::pgd().map(|p| p as u64);
+    }
+    match a.strip_prefix("0x") {
+        Some(h) => u64::from_str_radix(h, 16).map_err(|_| format!("bad hex {a:?}")),
+        None => a.parse::<u64>().map_err(|_| format!("bad number {a:?}")),
+    }
 }
 
 fn flag(args: &[String]) -> Result<Act, String> {
@@ -1066,6 +1135,15 @@ pub(crate) fn answer(req: MainReq, snap: &Snapshot, run: &mut dyn FnMut(Command)
         MainReq::ItemDrop(id, n, off) => {
             run(Command::ItemDrop(id, n, off));
             crate::game::itemdrop::reply()
+        }
+        MainReq::ArenaLoadout => {
+            run(Command::ArenaLoadout);
+            "arena_loadout: apply requested (the log shows `arena_loadout:` and `inventory:` lines)"
+                .into()
+        }
+        MainReq::Give(id, n, slot) => {
+            run(Command::Give(id, n, slot));
+            format!("give: {id:08X} x{n} slot {slot:?} requested (result in the log as `give:`; `inv` shows the inventory)")
         }
         MainReq::DropGear(dry) => {
             run(Command::DropGear(dry));
@@ -1498,5 +1576,38 @@ usage: revive_fail [n]"
             answer(MainReq::Players, &Snapshot::default(), &mut |_| {}),
             "no players loaded"
         );
+    }
+
+    #[test]
+    fn rawcall_takes_up_to_four_decimal_or_hex_arguments() {
+        assert_eq!(rawcall_arg("15"), Ok(15));
+        assert_eq!(rawcall_arg("0x1F"), Ok(31));
+        assert!(rawcall_arg("x").is_err());
+        assert!(matches!(
+            rawcall(&["209E20".into(), "1".into(), "0x2".into()]),
+            Ok(Act::Main(MainReq::RawCall(0x209E20, [1, 2, 0, 0])))
+        ));
+        let five: Vec<String> = ["1", "1", "2", "3", "4", "5"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert!(rawcall(&five).is_err());
+        assert!(execute_line("rawcall zz").contains("hex"));
+    }
+
+    #[test]
+    fn give_parses_a_hex_id_a_quantity_and_a_slot() {
+        let a = |v: &[&str]| give(&v.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert!(matches!(
+            a(&["0089588C"]),
+            Ok(Act::Main(MainReq::Give(0x0089_588C, 1, None)))
+        ));
+        assert!(matches!(
+            a(&["0x40000258", "3", "1"]),
+            Ok(Act::Main(MainReq::Give(0x4000_0258, 3, Some(1))))
+        ));
+        assert!(a(&["zz"]).is_err());
+        assert!(a(&["1", "0"]).is_err());
+        assert!(a(&["1", "1", "6"]).is_err());
     }
 }
