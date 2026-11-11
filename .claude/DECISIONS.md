@@ -134,3 +134,8 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   Checked after the fact (agent, 2026-11-08): Heolstor's `m18` is also the simplest Nightlord arena to use: `m19` is shared by the
   other Nightlords (3× the event script), `m16*` are DLC arenas, `m12` is the Shelter. Open risk is its size (~300 m across, large
   for a 1v1): answer with our own boundary if a real fight shows kiting, not another map (the warp target is one line of data).
+
+## 2026-11-10 — The Arena bot stays at level 13 with the hero's stock weapon (Leonardo)
+After his first match against the bot (ARENA-4) Leonardo first asked for a level-15 bot with a legendary weapon, then kept it as it is:
+"ta bom assim". The bot uses the game's highest bot table (`NPCBotTableParam` 30000, soul level 13, the hero's `CharaInitParam` kit).
+If it is reopened: a table of our own in `regulation.bin` (copies of `CharaInitParam` 30000..30900 at level 15, max-upgrade weapon).

@@ -212,6 +212,8 @@ pub(crate) enum Decision {
     PassMultiplayer,
     /// BOT-5: Bots On, Solo: the game's own solo Commence, and the expedition is a match against bots.
     PassBots,
+    /// ARENA-4: Bots On, Solo, the Arena card: the game's own solo Commence, and the expedition is an Arena match against one bot.
+    PassArenaBots,
     /// Show our dialog `text` instead of Commence and hand `request` to the thread.
     Dialog { text: usize, request: u8 },
 }
@@ -248,19 +250,29 @@ pub(crate) fn decide_for_card(
 
 /// ARENA-1 (pure): a Commence on the Arena card with the queue idle starts the Arena search (Solo only for now); `None` = not the
 /// Arena card, not idle (Stop Searching and a found match go through [`decide_for_card`] as for Battle Royale) or Offline (the game's
-/// own solo expedition, as any other card).
+/// own solo expedition, as any other card). ARENA-4: with Bots On, Solo is a match against one bot at once (no search, no queue needed).
 pub(crate) fn decide_arena(
     arena_card: Option<bool>,
     players: u8,
     phase: u8,
     mm_on: bool,
     mode: GameMode,
+    bots: bool,
 ) -> Option<Decision> {
     if arena_card != Some(true) || phase != crate::mm::PHASE_IDLE || mode != GameMode::BattleRoyale
     {
         return None;
     }
-    Some(if !mm_on {
+    Some(if bots {
+        if players == PLAYERS_ONE {
+            Decision::PassArenaBots
+        } else {
+            Decision::Dialog {
+                text: T_BOTS_SOLO,
+                request: REQ_NONE,
+            }
+        }
+    } else if !mm_on {
         Decision::Dialog {
             text: T_OFF,
             request: REQ_NONE,
@@ -403,6 +415,7 @@ fn decision_code(d: Decision) -> u64 {
         Decision::Pass => 1,
         Decision::PassMultiplayer => 2,
         Decision::PassBots => 3,
+        Decision::PassArenaBots => 4,
         Decision::Dialog { text, request } => 0x100 | ((text as u64) << 4) | u64::from(request),
     }
 }
@@ -466,7 +479,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             let arena_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize)
                 .has_card(crate::game::layout::ARENA_CARD_ROW);
             let d = while_starting(
-                decide_arena(arena_card, players, phase, crate::mm::enabled(), mode)
+                decide_arena(arena_card, players, phase, crate::mm::enabled(), mode, bots)
                     .unwrap_or_else(|| {
                         decide_for_card(br_card, players, phase, crate::mm::enabled(), mode, bots)
                     }),
@@ -487,6 +500,7 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
             match d {
                 Decision::Pass => {}
                 Decision::PassBots => crate::features::bots::set_bots_match(true),
+                Decision::PassArenaBots => crate::mm::set_arena_bots(true),
                 Decision::PassMultiplayer => {
                     let _ = settings.set_players(PLAYERS_TWO);
                 }
@@ -1108,45 +1122,82 @@ mod tests {
         use crate::mm::PHASE_IDLE;
         let bro = GameMode::BattleRoyale;
         assert_eq!(
-            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, true, bro),
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, true, bro, false),
             Some(Decision::Dialog {
                 text: T_ARENA_SEARCHING,
                 request: REQ_QUEUE_ARENA_SOLO
             })
         );
         assert_eq!(
-            decide_arena(Some(true), PLAYERS_TWO, PHASE_IDLE, true, bro),
+            decide_arena(Some(true), PLAYERS_TWO, PHASE_IDLE, true, bro, false),
             Some(Decision::Dialog {
                 text: T_ARENA_SOLO,
                 request: REQ_NONE
             })
         );
         assert_eq!(
-            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, false, bro),
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, false, bro, false),
             Some(Decision::Dialog {
                 text: T_OFF,
                 request: REQ_NONE
             })
         );
         assert_eq!(
-            decide_arena(Some(false), PLAYERS_ONE, PHASE_IDLE, true, bro),
+            decide_arena(Some(false), PLAYERS_ONE, PHASE_IDLE, true, bro, false),
             None,
             "another card"
         );
         assert_eq!(
-            decide_arena(None, PLAYERS_ONE, PHASE_IDLE, true, bro),
+            decide_arena(None, PLAYERS_ONE, PHASE_IDLE, true, bro, false),
             None,
             "menu unreadable"
         );
         assert_eq!(
-            decide_arena(Some(true), PLAYERS_ONE, PHASE_SEARCHING, true, bro),
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_SEARCHING, true, bro, false),
             None,
             "Stop Searching goes the Battle Royale way"
         );
         assert_eq!(
-            decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, true, GameMode::Offline),
+            decide_arena(
+                Some(true),
+                PLAYERS_ONE,
+                PHASE_IDLE,
+                true,
+                GameMode::Offline,
+                false
+            ),
             None,
             "Offline: the game's own expedition"
+        );
+    }
+
+    #[test]
+    fn bots_on_makes_the_arena_card_a_match_against_one_bot_solo_only() {
+        use crate::mm::PHASE_IDLE;
+        let bro = GameMode::BattleRoyale;
+        for mm_on in [true, false] {
+            assert_eq!(
+                decide_arena(Some(true), PLAYERS_ONE, PHASE_IDLE, mm_on, bro, true),
+                Some(Decision::PassArenaBots),
+                "no queue needed (mm {mm_on})"
+            );
+        }
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_TWO, PHASE_IDLE, true, bro, true),
+            Some(Decision::Dialog {
+                text: T_BOTS_SOLO,
+                request: REQ_NONE
+            })
+        );
+        assert_eq!(
+            decide_arena(Some(false), PLAYERS_ONE, PHASE_IDLE, true, bro, true),
+            None,
+            "the Battle Royale card keeps its own bots match"
+        );
+        assert_eq!(
+            decide_arena(Some(true), PLAYERS_ONE, PHASE_SEARCHING, true, bro, true),
+            None,
+            "a running search is not a bots match"
         );
     }
 }

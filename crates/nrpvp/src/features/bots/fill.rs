@@ -46,6 +46,50 @@ pub(crate) const HUNT_EVERY_MS: u64 = 60_000;
 pub(crate) const HUNT_FAR: f32 = 150.0;
 /// Ticks (50 ms) a kept bot that was seen may be missing from the set before it counts as gone (3 s).
 const GONE_AFTER: u32 = 60;
+/// ARENA-4: the Arena bot's table (`NPCBotTableParam` 30000: the 8 base heroes at soul level 13, OFF-3) and the flag of its event in
+/// `gamedata/emevd-bots.json`.
+pub(crate) const ARENA_TABLE: (i32, u32) = (30_000, 10_007_305);
+/// ARENA-4: where a living bot waits between a round end and the reset, so it cannot hit the frozen or downed LOCAL behind the black
+/// screen (Heolstor's arena: flat, centred on (0, 0, 0), at least ±150 m, MEMORY_MAP §27; the spawns are on the x axis).
+pub(crate) const ARENA_PARK: [f32; 3] = [0.0, 3.0, 120.0];
+/// ARENA-4: a bot this close (horizontal metres) to its spawn stands on it.
+const ON_SPAWN_M: f32 = 8.0;
+
+/// ARENA-4: what the director needs from the Arena this tick.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ArenaIn {
+    /// This expedition is an Arena match against a bot.
+    pub on: bool,
+    /// LOCAL stands on its spawn in the arena (the bot is asked for only then).
+    pub placed: bool,
+    /// The round events so far (`arenarounds::bot_events`).
+    pub events: BotEvents,
+}
+
+/// ARENA-4: the bot's spawn: B of `game::arenacard` (LOCAL has no roster team in a match against a bot, so it stands on A; a unit test
+/// keeps the two equal).
+pub(crate) const ARENA_BOT_SPAWN: [f32; 3] = [15.0, 3.0, 0.0];
+
+/// ARENA-4: the bot the Arena fights, as this feature publishes it every tick (read by `game::arenarounds`, dev only).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ArenaBot {
+    pub handle: u64,
+    /// Its HP when it was first seen (its max-HP field reads 1/3 of it, MEMORY_MAP §18).
+    pub full_hp: u32,
+    /// Seen on its spawn since the last round end.
+    pub ready: bool,
+}
+
+/// ARENA-4: round events from `game::arenarounds` (counters since the DLL loaded; the director remembers the values it has seen).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct BotEvents {
+    /// A round ended (a down or the time limit).
+    pub round_ends: u32,
+    /// The players were reset to their spawns (the next round follows).
+    pub resets: u32,
+    /// A match was decided (at the last round's reset, before WIN / LOSE).
+    pub decided: u32,
+}
 
 const EMPTY: u64 = u64::MAX;
 
@@ -144,6 +188,8 @@ pub(crate) struct Kept {
     pub death: Option<(Death, u64)>,
     /// BOT-2: killed by a mob and its replacement was asked for: no longer one of the wanted bots.
     pub replaced: bool,
+    /// ARENA-4: its HP when first seen above 0 (its full HP: the max-HP field reads 1/3, MEMORY_MAP §18).
+    pub full_hp: u32,
 }
 
 impl Kept {
@@ -161,6 +207,7 @@ impl Kept {
             spread: false,
             death: None,
             replaced: false,
+            full_hp: 0,
         }
     }
 }
@@ -195,6 +242,14 @@ pub(crate) struct BotFill {
     waiting_since: Option<u64>,
     /// Bring far bots to LOCAL (`bots_hunt`, on by default).
     pub(crate) hunt: bool,
+    /// ARENA-4: the Arena this tick ([`BotFill::set_arena`]).
+    arena: ArenaIn,
+    /// ARENA-4: the round events already handled (taken at the first active tick of the match).
+    arena_seen: Option<BotEvents>,
+    /// ARENA-4: the current bot has stood on its spawn since the last round end.
+    arena_ready: bool,
+    /// ARENA-4: the match is decided: no more bots.
+    arena_done: bool,
 }
 
 impl BotFill {
@@ -215,7 +270,37 @@ impl BotFill {
             last_hunt: None,
             waiting_since: None,
             hunt: true,
+            arena: ArenaIn::default(),
+            arena_seen: None,
+            arena_ready: false,
+            arena_done: false,
         }
+    }
+
+    /// ARENA-4: the Arena this tick (before [`BotFill::step`]).
+    #[cfg_attr(not(feature = "dev"), allow(dead_code))]
+    pub(crate) fn set_arena(&mut self, a: ArenaIn) {
+        self.arena = a;
+    }
+
+    /// ARENA-4: the current Arena bot (the last kept one that is not replaced, once seen), for `arenarounds`.
+    #[cfg_attr(not(feature = "dev"), allow(dead_code))]
+    pub(crate) fn arena_bot(&self) -> Option<ArenaBot> {
+        if !self.arena.on {
+            return None;
+        }
+        self.current()
+            .filter(|k| k.seen && !k.gone)
+            .map(|k| ArenaBot {
+                handle: k.handle,
+                full_hp: k.full_hp,
+                ready: self.arena_ready,
+            })
+    }
+
+    /// ARENA-4: the last kept bot that still plays.
+    fn current(&self) -> Option<&Kept> {
+        self.kept.iter().rev().find(|k| !k.replaced)
     }
 
     pub(crate) fn want(&self) -> usize {
@@ -267,8 +352,22 @@ impl BotFill {
 
     /// One step (pure apart from logging; unit tested with a made-up clock).
     pub(crate) fn step(&mut self, now: u64, mode: GameMode, world: &World, ctx: &mut Ctx) {
-        let active = (mode == GameMode::Offline || self.bots_match) && world.in_expedition();
-        if active && self.bots_match && self.want < MAX_BOTS && self.stage == Stage::Idle {
+        let arena = self.arena.on;
+        // ARENA-4: the Arena's bot is asked for only once LOCAL stands on its spawn (after the warp's map load).
+        let active = (mode == GameMode::Offline || self.bots_match || (arena && self.arena.placed))
+            && world.in_expedition();
+        if active && arena && self.want != 1 && self.stage == Stage::Idle {
+            tracing::info!(
+                "bots: Arena match against a bot: 1 bot (table {})",
+                ARENA_TABLE.0
+            );
+            self.want = 1;
+        } else if active
+            && !arena
+            && self.bots_match
+            && self.want < MAX_BOTS
+            && self.stage == Stage::Idle
+        {
             tracing::info!("bots: match against bots: {MAX_BOTS} bots");
             self.want = MAX_BOTS;
         }
@@ -286,8 +385,12 @@ impl BotFill {
         }
         self.me = world.local_pos.map(|(p, _)| p);
         self.keep_rivals(now, world, ctx);
-        self.respawn_due(now);
-        self.give_up_replacements(now);
+        if arena {
+            self.arena_step(world, ctx);
+        } else {
+            self.respawn_due(now);
+            self.give_up_replacements(now);
+        }
         if self.want == 0 && self.stage == Stage::Idle {
             return;
         }
@@ -358,7 +461,124 @@ impl BotFill {
                     self.stage = Stage::Done;
                 }
             }
+            Stage::Done if arena => {
+                // ARENA-4: a bot replaced at a reset: one more round of the table.
+                if self.active() < self.want && !self.arena_done && self.rounds < MAX_ROUNDS {
+                    self.stage = Stage::Gap {
+                        n: self.rounds.saturating_sub(1),
+                        at: now.saturating_sub(ROUND_GAP_MS),
+                    };
+                }
+            }
             Stage::Done => self.hunt_step(now, world, ctx),
+        }
+    }
+
+    /// ARENA-4: the Arena's bot follows the rounds (`arenarounds` events): parked far away at a round end; at the reset healed and put
+    /// back on its spawn, or replaced when dead; put at 0 HP when the match is decided. A new bot is put on its spawn once. A replaced
+    /// bot that comes back to life is put at 0 HP again.
+    fn arena_step(&mut self, world: &World, ctx: &mut Ctx) {
+        let ev = self.arena.events;
+        let seen = *self.arena_seen.get_or_insert(ev);
+        self.arena_seen = Some(ev);
+        let spawn = ARENA_BOT_SPAWN;
+        let cur = self.kept.iter().rposition(|k| !k.replaced);
+        let live = |k: &Kept| {
+            world
+                .bot(k.handle)
+                .filter(|b| b.hp > 0 && k.seen && !k.gone)
+        };
+        if ev.round_ends != seen.round_ends {
+            self.arena_ready = false;
+            if let Some(b) = cur.and_then(|i| live(&self.kept[i])) {
+                tracing::info!(
+                    "bots: Arena round over: bot 0x{:X} parked until the reset",
+                    b.handle
+                );
+                ctx.bot_writes.push(BotWrite::Put {
+                    chr: b.chr,
+                    handle: b.handle,
+                    to: ARENA_PARK,
+                });
+            }
+        }
+        if ev.resets != seen.resets && !self.arena_done {
+            match cur.map(|i| (i, live(&self.kept[i]))) {
+                Some((i, Some(b))) => {
+                    let full = self.kept[i].full_hp.max(b.hp);
+                    tracing::info!(
+                        "bots: Arena reset: bot 0x{:X} back to its spawn, HP {} -> {full}",
+                        b.handle,
+                        b.hp
+                    );
+                    ctx.bot_writes.push(BotWrite::Hp {
+                        chr: b.chr,
+                        handle: b.handle,
+                        hp: full,
+                    });
+                    ctx.bot_writes.push(BotWrite::Put {
+                        chr: b.chr,
+                        handle: b.handle,
+                        to: spawn,
+                    });
+                }
+                other => {
+                    if let Some((i, None)) = other {
+                        self.kept[i].replaced = true;
+                    }
+                    tracing::info!(
+                        "bots: Arena reset: no living bot; a new one for the next round"
+                    );
+                }
+            }
+        }
+        if ev.decided != seen.decided {
+            self.arena_done = true;
+            self.arena_ready = false;
+            if let Some(b) = cur.and_then(|i| live(&self.kept[i])) {
+                tracing::info!(
+                    "bots: Arena match decided: bot 0x{:X} removed (HP 0)",
+                    b.handle
+                );
+                ctx.bot_writes.push(BotWrite::Hp {
+                    chr: b.chr,
+                    handle: b.handle,
+                    hp: 0,
+                });
+            }
+        }
+        for (i, k) in self.kept.iter_mut().enumerate() {
+            let Some(b) = world.bot(k.handle) else {
+                continue;
+            };
+            if Some(i) == cur && !k.spread && b.pos.is_some() && !self.arena_done {
+                // A new bot: on its spawn once (the game brings it next to LOCAL).
+                k.spread = true;
+                ctx.bot_writes.push(BotWrite::Put {
+                    chr: b.chr,
+                    handle: k.handle,
+                    to: spawn,
+                });
+            } else if Some(i) != cur && b.hp > 0 && k.seen {
+                tracing::info!("bots: Arena: old bot 0x{:X} is alive again; HP 0", k.handle);
+                ctx.bot_writes.push(BotWrite::Hp {
+                    chr: b.chr,
+                    handle: k.handle,
+                    hp: 0,
+                });
+            }
+        }
+        // Standing on its spawn (seen after the put) makes the next round start (not on the tick a round ended: the park is not
+        // written yet).
+        if let Some(i) = cur.filter(|_| ev.round_ends == seen.round_ends) {
+            let k = &self.kept[i];
+            let on_spawn = live(k).and_then(|b| b.pos).is_some_and(|p| {
+                ((p[0] - spawn[0]).powi(2) + (p[2] - spawn[2]).powi(2)).sqrt() <= ON_SPAWN_M
+            });
+            if on_spawn && k.spread && !self.arena_ready && !self.arena_done {
+                self.arena_ready = true;
+                tracing::info!("bots: Arena bot 0x{:X} stands on its spawn", k.handle);
+            }
         }
     }
 
@@ -399,7 +619,11 @@ impl BotFill {
     }
 
     fn arm(&mut self, n: usize, now: u64, ctx: &mut Ctx) {
-        let (table, flag) = ROUND_TABLES[n % ROUND_TABLES.len()];
+        let (table, flag) = if self.arena.on {
+            ARENA_TABLE
+        } else {
+            ROUND_TABLES[n % ROUND_TABLES.len()]
+        };
         ctx.flags.push((flag, true));
         self.rounds += 1;
         tracing::info!("bots: round {}: table {table} (flag {flag})", n + 1);
@@ -409,8 +633,10 @@ impl BotFill {
     /// Keep every found bot on the rival team and refresh the roster.
     fn keep_rivals(&mut self, now: u64, world: &World, ctx: &mut Ctx) {
         let ground = world.local_pos.is_some_and(|(_, g)| g);
+        // ARENA-4: no camps to send bots to in the arena (the extra is cleared within a second, behind the black screen).
+        let arena = self.arena.on;
         for (h, sent) in &mut self.extra {
-            if *sent || !self.spread || !ground {
+            if *sent || !self.spread || !ground || arena {
                 continue;
             }
             if let Some(b) = world.bot(*h).filter(|b| b.pos.is_some()) {
@@ -426,7 +652,7 @@ impl BotFill {
         let target = self.rival_team;
         let rivals: Vec<u64> = world.rival_bots().map(|b| b.handle).collect();
         let sectors = self.want.max(self.kept.len());
-        let spread_on = self.spread;
+        let spread_on = self.spread && !arena;
         for (i, k) in self.kept.iter_mut().enumerate() {
             if k.gone {
                 continue;
@@ -447,6 +673,9 @@ impl BotFill {
             k.hp = b.hp;
             k.max_hp = b.max_hp;
             k.pos = b.pos.or(k.pos);
+            if k.full_hp == 0 && b.hp > 0 {
+                k.full_hp = b.hp;
+            }
             if !k.seen {
                 k.seen = true;
                 if b.npc_id != crate::game::layout::BOT_NPC_PARAM {
@@ -471,10 +700,14 @@ impl BotFill {
                 k.dead = true;
                 let cause = death_cause(b.attacker, world.local_handle, &rivals);
                 k.death = Some((cause, now));
-                if let Some(ev) = kill_event(k.handle, b.attacker, cause, world) {
+                // ARENA-4: the Arena's round messages say who won; no killfeed line there.
+                if let Some(ev) = kill_event(k.handle, b.attacker, cause, world).filter(|_| !arena)
+                {
                     ctx.kills.push(ev);
                 }
-                let next = if cause == Death::Mob {
+                let next = if arena {
+                    "; the Arena round is over".to_string()
+                } else if cause == Death::Mob {
                     format!("; a new bot replaces it in {} s", RESPAWN_MS / 1000)
                 } else {
                     "; out of the match".to_string()
@@ -560,6 +793,9 @@ impl BotFill {
     }
 
     fn reset(&mut self) {
+        self.arena_seen = None;
+        self.arena_ready = false;
+        self.arena_done = false;
         self.over = true;
         self.waiting_since = None;
         self.want = self.cfg_want;
@@ -588,6 +824,16 @@ impl BotFill {
             self.want,
             self.alive()
         );
+        if self.arena.on {
+            out.push_str(&format!(
+                ", Arena bot {}",
+                match (self.arena_done, self.arena_ready) {
+                    (true, _) => "done (match decided)",
+                    (false, true) => "on its spawn",
+                    (false, false) => "not on its spawn",
+                }
+            ));
+        }
         for (i, k) in self.kept.iter().enumerate() {
             let state = match (k.gone, k.seen, k.death) {
                 _ if k.replaced => "dead (mob), replaced",
@@ -920,6 +1166,229 @@ mod tests {
             .bot_writes
             .iter()
             .any(|b| matches!(b, BotWrite::Hunt { .. })));
+    }
+
+    fn arena_bot(handle: u64, hp: u32, x: f32) -> BotChr {
+        BotChr {
+            handle,
+            chr: 0x7000 + handle as usize,
+            team: 29,
+            npc_id: 600_040_000,
+            hp,
+            max_hp: hp / 3,
+            pos: Some([x, 3.0, 0.0]),
+            attacker: 0,
+        }
+    }
+
+    fn arena_in(round_ends: u32, resets: u32, decided: u32) -> ArenaIn {
+        ArenaIn {
+            on: true,
+            placed: true,
+            events: BotEvents {
+                round_ends,
+                resets,
+                decided,
+            },
+        }
+    }
+
+    fn puts(ctx: &Ctx) -> Vec<(u64, [f32; 3])> {
+        ctx.bot_writes
+            .iter()
+            .filter_map(|w| match w {
+                BotWrite::Put { handle, to, .. } => Some((*handle, *to)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn hps(ctx: &Ctx) -> Vec<(u64, u32)> {
+        ctx.bot_writes
+            .iter()
+            .filter_map(|w| match w {
+                BotWrite::Hp { handle, hp, .. } => Some((*handle, *hp)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_arena_asks_for_one_level_13_bot_only_once_local_is_on_its_spawn() {
+        let mut d = BotFill::new(0, 29);
+        let mut ctx = Ctx::default();
+        d.set_arena(ArenaIn {
+            placed: false,
+            ..arena_in(0, 0, 0)
+        });
+        d.step(0, GameMode::BattleRoyale, &world([E, E]), &mut ctx);
+        assert!(ctx.flags.is_empty(), "the warp is not done yet");
+        d.set_arena(arena_in(0, 0, 0));
+        d.step(50, GameMode::BattleRoyale, &world([E, E]), &mut ctx);
+        assert_eq!(ctx.flags, vec![(ARENA_TABLE.1, true)]);
+        assert_eq!(d.want(), 1);
+        // The table brings 2: one kept, the other left for the clear (not sent anywhere).
+        let mut ctx = Ctx::default();
+        let mut w = world([0xA0, 0xA1]);
+        w.bot_chrs = vec![arena_bot(0xA0, 900, -14.0), arena_bot(0xA1, 900, -15.0)];
+        d.step(100, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(ctx.bot_writes[0], BotWrite::ForgetSlot(0));
+        assert!(!ctx
+            .bot_writes
+            .iter()
+            .any(|b| matches!(b, BotWrite::Spread { .. })));
+        let mut ctx = Ctx::default();
+        d.step(100 + ROUND_GAP_MS, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(ctx.flags, vec![(super::super::FLAG_CLEAR, true)]);
+        assert_eq!(d.stage, Stage::Done);
+        // Not BR rules: no camps, no hunt, no 5 bots.
+        assert_eq!(d.want(), 1);
+    }
+
+    /// One bot kept and seen at LOCAL's side; returns the director at `t` = 2 s.
+    fn arena_with_bot(w: &mut World) -> BotFill {
+        let mut d = BotFill::new(0, 29);
+        d.set_arena(arena_in(0, 0, 0));
+        let mut ctx = Ctx::default();
+        d.step(0, GameMode::BattleRoyale, &world([E, E]), &mut ctx);
+        *w = world([0xA0, 0xA1]);
+        w.bot_chrs = vec![arena_bot(0xA0, 900, -14.0)];
+        d.step(50, GameMode::BattleRoyale, w, &mut ctx);
+        d.step(50 + ROUND_GAP_MS, GameMode::BattleRoyale, w, &mut ctx);
+        assert_eq!(d.stage, Stage::Done);
+        d
+    }
+
+    #[test]
+    fn the_arena_bot_goes_to_its_spawn_and_is_ready_there() {
+        let mut w = World::default();
+        let mut d = arena_with_bot(&mut w);
+        assert_eq!(
+            puts(&{
+                let mut ctx = Ctx::default();
+                d.step(2_000, GameMode::BattleRoyale, &w, &mut ctx);
+                ctx
+            }),
+            Vec::<(u64, [f32; 3])>::new(),
+            "put once, at the first sight"
+        );
+        let b = d.arena_bot().unwrap();
+        assert_eq!((b.handle, b.full_hp, b.ready), (0xA0, 900, false));
+        w.bot_chrs[0].pos = Some([15.0, 3.0, 0.5]);
+        d.step(2_050, GameMode::BattleRoyale, &w, &mut Ctx::default());
+        assert!(d.arena_bot().unwrap().ready);
+        assert!(
+            d.roster().contains("Arena bot on its spawn"),
+            "{}",
+            d.roster()
+        );
+    }
+
+    #[test]
+    fn a_new_arena_bot_is_put_on_spawn_b() {
+        let mut d = BotFill::new(0, 29);
+        d.set_arena(arena_in(0, 0, 0));
+        let mut ctx = Ctx::default();
+        d.step(0, GameMode::BattleRoyale, &world([E, E]), &mut ctx);
+        let mut w = world([0xA0, 0xA1]);
+        w.bot_chrs = vec![arena_bot(0xA0, 900, -14.0)];
+        d.step(50, GameMode::BattleRoyale, &w, &mut Ctx::default());
+        // Kept on this tick, put on its spawn on the next.
+        let mut ctx = Ctx::default();
+        d.step(100, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(puts(&ctx), vec![(0xA0, ARENA_BOT_SPAWN)]);
+        #[cfg(feature = "dev")]
+        assert_eq!(
+            ARENA_BOT_SPAWN,
+            crate::game::arenacard::spawn_for(Some(1)).0
+        );
+    }
+
+    #[test]
+    fn a_living_arena_bot_is_parked_at_the_round_end_then_healed_and_put_back() {
+        let mut w = World::default();
+        let mut d = arena_with_bot(&mut w);
+        w.bot_chrs[0].pos = Some([15.0, 3.0, 0.0]);
+        d.step(2_000, GameMode::BattleRoyale, &w, &mut Ctx::default());
+        assert!(d.arena_bot().unwrap().ready);
+        // LOCAL went down (or the time ran out): the bot leaves.
+        w.bot_chrs[0].hp = 600;
+        d.set_arena(arena_in(1, 0, 0));
+        let mut ctx = Ctx::default();
+        d.step(3_000, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(puts(&ctx), vec![(0xA0, ARENA_PARK)]);
+        assert!(!d.arena_bot().unwrap().ready);
+        w.bot_chrs[0].pos = Some(ARENA_PARK);
+        d.step(3_050, GameMode::BattleRoyale, &w, &mut Ctx::default());
+        assert!(!d.arena_bot().unwrap().ready, "parked is not ready");
+        // The reset: full HP (the spawn's), back on B.
+        d.set_arena(arena_in(1, 1, 0));
+        let mut ctx = Ctx::default();
+        d.step(8_000, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(hps(&ctx), vec![(0xA0, 900)]);
+        assert_eq!(puts(&ctx), vec![(0xA0, ARENA_BOT_SPAWN)]);
+        assert!(ctx.flags.is_empty(), "no new bot");
+        w.bot_chrs[0].pos = Some([15.0, 3.0, 0.0]);
+        d.step(8_050, GameMode::BattleRoyale, &w, &mut Ctx::default());
+        assert!(d.arena_bot().unwrap().ready);
+    }
+
+    #[test]
+    fn a_dead_arena_bot_is_replaced_at_the_reset_and_the_ending_removes_the_last() {
+        let mut w = World::default();
+        let mut d = arena_with_bot(&mut w);
+        w.local_handle = Some(0xF0);
+        // LOCAL kills it: no killfeed in the Arena; the round ends.
+        w.bot_chrs[0].hp = 0;
+        w.bot_chrs[0].attacker = 0xF0;
+        let mut ctx = Ctx::default();
+        d.step(2_000, GameMode::BattleRoyale, &w, &mut ctx);
+        assert!(ctx.kills.is_empty());
+        d.set_arena(arena_in(1, 0, 0));
+        let mut ctx = Ctx::default();
+        d.step(2_050, GameMode::BattleRoyale, &w, &mut ctx);
+        assert!(puts(&ctx).is_empty(), "a dead bot is not parked");
+        assert!(ctx.flags.is_empty(), "no new bot before the reset");
+        // The reset: a new table round.
+        d.set_arena(arena_in(1, 1, 0));
+        let mut ctx = Ctx::default();
+        d.step(7_000, GameMode::BattleRoyale, &w, &mut ctx);
+        assert!(d.arena_bot().is_none(), "no bot until the new one is seen");
+        d.step(7_050, GameMode::BattleRoyale, &w, &mut ctx);
+        d.step(7_100 + ROUND_GAP_MS, GameMode::BattleRoyale, &w, &mut ctx);
+        assert_eq!(ctx.flags, vec![(ARENA_TABLE.1, true)]);
+        // The new bot: kept, put on B; the old one stays dead.
+        let mut w2 = world([0xB0, 0xB1]);
+        w2.local_handle = Some(0xF0);
+        w2.bot_chrs = vec![w.bot_chrs[0], arena_bot(0xB0, 880, -14.0)];
+        d.step(
+            8_000 + ROUND_GAP_MS,
+            GameMode::BattleRoyale,
+            &w2,
+            &mut Ctx::default(),
+        );
+        let mut ctx = Ctx::default();
+        d.step(8_050 + ROUND_GAP_MS, GameMode::BattleRoyale, &w2, &mut ctx);
+        assert_eq!(puts(&ctx), vec![(0xB0, ARENA_BOT_SPAWN)]);
+        assert_eq!(d.arena_bot().unwrap().handle, 0xB0);
+        // The old bot coming back to life is put at 0 HP.
+        w2.bot_chrs[0].hp = 300;
+        let mut ctx = Ctx::default();
+        d.step(9_000 + ROUND_GAP_MS, GameMode::BattleRoyale, &w2, &mut ctx);
+        assert!(hps(&ctx).contains(&(0xA0, 0)), "{:?}", ctx.bot_writes);
+        // The match is decided while the new bot lives: it is removed, and no more bots come.
+        w2.bot_chrs[0].hp = 0;
+        d.set_arena(arena_in(2, 1, 1));
+        let mut ctx = Ctx::default();
+        d.step(20_000, GameMode::BattleRoyale, &w2, &mut ctx);
+        assert!(hps(&ctx).contains(&(0xB0, 0)), "{:?}", ctx.bot_writes);
+        assert!(d.roster().contains("done (match decided)"));
+        w2.bot_chrs[1].hp = 0;
+        d.set_arena(arena_in(2, 2, 1));
+        let mut ctx = Ctx::default();
+        d.step(25_000, GameMode::BattleRoyale, &w2, &mut ctx);
+        d.step(30_000, GameMode::BattleRoyale, &w2, &mut ctx);
+        assert!(ctx.flags.is_empty(), "no bot after the match");
     }
 
     #[test]

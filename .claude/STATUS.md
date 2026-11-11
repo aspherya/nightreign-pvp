@@ -1,4 +1,4 @@
-# Status (updated 2026-11-07)
+# Status (updated 2026-11-10)
 
 **The only "now" doc.** Rules: keep it under ~8 KB; replace lines instead of appending history (results go to `testing-log/`, traps to
 [TRAPS.md](TRAPS.md), decisions to [DECISIONS.md](DECISIONS.md), tools to [TOOLS.md](TOOLS.md), live cards to [TASKS.md](TASKS.md)).
@@ -61,7 +61,7 @@ accept a player alone (or a pair in Trio) and fill the team with random players;
 the Solo instant death, then the respawn on the hawk (RE first). Then a new zip and Duo / Trio with friends (DUOTRIO-1, never tested on
 real PCs). Before that session collect **every** player's logs.
 
-**Arena (MODE-02), started 2026-11-08** (rules PROJECT_SCOPE §Arena, history testing-log): dev only so far. **ARENA-1** the card queues two players (Solo 1v1) into Heolstor's empty arena, facing each other; **ARENA-2** best of 3 with resets, WIN / LOSE, random players leave the session; the ultimate only in the last round (#73, works). **ARENA-3 spikes done (2026-11-09, branch `arena-3-spike`, MEMORY_MAP §29):** level 15 (game's SetLevel + recovery), give + equip of a Sparring loadout on the game's thread, the weapon's skill (Seppuku) and spells, max upgrade, all seen in game. **ARENA-3 built:** at the arena spawn level 15, the Sparring loadout at max upgrade with its skills and the consumables in the pouch and the 3-minute round limit with a host verdict: **solo check and `mi-arena-loadout` (two instances) PASS 2026-11-09**. Next: ARENA-4 (1v1 bot), then the player build.
+**Arena (MODE-02), started 2026-11-08** (rules PROJECT_SCOPE §Arena, history testing-log): dev only so far. **ARENA-1** the card queues two players (Solo 1v1) into Heolstor's empty arena, facing each other; **ARENA-2** best of 3 with resets, WIN / LOSE, random players leave the session; the ultimate only in the last round (#73, works). **ARENA-3 spikes done (2026-11-09, branch `arena-3-spike`, MEMORY_MAP §29):** level 15 (game's SetLevel + recovery), give + equip of a Sparring loadout on the game's thread, the weapon's skill (Seppuku) and spells, max upgrade, all seen in game. **ARENA-3 built:** at the arena spawn level 15, the Sparring loadout at max upgrade with its skills and the consumables in the pouch and the 3-minute round limit with a host verdict: **solo check and `mi-arena-loadout` (two instances) PASS 2026-11-09**. **ARENA-4 built (branch `arena-4`):** Bots On + Solo + the Arena card = an offline match against one level-13 bot on spawn B, best of 3 with the same rounds (offline LOCAL holds SpEffect 8970061 so 0 HP is a down): **`mi-arena-bot` PASS and Leonardo's match PASS 2026-11-10** (the bot stays at level 13, Leonardo). Next: the player build.
 
 **Later:** GFX-1/2 (in-game UI, SB-5), player count (HOST_MIGRATION), SOLO-REVIVE, MODE-SCOPE, MM-8, normal
 expeditions (Leonardo has an idea). No match timer: the tide closes to a point (TIDE-MAX).

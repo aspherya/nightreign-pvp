@@ -63,11 +63,12 @@ pub(crate) enum BotsCmd {
 
 /// Tables our events know, with their flags (`gamedata/emevd-bots.json`; a unit test checks both files). 10 / 30 / 50: 2
 /// Nightfarers at level 1 (heroes 1 + 2, 3 + 4, 5 + 6); 10000: 2 of the 8 base Nightfarers at level 6 (the manager holds 2).
-pub(crate) const TABLES: [(i32, u32); 4] = [
+pub(crate) const TABLES: [(i32, u32); 5] = [
     (10, 10_007_300),
     (30, 10_007_303),
     (50, 10_007_304),
     (10_000, 10_007_301),
+    fill::ARENA_TABLE,
 ];
 /// Flag of the `2003[98]` event.
 pub(crate) const FLAG_CLEAR: u32 = 10_007_302;
@@ -165,6 +166,50 @@ pub(crate) struct BotsFeature {
     /// BOT-1: the fill director and its roster.
     pub(crate) fill: fill::BotFill,
     epoch: std::time::Instant,
+    /// ARENA-4: how far an Arena match against a bot has come (the switch is cleared when it is over).
+    arena_track: ArenaTrack,
+}
+
+/// ARENA-4: how far an Arena match against a bot has come.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ArenaTrack {
+    /// Commence pressed, the expedition not reached yet.
+    #[default]
+    Before,
+    /// In the expedition, before the arrival in the arena.
+    Expedition,
+    /// LOCAL stands in the arena; the `WorldChrMan` instance there.
+    Arena(usize),
+}
+
+/// What the Arena looks like this tick for [`arena_bots_over`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ArenaSeen {
+    pub on: bool,
+    /// The warp was asked for (`arenacard::warped`).
+    pub warped: bool,
+    /// LOCAL stands on its spawn (`arenacard::placed`).
+    pub placed: bool,
+    pub wcm: usize,
+}
+
+/// ARENA-4 (pure): whether an Arena match against a bot is over. In the arena an offline LOCAL reads the Roundtable's character type,
+/// so the end is the next map load after the arrival (the ending's way back, or a quit), not the place. Before the warp, back at the
+/// Roundtable is the end (a quit from the expedition). Returns the new track and whether to clear the switch.
+pub(crate) fn arena_bots_over(t: ArenaTrack, s: ArenaSeen, world: &World) -> (ArenaTrack, bool) {
+    use crate::game::views::Place;
+    if !s.on {
+        return (ArenaTrack::Before, false);
+    }
+    match t {
+        ArenaTrack::Before if world.in_expedition() => (ArenaTrack::Expedition, false),
+        ArenaTrack::Expedition if s.placed && s.wcm != 0 => (ArenaTrack::Arena(s.wcm), false),
+        ArenaTrack::Expedition if !s.warped && world.place == Some(Place::Roundtable) => {
+            (ArenaTrack::Before, true)
+        }
+        ArenaTrack::Arena(w) if s.wcm != w => (ArenaTrack::Before, true),
+        t => (t, false),
+    }
 }
 
 impl Default for BotsFeature {
@@ -180,6 +225,7 @@ impl BotsFeature {
             last: None,
             fill: fill::BotFill::new(want, rival_team),
             epoch: std::time::Instant::now(),
+            arena_track: ArenaTrack::Before,
         }
     }
 
@@ -222,8 +268,42 @@ impl Feature for BotsFeature {
 
     fn tick(&mut self, world: &World, ctx: &mut Ctx) {
         let now = self.now();
+        let arena_on = crate::mm::arena_bots();
+        // ARENA-4: the Arena is dev only (its card, warp and rounds); the player build never starts an Arena bots match.
+        #[cfg(feature = "dev")]
+        let (warped, placed) = (
+            crate::game::arenacard::warped(),
+            crate::game::arenacard::placed(),
+        );
+        #[cfg(not(feature = "dev"))]
+        let (warped, placed) = (false, false);
+        let seen = ArenaSeen {
+            on: arena_on,
+            warped,
+            placed,
+            wcm: world.wcm_instance,
+        };
+        let (track, over) = arena_bots_over(self.arena_track, seen, world);
+        if track != self.arena_track {
+            tracing::info!(
+                "arena: match against a bot: {:?} -> {track:?}",
+                self.arena_track
+            );
+        }
+        self.arena_track = track;
+        if over {
+            crate::mm::set_arena_bots(false);
+        }
         self.fill.set_bots_match(bots_match());
+        #[cfg(feature = "dev")]
+        self.fill.set_arena(fill::ArenaIn {
+            on: arena_on && !over,
+            placed,
+            events: crate::game::arenarounds::bot_events(),
+        });
         self.fill.step(now, super::mode::current(), world, ctx);
+        #[cfg(feature = "dev")]
+        crate::game::arenarounds::set_arena_bot(self.fill.arena_bot());
         PENDING.store(self.fill.pending(), std::sync::atomic::Ordering::Relaxed);
         if self.fill.take_over() {
             set_bots_match(false);
@@ -278,7 +358,7 @@ mod tests {
         );
         assert!(plan(BotsCmd::Spawn(20), GameMode::Offline, &live())
             .unwrap_err()
-            .contains("tables: 10, 30, 50, 10000"));
+            .contains("tables: 10, 30, 50, 10000, 30000"));
     }
 
     #[test]
@@ -302,6 +382,68 @@ mod tests {
             &mut ctx,
         );
         assert!(ctx.flags.is_empty());
+    }
+
+    #[test]
+    fn an_arena_bots_match_is_over_at_the_first_map_load_after_the_arrival() {
+        use crate::game::views::Place;
+        use ArenaTrack::*;
+        let at = |p| World {
+            place: Some(p),
+            ..World::default()
+        };
+        let seen = |warped, placed, wcm| ArenaSeen {
+            on: true,
+            warped,
+            placed,
+            wcm,
+        };
+        let rt = at(Place::Roundtable);
+        let ex = at(Place::Expedition);
+        assert_eq!(
+            arena_bots_over(Arena(5), ArenaSeen::default(), &rt),
+            (Before, false),
+            "off"
+        );
+        assert_eq!(
+            arena_bots_over(Before, seen(false, false, 1), &rt),
+            (Before, false),
+            "Commence pressed, still at the table"
+        );
+        assert_eq!(
+            arena_bots_over(Before, seen(false, false, 0), &World::default()),
+            (Before, false),
+            "loading"
+        );
+        assert_eq!(
+            arena_bots_over(Before, seen(false, false, 2), &ex),
+            (Expedition, false)
+        );
+        // The warp: the arena reads the Roundtable's type and a new world; not the end.
+        assert_eq!(
+            arena_bots_over(Expedition, seen(true, false, 3), &rt),
+            (Expedition, false),
+            "the warp's load and the arrival"
+        );
+        assert_eq!(
+            arena_bots_over(Expedition, seen(true, true, 3), &rt),
+            (Arena(3), false)
+        );
+        assert_eq!(
+            arena_bots_over(Arena(3), seen(true, true, 3), &rt),
+            (Arena(3), false),
+            "in the arena"
+        );
+        assert_eq!(
+            arena_bots_over(Arena(3), seen(true, true, 0), &World::default()),
+            (Before, true),
+            "the ending's load"
+        );
+        // A quit from the expedition before the warp.
+        assert_eq!(
+            arena_bots_over(Expedition, seen(false, false, 4), &rt),
+            (Before, true)
+        );
     }
 
     #[test]

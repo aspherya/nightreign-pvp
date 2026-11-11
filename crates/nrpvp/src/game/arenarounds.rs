@@ -20,6 +20,10 @@
 //! - **First to [`ROUNDS_TO_WIN`].** The last round ends the same way (both reset at their spawns), but the screen comes back with the
 //!   players still frozen and the endings play: WIN in the winner's game (flag 10007411: banner 4000, 10 s, 7000), LOSE in the
 //!   loser's (10007412: banner 4010, 10 s, 7001).
+//! - **ARENA-4, against a bot.** In an Arena match against a bot ([`crate::mm::arena_bots`]) the rival is the bot the bots feature
+//!   publishes ([`set_arena_bot`]): down at 0 HP, its HP in percent of the HP it had at its spawn. LOCAL judges the round limit (no
+//!   session). The round events ([`bot_events`]) tell the bots feature when to park, heal, replace or remove the bot, and every fade-in
+//!   that starts a round waits (at most [`RIVAL_WAIT_MS`]) until the bot stands on its spawn.
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -44,6 +48,8 @@ pub(crate) const REVIVE_AFTER_MS: u64 = 2_000;
 pub(crate) const RESET_AFTER_MS: u64 = 5_000;
 /// From the down: the screen comes back.
 pub(crate) const FADE_IN_MS: u64 = 6_000;
+/// ARENA-4: a round start waits at most this long for the bot on its spawn (then goes on without it).
+pub(crate) const RIVAL_WAIT_MS: u64 = 30_000;
 /// One get-up write per this long: the byte is cleared every frame, but a write every tick showed a burst of the game's own downed
 /// messages (Leonardo, 2026-11-08); one write started the get-up within ~1 s.
 const REVIVE_EVERY_MS: u64 = 1_000;
@@ -58,6 +64,9 @@ const FLAG_LOSE: u32 = 10_007_412;
 const FLAG_FADE_OUT: u32 = 10_007_515;
 const FLAG_FADE_IN: u32 = 10_007_516;
 const FLAG_FADE_IN_FROZEN: u32 = 10_007_517;
+/// ARENA-4: while ON this game's player holds SpEffect 8970061 (event 99100919): offline a solo player at 0 HP in the arena dies at
+/// once ("YOU DIED", `mi-arena-bot` 2026-11-10); with it 0 HP is a down. A down uses it up: OFF at each reset, ON at each round start.
+const FLAG_NEAR_DEATH: u32 = 10_007_519;
 /// `PlayerIns+0x732`: "revive completed"; the game starts the get-up while it is not 0 (re/MEMORY_MAP.md §6).
 const PLAYER_REVIVE_DONE: usize = crate::game::reviveblock::PLAYER_REVIVE_DONE;
 
@@ -148,6 +157,8 @@ pub(crate) struct Timer {
     pub verdict: Option<Outcome>,
     /// The round limit; 0 = [`ROUND_LIMIT_MS`] (the console's `arena_limit` sets a shorter one for tests).
     pub limit_ms: u64,
+    /// ARENA-4: the rival (a bot) is not on its spawn yet: a fade-in that starts a round waits (at most [`RIVAL_WAIT_MS`]).
+    pub rival_missing: bool,
 }
 
 /// Console override of the round limit (ms; 0 = the default).
@@ -256,7 +267,10 @@ impl Rounds {
                 Vec::new()
             }
             Phase::Starting { at_ms } => {
-                if now_ms.saturating_sub(at_ms) < START_FADE_IN_MS {
+                let t = now_ms.saturating_sub(at_ms);
+                if t < START_FADE_IN_MS
+                    || (timer.rival_missing && t < START_FADE_IN_MS + RIVAL_WAIT_MS)
+                {
                     return Vec::new();
                 }
                 self.phase = Phase::Fighting { armed: false };
@@ -344,7 +358,9 @@ impl Rounds {
                         out.push(Do::UltFull);
                     }
                 }
-                if stage == 2 && t >= FADE_IN_MS {
+                let rival_wait =
+                    !self.decided() && timer.rival_missing && t < FADE_IN_MS + RIVAL_WAIT_MS;
+                if stage == 2 && t >= FADE_IN_MS && !rival_wait {
                     if self.decided() {
                         self.phase = Phase::MatchOver;
                         out.push(Do::FadeInFrozen);
@@ -372,6 +388,26 @@ impl Rounds {
     }
 }
 
+/// ARENA-4: the types shared with the bots feature (defined there: that feature is in both builds, this module is dev only).
+use crate::features::bots::fill::{ArenaBot, BotEvents};
+
+static ARENA_BOT: Mutex<Option<ArenaBot>> = Mutex::new(None);
+static BOT_EVENTS: Mutex<BotEvents> = Mutex::new(BotEvents {
+    round_ends: 0,
+    resets: 0,
+    decided: 0,
+});
+
+/// ARENA-4 (bots feature, every tick): the bot the Arena fights, `None` = none (yet).
+pub(crate) fn set_arena_bot(b: Option<ArenaBot>) {
+    *lock(&ARENA_BOT) = b;
+}
+
+/// ARENA-4 (bots feature): the round events so far.
+pub(crate) fn bot_events() -> BotEvents {
+    *lock(&BOT_EVENTS)
+}
+
 static STATE: Mutex<Option<(Rounds, Instant)>> = Mutex::new(None);
 /// The host's verdicts received this match: `(bout key, LOCAL's outcome)`.
 static VERDICTS: Mutex<Vec<(u32, Outcome)>> = Mutex::new(Vec::new());
@@ -392,6 +428,21 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
+/// ARENA-4 (pure): whether LOCAL should hold SpEffect 8970061 ([`FLAG_NEAR_DEATH`]): in a match against a bot, from the arrival to the
+/// reset after each down (the reset clears it, the next round start gives it back), never once the match is decided.
+pub(crate) fn near_death_wanted(vs_bot: bool, on: bool, phase: Phase) -> bool {
+    vs_bot
+        && on
+        && match phase {
+            Phase::Starting { .. } | Phase::Fighting { .. } => true,
+            Phase::RoundOver { stage, .. } => stage < 2,
+            Phase::Off | Phase::MatchOver => false,
+        }
+}
+
+/// The value last written to [`FLAG_NEAR_DEATH`] (main loop only; `None` = never written).
+static NEAR_DEATH: Mutex<Option<bool>> = Mutex::new(None);
+
 fn set_flag(base: usize, flag: u32) {
     if let Err(e) = crate::game::flags::set(base, flag, true) {
         tracing::warn!("arena_rounds: flag {flag} not set: {e}");
@@ -407,10 +458,11 @@ pub(crate) fn tick(base: usize, world: &World) {
     let mut local = None;
     let mut rival = None;
     let mut rival_addr = None;
+    let vs_bot = crate::mm::arena_bots();
     for f in world.fighters.iter().flatten() {
         if f.local {
             local = Some((f.addr, Seen::of(f.state, f.hp)));
-        } else if rival.is_none() {
+        } else if rival.is_none() && !vs_bot {
             rival = Some(Seen::of(f.state, f.hp));
             rival_addr = Some(f.addr);
         }
@@ -418,6 +470,12 @@ pub(crate) fn tick(base: usize, world: &World) {
     let Some((local_addr, local_seen)) = local else {
         return;
     };
+    // ARENA-4: the bot is the rival (down at 0 HP; its HP in percent of its spawn HP for the time limit).
+    let arena_bot = if vs_bot { *lock(&ARENA_BOT) } else { None };
+    let bot_hp = arena_bot.and_then(|b| world.bot(b.handle).map(|c| (b, c.hp)));
+    if vs_bot {
+        rival = bot_hp.map(|(_, hp)| Seen::of(0, hp));
+    }
     // ARENA-3: the host's verdicts on timed-out bouts (key = bout number).
     let mut verdicts = lock(&VERDICTS);
     if !on {
@@ -433,11 +491,19 @@ pub(crate) fn tick(base: usize, world: &World) {
         }
     }
     let next_bout = u32::from(rounds.bouts) + 1;
+    let rival_hp = if vs_bot {
+        bot_hp
+            .filter(|(b, _)| b.full_hp > 0)
+            .map(|(b, hp)| (hp as f32 / b.full_hp as f32).min(1.0))
+    } else {
+        rival_addr.and_then(hp_fraction)
+    };
     let timer = Timer {
-        host: super::defeatdrop::is_host(base),
-        hp: hp_fraction(local_addr).zip(rival_addr.and_then(hp_fraction)),
+        host: vs_bot || super::defeatdrop::is_host(base),
+        hp: hp_fraction(local_addr).zip(rival_hp),
         verdict: verdicts.iter().find(|v| v.0 == next_bout).map(|v| v.1),
         limit_ms: LIMIT_OVERRIDE_MS.load(std::sync::atomic::Ordering::Relaxed),
+        rival_missing: vs_bot && !bot_hp.is_some_and(|(b, hp)| b.ready && hp > 0),
     };
     drop(verdicts);
     let before = rounds.phase;
@@ -446,6 +512,9 @@ pub(crate) fn tick(base: usize, world: &World) {
         *lock(&PLACE_SINCE) = None;
     }
     if std::mem::discriminant(&rounds.phase) != std::mem::discriminant(&before) {
+        if matches!(rounds.phase, Phase::RoundOver { .. }) {
+            lock(&BOT_EVENTS).round_ends += 1;
+        }
         tracing::info!(
             "arena_rounds: {before:?} -> {:?} (won {}, lost {})",
             rounds.phase,
@@ -453,6 +522,27 @@ pub(crate) fn tick(base: usize, world: &World) {
             rounds.lost
         );
     }
+    if before == (Phase::Fighting { armed: false })
+        && rounds.phase == (Phase::Fighting { armed: true })
+    {
+        tracing::info!("arena_rounds: both up: a down counts from now");
+    }
+    // ARENA-4: offline, 0 HP is a down only with SpEffect 8970061.
+    let want = near_death_wanted(vs_bot, on, rounds.phase);
+    let mut nd = lock(&NEAR_DEATH);
+    if *nd != Some(want) && (want || nd.is_some()) {
+        match crate::game::flags::set(base, FLAG_NEAR_DEATH, want) {
+            Ok(_) => {
+                tracing::info!(
+                    "arena_rounds: SpEffect 8970061 (0 HP downs) {}",
+                    if want { "given" } else { "taken back" }
+                );
+                *nd = Some(want);
+            }
+            Err(e) => tracing::warn!("arena_rounds: flag {FLAG_NEAR_DEATH} not set: {e}"),
+        }
+    }
+    drop(nd);
     for d in dos {
         match d {
             Do::Message(m) => {
@@ -473,6 +563,14 @@ pub(crate) fn tick(base: usize, world: &World) {
                 }
             }
             Do::Reset => {
+                // ARENA-4: the last round's reset already ends the match for the bot (no new bot behind the black screen).
+                let mut ev = lock(&BOT_EVENTS);
+                if rounds.decided() {
+                    ev.decided += 1;
+                } else {
+                    ev.resets += 1;
+                }
+                drop(ev);
                 set_flag(base, FLAG_HEAL);
                 set_flag(base, FLAG_REFILL_ESTUS);
                 *lock(&PLACE_SINCE) = Some(Instant::now());
@@ -732,7 +830,110 @@ mod tests {
             hp,
             verdict,
             limit_ms: 0,
+            rival_missing: false,
         }
+    }
+
+    #[test]
+    fn against_a_bot_local_holds_the_near_death_speffect_from_each_round_start_to_the_reset() {
+        let p = |stage| Phase::RoundOver {
+            lost: true,
+            at_ms: 0,
+            stage,
+        };
+        assert!(near_death_wanted(true, true, Phase::Starting { at_ms: 0 }));
+        assert!(near_death_wanted(
+            true,
+            true,
+            Phase::Fighting { armed: false }
+        ));
+        assert!(
+            near_death_wanted(true, true, p(1)),
+            "downed: keep it until the reset"
+        );
+        assert!(
+            !near_death_wanted(true, true, p(2)),
+            "the reset takes it back"
+        );
+        assert!(!near_death_wanted(true, true, Phase::MatchOver));
+        assert!(
+            !near_death_wanted(false, true, Phase::Starting { at_ms: 0 }),
+            "PvP: a session downs anyway"
+        );
+        assert!(!near_death_wanted(
+            true,
+            false,
+            Phase::Fighting { armed: true }
+        ));
+    }
+
+    fn missing(m: bool) -> Timer {
+        Timer {
+            rival_missing: m,
+            ..Timer::default()
+        }
+    }
+
+    #[test]
+    fn the_first_fade_in_waits_for_the_bot_on_its_spawn() {
+        let mut r = Rounds::default();
+        assert!(r.step_timed(0, true, UP, None, missing(true)).is_empty());
+        assert!(
+            r.step_timed(5_000, true, UP, None, missing(true))
+                .is_empty(),
+            "no bot yet: still black"
+        );
+        assert_eq!(
+            r.step_timed(5_050, true, UP, Some(UP), missing(false)),
+            vec![Do::FadeIn, Do::Message("Round 1: fight!".into())]
+        );
+        // Never seen: the round starts anyway after the wait.
+        let mut r = Rounds::default();
+        r.step_timed(0, true, UP, None, missing(true));
+        let end = START_FADE_IN_MS + RIVAL_WAIT_MS;
+        assert!(r
+            .step_timed(end - 1, true, UP, None, missing(true))
+            .is_empty());
+        assert_eq!(
+            r.step_timed(end, true, UP, None, missing(true))[0],
+            Do::FadeIn
+        );
+    }
+
+    #[test]
+    fn the_next_round_waits_for_the_new_bot_but_the_ending_does_not() {
+        let mut r = Rounds::default();
+        let t = start(&mut r);
+        // The bot is down (dead): round won; at the reset the bots feature brings a new one.
+        r.step_timed(t, true, UP, Some(DOWN), missing(false));
+        assert_eq!(
+            r.step_timed(t + 1_000, true, UP, Some(DOWN), missing(false)),
+            vec![Do::FadeOut]
+        );
+        assert_eq!(
+            r.step_timed(t + 5_000, true, UP, Some(DOWN), missing(false)),
+            vec![Do::Reset]
+        );
+        assert!(
+            r.step_timed(t + 6_000, true, UP, None, missing(true))
+                .is_empty(),
+            "the new bot is not on its spawn yet"
+        );
+        assert_eq!(
+            r.step_timed(t + 7_500, true, UP, Some(UP), missing(false)),
+            vec![Do::FadeIn, Do::Message("Round 2: fight!".into())]
+        );
+        r.step_timed(t + 7_550, true, UP, Some(UP), missing(false));
+        assert_eq!(r.phase, Phase::Fighting { armed: true });
+        // Round 2 won too: the ending plays without waiting for a bot.
+        let t = t + 10_000;
+        r.step_timed(t, true, UP, Some(DOWN), missing(false));
+        r.step_timed(t + 1_000, true, UP, Some(DOWN), missing(false));
+        r.step_timed(t + 5_000, true, UP, Some(DOWN), missing(false));
+        assert_eq!(
+            r.step_timed(t + 6_000, true, UP, None, missing(true)),
+            vec![Do::FadeInFrozen, Do::Win]
+        );
     }
 
     #[test]

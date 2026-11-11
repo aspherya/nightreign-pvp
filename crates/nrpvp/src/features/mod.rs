@@ -68,7 +68,7 @@ pub(crate) struct Ctx {
 }
 
 /// A write the bot feature asks for (BOT-1; the OFF-5 writes, git `72f7689`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum BotWrite {
     /// Make the bot manager forget the bot in this slot (`BotMan::forget_slot`): the bot stays, the slot is free for the next table.
     ForgetSlot(usize),
@@ -83,6 +83,14 @@ pub(crate) enum BotWrite {
         sector: usize,
         sectors: usize,
     },
+    /// ARENA-4: move this bot to a world position (its spawn, or parked far away between rounds; `game::botspread::put`).
+    Put {
+        chr: usize,
+        handle: u64,
+        to: [f32; 3],
+    },
+    /// ARENA-4: write this bot's HP (back to its spawn HP at a reset, 0 to remove it; `game::botspread::set_hp`).
+    Hp { chr: usize, handle: u64, hp: u32 },
 }
 
 /// Where the main loop's bot writes go.
@@ -133,6 +141,13 @@ impl Ctx {
                         .map(|l| tracing::info!("bots: {l}")),
                     None => Err("no world or no local player"),
                 },
+                BotWrite::Put { chr, handle, to } => match t.local {
+                    Some(local) => crate::game::botspread::put(local, base, chr, handle, to)
+                        .map(|l| tracing::info!("bots: {l}")),
+                    None => Err("no local player"),
+                },
+                BotWrite::Hp { chr, handle, hp } => crate::game::botspread::set_hp(chr, handle, hp)
+                    .map(|l| tracing::info!("bots: {l}")),
                 BotWrite::ForgetSlot(slot) if t.bot_man != 0 => {
                     crate::game::views::BotMan::new(mem, t.bot_man).forget_slot(slot)
                 }

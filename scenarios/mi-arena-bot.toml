@@ -1,0 +1,158 @@
+name = "mi-arena-bot"
+about = "ARENA-4 acceptance: the player's way into an offline Arena match against one bot: Matchmaking Settings > Bots On, Solo, the Arena card, Commence: no search, the warp, LOCAL on spawn A, one level-13 bot put on spawn B; round 1 won (bots_kill: a new bot for round 2), round 2 lost (hp0, a down thanks to SpEffect 8970061: the bot is parked, then healed and put back), round 3 won with the ultimate filled: WIN 2-1, then back at the Roundtable with the Arena bots match over"
+tags = ["mi"]
+# One emulated-Steam instance (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. Needs the DEV DLL and game data (the Arena card
+# hook, the warp, Heolstor off and his fight off are dev only; event 99100705 arms the level-13 bot table 30000).
+# Run: nro run scenarios\mi-arena-bot.toml
+
+[config]
+mm_queue = true
+br_menu = true
+mm_probe = true
+team_size = 1
+ui_flag_watch = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+keys = "wait 10000ms"   # a tp right after the load is undone by the spawn
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 3000ms; F; wait 3000ms"
+# A save that won an Arena match shows the game's Sovereign Sigils tutorial at the table, on every launch (a killed game never saves it
+# as seen; 2026-11-10). Esc closes it (or the menu, when there is none), then F opens the expedition menu.
+[[step]]
+keys = "ESC; wait 2000ms"
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 2000ms; F; wait 3000ms"
+[[step]]
+wait = { console = "pos", contains = "menu 0x200004", timeout_s = 5 }
+# Matchmaking Settings once (FS7-3: the mod sets Bots Off the first time the menu is seen), then Bots On and Solo by the console.
+[[step]]
+keys = "F2; wait 1500ms"
+[[step]]
+wait_log = { contains = ["Bots switch reset to Off"], timeout_s = 10, since = "run" }
+[[step]]
+console = "bots_switch on solo"
+[[step]]
+expect = { console = "bots_switch", contains = "On" }
+# Back to the cards: Battle Royale is first, DOWN is the Arena card, F picks it.
+[[step]]
+keys = "F1; wait 1500ms; DOWN; wait 800ms; F; wait 2000ms"
+[[step]]
+expect = { console = "br_card", contains = "arena yes" }
+[[step]]
+screenshot = "arena_card"
+[[step]]
+mark = "pressed"
+[[step]]
+keys = "F; wait 3000ms"   # Commence: no dialog, no search
+[[step]]
+wait_log = { contains = ["decision code 0x4", "arena: match against a bot requested"], timeout_s = 20, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena: flag 10007500 ON"], timeout_s = 180, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena: roster team None"], timeout_s = 90, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["bots: Arena match against a bot: 1 bot (table 30000)", "bots: round 1: table 30000 (flag 10007305)"], timeout_s = 20, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["kept bot", "stands on its spawn"], timeout_s = 60, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: SpEffect 8970061 (0 HP downs) given"], timeout_s = 40, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena_rounds: both up: a down counts from now"], timeout_s = 20, since = "mark:pressed" }
+[[step]]
+keys = "wait 1500ms"
+[[step]]
+console = "bots_list"
+[[step]]
+console = "players_pos"
+[[step]]
+screenshot = "round1_bot_on_b"
+[[step]]
+expect = { console = "bots_list", contains = ["1 of 1 kept, 1 alive", "Arena bot on its spawn", "team 29"] }
+
+# Round 1: LOCAL kills the bot. A new bot comes for round 2.
+[[step]]
+mark = "r1"
+[[step]]
+console = "bots_kill 1"
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 1: you won (1-0)"], timeout_s = 15, since = "mark:r1" }
+[[step]]
+wait_log = { contains = ["bots: Arena reset: no living bot; a new one for the next round", "arena_rounds: reset: recovery, estus, back to the spawn"], timeout_s = 15, since = "mark:r1" }
+[[step]]
+wait_log = { contains = ["bots: round 2: table 30000", "stands on its spawn"], timeout_s = 40, since = "mark:r1" }
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 2: fight!"], timeout_s = 40, since = "mark:r1" }
+[[step]]
+wait_log = { contains = ["arena_rounds: both up: a down counts from now"], timeout_s = 20, since = "mark:r1" }
+[[step]]
+keys = "wait 1500ms"
+[[step]]
+console = "bots_list"
+[[step]]
+screenshot = "round2_new_bot"
+
+# Round 2: LOCAL goes down. The bot is parked, then healed and put back; LOCAL gets up; the ultimate is filled for round 3.
+[[step]]
+mark = "r2"
+[[step]]
+console = "hp0"
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 2: you lost (1-1)"], timeout_s = 15, since = "mark:r2" }
+[[step]]
+wait_log = { contains = ["bots: Arena round over: bot", "parked until the reset"], timeout_s = 5, since = "mark:r2" }
+[[step]]
+screenshot = "round2_local_down"   # a down (offline, SpEffect 8970061), not YOU DIED
+[[step]]
+wait_log = { contains = ["arena_rounds: get-up asked", "bots: Arena reset: bot", "back to its spawn, HP", "round 3: ultimate filled"], timeout_s = 15, since = "mark:r2" }
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 3: fight!"], timeout_s = 40, since = "mark:r2" }
+[[step]]
+wait_log = { contains = ["arena_rounds: both up: a down counts from now", "SpEffect 8970061 (0 HP downs) given"], timeout_s = 20, since = "mark:r2" }
+[[step]]
+keys = "wait 1500ms"
+[[step]]
+console = "bots_list"
+[[step]]
+console = "status"
+[[step]]
+screenshot = "round3_start"
+
+# Round 3: LOCAL kills the bot: WIN 2-1.
+[[step]]
+mark = "r3"
+[[step]]
+console = "bots_kill 1"
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 3: you won (2-1)"], timeout_s = 15, since = "mark:r3" }
+[[step]]
+wait_log = { contains = ["arena_rounds: match over, WIN 2-1"], timeout_s = 20, since = "mark:r3" }
+[[step]]
+keys = "wait 2000ms"
+[[step]]
+screenshot = "win_banner"
+[[step]]
+expect = { console = "bots_list", contains = "done (match decided)" }
+
+# The ending: the banner (10 s), the game's result pages (F four times, as mi-arena-rounds), then the Roundtable.
+[[step]]
+keys = "wait 12000ms"
+[[step]]
+keys = "F; wait 3s; F; wait 3s; F; wait 4s; F; wait 6s"
+[[step]]
+wait = { console = "status", contains = ["world loaded, 1 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
+[[step]]
+wait_log = { contains = ["arena: match against a bot over"], timeout_s = 30, since = "mark:pressed" }
+[[step]]
+screenshot = "roundtable"
+[[step]]
+expect_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: Round 3: fight!"], absent = ["get-up write failed", "spawn move failed (force true)", "night_match: LOCAL defeated", "Put {", "Hp {", "killed <font", "no arrival at Heolstor's arena", "queue Arena Solo", "bots: round 3: table"], since = "mark:pressed" }

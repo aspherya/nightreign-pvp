@@ -113,6 +113,10 @@ pub(crate) struct Inputs {
     pub local_team_no: Option<u8>,
     /// R7-3: the mod's PvP mode is on (`TeamCtl::pvpve_state` = On) at the start of the tick.
     pub pvpve_on: bool,
+    /// ARENA-4: LOCAL is in Heolstor's arena in an offline match against a bot. There LOCAL's character type reads the Roundtable's
+    /// (`+0x70` = 0, `mi-arena-bot` run 2026-11-10; in a session it reads 13), so the place is taken as the expedition, as in the
+    /// two-player Arena.
+    pub in_arena: bool,
 }
 
 /// One tick's view of the game.
@@ -216,7 +220,13 @@ impl World {
     /// Read this tick's world.
     pub(crate) fn read(mem: &dyn GameMem, i: &Inputs) -> Self {
         let local = i.local.filter(|_| i.wcm_instance != 0);
-        let place = local.and_then(|p| ChrIns::new(mem, p).place());
+        let place = local.and_then(|p| ChrIns::new(mem, p).place()).map(|p| {
+            if i.in_arena {
+                Place::Expedition
+            } else {
+                p
+            }
+        });
         let local_revive_item = place == Some(Place::Expedition)
             && local.is_some_and(|p| {
                 ChrIns::new(mem, p).holds_any_speffect(&layout::SPEFFECTS_REVIVE_ITEM)

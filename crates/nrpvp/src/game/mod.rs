@@ -516,6 +516,10 @@ fn watch(
                 local_state,
                 local_team_no: combat.as_ref().and_then(|c| c.local_team_no()),
                 pvpve_on: team.pvpve_state() == crate::overlay::shared::PvpveState::On,
+                #[cfg(feature = "dev")]
+                in_arena: crate::mm::arena_bots() && arenacard::warped(),
+                #[cfg(not(feature = "dev"))]
+                in_arena: false,
             },
         );
         // M5-5 / R7-3: what the night match reads besides the read model (flags, every player's downed state, LOCAL's position,

@@ -262,6 +262,17 @@ pub(crate) fn place(base: usize, force: bool) -> bool {
     }
 }
 
+/// ARENA-4: the warp into the arena has been asked for this match (LOCAL is in the arena or on its way there).
+pub(crate) fn warped() -> bool {
+    matches!(
+        STATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .entry,
+        Entry::WaitArrival | Entry::Done
+    )
+}
+
 /// ARENA-2: LOCAL stands on its spawn in the arena (the entry is done for this match).
 pub(crate) fn placed() -> bool {
     STATE

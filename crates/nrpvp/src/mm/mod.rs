@@ -136,9 +136,33 @@ pub(crate) fn set_arena_match(on: bool) {
     ARENA_MATCH.store(on, Ordering::Relaxed);
 }
 
-/// Game loop (ARENA-1): the current match is an Arena match (false when the queue is off).
+/// ARENA-4: the next (or current) expedition is an offline Arena match against one bot (Bots On + Arena card + Solo + Commence; set by
+/// the Commence handler, cleared by the bots feature when that expedition is over).
+static ARENA_BOTS: AtomicBool = AtomicBool::new(false);
+
+/// ARENA-4: start (or forget) an Arena match against a bot.
+pub(crate) fn set_arena_bots(on: bool) {
+    if ARENA_BOTS.swap(on, Ordering::Relaxed) != on {
+        tracing::info!(
+            "arena: match against a bot {}",
+            if on {
+                "requested (Bots On, Arena card, Commence)"
+            } else {
+                "over"
+            }
+        );
+    }
+}
+
+/// ARENA-4: the current expedition is an Arena match against a bot (no queue, no session).
+pub(crate) fn arena_bots() -> bool {
+    ARENA_BOTS.load(Ordering::Relaxed)
+}
+
+/// Game loop (ARENA-1): the current match is an Arena match: one found by the Arena queue (false when the queue is off), or an
+/// offline match against a bot (ARENA-4).
 pub(crate) fn arena_match() -> bool {
-    enabled() && ARENA_MATCH.load(Ordering::Relaxed)
+    (enabled() && ARENA_MATCH.load(Ordering::Relaxed)) || arena_bots()
 }
 
 /// Game loop (ARENA-1): LOCAL's roster team (0-based) in the current match, from the session id map (`None` until it is known).

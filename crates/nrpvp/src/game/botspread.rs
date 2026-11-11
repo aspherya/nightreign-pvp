@@ -229,6 +229,37 @@ pub(crate) fn spread(
     ))
 }
 
+/// ARENA-4: move bot `chr` (still `handle`) to world position `to` (`spawn::teleport_other`, the hunt's move). Main loop only.
+pub(crate) fn put(
+    local: usize,
+    base: usize,
+    chr: usize,
+    handle: u64,
+    to: [f32; 3],
+) -> Result<String, &'static str> {
+    if mem::read::<u64>(chr + CHR_HANDLE) != Some(handle) {
+        return Err("the bot is gone (handle changed)");
+    }
+    let from = super::spawn::teleport_other(chr, local, base, to)?;
+    Ok(format!(
+        "bot 0x{handle:X} put at ({:.0}, {:.0}, {:.0}) from ({:.0}, {:.0}, {:.0})",
+        to[0], to[1], to[2], from[0], from[1], from[2]
+    ))
+}
+
+/// ARENA-4: write bot `chr`'s (still `handle`) HP in its character data module (the write `bots_kill` makes; 0 kills it).
+pub(crate) fn set_hp(chr: usize, handle: u64, hp: u32) -> Result<String, &'static str> {
+    if mem::read::<u64>(chr + CHR_HANDLE) != Some(handle) {
+        return Err("the bot is gone (handle changed)");
+    }
+    let data = mem::read::<usize>(chr + super::layout::PLAYER_MODULES)
+        .and_then(mem::read::<usize>)
+        .filter(|&d| mem::is_ptr(d))
+        .ok_or("no character data module")?;
+    mem::write_bytes(data + super::layout::DATA_MODULE_HP, &hp.to_le_bytes())?;
+    Ok(format!("bot 0x{handle:X} HP set to {hp}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
