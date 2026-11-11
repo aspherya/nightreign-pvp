@@ -8,11 +8,11 @@
 //! Size: just over 800 lines (ARCHITECTURE §6 budget) because `watch` still ticks the older controllers itself; they move into
 //! `crate::features` (R3 rest), which shrinks this file.
 
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod arenacard;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod arenaloadout;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod arenarounds;
 #[cfg(feature = "dev")]
 pub(crate) mod bartrace;
@@ -36,7 +36,7 @@ pub(crate) mod hostwatch;
 pub(crate) mod hudfilter;
 pub(crate) mod image;
 pub(crate) mod input;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod inventory;
 #[cfg(feature = "dev")]
 pub(crate) mod invspy;
@@ -53,7 +53,7 @@ pub(crate) mod menutrace;
 pub(crate) mod multi_instance;
 pub(crate) mod multiplay;
 pub(crate) mod orbclaim;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod params;
 pub(crate) mod poswrite;
 pub(crate) mod puppet;
@@ -67,14 +67,14 @@ pub(crate) mod sessionprobe;
 pub(crate) mod singletons;
 pub(crate) mod spawn;
 pub(crate) mod team;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod teleport;
 #[cfg(feature = "dev")]
 pub(crate) mod texttrace;
 pub(crate) mod toastfilter;
 #[cfg(feature = "dev")]
 pub(crate) mod toasttrace;
-#[cfg(feature = "dev")]
+#[cfg(feature = "arena")]
 pub(crate) mod ultgauge;
 pub(crate) mod views;
 #[cfg(feature = "dev")]
@@ -516,9 +516,9 @@ fn watch(
                 local_state,
                 local_team_no: combat.as_ref().and_then(|c| c.local_team_no()),
                 pvpve_on: team.pvpve_state() == crate::overlay::shared::PvpveState::On,
-                #[cfg(feature = "dev")]
+                #[cfg(feature = "arena")]
                 in_arena: crate::mm::arena_bots() && arenacard::warped(),
-                #[cfg(not(feature = "dev"))]
+                #[cfg(not(feature = "arena"))]
                 in_arena: false,
             },
         );
@@ -539,7 +539,7 @@ fn watch(
         // BOT-5: the Bots row's breakpoint stays in the Roundtable.
         menuflow::set_in_expedition(world.in_expedition());
         // ARENA-0 (dev): the Arena card's list hook and the warp after a Commence on it.
-        #[cfg(feature = "dev")]
+        #[cfg(feature = "arena")]
         arenacard::tick(
             base,
             world.in_expedition(),
@@ -547,7 +547,7 @@ fn watch(
             world.place == Some(views::Place::Roundtable),
         );
         // ARENA-2 (dev): best-of-3 rounds in an Arena match.
-        #[cfg(feature = "dev")]
+        #[cfg(feature = "arena")]
         arenarounds::tick(base, &world);
         let mut fctx = Ctx::default();
         // CON-1: developer console requests (dev build + dev mode), on this thread like the hotkeys; replies go back to the pipe.

@@ -11,8 +11,9 @@
 #   NPC bot instructions 2003:97 / 2003:98, started by our flags 10007300+; research\OFF-3-bots.md).
 #   event\common.emevd.dcx + event\common_func.emevd.dcx (M5-3, research\M5-no-boss-nights.md): nights with no boss and no minions
 #   (gamedata\emevd-nights-func.json replaces the shared boss/minion events, gamedata\emevd-nights.json adds the timed night end).
-#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only would be left out
-#   of a second copy written to dist\gamedata-player\ (none since BOT-5, 2026-11-06: the bot events are a player feature).
+#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only (the Arena events,
+#   ARENA-0..3) are left out of dist\gamedata-player\, the complete PLAYER package that package-release.ps1 zips: every file of
+#   dist\gamedata, event scripts rebuilt without their dev-only events, and game files that only dev-only events touch (m18) left out.
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 #   regulation.bin (UI-3, the Battle Royale card in the expedition list): the pinned regulation.bin with the param rows of
@@ -160,6 +161,7 @@ function Build-Emevd([string]$rel, $files, [string]$tag) {
     Invoke-Witchy @($plain)
     return $dcx
 }
+$devOnlyRels = @()
 foreach ($rel in $byFile.Keys) {
     $files = $byFile[$rel]
     $dcx = Build-Emevd $rel $files 'dev'
@@ -175,6 +177,7 @@ foreach ($rel in $byFile.Keys) {
         Copy-Item $pdcx $pdst
         Write-Host ("{0}  {1}  {2}  (player copy, {3} event file(s), no dev-only events)" -f $rel, (Get-Item $pdcx).Length, (Get-FileHash $pdcx).Hash.Substring(0, 16), $player.Count)
     }
+    if ($player.Count -eq 0) { $devOnlyRels += ($rel -replace '/', '\') }
 }
 
 # HAWK-1b/HAWK-2: the crossing line for every start-hawk route (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
@@ -220,3 +223,17 @@ $regOut = Join-Path $out 'regulation.bin'
 & (Join-Path $sbBin 'sbwriter.exe') $reg (Join-Path $repo 'gamedata\nightbossmenu-rows.json') (Join-Path $repo 'gamedata\playarea-rows.json') $regOut
 if ($LASTEXITCODE -ne 0) { throw "sbwriter failed ($LASTEXITCODE)" }
 Write-Host ("UI-3: regulation.bin  {0}  {1}" -f (Get-Item $regOut).Length, (Get-FileHash $regOut).Hash.Substring(0, 16))
+
+# The player package (dist\gamedata-player, zipped by package-release.ps1): every other file of dist\gamedata as it is, except game
+# files that only dev-only events change (they stay vanilla for players).
+$outFull = (Resolve-Path $out).Path
+foreach ($f in Get-ChildItem -LiteralPath $out -Recurse -File) {
+    $rel = $f.FullName.Substring($outFull.Length + 1)
+    if ($devOnlyRels -contains $rel) { continue }
+    $dst = Join-Path $outPlayer $rel
+    if (Test-Path -LiteralPath $dst) { continue }
+    New-Item -ItemType Directory -Force (Split-Path $dst -Parent) | Out-Null
+    Copy-Item -LiteralPath $f.FullName $dst
+}
+$nPlayer = @(Get-ChildItem -LiteralPath $outPlayer -Recurse -File).Count
+Write-Host ("player package: {0}  {1} file(s), dev-only left out: {2}" -f $outPlayer, $nPlayer, $(if ($devOnlyRels) { $devOnlyRels -join ', ' } else { 'none' }))

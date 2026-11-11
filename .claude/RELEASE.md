@@ -66,7 +66,11 @@ powershell -ExecutionPolicy Bypass -File scripts\regress.ps1
 # 3. The zip. 2 players for a test with one friend:
 powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2
 #    For the real game later:   scripts\package-release.ps1 -MatchPlayers 6
+#    Test build with the Arena too (not released yet): add -Arena (player DLL with the cargo feature `arena`, full dist\gamedata)
 ```
+
+`build-gamedata.ps1` writes `dist\gamedata` (everything, dev events included) and `dist\gamedata-player` (no dev-only events: what the
+normal zip takes). `-Arena` takes `dist\gamedata` instead; its VERSION line ends in `ARENA test build`.
 
 `package-release.ps1` builds the **player** DLL itself (`--no-default-features`, into `target\player\`) and the launcher, then packs. `scripts/build.ps1` is only for developer launches, not for the zip.
 
