@@ -354,14 +354,14 @@ pub(crate) fn decide(players: u8, phase: u8, mm_on: bool, mode: GameMode) -> Dec
 pub(crate) fn texts() -> [String; N_TEXTS] {
     [
         "Battle Royale: searching for players (Solo).\nYou will be told when the match is found.\nTo stop, press Stop Searching.".to_string(),
-        "Battle Royale: stopped searching for players.".to_string(),
+        "Stopped searching for players.".to_string(),
         "Battle Royale: searching for players (Duo).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
-        "Battle Royale matchmaking is turned off (matchmaking = false).".to_string(),
+        "Matchmaking is turned off (matchmaking = false).".to_string(),
         "Offline mode is solo only.
 Choose Solo in Matchmaking Settings > Number of Players.".to_string(),
         "Battle Royale: searching for players (Trio).\nYour Seamless Co-op party queues together, led by its host.\nTo stop, press Stop Searching.".to_string(),
-        "Battle Royale: match found.\nThe match starts by itself.".to_string(),
-        "Battle Royale with bots is Solo only for now.\nChoose Solo in Number of Players, or set Bots to Off.".to_string(),
+        "Match found.\nThe match starts by itself.".to_string(),
+        "Matches with bots are Solo only for now.\nChoose Solo in Number of Players, or set Bots to Off.".to_string(),
         "Bots (beta): an offline training mode. On: you alone against 5 AI Nightfarers, no other players, starts at once.".to_string(),
         "Bots On: Commence starts an offline training match, Solo against 5 AI bots (no other players).".to_string(),
         "Bots Off: Commence searches for players (the online Battle Royale).".to_string(),

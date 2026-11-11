@@ -309,6 +309,8 @@ pub(crate) struct KillFeed {
     pages_shown: usize,
     /// SB: the next page is one shown again.
     again_next: bool,
+    /// SB-ARENA: LOCAL's Arena rounds (won, lost) this match and whether the rival is a bot (`None` = not an Arena match).
+    arena: Option<(u8, u8, bool)>,
 }
 
 impl KillFeed {
@@ -327,6 +329,7 @@ impl KillFeed {
             page_asked: None,
             pages_shown: 0,
             again_next: false,
+            arena: None,
         }
     }
 }
@@ -346,8 +349,11 @@ impl Feature for KillFeed {
             if self.active {
                 self.active = false;
                 let rows = self.feed.rows();
-                if self.in_match && rows.len() >= 2 {
-                    let text = scoreboard::summary(&self.tally, &rows, self.me);
+                if self.in_match && (rows.len() >= 2 || self.arena.is_some()) {
+                    let text = match self.arena {
+                        Some((won, lost, vs_bot)) => self.arena_summary(&rows, won, lost, vs_bot),
+                        None => scoreboard::summary(&self.tally, &rows, self.me),
+                    };
                     tracing::info!(
                         "scoreboard: match over, summary of {} rows waits for the Roundtable:\n{text}",
                         rows.len()
@@ -369,6 +375,7 @@ impl Feature for KillFeed {
                 self.me = None;
                 self.seen.clear();
                 self.bot_dead.clear();
+                self.arena = None;
             }
             self.show_summary(w, ctx);
             return;
@@ -376,6 +383,9 @@ impl Feature for KillFeed {
         self.summary = None;
         self.active = true;
         self.in_match |= w.in_match;
+        if let Some((won, lost)) = arena_score() {
+            self.arena = Some((won, lost, crate::mm::arena_bots()));
+        }
         let now = Instant::now();
         let refresh = self.names_at.is_none_or(|t| t.elapsed() >= NAME_EVERY);
         if refresh {
@@ -467,7 +477,10 @@ impl Feature for KillFeed {
                 .find(|f| f.local)
                 .map(|f| short_id(f.id));
             if let Some(me) = me {
-                let text = scoreboard::message(self.tally.get(me));
+                let text = match self.arena {
+                    Some((won, lost, _)) => scoreboard::arena_message(won, lost),
+                    None => scoreboard::message(self.tally.get(me)),
+                };
                 match scoreboard::write_message(w.base, &text) {
                     Ok(()) => {
                         ctx.flags.push((scoreboard::FLAG_SCORE, true));
@@ -480,7 +493,34 @@ impl Feature for KillFeed {
     }
 }
 
+/// SB-ARENA: LOCAL's Arena rounds while an Arena match is on (only the `arena` build has Arena matches).
+#[cfg(feature = "arena")]
+fn arena_score() -> Option<(u8, u8)> {
+    crate::game::arenarounds::score()
+}
+
+#[cfg(not(feature = "arena"))]
+fn arena_score() -> Option<(u8, u8)> {
+    None
+}
+
 impl KillFeed {
+    /// SB-ARENA: the end of an Arena match: the round score, LOCAL against its one rival (a bot reads "Bot": a bot killed in a round
+    /// is replaced by a new one under a new name).
+    fn arena_summary(&self, rows: &[scoreboard::Row], won: u8, lost: u8, vs_bot: bool) -> String {
+        let me = self
+            .me
+            .map_or_else(|| NO_NAME.to_string(), |id| self.feed.plain_name(id));
+        let rival = rows.iter().find(|r| Some(r.id) != self.me);
+        let rival_name = if vs_bot {
+            "Bot".to_string()
+        } else {
+            rival.map_or_else(|| "Rival".to_string(), |r| r.name.clone())
+        };
+        let left = !vs_bot && rival.is_some_and(|r| self.tally.has_left(r.id));
+        scoreboard::arena_summary(&me, &rival_name, won, lost, left)
+    }
+
     /// SB: the end-of-match summary as the game's dialog, once LOCAL stands in the Roundtable with no menu open for a moment.
     /// The dialog shows three lines, so the summary comes in pages: each one after the previous dialog was closed (OK).
     fn show_summary(&mut self, w: &World, ctx: &mut Ctx) {

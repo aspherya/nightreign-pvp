@@ -409,6 +409,15 @@ pub(crate) fn bot_events() -> BotEvents {
 }
 
 static STATE: Mutex<Option<(Rounds, Instant)>> = Mutex::new(None);
+/// SB-ARENA: LOCAL's rounds `(won, lost)` while an Arena match is on (`None` = no Arena match); the scoreboard shows them instead of
+/// kills and deaths (an Arena round ends with a down, which the Battle Royale kill count never sees).
+pub(crate) fn score() -> Option<(u8, u8)> {
+    lock(&STATE)
+        .as_ref()
+        .filter(|(r, _)| r.phase != Phase::Off)
+        .map(|(r, _)| (r.won, r.lost))
+}
+
 /// The host's verdicts received this match: `(bout key, LOCAL's outcome)`.
 static VERDICTS: Mutex<Vec<(u32, Outcome)>> = Mutex::new(Vec::new());
 

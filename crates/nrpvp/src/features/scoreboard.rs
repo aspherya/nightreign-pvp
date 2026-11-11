@@ -91,6 +91,11 @@ impl Tally {
         self.order.push(id);
     }
 
+    /// The participant left the match before they were out.
+    pub(crate) fn has_left(&self, id: u16) -> bool {
+        self.left.contains(&id)
+    }
+
     pub(crate) fn get(&self, id: u16) -> Line {
         self.lines.get(&id).copied().unwrap_or_default()
     }
@@ -184,6 +189,53 @@ pub(crate) fn summary(t: &Tally, rows: &[Row], me: Option<u16>) -> String {
 
 /// The summary's first line.
 const SUMMARY_TITLE: &str = "Battle Royale results";
+
+/// Rounds that win an Arena match (`game::arenarounds::ROUNDS_TO_WIN`, which only the `arena` build has; a test keeps them equal).
+pub(crate) const ARENA_ROUNDS_TO_WIN: u8 = 2;
+
+/// SB-ARENA: the end of an Arena match (pure): the round score from LOCAL's side, the winner first. `rival_left`: the rival left
+/// before the match was decided.
+pub(crate) fn arena_summary(me: &str, rival: &str, won: u8, lost: u8, rival_left: bool) -> String {
+    let to_win = ARENA_ROUNDS_TO_WIN;
+    let title = if won >= to_win {
+        format!("Arena results: you won {won}-{lost}")
+    } else if lost >= to_win {
+        format!("Arena results: you lost {won}-{lost}")
+    } else {
+        format!("Arena results: not finished ({won}-{lost})")
+    };
+    let line = |place: u8, name: &str, rounds: u8, winner: bool, tail: &str| -> String {
+        format!(
+            "\n{place}.  {name}:  {}{}{tail}",
+            count_rounds(rounds),
+            if winner { "  - Winner" } else { "" }
+        )
+    };
+    let me_line = |p: u8| line(p, me, won, won >= to_win, "  (you)");
+    let rival_line = |p: u8| {
+        line(
+            p,
+            rival,
+            lost,
+            lost >= to_win,
+            if rival_left { "  (left)" } else { "" },
+        )
+    };
+    if lost > won {
+        format!("{title}{}{}", rival_line(1), me_line(2))
+    } else {
+        format!("{title}{}{}", me_line(1), rival_line(2))
+    }
+}
+
+fn count_rounds(n: u8) -> String {
+    format!("{n} round{} won", if n == 1 { "" } else { "s" })
+}
+
+/// SB-ARENA: the own-score message in an Arena match (pure).
+pub(crate) fn arena_message(won: u8, lost: u8) -> String {
+    format!("Rounds won: {won}   |   Rounds lost: {lost}")
+}
 /// Lines the game's generic dialog shows (more are cut, and a long line is cut too, not wrapped) `[VERIFIED: score-dialog-lab run
 /// 1794071916, 2026-11-07]`.
 pub(crate) const DIALOG_LINES: usize = 3;
@@ -460,6 +512,37 @@ mod tests {
              \n1.  Leo:  0 kills, 0 deaths  - Winner  (left)  (you)\
              \n2.  Ana:  0 kills, 1 death"
         );
+    }
+
+    #[test]
+    fn the_arena_summary_is_the_round_score_winner_first_on_one_page() {
+        assert_eq!(
+            arena_summary("Leo", "Bob", 2, 1, false),
+            "Arena results: you won 2-1\
+             \n1.  Leo:  2 rounds won  - Winner  (you)\
+             \n2.  Bob:  1 round won"
+        );
+        assert_eq!(
+            arena_summary("Leo", "Bob", 0, 2, false),
+            "Arena results: you lost 0-2\
+             \n1.  Bob:  2 rounds won  - Winner\
+             \n2.  Leo:  0 rounds won  (you)"
+        );
+        assert_eq!(
+            arena_summary("Leo", "Bob", 1, 0, true),
+            "Arena results: not finished (1-0)\
+             \n1.  Leo:  1 round won  (you)\
+             \n2.  Bob:  0 rounds won  (left)"
+        );
+        assert_eq!(pages(&arena_summary("Leo", "Bob", 2, 1, false)).len(), 1);
+        assert_eq!(arena_message(1, 0), "Rounds won: 1   |   Rounds lost: 0");
+        assert!(arena_message(255, 255).encode_utf16().count() < TEXT_UNITS);
+    }
+
+    #[cfg(feature = "arena")]
+    #[test]
+    fn the_arena_win_count_matches_the_rounds_rule() {
+        assert_eq!(ARENA_ROUNDS_TO_WIN, crate::game::arenarounds::ROUNDS_TO_WIN);
     }
 
     #[test]

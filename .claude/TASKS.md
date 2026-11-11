@@ -484,7 +484,7 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
    at the Roundtable out of the session.
 Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens (**done 2026-11-08**, testing-log; the ultimate only in the last round works, #73, Leonardo 2026-11-08; open: one near-death message before "fight", the 3-minute round limit + HP tiebreak is not built); ARENA-3
 level 15 + loadout + max upgrade + round limit (**done 2026-11-09**, solo + `mi-arena-loadout` PASS, testing-log; open: passives, the flask
-count, the quick-slot order, the player build); ARENA-4 offline 1v1 against one level-13 bot (**done 2026-11-10**, `mi-arena-bot` + Leonardo's match PASS, testing-log; bot level 13 kept by Leonardo; open: an Arena WIN counts as an Everdark win for the game's progress, the BR scoreboard summary also runs after an Arena match); ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
+count, the quick-slot order, the player build); ARENA-4 offline 1v1 against one level-13 bot (**done 2026-11-10**, `mi-arena-bot` + Leonardo's match PASS, testing-log; bot level 13 kept by Leonardo; open: an Arena WIN counts as an Everdark win for the game's progress; the end summary now shows the Arena round score, SCOREBOARD 2026-11-10); ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's

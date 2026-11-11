@@ -96,6 +96,11 @@ wait_log = { contains = ["arena_rounds: Round 2: fight!"], timeout_s = 40, since
 wait_log = { contains = ["arena_rounds: both up: a down counts from now"], timeout_s = 20, since = "mark:r1" }
 [[step]]
 keys = "wait 1500ms"
+# SB-ARENA: the pause message counts rounds, not kills.
+[[step]]
+console = "score_show"
+[[step]]
+wait_log = { contains = ["scoreboard: own score shown: Rounds won: 1   |   Rounds lost: 0"], timeout_s = 10, since = "mark:r1" }
 [[step]]
 console = "bots_list"
 [[step]]
@@ -152,7 +157,10 @@ keys = "F; wait 3s; F; wait 3s; F; wait 4s; F; wait 6s"
 wait = { console = "status", contains = ["world loaded, 1 player(s)", "team_type 1"], timeout_s = 120, every_ms = 2000 }
 [[step]]
 wait_log = { contains = ["arena: match against a bot over"], timeout_s = 30, since = "mark:pressed" }
+# SB-ARENA: the end summary is the round score, one page, the bot as "Bot".
+[[step]]
+wait_log = { contains = ["Arena results: you won 2-1", "1.  ", ":  2 rounds won  - Winner  (you)", "2.  Bot:  1 round won", "scoreboard: summary page 1/1 shown"], timeout_s = 60, since = "mark:pressed" }
 [[step]]
 screenshot = "roundtable"
 [[step]]
-expect_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: Round 3: fight!"], absent = ["get-up write failed", "spawn move failed (force true)", "night_match: LOCAL defeated", "Put {", "Hp {", "killed <font", "no arrival at Heolstor's arena", "queue Arena Solo", "bots: round 3: table"], since = "mark:pressed" }
+expect_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: Round 3: fight!"], absent = ["get-up write failed", "spawn move failed (force true)", "night_match: LOCAL defeated", "Battle Royale results", "Put {", "Hp {", "killed <font", "no arrival at Heolstor's arena", "queue Arena Solo", "bots: round 3: table"], since = "mark:pressed" }

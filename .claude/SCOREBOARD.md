@@ -173,3 +173,11 @@ Kept short; the run details are in `testing-log/2026-10-20_on.md`.
   missing 6 s = left; a bot dead 2 s with no kill report = killed by a mob (its body stays in the world, so absence never comes).
   `score-bots-end` PASS (runs 1794071602 one page cut, 1794072818 three pages); Leonardo watched the three pages.
   Not done: Duo/Trio team totals, colours in the dialog, two real players.
+- 2026-11-10: **SB-ARENA: an Arena match scores rounds, not kills.** In an Arena match the Battle Royale rules (and with them the
+  kill report) stand aside, so the tally stayed empty and the end showed "Battle Royale results" with 0 kills / 0 deaths for both
+  players and no winner `[VERIFIED: nrpvp.log 2026-11-11 02:06 UTC, Arena vs bot, WIN 2-0 summarised as "leo: 0 kills, 0 deaths";
+  run 2026-11-08 23:20, two players "0 kills, 0 deaths" each]`. Now the killfeed keeps LOCAL's rounds from `arenarounds::score()` and
+  shows them: the pause message reads `Rounds won: n | Rounds lost: n`, the end summary is one page, `Arena results: you won 2-1`,
+  winner first, `n rounds won`, `(you)`, `(left)` when the rival left before the match was decided; a bot rival reads "Bot" (the
+  game replaces a bot killed in a round under a new name). Each game uses its own round count (the same one its WIN / LOSE banner
+  uses). Unit-tested; not yet seen in game.
