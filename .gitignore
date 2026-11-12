@@ -6,3 +6,5 @@ __pycache__/
 /runs/
 /tools/regulation/bin/
 /tools/regulation/obj/
+/build.local.psd1
+/tools/local/

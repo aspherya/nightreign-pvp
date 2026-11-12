@@ -30,6 +30,8 @@ param(
     [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
     # UI-3: Smithbox install whose SoulsFormats DLLs build regulation.bin (referenced at build time, never copied into the repo).
     [string]$Smithbox = 'Z:\Tools\Smithbox-2.2.6',
+    # Portable wrapper can supply an installed Python or Windows py launcher explicitly.
+    [string]$Python = '',
     # HAWK-2: the crossing line is built by default (it is part of the game). -VanillaRoutes leaves map\ out (vanilla 200 m start
     # routes; dev comparisons only: package-release.ps1 refuses such a package).
     [switch]$VanillaRoutes,
@@ -132,7 +134,8 @@ foreach ($lang in $langs) {
 Write-Host "OK: $out ($($langs.Count) languages; FMGs: $(($fmgs | ForEach-Object Name) -join ', '))"
 
 # UI-2 / OFF-4 / M5-3: our event-script events, grouped by the game file they change.
-$py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+$py = $Python
+if (-not $py) { $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe' }
 if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
 if (-not $py) { throw 'Python 3 not found (needed for scripts\emevd_add_events.py)' }
 $byFile = [ordered]@{}
@@ -183,9 +186,6 @@ foreach ($rel in $byFile.Keys) {
 # HAWK-1b/HAWK-2: the crossing line for every start-hawk route (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
 if ($HawkRoutes) { Write-Host '-HawkRoutes is the default now (HAWK-2); the switch has no effect' }
 if (-not $VanillaRoutes) {
-    $py = Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
-    if (-not (Test-Path $py)) { $py = (Get-Command python -ErrorAction SilentlyContinue).Source }
-    if (-not $py) { throw 'Python 3 not found (needed for patch_routes.py)' }
     $msb = Join-Path $Unpacked 'map\mapstudio\m60_00_00_99.msb.dcx'
     # map\mapstudio\m60_00_00_99.msb.dcx of game 1.03.3 (HAWK-0).
     $hh = (Get-FileHash $msb).Hash
