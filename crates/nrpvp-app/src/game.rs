@@ -132,7 +132,8 @@ mod tests {
 
     #[test]
     fn foreign_files_are_listed_and_ours_are_not() {
-        let dir = std::env::temp_dir().join(format!("nrpvp-app-foreign-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("nrpvp-app-game-foreign-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("SeamlessCoop")).unwrap();
         for f in [

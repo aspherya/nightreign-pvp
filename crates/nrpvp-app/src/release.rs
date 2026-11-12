@@ -1,9 +1,9 @@
 //! Where releases come from, and the `release.json` manifest that describes one.
 //!
-//! Releases are GitHub releases of a **public, binaries-only** repository ([`RELEASES_REPO`]); the source repository stays private.
+//! Source and player releases share the same private repository ([`RELEASES_REPO`]).
 //! Every release carries three assets: `release.json` (this manifest), the player zip, and the launcher exe. The launcher reads
-//! `https://github.com/<repo>/releases/latest/download/release.json` (a plain redirect, no GitHub API, no rate limit), then downloads
-//! the zip of that tag and checks its SHA-256. `scripts\publish-release.ps1` writes the manifest and uploads the release.
+//! Authenticated GitHub release/asset API requests download the manifest and assets; their SHA-256 is checked before install.
+//! `scripts\publish-release.ps1` writes the manifest and uploads the release. Tokens are held in Windows-protected local storage.
 //!
 //! For testing without GitHub: `NRPVP_RELEASE_DIR=<folder holding release.json and the zip>` reads a local folder instead;
 //! `NRPVP_RELEASES_REPO=<owner/name>` points at another repository.
@@ -15,7 +15,10 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-pub const RELEASES_REPO: &str = "notgonnaleo/nightreign-pvp-releases";
+pub const RELEASES_REPO: &str = match option_env!("NRPVP_RELEASES_REPO") {
+    Some(repo) => repo,
+    None => "notgonnaleo/nightreign-pvp",
+};
 /// Seamless Co-op for Nightreign, by Yui. The GitHub repository holds only data files today (no releases); the mod itself is
 /// published on Nexus Mods. The launcher installs from a GitHub release if one ever appears, else guides the Nexus download.
 pub const SC_GITHUB_REPO: &str = "yuiamoroll/NightreignSeamlessCoopRelease";
@@ -97,28 +100,136 @@ fn client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| format!("Could not start the download client: {e}"))
 }
 
+#[derive(Deserialize)]
+struct GitHubAsset {
+    id: u64,
+    name: String,
+}
+#[derive(Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<GitHubAsset>,
+}
+
+fn github_url(repo: &str, endpoint: &[&str]) -> Result<reqwest::Url, String> {
+    let parts: Vec<_> = repo.split('/').collect();
+    if parts.len() != 2
+        || parts.iter().any(|p| {
+            p.is_empty()
+                || *p == "."
+                || *p == ".."
+                || !p
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
+        })
+    {
+        return Err("The GitHub repository must be owner/name.".into());
+    }
+    let mut url = reqwest::Url::parse("https://api.github.com").map_err(|e| e.to_string())?;
+    url.path_segments_mut()
+        .map_err(|_| "Invalid GitHub URL.")?
+        .extend(["repos", parts[0], parts[1]])
+        .extend(endpoint);
+    Ok(url)
+}
+
+fn github_get(
+    repo: &str,
+    endpoint: &[&str],
+    token: &str,
+    binary: bool,
+) -> Result<reqwest::blocking::Response, String> {
+    let response = client()?
+        .get(github_url(repo, endpoint)?)
+        .bearer_auth(token)
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header(
+            "Accept",
+            if binary {
+                "application/octet-stream"
+            } else {
+                "application/vnd.github+json"
+            },
+        )
+        .send()
+        .map_err(|_| "Could not reach GitHub. Check your connection and try again.")?;
+    match response.status().as_u16() {
+        200..=299 => Ok(response),
+        401 => Err("The GitHub token expired or is invalid. Update it in Settings > Private updates.".into()),
+        403 => Err("GitHub denied access or its API limit was reached. The token needs Contents: read-only for this repository.".into()),
+        404 => Err("No published release was found, or your token cannot access this private repository. Check Settings > Private updates.".into()),
+        status => Err(format!("GitHub answered {status}; try again later.")),
+    }
+}
+
+fn github_token() -> Result<String, String> {
+    crate::auth::token()?.ok_or_else(|| {
+        "Add a read-only GitHub token in Settings > Private updates to download releases.".into()
+    })
+}
+
+pub fn validate_token(token: &str) -> Result<(), String> {
+    if token.len() > 512 || !token.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err("Enter a valid GitHub personal access token.".into());
+    }
+    let Source::GitHub(repo) = source() else {
+        return Err("Disable NRPVP_RELEASE_DIR before connecting private GitHub updates.".into());
+    };
+    github_get(&repo, &["releases"], token, false)?;
+    Ok(())
+}
+
+fn github_release(repo: &str, tag: Option<&str>, token: &str) -> Result<GitHubRelease, String> {
+    let endpoint = match tag {
+        Some(tag) => vec!["releases", "tags", tag],
+        None => vec!["releases", "latest"],
+    };
+    let release: GitHubRelease = github_get(repo, &endpoint, token, false)?
+        .json()
+        .map_err(|_| "GitHub returned invalid release information.")?;
+    if release.draft || release.prerelease {
+        return Err("This build has not been published as a stable release.".into());
+    }
+    Ok(release)
+}
+
+fn github_asset(
+    repo: &str,
+    release: &GitHubRelease,
+    name: &str,
+    token: &str,
+) -> Result<reqwest::blocking::Response, String> {
+    let asset = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == name)
+        .ok_or_else(|| format!("The release is missing {name}."))?;
+    // Construct the API URL from the numeric asset ID; never send the token to URLs supplied by a manifest.
+    github_get(
+        repo,
+        &["releases", "assets", &asset.id.to_string()],
+        token,
+        true,
+    )
+}
+
 /// The latest release's manifest.
 pub fn latest() -> Result<Manifest, String> {
     let text = match source() {
         Source::Local(dir) => std::fs::read_to_string(dir.join("release.json"))
             .map_err(|e| format!("No release.json in {}: {e}", dir.display()))?,
         Source::GitHub(repo) => {
-            let url = format!("https://github.com/{repo}/releases/latest/download/release.json");
-            let resp = client()?
-                .get(&url)
-                .send()
-                .map_err(|e| format!("Could not reach GitHub: {e}"))?;
-            if resp.status() == reqwest::StatusCode::NOT_FOUND {
-                return Err("No release has been published yet.".into());
+            let token = github_token()?;
+            let release = github_release(&repo, None, &token)?;
+            let text = github_asset(&repo, &release, "release.json", &token)?
+                .text()
+                .map_err(|_| "Could not read the release manifest.")?;
+            if parse(&text)?.tag != release.tag_name {
+                return Err("The manifest tag does not match the GitHub release.".into());
             }
-            if !resp.status().is_success() {
-                return Err(format!(
-                    "GitHub answered {} for the release list.",
-                    resp.status()
-                ));
-            }
-            resp.text()
-                .map_err(|e| format!("Could not read the release info: {e}"))?
+            text
         }
     };
     parse(&text)
@@ -150,11 +261,12 @@ pub fn fetch_asset(
                 .map_err(|e| format!("Could not open {}: {e}", asset.name))?,
         ),
         Source::GitHub(repo) => {
-            let url = format!(
-                "https://github.com/{repo}/releases/download/{}/{}",
-                m.tag, asset.name
-            );
-            Box::new(open_url(&url)?)
+            let token = github_token()?;
+            let release = github_release(&repo, Some(&m.tag), &token)?;
+            if release.tag_name != m.tag {
+                return Err("The GitHub release tag changed.".into());
+            }
+            Box::new(github_asset(&repo, &release, &asset.name, &token)?)
         }
     };
     let hash = copy_hashed(reader, dest, asset.size, progress)?;
@@ -274,6 +386,24 @@ pub fn sc_github_release() -> Result<Option<ScRelease>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn authenticated_asset_urls_stay_on_github_and_escape_tag_paths() {
+        let url = github_url(
+            "notgonnaleo/nightreign-pvp",
+            &["releases", "tags", "v1/extra"],
+        )
+        .unwrap();
+        assert_eq!(url.host_str(), Some("api.github.com"));
+        assert!(url.path().ends_with("v1%2Fextra"));
+        for repo in [
+            "https://evil.example/repo",
+            "owner/repo/extra",
+            "../repo",
+            "owner/repo?token=secret",
+        ] {
+            assert!(github_url(repo, &["releases"]).is_err());
+        }
+    }
 
     const SAMPLE: &str = r#"{
       "schema": 1, "version": "0.2.0", "tag": "v0.2.0", "published": "2026-11-06",

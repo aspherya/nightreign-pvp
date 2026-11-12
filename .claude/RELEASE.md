@@ -117,8 +117,8 @@ If the game crashes on quit (0xC0000374) it is the known bug; note the time and 
 
 ## 5b. Publish for the launcher app (LAUNCH-1)
 
-The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of the **public releases-only
-repository** `notgonnaleo/nightreign-pvp-releases` (DECISIONS 2026-11-06; the source repository is private). One command builds the zip, the
+The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from authenticated GitHub releases of this
+same private repository, `notgonnaleo/nightreign-pvp` (single-repository setup, 2026-11-12). One command builds the zip, the
 launcher and `release.json`, and uploads them:
 
 ```powershell
@@ -131,13 +131,85 @@ $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launc
 - The newest non-draft release is what every launcher installs: publishing is the release. Never reuse a version number.
 - `release.json` pins the game exe and `nrsc.dll` hashes from `pins/nightreign.toml`: the launcher warns a player whose game or Seamless
   Co-op differs. Update the pins when the game or SC changes.
-- Players download `NightreignPvP-Launcher.exe` once from the releases page; it shows when a newer launcher is out (no self-update yet).
+- Players download `NightreignPvP-Launcher.exe` once. On startup, with the game closed, the launcher installs newer published launcher and mod versions. A manually installed mod without version metadata adopts the latest published release once. Downloads are checked against `release.json`; the launcher update helper waits for the old process to exit, replaces it beside a backup, and restarts. Version comparison prevents downgrades of versioned installations and repeat updates. `--skip-auto-update` disables automatic updates for troubleshooting.
 - Testing without GitHub: `NRPVP_RELEASE_DIR=<folder with release.json + assets>`; another repository: `NRPVP_RELEASES_REPO=owner/name`.
 - **Private room** (RW-6): the launcher's Private room tab writes `private_code` into the installed `nrpvp.toml` (before the first table); an update keeps it. Friends save the same code, then queue as usual. Mock: `?room=night-owls`.
 - The launcher warns (Install tab and the bottom bar, red) when files of another tool sit in the game folder and make the game load other code: `winmm.dll`, `dlllist.txt`, `OnlineFix*`, `steam_emu.ini`, `ColdClientLoader.ini`, `steam_settings` (an OnlineFix package broke every run on 2026-11-08, TRAPS). It removes nothing. Mock: `?foreign`.
 - UI look without building: `.claude/launch.json` config `launcher-ui-mock` serves `crates/nrpvp-app/ui` on a mock (`?fresh`, `?update`).
 
 ## 6. Quick troubleshooting
+
+### GitHub Actions release setup
+
+`.github/workflows/release.yml` runs on `v*` tags or **Actions > Build player release > Run workflow**.
+Each run builds the player DLL without developer features, the helper, and the launcher (with its release version embedded),
+then uploads `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`, and the SHA-256 `release.json` as a workflow artifact.
+Tag runs also upload a **draft** to this repository. Manual runs can opt into that draft upload.
+Drafts are invisible to `/releases/latest`; after the final test session, publish the draft as the latest stable release
+to activate updates. Never reuse a version or replace already-published assets. Update `releases/notes.txt` before tagging.
+
+One-time setup by the repository owner:
+
+1. Keep `notgonnaleo/nightreign-pvp` private. The workflow uses `github.repository` as the release destination and embeds
+   that value in the launcher. Source, build inputs and player releases all live here; no second repository is needed.
+2. On the machine holding the pinned game unpack and tools, run `scripts/build-gamedata.ps1` and then:
+
+   ```powershell
+   ./scripts/prepare-ci-inputs.ps1 -GameData ./dist/gamedata-player -Me3Dir Z:\Tools\me3
+   ```
+
+   Upload `dist/ci-inputs.zip` to a **draft** release tagged `build-inputs-v1` in this repository. Keep it a draft so it
+   never becomes a player update.
+   Set its Actions variable `CI_INPUTS_SHA256` to the hash printed by the script (`dist/ci-inputs.sha256`).
+   `CI_INPUTS_TAG` can select a different versioned input release. This bundle contains only the generated player
+   game-data package and pinned me3 binaries/licenses, never Seamless Co-op or a game executable.
+   Regenerate and update the hash when game-data sources/pins change. A hosted Windows runner cannot generate
+   game content without the local unpack and tools. The currently installed Arena test package is not a player input.
+3. The workflow's built-in `GITHUB_TOKEN` has `contents: write`, which downloads the input draft and creates player
+   drafts in this same repository. No `RELEASES_TOKEN` secret or personal write token is needed for CI.
+4. Run a new version through the workflow, download its artifact and test it locally with `NRPVP_RELEASE_DIR` before
+   publishing its draft. The pipeline does not publish a stable release automatically.
+
+### Read-only token for private launcher updates
+
+Create a **fine-grained** token from GitHub **Settings > Developer settings > Personal access tokens > Fine-grained tokens >
+Generate new token**. Select the repository owner, an expiration date and **Only select repositories > nightreign-pvp**.
+Under **Repository permissions**, grant **Contents: Read-only**; Metadata read access is automatic. Leave other permissions
+unset. If GitHub requires owner/organization approval, complete that before using the token.
+
+Paste the token into launcher **Settings > Private updates > Connect**. The launcher checks repository release access and
+stores the token using Windows DPAPI encryption for the current Windows user. The token is never embedded in the executable,
+committed, returned to the UI or sent to Seamless Co-op's repository. Each launcher installation needs a valid token.
+An expired/revoked token can be replaced in the same place; **Remove saved token** disconnects private updates.
+
+GitHub does **not** offer a releases-only permission: **Contents: Read-only** permits downloading release assets and reading
+repository source. Treat anyone holding this token as having source access. A user-created token cannot exceed that user's
+repository access. See [GitHub release asset permissions](https://docs.github.com/en/rest/releases/assets#get-a-release-asset)
+and [fine-grained token setup](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
+
+The launcher uses the authenticated release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
+to download the manifest, launcher and player zip. SHA-256 verification still applies. Tokens go only to constructed
+`api.github.com/repos/<owner>/<repo>/...` URLs; public Seamless Co-op requests remain unauthenticated. Drafts and prereleases
+are excluded from player updates. `NRPVP_RELEASE_DIR` still supports offline release testing without a token.
+
+### Player save setup and name changes
+
+The launcher embeds `crates/nrpvp-app/assets/starter.sl2`, extracted from the supplied RAR (provenance and hashes in
+that directory's README). No separate save generation or player download is required. First setup (or Play when no
+Seamless save exists) creates the configured Seamless save for the selected SteamID64 and rebinds its embedded owner.
+The active Steam account is read from Steam's live process/registry at startup, on focus and for every Play/setup/edit operation.
+There is no manual SteamID entry or saved-account fallback; account switches are respected automatically. If Steam is closed or
+signed out, the launcher asks the user to start Steam and sign in. Destructive replacement and name edits reject an account switch
+between the displayed confirmation and the operation.
+Existing saves are preserved. The vanilla `.sl2` extension is refused. Setup and name edits require the game closed.
+Settings lists supported nonempty character slots; **Save name** edits that slot's UTF-16 player name and recomputes
+the encrypted entry checksum. Backups named `NR0000.<extension>.nrpvp-<timestamp>.bak` sit beside the save.
+Past match-history names are preserved. A supported-format roundtrip does not prove in-game compatibility: test
+starter-save loading and the changed name in the pinned game before publishing.
+
+**Settings > Player > Use all-unlocked save** is available after initial setup too. It requires an explicit confirmation,
+backs up the existing Seamless save (even a damaged one), rebinds the bundled template to the live Steam account and replaces
+the save atomically. A readable character name from the same account is kept. The game must be closed; vanilla saves are untouched.
 
 | Symptom | Cause / fix |
 |---|---|

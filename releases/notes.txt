@@ -1,0 +1,11 @@
+Launcher updates and player setup
+
+- The launcher automatically installs newer published launcher and mod releases while the game is closed.
+- First setup installs the bundled starter save for your Steam account when no Seamless Co-op save exists.
+- Change your character's in-game name from Settings > Player. Name edits keep a backup.
+- Existing saves and private room codes are preserved during updates.
+- Use the all-unlocked save anytime from Settings, with confirmation and a backup first.
+- Steam account detection refreshes automatically whenever you press Play.
+- Private updates use a read-only GitHub token stored encrypted for your Windows user; source and releases share this repository.
+
+Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.

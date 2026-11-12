@@ -1,0 +1,93 @@
+name: Build player release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. 0.3.0 (never reuse a version)'
+        required: true
+        type: string
+      publish_draft:
+        description: 'Upload a draft release to this repository'
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      NRPVP_RELEASES_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select version
+        shell: pwsh
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v', '' } else { $env:REQUESTED_VERSION }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - name: Rust toolchain
+        run: rustup show
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: release-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Download draft build inputs
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUTS_SHA256: ${{ vars.CI_INPUTS_SHA256 }}
+          INPUTS_TAG: ${{ vars.CI_INPUTS_TAG || 'build-inputs-v1' }}
+        run: |
+          if ($env:INPUTS_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') { throw 'Configure CI_INPUTS_SHA256 after running scripts/prepare-ci-inputs.ps1; see .claude/RELEASE.md.' }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          gh release download $env:INPUTS_TAG --repo $env:GITHUB_REPOSITORY --pattern ci-inputs.zip --dir dist
+          if ($LASTEXITCODE) { throw 'Upload ci-inputs.zip to this repository draft build-inputs release first.' }
+          if ((Get-FileHash dist/ci-inputs.zip).Hash -ne $env:INPUTS_SHA256) { throw 'Build input checksum mismatch.' }
+          Expand-Archive -LiteralPath dist/ci-inputs.zip -DestinationPath dist/ci-inputs
+          Copy-Item -LiteralPath dist/ci-inputs/gamedata-player -Destination dist/gamedata-player -Recurse
+          $pins = Get-Content pins/nightreign.toml -Raw
+          foreach ($file in 'me3.exe', 'me3-launcher.exe', 'me3_mod_host.dll') {
+            $expected = [regex]::Match($pins, '"' + [regex]::Escape($file) + '"\s*=\s*"([0-9A-Fa-f]{64})"').Groups[1].Value
+            if (-not $expected -or (Get-FileHash "dist/ci-inputs/me3/bin/$file").Hash -ne $expected) { throw "me3 pin mismatch: $file" }
+          }
+      - name: Validate launcher and player build
+        shell: pwsh
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked --release -p nrpvp-app -p nrpvp-launcher
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --release -p nrpvp-app -p nrpvp-launcher --all-targets -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --release -p nrpvp --no-default-features -- -D warnings
+          exit $LASTEXITCODE
+      - name: Build launcher, player DLL and update manifest
+        shell: pwsh
+        run: ./scripts/publish-release.ps1 -Version $env:RELEASE_VERSION -NotesFile releases/notes.txt -MatchPlayers 6 -MinPlayers 2 -Me3Dir "$PWD/dist/ci-inputs/me3" -Repo $env:NRPVP_RELEASES_REPO -DryRun
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NightreignPvP-${{ env.RELEASE_VERSION }}-windows-x64
+          path: dist/release/*
+          if-no-files-found: error
+      - name: Upload draft release
+        if: github.ref_type == 'tag' || inputs.publish_draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v$env:RELEASE_VERSION" --repo $env:NRPVP_RELEASES_REPO --target $env:GITHUB_SHA --draft --title "Nightreign PvP v$env:RELEASE_VERSION" --notes-file releases/notes.txt dist/release/NightreignPvP.zip dist/release/NightreignPvP-Launcher.exe dist/release/release.json
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

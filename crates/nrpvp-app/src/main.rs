@@ -3,13 +3,18 @@
 //! it uses no memory while the game runs. The window is the HTML in ui\ (Tauri 2, WebView2).
 #![windows_subsystem = "windows"]
 
+mod auth;
 mod game;
 mod install;
 mod release;
 mod room;
+mod save_format;
+mod saves;
+mod update;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
@@ -17,6 +22,7 @@ use tauri::{AppHandle, Emitter};
 use release::{Manifest, ScRelease};
 
 // ---- settings ---------------------------------------------------------------------------------------------------------------
+static SETTINGS_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Default, Serialize, Deserialize)]
 struct Settings {
@@ -34,33 +40,42 @@ fn settings_path() -> PathBuf {
 }
 
 fn load_settings() -> Settings {
+    let _guard = SETTINGS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    read_settings()
+}
+
+fn read_settings() -> Settings {
     std::fs::read_to_string(settings_path())
         .ok()
         .and_then(|t| serde_json::from_str(&t).ok())
         .unwrap_or_default()
 }
 
-fn save_settings(s: &Settings) -> Result<(), String> {
+fn update_settings(edit: impl FnOnce(&mut Settings)) -> Result<(), String> {
+    let _guard = SETTINGS_LOCK
+        .lock()
+        .map_err(|_| "Restart the launcher to update settings.")?;
+    let mut settings = read_settings();
+    edit(&mut settings);
     let p = settings_path();
     if let Some(dir) = p.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     std::fs::write(
         &p,
-        serde_json::to_string_pretty(s).map_err(|e| e.to_string())?,
+        serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?,
     )
     .map_err(|e| format!("Could not save the launcher settings: {e}"))
 }
 
 /// The saved game folder if it is still valid, else a fresh detection (saved for next time).
 fn game_dir() -> Option<PathBuf> {
-    let mut s = load_settings();
+    let s = load_settings();
     if let Some(dir) = s.game_dir.as_deref().filter(|d| game::is_game_dir(d)) {
         return Some(dir.to_path_buf());
     }
     let found = game::detect()?;
-    s.game_dir = Some(found.clone());
-    let _ = save_settings(&s);
+    let _ = update_settings(|s| s.game_dir = Some(found.clone()));
     Some(found)
 }
 
@@ -120,6 +135,9 @@ struct Status {
     foreign: Vec<String>,
     /// RW-6: the private room code in the installed `nrpvp.toml` ("" = public matchmaking).
     private_code: String,
+    player: saves::Status,
+    auto_update: bool,
+    github_token_set: bool,
 }
 
 #[tauri::command]
@@ -131,7 +149,7 @@ async fn status() -> Result<Status, String> {
             .map(|g| g.join("SeamlessCoop").join("nrsc.dll"));
         let sc_installed = nrsc.as_ref().is_some_and(|p| p.is_file());
         Ok(Status {
-            launcher_version: env!("CARGO_PKG_VERSION"),
+            launcher_version: update::VERSION,
             launcher_sha256: std::env::current_exe()
                 .ok()
                 .and_then(|p| release::sha256_file(&p).ok()),
@@ -147,6 +165,9 @@ async fn status() -> Result<Status, String> {
             game_running: game::is_running(),
             foreign: game.as_deref().map(game::foreign_files).unwrap_or_default(),
             private_code: game.as_deref().map(install::room_code).unwrap_or_default(),
+            player: saves::status(game.as_deref(), saves::detect_account()),
+            auto_update: !std::env::args().any(|a| a == "--skip-auto-update"),
+            github_token_set: auth::token().ok().flatten().is_some(),
         })
     })
     .await
@@ -166,15 +187,18 @@ async fn game_exe_sha256() -> Result<Option<String>, String> {
             .ok()
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_secs());
-        let mut s = load_settings();
+        let s = load_settings();
         if let Some((size, m, h)) = &s.exe_hash {
             if *size == meta.len() && *m == mtime {
                 return Ok(Some(h.clone()));
             }
         }
         let h = release::sha256_file(&exe)?;
-        s.exe_hash = Some((meta.len(), mtime, h.clone()));
-        let _ = save_settings(&s);
+        let _ = update_settings(|s| {
+            if s.game_dir.as_deref() == Some(game.as_path()) {
+                s.exe_hash = Some((meta.len(), mtime, h.clone()));
+            }
+        });
         Ok(Some(h))
     })
     .await
@@ -198,16 +222,28 @@ async fn pick_game_dir() -> Result<Option<String>, String> {
 fn set_game_dir(path: String) -> Result<String, String> {
     let dir = game::normalize(Path::new(&path))
         .ok_or("nightreign.exe is not in that folder. Pick the game's \"Game\" folder: in Steam, right-click ELDEN RING NIGHTREIGN > Manage > Browse local files.")?;
-    let mut s = load_settings();
-    s.game_dir = Some(dir.clone());
-    s.exe_hash = None;
-    save_settings(&s)?;
+    update_settings(|s| {
+        s.game_dir = Some(dir.clone());
+        s.exe_hash = None;
+    })?;
     Ok(dir.display().to_string())
 }
 
 #[tauri::command]
 async fn latest_release() -> Result<Manifest, String> {
     blocking(release::latest).await
+}
+
+#[tauri::command]
+async fn set_github_token(token: String) -> Result<(), String> {
+    blocking(move || {
+        let token = token.trim();
+        if !token.is_empty() {
+            release::validate_token(token)?;
+        }
+        auth::store(token)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -360,14 +396,57 @@ mod open_tests {
     }
 }
 
+#[tauri::command]
+async fn update_launcher(app: AppHandle) -> Result<bool, String> {
+    let handle = app.clone();
+    let started = blocking(move || {
+        if game::is_running() {
+            return Err("Close the game before updating the launcher.".into());
+        }
+        update::prepare(reporter(&handle, "Updating the launcher"))
+    })
+    .await?;
+    if started {
+        app.exit(0);
+    }
+    Ok(started)
+}
+
+#[tauri::command]
+async fn setup_player() -> Result<(), String> {
+    blocking(move || {
+        let steam_id = saves::current_account()?;
+        saves::setup(&need_game()?, &steam_id)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
+async fn rename_player(slot: usize, name: String, steam_id: String) -> Result<(), String> {
+    blocking(move || {
+        let id = saves::require_account(&steam_id)?;
+        saves::rename(&need_game()?, &id, slot, &name)
+    })
+    .await
+}
+
+#[tauri::command]
+async fn replace_starter_save(steam_id: String) -> Result<(), String> {
+    blocking(move || saves::reset(&need_game()?, &steam_id)).await
+}
+
 /// Starts the game, then closes the launcher.
 #[tauri::command]
 async fn play(app: AppHandle) -> Result<(), String> {
     blocking(|| {
         let game = need_game()?;
+        let id = saves::current_account()?;
+        saves::setup(&game, &id)?;
         if game::is_running() {
             return Err("The game is already running.".into());
         }
+        saves::require_account(&id)?;
         nrpvp_launch::launch(&game)
     })
     .await?;
@@ -376,6 +455,9 @@ async fn play(app: AppHandle) -> Result<(), String> {
 }
 
 fn main() {
+    if update::run_helper() {
+        return;
+    }
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             status,
@@ -383,6 +465,7 @@ fn main() {
             pick_game_dir,
             set_game_dir,
             latest_release,
+            set_github_token,
             install_mod,
             sc_github,
             install_sc_github,
@@ -391,6 +474,10 @@ fn main() {
             install_sc_zip,
             open,
             set_private_code,
+            setup_player,
+            rename_player,
+            replace_starter_save,
+            update_launcher,
             play
         ])
         .run(tauri::generate_context!())

@@ -22,6 +22,10 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 winreg = "0.55"
 rfd = { version = "0.15", default-features = false }
 nrpvp-launcher = { path = "../nrpvp-launcher" }
+aes = "0.8"
+cbc = "0.1"
+md-5 = "0.10"
+semver = "1"
 
 [features]
 # A plain `cargo build` is a production build: the UI is served from the embedded ui\ folder, never from a dev server.

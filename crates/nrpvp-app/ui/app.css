@@ -223,3 +223,15 @@ code { font: 12px/1 Consolas, monospace; color: var(--gold-hover); background: r
 /* toast */
 .toast { position: fixed; z-index: 30; left: 50%; bottom: 128px; transform: translateX(-50%); max-width: 640px; padding: 12px 18px; background: #2a1715; border: 1px solid rgba(219,119,112,.55); color: #f3cdc9; font-size: 13px; border-radius: 2px; box-shadow: 0 16px 40px rgba(0,0,0,.5); white-space: pre-line; animation: fade .2s ease; user-select: text; -webkit-user-select: text; }
 .toast.ok { background: #16201a; border-color: rgba(159,191,154,.5); color: #d4e6d0; }
+
+/* Player settings remain reachable on shorter windows. */
+.drawer { overflow-y: auto; }
+.drawer-sec { flex-shrink: 0; }
+.drawer .input { min-width: 0; width: 100%; }
+.wz-page > .input { display: block; margin: 8px 0 12px; width: 100%; }
+
+/* Explicit save replacement confirmation. */
+#saveConfirm { z-index: 25; }
+.save-confirm { width: 500px; padding: 28px; background: #15171c; border: 1px solid var(--border); color: #cfc8b9; }
+.save-confirm h3 { margin-top: 0; color: var(--gold); }
+.save-confirm label { display: block; margin: 20px 0; font-size: 13px; }

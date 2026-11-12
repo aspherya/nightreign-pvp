@@ -25,6 +25,12 @@ const S = {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const mb = (n) => (n / 1048576).toFixed(n > 10485760 ? 0 : 1) + ' MB';
 const same = (a, b) => !!a && !!b && a.toUpperCase() === b.toUpperCase();
+const newer = (a, b) => {
+  if (!/^\d+\.\d+\.\d+$/.test(a || '') || !/^\d+\.\d+\.\d+$/.test(b || '')) return false;
+  const x = a.split('.').map(Number), y = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i];
+  return false;
+};
 let toastTimer;
 function toast(msg, ok = false) {
   const t = $('#toast');
@@ -56,8 +62,8 @@ function derive() {
     modVersion: m && m.version,
     gameMatch: r && S.exeHash ? same(r.game.exe_sha256, S.exeHash) : null,
   };
-  d.update = !!(r && d.modOk && d.modVersion !== r.version);
-  d.newLauncher = !!(r && r.launcher && st.launcher_sha256 && !same(r.launcher.sha256, st.launcher_sha256));
+  d.update = !!(r && d.modOk && (!d.modVersion || newer(r.version, d.modVersion)));
+  d.newLauncher = !!(r && r.launcher && newer(r.version, st.launcher_version) && st.launcher_sha256 && !same(r.launcher.sha256, st.launcher_sha256));
   d.ready = d.gameOk && d.scOk && d.modOk;
   return d;
 }
@@ -110,7 +116,7 @@ function render() {
       d.scOk ? (d.scMatch === false ? `Installed, but not v${r.seamless_coop.version} (the version this release needs)` : `Installed${r ? ' · v' + r.seamless_coop.version : ''}`) : 'Not installed'),
     row(d.modOk ? (d.update ? 'warn' : 'ok') : 'bad', 'Nightreign PvP',
       d.modOk ? (d.modVersion ? 'v' + d.modVersion : 'Installed by hand (unknown version)') + (d.update ? ` · v${r.version} available` : '') : (st.mod && st.mod.present ? st.mod.problem : 'Not installed')),
-  ].join('') + (d.newLauncher ? row('warn', 'New launcher available', 'Download NightreignPvP-Launcher.exe from the releases page (Settings › All releases) and replace this one.') : '')
+  ].join('') + (d.newLauncher ? row('warn', 'New launcher available', 'Restart the launcher to retry the automatic update, or download it from Settings › All releases.') : '')
     + (st.foreign && st.foreign.length ? row('bad', 'Files from another tool in the game folder',
       `${st.foreign.join(', ')}: they make the game load other code and break matches. Move them out of the game folder, then use Steam's "Verify integrity of game files".`) : '');
 
@@ -150,6 +156,19 @@ function render() {
   $('#setSc').textContent = d.scOk ? (d.scMatch === false ? 'Installed (a different version than this release needs)' : 'Installed') : 'Not installed';
   $('#setVer').textContent = st.launcher_version ? 'Launcher v' + st.launcher_version + (d.newLauncher ? ' · a newer one is out' : '') : '';
   $('#setRepair').disabled = !d.gameOk || !r || !!S.busy;
+  $('#githubAuthStatus').textContent = st.github_token_set ? 'A GitHub token is saved for private release downloads.' : 'Connect a read-only GitHub token to download private releases.';
+  $('#githubAuthSave').disabled = !!S.busy;
+  $('#githubAuthClear').disabled = !!S.busy || !st.github_token_set;
+  const player = st.player || {}, characters = player.characters || [];
+  $('#playerSteamId').textContent = player.steam_id || 'Start Steam and sign in. No manual SteamID is needed.';
+  const playerMessage = player.problem || (player.present ? 'Your Seamless Co-op save is installed.' : 'The bundled starter save will be installed during setup.');
+  $('#playerStatus').textContent = playerMessage;
+  $('#wzPlayerStatus').textContent = playerMessage;
+  const options = characters.map(c => `<option value="${c.slot}">Slot ${c.slot + 1}: ${esc(c.name)}</option>`).join('');
+  if ($('#playerSlot').innerHTML !== options) $('#playerSlot').innerHTML = options;
+  $('#playerSave').disabled = !!S.busy || !!st.game_running || !characters.length || !!player.problem;
+  $('#playerSetup').disabled = !!S.busy || !!st.game_running || !d.scOk || !player.steam_id;
+  $('#playerReplace').disabled = !!S.busy || !!st.game_running || !d.scOk || !player.steam_id;
 
   if (!$('#wizard').hidden) renderWizard();
 }
@@ -217,11 +236,17 @@ function renderWizard() {
       h += `<div class="release-line"><span class="v">v${esc(r.version)}</span><span class="meta">${esc(r.published)} · ${mb(r.zip.size)}${r.match_players ? ` · ${r.match_players} players per match` : ''}</span></div>`;
       h += `<div class="card notes" style="max-height:170px;overflow:auto">${notesHtml(r.notes)}</div>`;
     } else {
-      h += `<div class="card warn"><h4>No release found</h4><p class="muted" style="margin:0">${esc(S.releaseError || 'Looking…')}</p><div class="row"><button class="btn" id="wzRetry">Try again</button></div></div>`;
+      h += `<div class="card warn"><h4>No release found</h4><p class="muted" style="margin:0">${esc(S.releaseError || 'Looking…')}</p><div class="row"><button class="btn" id="wzRetry">Try again</button><button class="btn" id="wzConnectGithub">Connect private updates</button></div></div>`;
     }
     if (d.modOk && !d.update) h = `<div class="field"><span class="mark ok"></span><span><b>Nightreign PvP is installed</b><small>${d.modVersion ? 'v' + esc(d.modVersion) : 'installed by hand'}</small></span></div>` + h;
     $('#wzMod').innerHTML = h;
     $('#wzRetry') && ($('#wzRetry').onclick = loadRelease);
+    $('#wzConnectGithub') && ($('#wzConnectGithub').onclick = () => {
+      $('#wizard').hidden = true;
+      $('#settings').hidden = false;
+      render();
+      $('#githubAuthForm').scrollIntoView({ block: 'center' });
+    });
     if (d.modOk && !d.update) { next.textContent = 'Continue'; next.disabled = !!S.busy; }
     else { next.textContent = d.modOk ? 'Update' : 'Install'; next.disabled = !r || !!S.busy; }
   }
@@ -248,7 +273,10 @@ async function wizardNext() {
     const ok = await installMod();
     if (!ok) return;
   }
-  if (S.step === 3) return play();
+  if (S.step === 3) {
+    if (!await setupPlayer($('#wzPlayerName').value)) return;
+    return play();
+  }
   S.step = Math.min(3, S.step + 1);
   render();
 }
@@ -344,6 +372,46 @@ $('#wzPickGame').onclick = pickGame;
 $('#setPickGame').onclick = pickGame;
 $('#setRepair').onclick = () => { $('#settings').hidden = true; installMod(); };
 $('#setScSetup').onclick = () => { $('#settings').hidden = true; openWizard(1); };
+async function setupPlayer(name = '') {
+  return job('Setting up your save…', async () => {
+    await invoke('setup_player');
+    if (name.trim()) {
+      const status = await invoke('status');
+      const character = status.player.characters[0];
+      if (!character) throw 'No supported character was found in the save.';
+      await invoke('rename_player', { slot: character.slot, name, steamId: status.player.steam_id });
+    }
+  }, 'Player setup complete.');
+}
+$('#playerSetup').onclick = () => setupPlayer();
+$('#playerRefresh').onclick = refresh;
+async function connectGitHub(token) {
+  const connected = await job('Connecting private updates…', () => invoke('set_github_token', { token }), token ? 'GitHub connected. Restart the launcher to apply available updates automatically.' : 'Saved GitHub token removed.');
+  $('#githubToken').value = '';
+  if (connected) await loadRelease();
+}
+$('#githubAuthForm').onsubmit = e => { e.preventDefault(); if ($('#githubToken').value.trim()) connectGitHub($('#githubToken').value); };
+$('#githubAuthClear').onclick = () => connectGitHub('');
+$('#playerReplace').onclick = async () => {
+  await refresh();
+  if (!S.status?.player?.steam_id || S.status.game_running || S.busy) return;
+  S.resetAccount = S.status.player.steam_id;
+  $('#saveConfirmAccount').textContent = `Steam account: ${S.resetAccount}`;
+  $('#saveConfirmCheck').checked = false;
+  $('#saveConfirmApply').disabled = true;
+  $('#saveConfirm').hidden = false;
+};
+$('#saveConfirmCheck').onchange = () => { $('#saveConfirmApply').disabled = !$('#saveConfirmCheck').checked; };
+$('#saveConfirmCancel').onclick = () => { $('#saveConfirm').hidden = true; };
+$('#saveConfirmApply').onclick = async () => {
+  if (!$('#saveConfirmCheck').checked || S.busy) return;
+  $('#saveConfirm').hidden = true;
+  await job('Installing the all-unlocked save…', () => invoke('replace_starter_save', { steamId: S.resetAccount }), 'All-unlocked save installed. Your previous save was backed up.');
+};
+$('#playerForm').onsubmit = e => {
+  e.preventDefault();
+  job('Saving your name…', () => invoke('rename_player', { slot: Number($('#playerSlot').value), name: $('#playerName').value, steamId: S.status.player.steam_id }), 'Your in-game name was saved. A backup was kept.');
+};
 $$('.tab').forEach((t) => (t.onclick = () => {
   $$('.tab').forEach((x) => x.classList.toggle('active', x === t));
   $$('.tab-body').forEach((b) => (b.hidden = b.id !== 'tab-' + t.dataset.tab));
@@ -362,6 +430,7 @@ $('#roomForm').onsubmit = (e) => { e.preventDefault(); saveRoom($('#roomCode').v
 $('#roomClear').onclick = () => saveRoom('');
 bindOpen(document);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
+window.addEventListener('focus', () => { if (!S.busy) refresh(); });
 
 listen('progress', (e) => {
   const { label, done, total } = e.payload;
@@ -374,7 +443,15 @@ listen('progress', (e) => {
 
 (async function start() {
   await Promise.all([refresh(), loadRelease()]);
-  const d = derive();
+  let d = derive();
+  if (S.status && S.status.auto_update && !S.status.game_running && S.release) {
+    if (d.newLauncher) {
+      const updating = await job('Updating the launcher…', () => invoke('update_launcher'));
+      if (updating) return;
+    }
+    if (d.update) await installMod();
+    d = derive();
+  }
   if (!d.gameOk || !d.scOk || !d.modOk) openWizard();
 })();
 
@@ -405,7 +482,7 @@ listen('progress', (e) => {
 })();
 
 // ---------- browser mock (no Tauri) ----------
-var mockRoom; // `var`: the mock runs before this line (start() above); filled from ?room= on first use
+var mockRoom, mockPlayer; // `var`: the mock runs before this line (start() above).
 function mockInvoke(cmd, args) {
   const wait = (ms, v) => new Promise((r) => setTimeout(() => r(v), ms));
   const q = new URLSearchParams(location.search);
@@ -414,12 +491,17 @@ function mockInvoke(cmd, args) {
     case 'status': return wait(120, { launcher_version: '0.1.0', game_dir: fresh ? null : 'Z:\\SteamLibrary\\steamapps\\common\\ELDEN RING NIGHTREIGN\\Game',
       sc_installed: !fresh, sc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E', sc_launcher: true,
       mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', tag: 'v0.2.0', problem: null, present: true }, game_running: false,
-      foreign: q.has('foreign') ? ['OnlineFix.ini', 'dlllist.txt', 'winmm.dll'] : [], private_code: (mockRoom ??= q.get('room') || '') });
+      foreign: q.has('foreign') ? ['OnlineFix.ini', 'dlllist.txt', 'winmm.dll'] : [], private_code: (mockRoom ??= q.get('room') || ''),
+      auto_update: false, player: (mockPlayer ??= { steam_id: '76561198000000000', present: !fresh, characters: fresh ? [] : [{ slot: 0, name: 'Nightfarer' }], problem: null }) });
     case 'latest_release': return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
       notes: 'The first build for players outside the test group.\n\n- Battle Royale card in the Roundtable: Solo queue, no click after Commence\n- Killfeed as the game\'s own toasts\n- Sites of Grace switch off during a PvP fight\n- Rivals are hidden from the map, compass and name tags\n\nEveryone in a match needs this version.',
       zip: { name: 'NightreignPvP.zip', sha256: '', size: 31457280 }, game: { version: '1.03.3', exe_sha256: 'X' }, seamless_coop: { version: '1.1.3', nrsc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E' } });
     case 'game_exe_sha256': return wait(200, 'X');
     case 'sc_github': return wait(200, null);
+    case 'setup_player': mockPlayer = { steam_id: '76561198000000000', present: true, characters: [{slot: 0, name: 'Champion Of Zeus'}], problem: null }; return wait(100, null);
+    case 'replace_starter_save': return wait(100, null);
+    case 'rename_player': mockPlayer.characters[0].name = args.name; return wait(100, null);
+    case 'set_github_token': return wait(100, null);
     case 'set_private_code': {
       const c = String(args.code).trim().toLowerCase();
       if (c.length > 32) return Promise.reject('The code can be 32 characters at most.');

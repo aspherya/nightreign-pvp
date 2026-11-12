@@ -115,7 +115,7 @@
         <div class="wz-page" data-page="0">
           <div class="eyebrow">Step 1 of 3</div>
           <h2>Where is the game?</h2>
-          <p class="muted">The mod is installed into the game's own folder, next to <code>nightreign.exe</code>. Nothing else on your PC is changed.</p>
+          <p class="muted">The mod is installed next to <code>nightreign.exe</code>. Player setup also prepares your Seamless Co-op save in your Steam profile.</p>
           <div class="field" id="wzGame"></div>
           <div class="row"><button class="btn" id="wzPickGame">Choose folder&hellip;</button></div>
           <p class="hint">In Steam: right-click ELDEN RING NIGHTREIGN &rsaquo; Manage &rsaquo; Browse local files, then open <b>Game</b>.</p>
@@ -139,6 +139,11 @@
         <div class="wz-page" data-page="3" hidden>
           <div class="eyebrow">All set</div>
           <h2>The night awaits.</h2>
+          <p class="muted">Your existing Seamless Co-op save is kept. If you have none, setup installs the bundled starter save for this Steam account.</p>
+          <p class="hint">Your signed-in Steam account is detected automatically when you press Play.</p>
+          <label class="label" for="wzPlayerName">In-game name (optional)</label>
+          <input class="input" id="wzPlayerName" maxlength="16" placeholder="Keep the current name" aria-label="Setup in-game name">
+          <p class="hint" id="wzPlayerStatus"></p>
           <p class="muted">Start Steam, then press Play. The launcher closes itself once the game starts, so it does not take memory while you play.</p>
           <ul class="ready-list">
             <li>Always start the game from this launcher (or <code>nrpvp_launcher.exe</code>), never with Steam's Play button.</li>
@@ -162,6 +167,29 @@
     <aside class="drawer">
       <div class="drawer-head"><h3>Settings</h3><button class="icon-btn" id="btnCloseSettings" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
       <div class="drawer-sec">
+        <div class="label">Player</div>
+        <p class="hint" id="playerStatus"></p>
+        <div class="label">Signed-in Steam account</div>
+        <div class="path" id="playerSteamId"></div>
+        <div class="row"><button class="btn" id="playerRefresh">Refresh account</button><button class="btn" id="playerSetup">Set up save</button></div>
+        <label class="label" for="playerSlot">Character</label>
+        <select class="input" id="playerSlot" aria-label="Character slot"></select>
+        <form class="row" id="playerForm"><input class="input" id="playerName" maxlength="16" aria-label="In-game name" placeholder="In-game name"><button class="btn gold" id="playerSave">Save name</button></form>
+        <p class="hint">Up to 16 characters. Close the game before editing. Each name change keeps a backup beside your save.</p>
+        <button class="btn" id="playerReplace">Use all-unlocked save</button>
+        <p class="hint">Available anytime. Replaces your Seamless Co-op progress with the bundled save and backs up your current save first.</p>
+      </div>
+      <div class="drawer-sec">
+        <div class="label">Private updates</div>
+        <p class="hint" id="githubAuthStatus"></p>
+        <form id="githubAuthForm" class="row" autocomplete="off">
+          <input class="input" id="githubToken" type="password" autocomplete="new-password" maxlength="512" placeholder="GitHub read-only token" aria-label="GitHub read-only token">
+          <button class="btn gold" id="githubAuthSave">Connect</button>
+        </form>
+        <button class="link-btn" id="githubAuthClear">Remove saved token</button>
+        <p class="hint">Fine-grained token: only this repository, Contents: read-only. GitHub also grants source access with this permission. Stored encrypted for your Windows user.</p>
+      </div>
+      <div class="drawer-sec">
         <div class="label">Game folder</div>
         <div class="path" id="setGame">&mdash;</div>
         <div class="row"><button class="btn" id="setPickGame">Change&hellip;</button><button class="btn" data-open="game">Open folder</button></div>
@@ -184,6 +212,15 @@
     </aside>
   </div>
 
+  <div class="overlay soft" id="saveConfirm" hidden>
+    <section class="save-confirm">
+      <h3>Use the all-unlocked save?</h3>
+      <p id="saveConfirmAccount"></p>
+      <p>Your current Seamless Co-op progress will be replaced. A backup is saved beside your save first. Your character name is kept when it can be read.</p>
+      <label><input type="checkbox" id="saveConfirmCheck"> I understand that this replaces my current progress.</label>
+      <div class="row"><button class="btn" id="saveConfirmCancel">Cancel</button><button class="btn gold" id="saveConfirmApply" disabled>Back up and replace save</button></div>
+    </section>
+  </div>
   <div class="toast" id="toast" hidden></div>
 
   <script src="app.js"></script>

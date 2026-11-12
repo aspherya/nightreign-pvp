@@ -1,6 +1,6 @@
 # Publishes a player release for the launcher app (crates/nrpvp-app): builds the player zip and the launcher exe, writes release.json,
-# and uploads all three as a GitHub release of the PUBLIC releases-only repository (the source repository stays private).
-# The launcher reads https://github.com/<Repo>/releases/latest/download/release.json, so the newest non-draft release is what players get.
+# and uploads all three as a GitHub release in the same repository as the source.
+# The launcher downloads release.json via the authenticated GitHub release asset API; the latest stable release is what players get.
 #
 #   ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -DryRun     # build + write dist\release\, upload nothing
 #   ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt             # build + upload (needs `gh auth login`)
@@ -10,10 +10,12 @@ param(
     [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [Parameter(Mandatory)][string]$NotesFile,
     [ValidateRange(2, 6)][int]$MatchPlayers = 2,
+    [ValidateRange(0, 6)][int]$MinPlayers = 0,
+    [string]$Me3Dir = 'Z:\Tools\me3',
     # Shown to players; must agree with the hashes in pins/nightreign.toml.
     [string]$GameVersion = '1.03.3',
     [string]$ScVersion = '1.1.3',
-    [string]$Repo = 'notgonnaleo/nightreign-pvp-releases',
+    [string]$Repo = 'notgonnaleo/nightreign-pvp',
     [switch]$DryRun,
     [switch]$AllowDirty
 )
@@ -37,18 +39,25 @@ $gameSha = Pin 'nightreign.exe'
 $nrscSha = Pin 'SeamlessCoop/nrsc.dll'
 
 # 1. The player zip.
-& (Join-Path $PSScriptRoot 'package-release.ps1') -MatchPlayers $MatchPlayers
+& (Join-Path $PSScriptRoot 'package-release.ps1') -MatchPlayers $MatchPlayers -MinPlayers $MinPlayers -Me3Dir $Me3Dir
 $zip = Join-Path $dist 'NightreignPvP.zip'
 
 # 2. The launcher app.
 $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $cargo) { $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe' }
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-& $cargo build --release -p nrpvp-app --manifest-path (Join-Path $repoRoot 'Cargo.toml') 2>&1 | Out-Null
+$oldBuildVersion = $env:NRPVP_BUILD_VERSION
+$oldReleasesRepo = $env:NRPVP_RELEASES_REPO
+$env:NRPVP_BUILD_VERSION = $Version
+$env:NRPVP_RELEASES_REPO = $Repo
+try { & $cargo build --locked --release -p nrpvp-app --manifest-path (Join-Path $repoRoot 'Cargo.toml') }
+finally { $env:NRPVP_BUILD_VERSION = $oldBuildVersion; $env:NRPVP_RELEASES_REPO = $oldReleasesRepo }
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the launcher app failed ($code)" }
 
-if (Test-Path $out) { Remove-Item $out -Recurse -Force }
+$expectedOut = [IO.Path]::GetFullPath((Join-Path $repoRoot 'dist\release'))
+if ([IO.Path]::GetFullPath($out) -ne $expectedOut) { throw 'Release output is outside the expected dist directory.' }
+if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
 New-Item -ItemType Directory -Force $out | Out-Null
 Copy-Item -LiteralPath $zip -Destination $out
 $launcher = Join-Path $out 'NightreignPvP-Launcher.exe'
@@ -68,6 +77,7 @@ $manifest = [ordered]@{
     game           = [ordered]@{ version = $GameVersion; exe_sha256 = $gameSha }
     seamless_coop  = [ordered]@{ version = $ScVersion; nrsc_sha256 = $nrscSha }
     match_players  = $MatchPlayers
+    min_players    = $(if ($MinPlayers -ge 2) { [Math]::Min($MinPlayers, $MatchPlayers) } else { $MatchPlayers })
 }
 $json = Join-Path $out 'release.json'
 [IO.File]::WriteAllText($json, ($manifest | ConvertTo-Json -Depth 4), (New-Object Text.UTF8Encoding($false)))

@@ -56,20 +56,21 @@ foreach ($f in 'bin\me3.exe', 'bin\me3-launcher.exe', 'bin\me3_mod_host.dll', 'L
 $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $cargo) { $cargo = Join-Path $env:USERPROFILE '.cargo\bin\cargo.exe' }
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # cargo writes progress to stderr
-& $cargo build --release -p nrpvp-launcher --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
+& $cargo build --locked --release -p nrpvp-launcher --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the launcher failed ($code)" }
 $playerTarget = Join-Path $repo 'target\player'
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 $featureArgs = if ($Arena) { @('--features', 'arena') } else { @() }
-& $cargo build --release -p nrpvp --no-default-features @featureArgs --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
+& $cargo build --locked --release -p nrpvp --no-default-features @featureArgs --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the player nrpvp.dll failed ($code)" }
 $dll = Join-Path $playerTarget 'release\nrpvp.dll'
 $launcher = Join-Path $repo 'target\release\nrpvp_launcher.exe'
 
 $stage = Join-Path $dist 'release-stage'
-if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+if ([IO.Path]::GetFullPath($stage) -ne [IO.Path]::GetFullPath((Join-Path $repo 'dist\release-stage'))) { throw 'Unexpected release staging path.' }
+if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
 $mod = Join-Path $stage 'NightreignPvP'
 $me3 = Join-Path $mod 'me3'
 New-Item -ItemType Directory -Force $me3 | Out-Null
@@ -115,6 +116,6 @@ $zipName = 'NightreignPvP.zip'
 $zip = Join-Path $dist $zipName
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
-Remove-Item $stage -Recurse -Force
+Remove-Item -LiteralPath $stage -Recurse -Force
 Write-Output "OK: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
 Write-Output $ver
