@@ -396,6 +396,12 @@ static PRESSES: AtomicU32 = AtomicU32::new(0);
 /// ARENA-3: Commence presses the game itself runs (any `Pass*` decision): the expedition start follows, and it wipes the Sparring
 /// loadout while the player still stands at the Roundtable (MEMORY_MAP §29).
 static GAME_COMMENCES: AtomicU32 = AtomicU32::new(0);
+/// Bug #2 (Arena test 2026-11-11: a Commence started a vanilla solo run and no press was counted): every hit of the Commence
+/// breakpoint, and the hits that left the game alone because the menu's settings or the FMG slot could not be read (bit 0 = no
+/// settings, 1 = no players byte, 2 = no FMG / slot), so the pipe thread can tell "never hit" from "hit and passed through".
+static COMMENCE_HITS: AtomicU32 = AtomicU32::new(0);
+static COMMENCE_SKIPS: AtomicU32 = AtomicU32::new(0);
+static LAST_SKIP_WHY: AtomicU8 = AtomicU8::new(0);
 
 /// ARENA-3: how many Commence presses the game has run so far.
 #[cfg_attr(not(feature = "dev"), allow(dead_code))]
@@ -473,6 +479,14 @@ unsafe extern "system" fn veh(info: *mut EXCEPTION_POINTERS) -> i32 {
         let br_card = ExpeditionMenu::new(&mem, (*ctx).R14 as usize).is_battle_royale_card();
         let bots = BOTS_MENU && settings.as_ref().and_then(|s| s.bots()).unwrap_or(false);
         let (fmg, slot) = (FMG.load(Ordering::Acquire), SLOT.load(Ordering::Acquire));
+        COMMENCE_HITS.fetch_add(1, Ordering::Relaxed);
+        let why = u8::from(settings.is_none())
+            | (u8::from(players.is_none()) << 1)
+            | (u8::from(fmg == 0 || slot == 0) << 2);
+        if why != 0 {
+            LAST_SKIP_WHY.store(why, Ordering::Relaxed);
+            COMMENCE_SKIPS.fetch_add(1, Ordering::Relaxed);
+        }
         if let (Some(settings), Some(players), true) = (settings, players, fmg != 0 && slot != 0) {
             let phase = crate::mm::phase();
             let mode = crate::features::mode::current();
@@ -670,6 +684,7 @@ fn run(base: usize) {
     let mut seen_swaps = 0u32;
     let mut next_resolve = Instant::now();
     let mut seen = 0u32;
+    let mut seen_skips = 0u32;
     // FS7-3 / FS7-4: the menu was open on the last pass; a preset waits for the label hook to see the newly opened menu.
     let mut menu_was_open = false;
     let mut preset_pending = false;
@@ -858,7 +873,31 @@ fn run(base: usize) {
             );
             seen = p;
         }
+        let skips = COMMENCE_SKIPS.load(Ordering::Relaxed);
+        if skips != seen_skips {
+            tracing::warn!(
+                "br_menu: Commence left to the game untouched ({skips} time(s), {} hit(s) in all): {}",
+                COMMENCE_HITS.load(Ordering::Relaxed),
+                skip_reason(LAST_SKIP_WHY.load(Ordering::Relaxed))
+            );
+            seen_skips = skips;
+        }
     }
+}
+
+/// Bug #2 (pure): the reason bits of a Commence the handler could not decide.
+fn skip_reason(why: u8) -> String {
+    let mut r = Vec::new();
+    if why & 1 != 0 {
+        r.push("no menu settings");
+    }
+    if why & 2 != 0 {
+        r.push("no Number of Players byte");
+    }
+    if why & 4 != 0 {
+        r.push("no CL_Dialogues FMG slot");
+    }
+    r.join(", ")
 }
 
 #[cfg(test)]

@@ -16,6 +16,9 @@ param(
     # Pre-release feature flag: players per match in the player zip (2..6). 2 = quick friend tests (default until the first release);
     # 6 = the final game: every match has 6 players (Solo 6 x 1, Duo 3 x 2, Squad 2 x 3). Min = max, so matches only start full. Everyone who should meet needs the same number.
     [ValidateRange(2, 6)][int]$MatchPlayers = 2,
+    # Smallest match after the fill wait (mm_fill_wait_s, 90 s). 0 = same as -MatchPlayers (matches only start full). v1 (2026-11-12,
+    # Leonardo): -MatchPlayers 6 -MinPlayers 2, so a group smaller than 6 still plays after the wait.
+    [ValidateRange(0, 6)][int]$MinPlayers = 0,
     # Test builds only (2026-11-10): also the Arena mode (MODE-02, not released yet). The player DLL gets the cargo feature `arena` (still
     # no developer tooling) and the zip takes the full dist\gamedata (the Arena card hook needs its warp events and the m18 script).
     [switch]$Arena
@@ -88,7 +91,10 @@ $toml = @(
     'matchmaking = true',
     '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
     "mm_max_players = $MatchPlayers",
-    "mm_min_players = $MatchPlayers",
+    '# Smallest match: after 90 s of waiting, a match starts with at least this many players.',
+    "mm_min_players = $(if ($MinPlayers -ge 2) { [Math]::Min($MinPlayers, $MatchPlayers) } else { $MatchPlayers })",
+    '# Private match: everyone who writes the same code here (letters, digits, - and _) meets only each other. Empty = public.',
+    'private_code = ""',
     'team_candidates = [29, 6, 3, 16, 13, 2, 1]',
     '',
     '# Hawk crossing: the start hawk flies one line across the map. Hold the stick to dive, then steer; leave the hawk with the',

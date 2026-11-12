@@ -505,6 +505,16 @@ next real-Steam Arena: both players keep their level-15 HP in every round (logs)
 Out of scope: Bug #2 of the same test (host's first Commence after an Arena starts a vanilla solo run; separate card), the lost
 Sparring loadout in a second match.
 
+### MM-REQ — Host's card pick starts a vanilla run after an Arena the rival left first (Bug #2, 2026-11-11)
+Owner: OPUS | Status: reproduced on one PC (`mi-arena-requeue`, testing-log 2026-11-12), root cause open; workaround: title screen
+and back (Leonardo: acceptable for v1) | Depends on: —
+Goal: the host's next card pick goes through our Commence handler again. Facts: only when the client returned to the Roundtable
+before the host; the card pick itself starts the game's expedition (own lobby B), our Commence (`exe+0x9EEBFB`) and label
+(`exe+0x7AC800`) breakpoints never fire, the Bots predicate does; code bytes intact; keeping the lobby did not help. Next: find the
+menu state that turns a card pick into a direct start (compare the expedition menu object, R14 of the predicate hit, good vs bad;
+an exec watch on the game's lobby-create call to get the call chain), then reset it or route it through our handler.
+Acceptance: `mi-arena-requeue` PASS in the friend-session order; BR checked with the same order.
+
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's
 list holds ~609 entries in an expedition (553 relics, MEMORY_MAP §29), so a rival kill drops only the equipped weapons. Fix: the

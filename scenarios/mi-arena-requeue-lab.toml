@@ -1,0 +1,269 @@
+name = "mi-arena-requeue-lab"
+about = "Bug #2 (Arena test 2026-11-11): mi-arena-rounds, then BOTH games queue for the Arena again at the Roundtable; every Commence must be seen by the mod (never a vanilla solo run) and the two must meet again. Base: mi-arena-queue's way into the arena (Arena card, Commence once each), then player 2 is downed twice (hp0, a test aid that downs the player in a session): round messages on both games, the loser gets up, both reset to their spawns, player 1 wins 2-0 (WIN banner) and player 2 loses (LOSE banner), both back at the Roundtable, and both leave the match's Seamless Co-op lobby (random players)"
+tags = ["mi"]
+teardown = "keep"
+# Two emulated-Steam instances (MULTI-INSTANCE.md 20): Steam closed, `nro desk` running, the PC untouched while it runs. Needs the DEV
+# DLL and game data (the Arena card hook, the warp, Heolstor off and his fight off are dev only).
+# Run: nro run scenarios\mi-arena-queue.toml
+
+[config]            # every instance, as mi-zero-click
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_auto_start = true
+br_menu = true
+mm_host_create = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+# Instance 1 queues first, so it owns the queue lobby. The player's way: at the table, F opens the menu, DOWN to the Arena card, F
+# picks it, F is Commence, F closes our dialog.
+[[step]]
+instance = 1
+navigate = "queue_arena"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 20 }
+
+[[step]]
+instance = 1
+expect_log = { contains = ["queue Arena Solo (sent)", "kind=arena"], since = "run" }
+
+[[step]]
+instance = 2
+navigate = "queue_arena"
+
+[[step]]
+instance = 1
+mark = "pressed"
+
+[[step]]
+instance = 2
+mark = "pressed"
+
+# From here on no key and no click: only watching.
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 240, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena: flag 10007500 ON"], timeout_s = 60, since = "mark:pressed" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena: flag 10007500 ON"], timeout_s = 60, since = "mark:pressed" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena: roster team"], timeout_s = 90, since = "mark:pressed" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena: roster team"], timeout_s = 90, since = "mark:pressed" }
+
+[[step]]
+instance = 1
+mark = "rounds"
+
+[[step]]
+instance = 2
+mark = "rounds"
+
+# Both seen up: round 1 is armed. Round 1: player 2 goes down.
+[[step]]
+instance = 1
+keys = "wait 3000ms"
+
+# ARENA-LV: from here on, a level line comes only from the reset (the spawn's SetLevel is already logged).
+[[step]]
+instance = 1
+mark = "down1"
+
+[[step]]
+instance = 2
+mark = "down1"
+
+[[step]]
+instance = 2
+console = "hp0"
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_rounds: Round 1: you won (1-0)"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_rounds: Round 1: you lost (0-1)"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 1
+screenshot = "p1_round1"
+
+[[step]]
+instance = 2
+screenshot = "p2_round1_down"
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_rounds: reset: recovery, estus, back to the spawn"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_rounds: reset: recovery, estus, back to the spawn"], timeout_s = 20, since = "mark:rounds" }
+
+# ARENA-LV: every reset sets level 15 again on both games (host and client) and logs the max HP it left.
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_loadout: level -> 15, reached 15, max HP"], timeout_s = 10, since = "mark:down1" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_loadout: level -> 15, reached 15, max HP"], timeout_s = 10, since = "mark:down1" }
+
+[[step]]
+instance = 1
+console = "inv"
+
+[[step]]
+instance = 2
+console = "inv"
+
+[[step]]
+instance = 1
+keys = "wait 4000ms"
+
+[[step]]
+instance = 2
+console = "status"
+
+[[step]]
+instance = 1
+console = "players_pos"
+
+[[step]]
+instance = 2
+screenshot = "p2_round2_start"
+
+# Round 2: player 2 goes down again: player 1 wins 2-0.
+[[step]]
+instance = 2
+console = "hp0"
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_rounds: Round 2: you won (2-0)"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_rounds: Round 2: you lost (0-2)"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_rounds: match over, WIN 2-0"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_rounds: match over, LOSE 0-2"], timeout_s = 20, since = "mark:rounds" }
+
+[[step]]
+instance = 1
+keys = "wait 2000ms"
+
+[[step]]
+instance = 1
+screenshot = "p1_win_banner"
+
+[[step]]
+instance = 2
+screenshot = "p2_lose_banner"
+
+# The ending: the banner (10 s), then the game's own result and reward pages, which a player presses through (as match-win-end:
+# F four times), then both back at the Roundtable, out of the match's lobby.
+[[step]]
+instance = 1
+keys = "wait 12000ms"
+
+# Bug #2 order (friend session 2026-11-11): the CLIENT presses through first and leaves the match's lobby, the HOST follows ~60 s later
+# and leaves its own lobby alone (`leaving its Seamless Co-op lobby ... (1 member(s))`).
+[[step]]
+instance = 2
+keys = "F; wait 3s; F; wait 3s; F; wait 4s; F; wait 6s"
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 1
+keys = "wait 30000ms"
+
+[[step]]
+instance = 1
+keys = "F; wait 3s; F; wait 3s; F; wait 4s; F; wait 6s"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["team_type 1"], timeout_s = 120, every_ms = 2000 }
+
+# Random players do not stay together: one game leaves the match's lobby (log `leaving its Seamless Co-op lobby`), which dissolves it
+# for the other (`is gone or we are not in it`, seen 2026-11-08); either way each game ends up alone.
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 1 player(s)", "team_type 1"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 1 player(s)", "team_type 1"], timeout_s = 60, every_ms = 2000 }
+
+[[step]]
+instance = 1
+expect_log = { contains = ["Seamless Co-op lobby"], since = "mark:rounds" }
+
+[[step]]
+instance = 1
+screenshot = "p1_roundtable"
+
+[[step]]
+instance = 2
+screenshot = "p2_roundtable"
+
+[[step]]
+instance = 1
+expect_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: Round 2: fight!"], absent = ["get-up write failed", "spawn move failed (force true)", "rival completed the revive meter", "night_match: LOCAL defeated"], since = "run" }
+
+[[step]]
+instance = 2
+expect_log = { contains = ["arena_rounds: Round 2: fight!"], absent = ["get-up write failed", "spawn move failed (force true)", "night_match: LOCAL defeated"], since = "mark:rounds" }
+
+# Lab: stop here with both games kept at the Roundtable (the host alone after the client left) for a manual look.
+[[step]]
+instance = 1
+keys = "wait 5000ms"
