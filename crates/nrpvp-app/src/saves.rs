@@ -107,16 +107,61 @@ fn save_path(game: &Path, id: u64) -> Result<PathBuf, String> {
 }
 
 #[derive(Default, Serialize)]
+pub struct SteamSave {
+    pub present: bool,
+    pub characters: Vec<Character>,
+    pub problem: Option<String>,
+}
+
+fn steam_path(id: u64) -> Result<PathBuf, String> {
+    let root = std::env::var_os("APPDATA").ok_or("APPDATA is not set.")?;
+    Ok(PathBuf::from(root)
+        .join("Nightreign")
+        .join(id.to_string())
+        .join("NR0000.sl2"))
+}
+
+fn validate_steam(bytes: &[u8], id: u64) -> Result<Save, String> {
+    let save = Save::parse(bytes)?;
+    if save.owner() != id {
+        return Err(
+            "The Steam save belongs to another account. Sign in to its owner before importing."
+                .into(),
+        );
+    }
+    Ok(save)
+}
+
+fn steam_status(id: Option<&str>) -> SteamSave {
+    let mut status = SteamSave::default();
+    let result = (|| -> Result<(), String> {
+        let id = account(id.ok_or("Start Steam and sign in to find your Steam save.")?)?;
+        let path = steam_path(id)?;
+        status.present = path.is_file();
+        if !status.present {
+            return Err("No local Steam save found. Start the normal game once and let Steam sync your save.".into());
+        }
+        status.characters =
+            validate_steam(&fs::read(path).map_err(|e| e.to_string())?, id)?.characters();
+        Ok(())
+    })();
+    status.problem = result.err();
+    status
+}
+
+#[derive(Default, Serialize)]
 pub struct Status {
     pub steam_id: Option<String>,
     pub path: Option<String>,
     pub present: bool,
     pub characters: Vec<Character>,
     pub problem: Option<String>,
+    pub steam_save: SteamSave,
 }
 
 pub fn status(game: Option<&Path>, steam_id: Option<String>) -> Status {
     let mut status = Status {
+        steam_save: steam_status(steam_id.as_deref()),
         steam_id,
         ..Status::default()
     };
@@ -277,6 +322,35 @@ pub fn reset(game: &Path, expected_id: &str) -> Result<(), String> {
     install_starter_at(&path, id, previous.as_deref())
 }
 
+/// Copy the complete vanilla save, including all original names, without rewriting its entries.
+fn import_bytes_at(target: &Path, bytes: &[u8], id: u64) -> Result<bool, String> {
+    validate_steam(bytes, id)?;
+    let previous = match fs::read(target) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("Could not back up your current mod save: {error}")),
+    };
+    commit(target, bytes, previous.as_deref())?;
+    Ok(previous.is_some())
+}
+
+pub fn import_steam(game: &Path, expected_id: &str) -> Result<bool, String> {
+    let _guard = SAVE_LOCK
+        .lock()
+        .map_err(|_| "Save operation failed; restart the launcher.")?;
+    if game::is_running() {
+        return Err("Close the game before importing your Steam save.".into());
+    }
+    let current = require_account(expected_id)?;
+    let id = account(&current)?;
+    let target = save_path(game, id)?; // Rejects the vanilla extension before any write.
+    let source = steam_path(id)?;
+    let bytes = fs::read(&source)
+        .map_err(|_| "Could not read your local Steam save. Let Steam sync it, then try again.")?;
+    require_account(&current)?;
+    import_bytes_at(&target, &bytes, id)
+}
+
 pub fn rename(game: &Path, id: &str, slot: usize, name: &str) -> Result<(), String> {
     let _guard = SAVE_LOCK
         .lock()
@@ -298,6 +372,45 @@ pub fn rename(game: &Path, id: &str, slot: usize, name: &str) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn steam_import_preserves_original_names_and_all_bytes_and_backs_up_mod_save() {
+        let root = std::env::temp_dir().join(format!("nrpvp-steam-import-{}", stamp()));
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("NR0000.sl2");
+        let target = root.join("NR0000.co2");
+        let id = 0x0110000100001234;
+        let mut steam = Save::parse(save_format::STARTER).unwrap();
+        steam.rebind(id).unwrap();
+        steam.rename(0, "João Steam").unwrap();
+        let bytes = steam.encode().unwrap();
+        fs::write(&source, &bytes).unwrap();
+        fs::write(&target, b"previous mod progress").unwrap();
+        assert!(import_bytes_at(&target, &bytes, id).unwrap());
+        assert_eq!(fs::read(&source).unwrap(), bytes);
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert_eq!(
+            Save::parse(&fs::read(&target).unwrap())
+                .unwrap()
+                .characters()[0]
+                .name,
+            "João Steam"
+        );
+        let backup = fs::read_dir(&root)
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|entry| entry.path().extension().is_some_and(|e| e == "bak"))
+            .unwrap();
+        assert_eq!(fs::read(backup.path()).unwrap(), b"previous mod progress");
+        assert!(import_bytes_at(&target, &bytes, id + 1).is_err());
+        let mut corrupt = bytes.clone();
+        corrupt[20000] ^= 1;
+        assert!(import_bytes_at(&target, &corrupt, id).is_err());
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        let empty_target = root.join("fresh.co2");
+        assert!(!import_bytes_at(&empty_target, &bytes, id).unwrap());
+        assert_eq!(fs::read(empty_target).unwrap(), bytes);
+        fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn starter_replacement_rebinds_keeps_name_and_backs_up_exact_old_save() {
         let root = std::env::temp_dir().join(format!("nrpvp-reset-test-{}", stamp()));

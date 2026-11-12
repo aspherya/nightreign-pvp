@@ -178,6 +178,8 @@
         <p class="hint">Up to 16 characters. Close the game before editing. Each name change keeps a backup beside your save.</p>
         <button class="btn" id="playerReplace">Use all-unlocked save</button>
         <p class="hint">Available anytime. Replaces your Seamless Co-op progress with the bundled save and backs up your current save first.</p>
+        <button class="btn" id="playerImportSteam">Import Steam save</button>
+        <p class="hint" id="steamSaveStatus"></p>
       </div>
       <div class="drawer-sec">
         <div class="label">Private updates</div>
@@ -214,9 +216,9 @@
 
   <div class="overlay soft" id="saveConfirm" hidden>
     <section class="save-confirm">
-      <h3>Use the all-unlocked save?</h3>
+      <h3 id="saveConfirmTitle">Use the all-unlocked save?</h3>
       <p id="saveConfirmAccount"></p>
-      <p>Your current Seamless Co-op progress will be replaced. A backup is saved beside your save first. Your character name is kept when it can be read.</p>
+      <p id="saveConfirmDescription">Your current Seamless Co-op progress will be replaced. A backup is saved beside your save first. Your character name is kept when it can be read.</p>
       <label><input type="checkbox" id="saveConfirmCheck"> I understand that this replaces my current progress.</label>
       <div class="row"><button class="btn" id="saveConfirmCancel">Cancel</button><button class="btn gold" id="saveConfirmApply" disabled>Back up and replace save</button></div>
     </section>

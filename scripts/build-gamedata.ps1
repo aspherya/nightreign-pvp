@@ -224,6 +224,10 @@ $regOut = Join-Path $out 'regulation.bin'
 if ($LASTEXITCODE -ne 0) { throw "sbwriter failed ($LASTEXITCODE)" }
 Write-Host ("UI-3: regulation.bin  {0}  {1}" -f (Get-Item $regOut).Length, (Get-FileHash $regOut).Hash.Substring(0, 16))
 
+# Title menu background, generated from our bitmap and the pinned original movie (no game GFx is stored in git).
+& $py -I (Join-Path $repo 'tools\gfx\title_background.py') (Join-Path $Unpacked 'menu\05_000_title.gfx') (Join-Path $out 'menu\05_000_title.gfx')
+if ($LASTEXITCODE -ne 0) { throw 'Title background build failed; check the pinned title movie and image assets.' }
+
 # The player package (dist\gamedata-player, zipped by package-release.ps1): every other file of dist\gamedata as it is, except game
 # files that only dev-only events change (they stay vanilla for players).
 $outFull = (Resolve-Path $out).Path

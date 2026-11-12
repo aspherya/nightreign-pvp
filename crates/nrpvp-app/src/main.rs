@@ -436,6 +436,11 @@ async fn replace_starter_save(steam_id: String) -> Result<(), String> {
     blocking(move || saves::reset(&need_game()?, &steam_id)).await
 }
 
+#[tauri::command]
+async fn import_steam_save(steam_id: String) -> Result<bool, String> {
+    blocking(move || saves::import_steam(&need_game()?, &steam_id)).await
+}
+
 /// Starts the game, then closes the launcher.
 #[tauri::command]
 async fn play(app: AppHandle) -> Result<(), String> {
@@ -477,6 +482,7 @@ fn main() {
             setup_player,
             rename_player,
             replace_starter_save,
+            import_steam_save,
             update_launcher,
             play
         ])

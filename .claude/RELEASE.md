@@ -165,6 +165,7 @@ One-time setup by the repository owner:
    game-data package and pinned me3 binaries/licenses, never Seamless Co-op or a game executable.
    Regenerate and update the hash when game-data sources/pins change. A hosted Windows runner cannot generate
    game content without the local unpack and tools. The currently installed Arena test package is not a player input.
+   The current player input has 21 files, including `menu/05_000_title.gfx`. Regenerate older bundles to include the custom title background.
 3. The workflow's built-in `GITHUB_TOKEN` has `contents: write`, which downloads the input draft and creates player
    drafts in this same repository. No `RELEASES_TOKEN` secret or personal write token is needed for CI.
 4. Run a new version through the workflow, download its artifact and test it locally with `NRPVP_RELEASE_DIR` before
@@ -210,6 +211,14 @@ starter-save loading and the changed name in the pinned game before publishing.
 **Settings > Player > Use all-unlocked save** is available after initial setup too. It requires an explicit confirmation,
 backs up the existing Seamless save (even a damaged one), rebinds the bundled template to the live Steam account and replaces
 the save atomically. A readable character name from the same account is kept. The game must be closed; vanilla saves are untouched.
+
+**Settings > Player > Import Steam save** copies the signed-in account's local vanilla
+`%APPDATA%\Nightreign\<SteamID64>\NR0000.sl2` into the configured Seamless Co-op save. It verifies every entry checksum and
+the embedded owner before replacing anything. The entire file is copied byte-for-byte, preserving all original character
+names, profile data and progress; the source `.sl2` is never written. An existing mod save is backed up first, and a new
+mod save can also be created this way. Settings previews the detected character names. Both save sources use an explicit
+replacement confirmation. Close the game first; if the local vanilla save is missing, start the normal game once and let
+Steam synchronize it. This imports the local Steam save, not a direct Steam Cloud download.
 
 | Symptom | Cause / fix |
 |---|---|

@@ -12,7 +12,7 @@ $resolvedData = (Resolve-Path -LiteralPath $GameData).Path
 if ((Split-Path $resolvedData -Leaf) -ne 'gamedata-player') {
     throw 'Use the gamedata-player output of build-gamedata.ps1. Do not use the installed Arena test package.'
 }
-if (@(Get-ChildItem -LiteralPath $resolvedData -Recurse -File).Count -ne 20) { throw 'Expected the 20-file player game-data package.' }
+if (@(Get-ChildItem -LiteralPath $resolvedData -Recurse -File).Count -ne 21 -or -not (Test-Path -LiteralPath (Join-Path $resolvedData 'menu/05_000_title.gfx'))) { throw 'Expected the 21-file player game-data package, including the custom title background.' }
 $pins = Get-Content -LiteralPath (Join-Path $repoRoot 'pins/nightreign.toml') -Raw
 foreach ($file in 'me3.exe', 'me3-launcher.exe', 'me3_mod_host.dll') {
     $expected = [regex]::Match($pins, '"' + [regex]::Escape($file) + '"\s*=\s*"([0-9A-Fa-f]{64})"').Groups[1].Value

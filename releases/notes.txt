@@ -6,6 +6,8 @@ Launcher updates and player setup
 - Existing saves and private room codes are preserved during updates.
 - Use the all-unlocked save anytime from Settings, with confirmation and a backup first.
 - Steam account detection refreshes automatically whenever you press Play.
+- Import your local Steam save with all its original names and progress from Settings > Player. The vanilla save is kept unchanged and the existing mod save is backed up.
+- Custom main-menu background, stretched across the full game title screen.
 - Private updates use a read-only GitHub token stored encrypted for your Windows user; source and releases share this repository.
 
 Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.

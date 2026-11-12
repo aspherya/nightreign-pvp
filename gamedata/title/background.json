@@ -1,0 +1,12 @@
+{
+  "width": 1024,
+  "height": 1024,
+  "stage_width": 1920,
+  "stage_height": 1080,
+  "bitmap_sha256": "81c1ce291d58ce4e7c2e603c03fbd8562a29faf645026f8a88bf08871c1107ac",
+  "source_sha256": "c495ffbf0c024f92239233589c62abcad70b4e49eb551a3e1d0c1bd17974be76",
+  "game_file": "menu/05_000_title.gfx",
+  "game_file_sha256": "fc735f3e12640802db433a631deaaea2bed565c8c7c85815938381c7d988963d",
+  "note": "User-supplied main-menu background. Source has a .png filename but contains WebP. Display stretches independently across the complete title stage.",
+  "source_file": "background.webp"
+}

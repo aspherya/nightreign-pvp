@@ -61,8 +61,8 @@ python tools\gfx\add_text_field.py fe.xml fe_mod.xml --id 713 --depth 900 --name
   modified file in `dist\gamedata\menu\` first, remove it afterwards).
 - The first try changed `01_930_keyguide.gfx` (red text, bar 100 px up) and nothing changed in the pause menu: that screen draws its
   own key guide from `02_013_equip.gfx` (TRAPS).
-- Not done yet: a build step. When a feature ships a GFx edit, `scripts\build-gamedata.ps1` should make it from the pinned game file +
-  a patch script (like the FMG and EMEVD edits), never commit the game's `.gfx` itself.
+- The title background now has a build step (§8): `scripts\build-gamedata.ps1` generates it from the pinned game file and our image.
+  Other future GFx edits should follow that pattern; never commit the game's `.gfx` itself.
 
 ## 5. Why a live value is the hard part
 
@@ -91,3 +91,24 @@ touched by that code, so it keeps its initial text. Ways to make it live, cheape
 
 No, for everything above: the files are made and checked from the command line, and `nro` takes the screenshots. Leonardo only looks
 at the result and decides the design (where the counter goes, how it looks).
+
+## 8. Custom title background (2026-11-12)
+
+`[VERIFIED: mod-only game launch, captured title screen, user confirmed "it worked"]`
+`menu/05_000_title.gfx` is the title command menu. The supplied square image is stretched over its full 1920x1080 stage, behind
+the original Continue / Load Game / New Game / System controls. Source image and preprocessed bitmap live in `gamedata/title/`.
+The supplied `.png` filename actually held WebP; the original bytes are stored as `background.webp`.
+
+`tools/gfx/title_background.py` embeds a lossless ARGB bitmap (`DefineBitsLossless2`) and a rectangular bitmap-filled shape
+(`DefineShape3`). It inserts the background at root depth 1 and shifts the three existing root placements up one depth.
+All original scripts, names, nested timelines and controls are preserved. Bitmap X/Y scaling differs intentionally, filling
+the stage without letterboxing. Inline lossless bitmaps work in Nightreign's GFx runtime; a separate TPF is unnecessary.
+
+The patcher verifies the source movie SHA-256 in `gamedata/title/background.json`, checks image/bitmap integrity and rejects
+unexpected root operations or masks. `scripts/build-gamedata.ps1` runs it before copying the player package, so both developer
+and player builds include the generated menu file. The vanilla game archives/executable are never patched.
+
+To change the picture, run `python tools/gfx/prepare_title_bitmap.py IMAGE` (ffmpeg + ffprobe), then rebuild game data.
+Regular builds use the committed bitmap and only need Python's standard library. The original game GFx stays out of git.
+The installed test override is `Game/NightreignPvP/gamedata/menu/05_000_title.gfx`; removing that one file restores the stock menu.
+Evidence and version hashes are recorded in `testing-log/2026-11-12-title-background.md`.

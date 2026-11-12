@@ -169,6 +169,11 @@ function render() {
   $('#playerSave').disabled = !!S.busy || !!st.game_running || !characters.length || !!player.problem;
   $('#playerSetup').disabled = !!S.busy || !!st.game_running || !d.scOk || !player.steam_id;
   $('#playerReplace').disabled = !!S.busy || !!st.game_running || !d.scOk || !player.steam_id;
+  const steamSave = player.steam_save || {};
+  $('#playerImportSteam').disabled = !!S.busy || !!st.game_running || !d.scOk || !player.steam_id || !steamSave.present || !!steamSave.problem;
+  $('#steamSaveStatus').textContent = steamSave.problem || (steamSave.present
+    ? 'Local Steam save found' + ((steamSave.characters || []).length ? ': ' + steamSave.characters.map(c => c.name).join(', ') : '') + '. Imports all progress and original character names.'
+    : 'No local Steam save found. Start the normal game and let Steam sync your save.');
 
   if (!$('#wizard').hidden) renderWizard();
 }
@@ -392,20 +397,35 @@ async function connectGitHub(token) {
 }
 $('#githubAuthForm').onsubmit = e => { e.preventDefault(); if ($('#githubToken').value.trim()) connectGitHub($('#githubToken').value); };
 $('#githubAuthClear').onclick = () => connectGitHub('');
-$('#playerReplace').onclick = async () => {
+async function confirmSaveReplacement(source) {
   await refresh();
   if (!S.status?.player?.steam_id || S.status.game_running || S.busy) return;
+  if (source === 'steam' && (!S.status.player.steam_save?.present || S.status.player.steam_save.problem)) return;
+  S.saveSource = source;
   S.resetAccount = S.status.player.steam_id;
+  $('#saveConfirmTitle').textContent = source === 'steam' ? 'Import your Steam save?' : 'Use the all-unlocked save?';
+  $('#saveConfirmDescription').textContent = source === 'steam'
+    ? 'Your local Steam save will be copied with all its progress and original character names. Your current Seamless Co-op save is backed up before replacement. Your vanilla Steam save is kept unchanged.'
+    : 'Your current Seamless Co-op progress will be replaced. A backup is saved beside your save first. Your character name is kept when it can be read.';
   $('#saveConfirmAccount').textContent = `Steam account: ${S.resetAccount}`;
   $('#saveConfirmCheck').checked = false;
   $('#saveConfirmApply').disabled = true;
   $('#saveConfirm').hidden = false;
-};
+}
+$('#playerReplace').onclick = () => confirmSaveReplacement('starter');
+$('#playerImportSteam').onclick = () => confirmSaveReplacement('steam');
 $('#saveConfirmCheck').onchange = () => { $('#saveConfirmApply').disabled = !$('#saveConfirmCheck').checked; };
 $('#saveConfirmCancel').onclick = () => { $('#saveConfirm').hidden = true; };
 $('#saveConfirmApply').onclick = async () => {
   if (!$('#saveConfirmCheck').checked || S.busy) return;
   $('#saveConfirm').hidden = true;
+  if (S.saveSource === 'steam') {
+    await job('Importing your Steam save…', async () => {
+      const backedUp = await invoke('import_steam_save', { steamId: S.resetAccount });
+      toast('Steam save imported with its original names.' + (backedUp ? ' Your previous mod save was backed up.' : ''), true);
+    });
+    return;
+  }
   await job('Installing the all-unlocked save…', () => invoke('replace_starter_save', { steamId: S.resetAccount }), 'All-unlocked save installed. Your previous save was backed up.');
 };
 $('#playerForm').onsubmit = e => {
@@ -500,6 +520,7 @@ function mockInvoke(cmd, args) {
     case 'sc_github': return wait(200, null);
     case 'setup_player': mockPlayer = { steam_id: '76561198000000000', present: true, characters: [{slot: 0, name: 'Champion Of Zeus'}], problem: null }; return wait(100, null);
     case 'replace_starter_save': return wait(100, null);
+    case 'import_steam_save': return wait(100, true);
     case 'rename_player': mockPlayer.characters[0].name = args.name; return wait(100, null);
     case 'set_github_token': return wait(100, null);
     case 'set_private_code': {
