@@ -73,8 +73,32 @@ fn extract(
     Ok(chosen.len())
 }
 
+/// The mod's settings file inside [`MOD_DIR`].
+const TOML: &str = "nrpvp.toml";
+
+/// RW-6: the private room code in the installed `nrpvp.toml` ("" = public, or no file).
+pub fn room_code(game: &Path) -> String {
+    fs::read_to_string(game.join(MOD_DIR).join(TOML))
+        .map(|t| crate::room::read(&t))
+        .unwrap_or_default()
+}
+
+/// RW-6: write `code` (normalised by the caller; "" = public) into the installed `nrpvp.toml`.
+pub fn set_room_code(game: &Path, code: &str) -> Result<(), String> {
+    let path = game.join(MOD_DIR).join(TOML);
+    let text = fs::read_to_string(&path).map_err(|e| {
+        format!(
+            "Could not read {}: {e}\n\nInstall Nightreign PvP first.",
+            path.display()
+        )
+    })?;
+    fs::write(&path, crate::room::write(&text, code))
+        .map_err(|e| format!("Could not save {}: {e}", path.display()))
+}
+
 /// Installs the mod zip (`nrpvp_launcher.exe` + `NightreignPvP\...`) into `game` and records `m` as the installed release.
-/// The player's `nrpvp.toml` is replaced by the release's (the release decides match size); the old one is kept as `.bak`.
+/// The player's `nrpvp.toml` is replaced by the release's (the release decides match size); the old one is kept as `.bak`, and the
+/// player's private room code is carried over.
 pub fn install_mod(
     game: &Path,
     zip_path: &Path,
@@ -93,7 +117,11 @@ pub fn install_mod(
         }
     }
     let mod_dir = game.join(MOD_DIR);
-    let toml = mod_dir.join("nrpvp.toml");
+    let toml = mod_dir.join(TOML);
+    // RW-6: the player's private room code outlives the update (the rest of the file is the release's).
+    let room_code = fs::read_to_string(&toml)
+        .map(|t| crate::room::read(&t))
+        .unwrap_or_default();
     if toml.is_file() {
         let _ = fs::copy(&toml, mod_dir.join("nrpvp.toml.bak"));
     }
@@ -120,6 +148,9 @@ pub fn install_mod(
         },
         progress,
     )?;
+    if !room_code.is_empty() {
+        set_room_code(game, &room_code)?;
+    }
     let json = serde_json::to_string_pretty(m).map_err(|e| e.to_string())?;
     fs::write(mod_dir.join(INSTALLED_MANIFEST), json)
         .map_err(|e| format!("Could not record the install: {e}"))
@@ -331,6 +362,14 @@ mod tests {
             !dir.join("escape.txt").exists() && !dir.parent().unwrap().join("escape.txt").exists()
         );
         assert_eq!(mod_state(&game).version.as_deref(), Some("9.9.9"));
+        let new_toml = fs::read_to_string(m.join("nrpvp.toml")).unwrap();
+        assert!(
+            new_toml.starts_with("team_size = 1\n"),
+            "the release's file: {new_toml}"
+        );
+        assert_eq!(room_code(&game), "x", "the private room code is kept");
+        set_room_code(&game, "").unwrap();
+        assert_eq!(room_code(&game), "");
         assert_eq!(calls, 4);
         let _ = fs::remove_dir_all(&dir);
     }

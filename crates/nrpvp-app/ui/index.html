@@ -60,6 +60,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="notes" role="tab">Patch notes</button>
         <button class="tab" data-tab="checks" role="tab">Install</button>
+        <button class="tab" data-tab="room" role="tab">Private room</button>
       </nav>
       <div class="tab-body" id="tab-notes">
         <div class="notes-head">
@@ -71,6 +72,17 @@
       <div class="tab-body" id="tab-checks" hidden>
         <ul class="checks" id="checks"></ul>
         <button class="link-btn" id="btnRerunSetup">Run setup again</button>
+      </div>
+      <div class="tab-body" id="tab-room" hidden>
+        <div class="room-state" id="roomState"></div>
+        <p class="room-text">Play only with your friends: everyone saves the <b>same code</b> here, then picks the card and presses
+          Commence as usual. You only meet players with this code, never the public queue.</p>
+        <form class="room-row" id="roomForm" autocomplete="off">
+          <input class="input" id="roomCode" maxlength="32" spellcheck="false" placeholder="e.g. night-owls" aria-label="Private room code">
+          <button class="btn gold" id="roomSave" type="submit">Save</button>
+        </form>
+        <button class="link-btn" id="roomClear">Back to public matchmaking</button>
+        <p class="hint">Letters, digits, - and _ (32 at most); upper or lower case does not matter. Change it while the game is closed.</p>
       </div>
     </aside>
   </main>

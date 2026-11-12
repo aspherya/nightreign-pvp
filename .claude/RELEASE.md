@@ -133,6 +133,8 @@ $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launc
   Co-op differs. Update the pins when the game or SC changes.
 - Players download `NightreignPvP-Launcher.exe` once from the releases page; it shows when a newer launcher is out (no self-update yet).
 - Testing without GitHub: `NRPVP_RELEASE_DIR=<folder with release.json + assets>`; another repository: `NRPVP_RELEASES_REPO=owner/name`.
+- **Private room** (RW-6): the launcher's Private room tab writes `private_code` into the installed `nrpvp.toml` (before the first table); an update keeps it. Friends save the same code, then queue as usual. Mock: `?room=night-owls`.
+- The launcher warns (Install tab and the bottom bar, red) when files of another tool sit in the game folder and make the game load other code: `winmm.dll`, `dlllist.txt`, `OnlineFix*`, `steam_emu.ini`, `ColdClientLoader.ini`, `steam_settings` (an OnlineFix package broke every run on 2026-11-08, TRAPS). It removes nothing. Mock: `?foreign`.
 - UI look without building: `.claude/launch.json` config `launcher-ui-mock` serves `crates/nrpvp-app/ui` on a mock (`?fresh`, `?update`).
 
 ## 6. Quick troubleshooting

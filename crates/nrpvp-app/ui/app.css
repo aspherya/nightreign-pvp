@@ -160,6 +160,18 @@ code { font: 12px/1 Consolas, monospace; color: var(--gold-hover); background: r
 .link-btn { border: 0; background: none; padding: 6px 0; color: var(--muted); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
 .link-btn:hover { color: var(--gold-hover); border-bottom-color: var(--gold); }
 .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.input { flex: 1; min-width: 0; height: 36px; padding: 0 12px; border: 1px solid var(--border-strong); background: rgba(9,10,12,.65); color: var(--text); border-radius: 2px; font: 13px/1 Consolas, monospace; letter-spacing: .04em; outline: none; transition: border-color .15s; }
+.input:focus { border-color: var(--gold); }
+.input::placeholder { color: var(--faint); }
+.room-state { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); background: rgba(9,10,12,.55); border-radius: 2px; font-size: 13px; color: #c8c2b5; }
+.room-state i { width: 7px; height: 7px; flex: none; background: var(--muted); transform: rotate(45deg); }
+.room-state.on { border-color: rgba(214,184,120,.55); }
+.room-state.on i { background: var(--gold); }
+.room-state code { font-size: 13px; }
+.room-text { color: #c8c2b5; font-size: 13px; line-height: 1.5; margin: 16px 0 0; }
+.room-row { display: flex; gap: 10px; margin: 16px 0 12px; }
+.chip.room { border-color: rgba(214,184,120,.55); color: var(--gold-hover); }
+.chip.room b { font-weight: 600; text-transform: none; letter-spacing: .04em; }
 .hint { color: var(--faint); font-size: 12px; margin: 14px 0 0; }
 .grow { flex: 1; }
 

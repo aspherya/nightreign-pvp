@@ -6,6 +6,7 @@
 mod game;
 mod install;
 mod release;
+mod room;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -115,6 +116,10 @@ struct Status {
     #[serde(rename = "mod")]
     mod_state: Option<install::ModState>,
     game_running: bool,
+    /// Files of other tools in the game folder that break matches (`game::foreign_files`).
+    foreign: Vec<String>,
+    /// RW-6: the private room code in the installed `nrpvp.toml` ("" = public matchmaking).
+    private_code: String,
 }
 
 #[tauri::command]
@@ -140,6 +145,8 @@ async fn status() -> Result<Status, String> {
                 .is_some_and(|g| g.join("nrsc_launcher.exe").is_file()),
             mod_state: game.as_deref().map(install::mod_state),
             game_running: game::is_running(),
+            foreign: game.as_deref().map(game::foreign_files).unwrap_or_default(),
+            private_code: game.as_deref().map(install::room_code).unwrap_or_default(),
         })
     })
     .await
@@ -286,6 +293,18 @@ async fn install_sc_zip(app: AppHandle, path: String) -> Result<(), String> {
     .await
 }
 
+/// RW-6: set the private room code ("" = public matchmaking); answers the code as saved (normalised).
+#[tauri::command]
+fn set_private_code(code: String) -> Result<String, String> {
+    let code = room::normalize(&code)?;
+    let game = need_game()?;
+    if game::is_running() {
+        return Err("Close the game first: it reads the code when it starts.".into());
+    }
+    install::set_room_code(&game, &code)?;
+    Ok(code)
+}
+
 /// Opens a fixed place: never a URL or path from the page.
 #[tauri::command]
 fn open(target: String) -> Result<(), String> {
@@ -299,11 +318,46 @@ fn open(target: String) -> Result<(), String> {
             .to_string(),
         _ => return Err(format!("unknown target {target}")),
     };
-    Command::new("explorer")
-        .arg(what)
+    let (program, args) = opener(&what);
+    Command::new(program)
+        .args(args)
         .spawn()
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// How a place is opened (pure): a web page in the default browser, a folder in Explorer. `explorer <url>` does not open the browser
+/// for every URL: with the Nexus link (`?tab=files`) it opened a File Explorer window instead (Leonardo, 2026-11-10).
+fn opener(what: &str) -> (&'static str, Vec<String>) {
+    if what.starts_with("https://") || what.starts_with("http://") {
+        (
+            "rundll32.exe",
+            vec!["url.dll,FileProtocolHandler".into(), what.into()],
+        )
+    } else {
+        ("explorer", vec![what.into()])
+    }
+}
+
+#[cfg(test)]
+mod open_tests {
+    use super::*;
+
+    #[test]
+    fn a_web_page_goes_to_the_browser_and_a_folder_to_explorer() {
+        let (p, a) = opener(release::SC_NEXUS_URL);
+        assert_eq!(p, "rundll32.exe");
+        assert_eq!(
+            a,
+            [
+                "url.dll,FileProtocolHandler".to_string(),
+                release::SC_NEXUS_URL.to_string()
+            ]
+        );
+        let (p, a) = opener(r"Z:\Game\NightreignPvP");
+        assert_eq!(p, "explorer");
+        assert_eq!(a, [r"Z:\Game\NightreignPvP".to_string()]);
+    }
 }
 
 /// Starts the game, then closes the launcher.
@@ -336,6 +390,7 @@ fn main() {
             pick_sc_zip,
             install_sc_zip,
             open,
+            set_private_code,
             play
         ])
         .run(tauri::generate_context!())

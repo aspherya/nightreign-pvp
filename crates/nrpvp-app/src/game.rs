@@ -72,6 +72,34 @@ pub fn library_paths(vdf: &str) -> Vec<PathBuf> {
         .collect()
 }
 
+/// Files other tools put next to the game that make it load their code (a proxy DLL and its list) or replace Steam (an "online fix"
+/// or emulator). Seen 2026-11-08: an OnlineFix package (`winmm.dll` + `dlllist.txt`) in a tester's game folder broke every match.
+const FOREIGN_FILES: [&str; 8] = [
+    "winmm.dll",
+    "dlllist.txt",
+    "OnlineFix.ini",
+    "OnlineFix64.dll",
+    "OnlineFix.url",
+    "steam_emu.ini",
+    "ColdClientLoader.ini",
+    "steam_settings",
+];
+
+/// The [`FOREIGN_FILES`] present in the game folder (names as found, case-insensitive match). Nothing is removed: the launcher only
+/// warns.
+pub fn foreign_files(dir: &Path) -> Vec<String> {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut found: Vec<String> = rd
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| FOREIGN_FILES.iter().any(|f| f.eq_ignore_ascii_case(n)))
+        .collect();
+    found.sort();
+    found
+}
+
 /// True while nightreign.exe runs (files in the game folder are then locked).
 pub fn is_running() -> bool {
     Command::new("tasklist")
@@ -100,6 +128,24 @@ mod tests {
                 PathBuf::from(r"Z:\SteamLibrary")
             ]
         );
+    }
+
+    #[test]
+    fn foreign_files_are_listed_and_ours_are_not() {
+        let dir = std::env::temp_dir().join(format!("nrpvp-app-foreign-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("SeamlessCoop")).unwrap();
+        for f in [
+            "nightreign.exe",
+            "steam_api64.dll",
+            "nrsc_launcher.exe",
+            "WINMM.dll",
+            "OnlineFix.ini",
+        ] {
+            std::fs::write(dir.join(f), b"x").unwrap();
+        }
+        assert_eq!(foreign_files(&dir), ["OnlineFix.ini", "WINMM.dll"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

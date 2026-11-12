@@ -429,7 +429,7 @@ Test routes: **1 PC** = automated scenario (`nro`, one game), **2 inst** = two r
 | D4 | Boss dormant powers / weapons only to the last hitter's team | RW-5 | **Parked 2026-10-31, vanilla (see RW-5)** (`disableMultiDropShare` param hint) | RE first, then 2 inst with a boss |
 | D5 | Day 1 / night 1 free of the tide, tide starts on Day 2 | RW-4 | **Done on 1 PC** (`day1-free`) | FS (real clock over the network) |
 | D6 | Match ends when one team is left, even on Day 1 | RW-1 | **Done on 1 PC** (`match-win`, `match-win-end`, `match-loss`) | 2 inst with real defeats; FS |
-| D7 | Private match by password, outside matchmaking | RW-6 | Unit-tested only (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
+| D7 | Private match by password, outside matchmaking | RW-6 | **`mi-private-room` + `mi-private-mismatch` PASS on two instances (2026-11-11)** (`private_code` in `nrpvp.toml`); the in-game "Multiplayer Password" field is the planned player route (RW-6 follow-up) | 2 inst: same code meets, different codes do not (`mm_queue` works over the emulator, `mi-queue`) |
 
 Backlog since 2026-11-02 (Leonardo: nothing here is scheduled; UI improvements come first, only simple work with a valid result). Order when picked up again (2026-11-01): **Sites of Grace blocked in PvP combat**, **Duo and Trio first tests**, then the 2-instance checks of F1, D1, D7. Open ideas without schedule: Solo night death, match time limit. Arena is in design since 2026-11-08 (ARENA-0).
 
@@ -484,7 +484,7 @@ Arena (MODE-02) is built in slices; each unknown below gets a time-boxed spike b
    at the Roundtable out of the session.
 Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**done 2026-11-08**, testing-log); ARENA-2 rounds (best of 3) and the end screens (**done 2026-11-08**, testing-log; the ultimate only in the last round works, #73, Leonardo 2026-11-08; open: one near-death message before "fight", the 3-minute round limit + HP tiebreak is not built); ARENA-3
 level 15 + loadout + max upgrade + round limit (**done 2026-11-09**, solo + `mi-arena-loadout` PASS, testing-log; open: passives, the flask
-count, the quick-slot order, the player build); ARENA-4 offline 1v1 against one level-13 bot (**done 2026-11-10**, `mi-arena-bot` + Leonardo's match PASS, testing-log; bot level 13 kept by Leonardo; open: an Arena WIN counts as an Everdark win for the game's progress; the end summary now shows the Arena round score, SCOREBOARD 2026-11-10); ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
+count, the quick-slot order, the player build); ARENA-4 offline 1v1 against one level-13 bot (**done 2026-11-10**, `mi-arena-bot` + Leonardo's match PASS, testing-log; bot level 13 kept by Leonardo; an Arena WIN counting as an Everdark win is accepted (DECISIONS 2026-11-10); the end summary now shows the Arena round score, SCOREBOARD 2026-11-10); ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
 ### ARENA-LV — Arena: level 15 holds for the whole match; a rival cannot revive the loser (Arena test 2026-11-11)
 Owner: OPUS | Status: #1 and #3 built on branch `arena-level-hold`, `mi-arena-rounds` PASS ×3 (2026-11-12; run 3: max HP 1120
@@ -553,3 +553,49 @@ what a second real client shows (research tools: console `memscan`, `peek`; find
 6. A LOCAL dead (HP 0, not downed) for 30 s counts as *out* even when a mob's death would respawn it (`OUT_DEAD_MS`, by design).
 7. After the expedition-leave reset `status` is empty until the next in-expedition tick.
 8. `DeathHold(false)` and `MenuGate(false)` are emitted on every leave, even when neither was on.
+
+## Cloud (CLOUD-n): player logs, match data (Leonardo 2026-11-11; design [CLOUD.md](CLOUD.md))
+
+Order: CLOUD-1 and CLOUD-2 before the open release; CLOUD-3 once people play; CLOUD-4 later. One PR at a time.
+
+### CLOUD-1 — Log upload server (C#, Lightsail)
+Owner: SONNET/implementer → OPUS review; HUMAN deploys | Status: todo (needs: where Postgres runs, CLOUD §2) | Phase: before the open release
+Goal: `POST /v1/logs` stores a player's log zip and answers a short code; `GET /v1/health`.
+Context: CLOUD.md §2-§5.
+Steps: 1. `cloud/NightreignPvP.Api` (ASP.NET Core Minimal API, .NET LTS), `cloud/NightreignPvP.Api.Tests`. 2. EF Core + Npgsql, table
+`log_upload`, the first migration. 3. The route: validate `meta` (schema 1, sizes), stream the file to
+`<root>/<yyyy>/<mm>/<code>.gz` (gzip of the zip), sha256, row, `201 {code}`; codes: 6 chars from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`,
+retried on a clash. 4. Rate limit per IP (`AddRateLimiter`: 5 uploads / 10 min), 8 MB limit. 5. `BackgroundService`: delete files and
+rows older than 30 days, once a day. 6. Config by environment (connection string, storage root); `cloud/README.md`: build, run, deploy
+(systemd unit + Caddy for HTTPS), back up. 7. CI job `dotnet test`.
+Deliverables: `cloud/`, CI change, CLOUD.md updates (URL, what is deployed).
+Acceptance: `dotnet test` green with integration tests (WebApplicationFactory + a throwaway Postgres): upload → 201 + file + row;
+too big → 413; bad meta → 400; the 6th upload in 10 min → 429; retention removes an old row and its file. HUMAN: deployed on the
+Lightsail, `curl https://<host>/v1/health` → 200, one `curl` upload returns a code.
+Out of scope: matches, accounts, a web page to browse uploads (psql is enough).
+
+### CLOUD-2 — "Send logs" in the launcher
+Owner: SONNET/implementer → OPUS review | Status: todo | Depends on: CLOUD-1 (a local run of the API is enough to build it) | Phase: before the open release
+Goal: one click in the launcher uploads the player's logs and shows the code to paste on Discord.
+Context: CLOUD.md §3-§4, `crates/nrpvp-app` (RELEASE §5b).
+Steps: 1. `install.id`: a random UUID made once in `Game\NightreignPvP\`. 2. Collect: `nrpvp.log`, the 3 newest `logs\nrpvp_*.log`,
+`launcher.log`, the me3 log, `VERSION.txt`, `nrpvp.toml`; skip what is missing; cap 30 MB before compression. 3. Replace every
+SteamID64 with a salted hash (one salt per upload). 4. Zip, `POST /v1/logs` with `meta` (`note` from an optional text box), API URL
+constant + `NRPVP_API_URL`. 5. UI: a "Send logs" button (Help / bottom bar), progress, then the code with a Copy button; errors as
+a toast; a mock in `launcher-ui-mock`.
+Deliverables: `crates/nrpvp-app` changes, RELEASE.md (one line), CLOUD.md (what the launcher sends).
+Acceptance: unit tests for the file list, the size cap and the Steam ID hashing (same id → same hash, no `7656119…` left); upload
+against a local API returns a code and the zip on disk holds the files; HUMAN-solo: the button in the built launcher shows a code.
+Out of scope: automatic uploads, crash dumps.
+
+### CLOUD-3 — Match summaries from the mod
+Owner: OPUS design → SONNET/implementer | Status: todo | Depends on: CLOUD-1 | Phase: after the open release
+Goal: at the end of every online match each game sends its own summary (`POST /v1/matches`, CLOUD.md §4); `telemetry = false` in
+`nrpvp.toml` turns it off.
+Steps (outline): the route, tables `match_report` / `match_player` (CLOUD-1's server); in the mod, the summary from the killfeed /
+scoreboard (BR) or `arenarounds` (Arena) at the expedition end, sent from a background thread (never the game thread), dropped after
+one retry; `match_key` = hash of the queue lobby id; pids = hashed short ids. Bots matches are not sent.
+Acceptance: unit tests (payload), `mi-arena-rounds` and one BR scenario show `telemetry: match sent` against a local API.
+
+### CLOUD-4 — Optional accounts (Steam sign-in, Discord link)
+Owner: OPUS | Status: backlog (after the open release, when people play) | Design: CLOUD.md §6.

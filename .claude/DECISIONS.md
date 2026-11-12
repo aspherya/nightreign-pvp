@@ -113,6 +113,7 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   for the others. Why keep it: as in Apex / Warzone the downed pose is the signal; the bleed-out time is a teammate's tool (revive or
   not), and a tag through walls would mark the downed player's spot. **A teammate's gauge must still show** (teammates are not
   filtered; checked in DUOTRIO-1).
+- **Launcher release path: the public releases-only repository; publishing frozen** (Leonardo, 2026-11-08): a private repository with a token in the launcher was weighed and dropped (the token can be pulled out of the exe, and the installed DLL can be copied anyway). Later, when Leonardo's server and R2 bucket exist, `release.json` and the zip can move there (the launcher only reads one address). Nothing is published until Leonardo says so; PR #68 waits, the next friend session gets the zip by hand. Server sizing: a 2 GB Lightsail is enough if no file passes through the server (downloads and logs straight to the bucket by short-lived links; `release.json` public on the bucket; log upload switchable; a stateless API).
 - **Duo / Trio fill short parties with random players** (Leonardo, 2026-11-08; reverses "complete parties only" of 2026-10-19 in MM-6): a player alone, or a pair in Trio, is queued and gets random teammates, as players expect from a battle royale. Needed before the first release. Card MM-FILL (TASKS); it also closes the MM-6 gap that the match does not take its teams from the queue roster.
 - **Arena (MODE-02) development starts now** (Leonardo, 2026-11-08): before the Battle Royale release (which waits only for a match
   with more than 3 players) and before the launcher. Reverses "Arena comes after the first release" (2026-11-01). Rules decided the
@@ -139,3 +140,17 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
 After his first match against the bot (ARENA-4) Leonardo first asked for a level-15 bot with a legendary weapon, then kept it as it is:
 "ta bom assim". The bot uses the game's highest bot table (`NPCBotTableParam` 30000, soul level 13, the hero's `CharaInitParam` kit).
 If it is reopened: a table of our own in `regulation.bin` (copies of `CharaInitParam` 30000..30900 at level 15, max-upgrade weapon).
+
+## 2026-11-10 — A won Arena match may count as an Everdark win: accepted (Leonardo)
+A won Arena match counts as an Everdark win for the game (seen: the vanilla Sovereign Sigils tutorial at the table afterwards,
+testing-log ARENA-4 runs 1794280877..1794281105). Leonardo finds the Everdark reward fair for a won match ("acho justo"), so it stays
+for the open release. Seamless Co-op keeps its own save (`.co2`), the vanilla `.sl2` is not touched. What else the win marks
+(rewards, journal, win counts) is `[HYPOTHESIS]`: only the tutorial was seen. If it is reopened: keep the Arena WIN from setting the
+game's clear flags.
+
+## 2026-11-11 — Cloud: logs first, match data later, accounts optional and later; server in C# (Leonardo)
+Leonardo asked whether a database for player logs, matches and metrics is worth it. Decided: a **Send logs** button in the launcher
+first (before the open release), match summaries after the release, **optional** accounts later with Steam sign-in and a Discord
+link, no passwords of our own, never needed to play. No rankings (no anti-cheat, results come from the clients). The server is C#
+(ASP.NET Core) on Leonardo's Lightsail with his Postgres; log files on disk, never in Postgres; no personal data by default (a random
+install id; Steam IDs in logs hashed by the launcher). Design: [CLOUD.md](CLOUD.md).

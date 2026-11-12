@@ -22,6 +22,7 @@ column says when a doc is worth its tokens.
 | [TECHNICAL_NOTES.md](TECHNICAL_NOTES.md) | Version pins, stack, Seamless Co-op facts, non-memory engine facts, ADRs | Version or engine questions |
 | [NETWORKING.md](NETWORKING.md) | Replacing Seamless Co-op: what SC does, game netcode, transport and session options, phased plan, gates | Cross-game data, anything about SC or sessions |
 | [HOST_MIGRATION.md](HOST_MIGRATION.md) | Host migration and player count: findings, design, plan, budgets | Anything about a host leaving or more players |
+| [CLOUD.md](CLOUD.md) | Our server (C#): log upload, match data, accounts later; API, tables, privacy rules | Anything the launcher or mod sends to our server |
 | [BOTS.md](BOTS.md) | AI bots that fill a match: design, plan, open questions (friends + bots) | Anything about bots |
 | [SCOREBOARD.md](SCOREBOARD.md) | K/D scoreboard: counting rules, own numbers in a match, end-of-match summary, UI options, plan | Anything about kills / deaths counts or the end summary |
 | [MATCHMAKING.md](MATCHMAKING.md) | How Steam matchmaking works today: flow, lobby keys, logs, failures | Matchmaking work |

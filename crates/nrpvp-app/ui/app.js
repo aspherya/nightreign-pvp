@@ -17,6 +17,7 @@ const S = {
   exeHash: null,
   scGithub: undefined, // undefined = not asked yet, null = none
   busy: null,          // label of the running job
+  roomDirty: false,    // the private room field holds an unsaved edit
   step: 0,
 };
 
@@ -70,10 +71,24 @@ function render() {
   // chips
   const chips = [];
   chips.push('<span class="chip"><i></i>Player versus player</span>');
-  chips.push('<span class="chip"><i></i>Online matchmaking</span>');
+  if (st.private_code) chips.push(`<span class="chip room"><i></i>Private room&nbsp;<b>${esc(st.private_code)}</b></span>`);
+  else chips.push('<span class="chip"><i></i>Online matchmaking</span>');
   if (r) chips.push(`<span class="chip"><i></i>Game ${esc(r.game.version)}</span>`);
   if (d.gameMatch === false) chips.push('<span class="chip warn"><i></i>Game updated since this release</span>');
   $('#chips').innerHTML = chips.join('');
+
+  // private room (RW-6)
+  const code = st.private_code || '';
+  const rs = $('#roomState');
+  rs.className = 'room-state' + (code ? ' on' : '');
+  rs.innerHTML = code
+    ? `<i></i><span>Private room <code>${esc(code)}</code>: you meet only players with this code.</span>`
+    : '<i></i><span>Public matchmaking: you meet anyone who is searching.</span>';
+  if (document.activeElement !== $('#roomCode') && !S.roomDirty) $('#roomCode').value = code;
+  $('#roomClear').hidden = !code;
+  const roomBusy = !st.mod || !st.mod.present || !!S.busy;
+  $('#roomSave').disabled = roomBusy;
+  $('#roomCode').disabled = roomBusy;
 
   // notes
   if (r) {
@@ -95,7 +110,9 @@ function render() {
       d.scOk ? (d.scMatch === false ? `Installed, but not v${r.seamless_coop.version} (the version this release needs)` : `Installed${r ? ' · v' + r.seamless_coop.version : ''}`) : 'Not installed'),
     row(d.modOk ? (d.update ? 'warn' : 'ok') : 'bad', 'Nightreign PvP',
       d.modOk ? (d.modVersion ? 'v' + d.modVersion : 'Installed by hand (unknown version)') + (d.update ? ` · v${r.version} available` : '') : (st.mod && st.mod.present ? st.mod.problem : 'Not installed')),
-  ].join('') + (d.newLauncher ? row('warn', 'New launcher available', 'Download NightreignPvP-Launcher.exe from the releases page (Settings › All releases) and replace this one.') : '');
+  ].join('') + (d.newLauncher ? row('warn', 'New launcher available', 'Download NightreignPvP-Launcher.exe from the releases page (Settings › All releases) and replace this one.') : '')
+    + (st.foreign && st.foreign.length ? row('bad', 'Files from another tool in the game folder',
+      `${st.foreign.join(', ')}: they make the game load other code and break matches. Move them out of the game folder, then use Steam's "Verify integrity of game files".`) : '');
 
   // dock
   const dot = $('#dockDot'), text = $('#dockText'), sub = $('#dockSub'), btn = $('#btnPrimary'), label = $('#primaryLabel');
@@ -115,6 +132,9 @@ function render() {
   } else if (d.update) {
     dot.className = 'dot warn'; text.textContent = `Update available: v${r.version}`;
     sub.textContent = 'Everyone in a match needs the same version.'; btn.disabled = false; label.textContent = 'Update';
+  } else if (st.foreign && st.foreign.length && !st.game_running) {
+    dot.className = 'dot bad'; text.textContent = 'Files from another tool in the game folder';
+    sub.textContent = `${st.foreign.join(', ')}: matches will fail. Install tab › how to fix.`; btn.disabled = false; label.textContent = 'Play';
   } else {
     dot.className = 'dot ok';
     text.textContent = st.game_running ? 'The game is running' : 'Ready to play';
@@ -326,9 +346,20 @@ $('#setRepair').onclick = () => { $('#settings').hidden = true; installMod(); };
 $('#setScSetup').onclick = () => { $('#settings').hidden = true; openWizard(1); };
 $$('.tab').forEach((t) => (t.onclick = () => {
   $$('.tab').forEach((x) => x.classList.toggle('active', x === t));
-  $('#tab-notes').hidden = t.dataset.tab !== 'notes';
-  $('#tab-checks').hidden = t.dataset.tab !== 'checks';
+  $$('.tab-body').forEach((b) => (b.hidden = b.id !== 'tab-' + t.dataset.tab));
 }));
+async function saveRoom(code) {
+  try {
+    const saved = await invoke('set_private_code', { code });
+    S.roomDirty = false;
+    $('#roomCode').value = saved;
+    toast(saved ? `Private room "${saved}" saved. Your friends need the same code.` : 'Back to public matchmaking.', true);
+  } catch (e) { toast(String(e)); }
+  refresh();
+}
+$('#roomCode').oninput = () => (S.roomDirty = true);
+$('#roomForm').onsubmit = (e) => { e.preventDefault(); saveRoom($('#roomCode').value); };
+$('#roomClear').onclick = () => saveRoom('');
 bindOpen(document);
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -374,6 +405,7 @@ listen('progress', (e) => {
 })();
 
 // ---------- browser mock (no Tauri) ----------
+var mockRoom; // `var`: the mock runs before this line (start() above); filled from ?room= on first use
 function mockInvoke(cmd, args) {
   const wait = (ms, v) => new Promise((r) => setTimeout(() => r(v), ms));
   const q = new URLSearchParams(location.search);
@@ -381,12 +413,20 @@ function mockInvoke(cmd, args) {
   switch (cmd) {
     case 'status': return wait(120, { launcher_version: '0.1.0', game_dir: fresh ? null : 'Z:\\SteamLibrary\\steamapps\\common\\ELDEN RING NIGHTREIGN\\Game',
       sc_installed: !fresh, sc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E', sc_launcher: true,
-      mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', tag: 'v0.2.0', problem: null, present: true }, game_running: false });
+      mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', tag: 'v0.2.0', problem: null, present: true }, game_running: false,
+      foreign: q.has('foreign') ? ['OnlineFix.ini', 'dlllist.txt', 'winmm.dll'] : [], private_code: (mockRoom ??= q.get('room') || '') });
     case 'latest_release': return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
       notes: 'The first build for players outside the test group.\n\n- Battle Royale card in the Roundtable: Solo queue, no click after Commence\n- Killfeed as the game\'s own toasts\n- Sites of Grace switch off during a PvP fight\n- Rivals are hidden from the map, compass and name tags\n\nEveryone in a match needs this version.',
       zip: { name: 'NightreignPvP.zip', sha256: '', size: 31457280 }, game: { version: '1.03.3', exe_sha256: 'X' }, seamless_coop: { version: '1.1.3', nrsc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E' } });
     case 'game_exe_sha256': return wait(200, 'X');
     case 'sc_github': return wait(200, null);
+    case 'set_private_code': {
+      const c = String(args.code).trim().toLowerCase();
+      if (c.length > 32) return Promise.reject('The code can be 32 characters at most.');
+      if (!/^[a-z0-9_-]*$/.test(c)) return Promise.reject('The code may only hold letters, digits, - and _.');
+      mockRoom = c;
+      return wait(150, c);
+    }
     default: return wait(400, null);
   }
 }
