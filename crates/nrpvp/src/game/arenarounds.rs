@@ -225,6 +225,14 @@ impl Rounds {
         self.won + self.lost
     }
 
+    /// ARENA-LV: rounds are being played (from the first round's start to the last reset; not before, not after the match).
+    pub(crate) fn in_play(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::Starting { .. } | Phase::Fighting { .. } | Phase::RoundOver { .. }
+        )
+    }
+
     fn decided(&self) -> bool {
         self.won >= ROUNDS_TO_WIN || self.lost >= ROUNDS_TO_WIN
     }
@@ -584,6 +592,8 @@ pub(crate) fn tick(base: usize, world: &World) {
                 set_flag(base, FLAG_REFILL_ESTUS);
                 *lock(&PLACE_SINCE) = Some(Instant::now());
                 tracing::info!("arena_rounds: reset: recovery, estus, back to the spawn");
+                // ARENA-LV: a level lost in the round (2026-11-11: level 14 after a revive by the rival) never carries over.
+                super::arenaloadout::reapply(base, true);
             }
             Do::UltFull => match super::ultgauge::set(local_addr, 1.0) {
                 Ok((b, a)) => {
@@ -612,6 +622,9 @@ pub(crate) fn tick(base: usize, world: &World) {
             }
         }
     }
+    // ARENA-LV: hold level 15 only while rounds are played (mi-arena-rounds 2026-11-12: after the match, back at the Roundtable,
+    // `on` still held for ~30 s and the hold set level 15 on the Roundtable's level 1).
+    super::arenaloadout::hold_tick(base, on && rounds.in_play());
     // The ultimate stays empty until round 3 (only written when it holds a charge).
     if on && rounds.ult_held() {
         if let Some((_, now, _)) = super::ultgauge::read(local_addr) {
@@ -674,6 +687,26 @@ mod tests {
             },
             "getting up: neither"
         );
+    }
+
+    #[test]
+    fn rounds_are_in_play_only_between_the_start_and_the_match_end() {
+        let mut r = Rounds::default();
+        assert!(!r.in_play(), "off");
+        for phase in [
+            Phase::Starting { at_ms: 0 },
+            Phase::Fighting { armed: true },
+            Phase::RoundOver {
+                lost: true,
+                at_ms: 0,
+                stage: 2,
+            },
+        ] {
+            r.phase = phase;
+            assert!(r.in_play(), "{phase:?}");
+        }
+        r.phase = Phase::MatchOver;
+        assert!(!r.in_play(), "back toward the Roundtable");
     }
 
     #[test]

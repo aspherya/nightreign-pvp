@@ -227,20 +227,28 @@ fn free_slot() -> Option<usize> {
     (0..TARGETS).find(|&s| hwbp::is_free(s))
 }
 
+/// What to arm (pure): `(revive block, hit hook)` while LOCAL is downed. ARENA-2: the loser of an Arena round gets up through the
+/// revive check, so the block stays off there; ARENA-LV (2026-11-11: the winner's hits on the downed loser completed the bar and the
+/// game's own revive cost a level): the hit hook is on in the Arena too.
+pub(crate) fn wants(enabled: bool, arena: bool, downed: bool) -> (bool, bool) {
+    let on = enabled && downed;
+    (on && !arena, on)
+}
+
 /// Main loop, right after the combat tick: publish LOCAL and the rival handles, arm while LOCAL is downed, log what the VEH did.
 pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
     let mut st = STATE.lock().unwrap_or_else(PoisonError::into_inner);
     let local = combat.local_state();
-    // ARENA-2: the loser of an Arena round gets up through this very check; never block it there.
-    let want = enabled() && !crate::mm::arena_match() && local.is_some_and(|(_, s)| s == 1);
-    if want {
+    let arena = crate::mm::arena_match();
+    let (want, want_hit) = wants(enabled(), arena, local.is_some_and(|(_, s)| s == 1));
+    if want_hit {
         let (addr, _) = local.unwrap_or_default();
         LOCAL.store(addr, Ordering::Relaxed);
         let handles = combat.rival_handles();
         for (i, r) in RIVALS.iter().enumerate() {
             r.store(handles.get(i).copied().unwrap_or(0), Ordering::Relaxed);
         }
-        if st.slot.is_none() && !st.bytes_bad {
+        if want && st.slot.is_none() && !st.bytes_bad {
             let target = base + RVA_REVIVE_CHECK;
             if super::mem::read::<[u8; 7]>(target) != Some(REVIVE_CHECK_BYTES)
                 || super::mem::read::<[u8; 9]>(base + RVA_NO_EVENT) != Some(NO_EVENT_BYTES)
@@ -287,7 +295,14 @@ pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
     if hits != st.seen_hits {
         let n = hits.wrapping_sub(st.seen_hits);
         st.seen_hits = hits;
-        combat.penalize_rival_hits(n);
+        if arena {
+            // ARENA-LV: in the Arena a downed player only waits for our get-up; the rival's hit is dropped, no clock penalty.
+            tracing::info!(
+                "T-041 hit hook: {n} rival hit(s) on downed LOCAL cancelled (Arena: no penalty)"
+            );
+        } else {
+            combat.penalize_rival_hits(n);
+        }
         st.clear_pause_ticks = 4;
     } else if st.clear_pause_ticks > 0 {
         st.clear_pause_ticks -= 1;
@@ -327,5 +342,26 @@ pub(crate) fn tick(combat: &mut CombatCtl, base: usize) {
             LAST_HANDLE.load(Ordering::Relaxed)
         );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wants;
+
+    #[test]
+    fn the_arena_arms_only_the_hit_hook() {
+        assert_eq!(
+            wants(true, false, true),
+            (true, true),
+            "Battle Royale: both"
+        );
+        assert_eq!(
+            wants(true, true, true),
+            (false, true),
+            "Arena: our get-up passes the revive check; a rival's hit is still dropped"
+        );
+        assert_eq!(wants(true, true, false), (false, false), "not downed");
+        assert_eq!(wants(false, false, true), (false, false), "switched off");
     }
 }

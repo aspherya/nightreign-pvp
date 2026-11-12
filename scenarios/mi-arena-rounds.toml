@@ -97,6 +97,15 @@ mark = "rounds"
 instance = 1
 keys = "wait 3000ms"
 
+# ARENA-LV: from here on, a level line comes only from the reset (the spawn's SetLevel is already logged).
+[[step]]
+instance = 1
+mark = "down1"
+
+[[step]]
+instance = 2
+mark = "down1"
+
 [[step]]
 instance = 2
 console = "hp0"
@@ -124,6 +133,23 @@ wait_log = { contains = ["arena_rounds: reset: recovery, estus, back to the spaw
 [[step]]
 instance = 1
 wait_log = { contains = ["arena_rounds: reset: recovery, estus, back to the spawn"], timeout_s = 20, since = "mark:rounds" }
+
+# ARENA-LV: every reset sets level 15 again on both games (host and client) and logs the max HP it left.
+[[step]]
+instance = 1
+wait_log = { contains = ["arena_loadout: level -> 15, reached 15, max HP"], timeout_s = 10, since = "mark:down1" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_loadout: level -> 15, reached 15, max HP"], timeout_s = 10, since = "mark:down1" }
+
+[[step]]
+instance = 1
+console = "inv"
+
+[[step]]
+instance = 2
+console = "inv"
 
 [[step]]
 instance = 1

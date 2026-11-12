@@ -115,3 +115,7 @@ Read when you touch the area named in a bullet, or before debugging something od
   from our main loop killed the process at once, while the add-item call (`give`) was fine. The equip path rebuilds the character
   model (`exe+0x1F11A0`); call such functions only from the game's own thread (the RW-3 drop needed a breakpoint for the same reason,
   `game/itemdrop.rs`), and never in a run you cannot lose.
+- **`arena_loadout apply` at the Roundtable froze the game** (ARENA-LV research, 2026-11-12, one emulated instance): the queued
+  game-thread call armed its breakpoint (hwbp slot 0), then the main loop and the console pipe stopped for good (`All pipe
+  instances are busy`); only `nro stop --all` ended it. The Arena only calls it on the arena spawn, where it works; keep the console
+  `apply` for an expedition, or expect to lose the instance.

@@ -11,7 +11,12 @@
 //!
 //! No loadout chosen = the slots hold the Nightfarer's starting weapon, which is given back at its maximum upgrade (the "default
 //! weapon at legendary" rule). Relics are the game's (untouched). Not covered yet: passives, the flask count, the quick slots.
+//!
+//! ARENA-LV (Arena test 2026-11-11: the host played with level-1 max HP; a player lost a level between rounds): every round reset
+//! sets level 15 again ([`reapply`]) and, while an Arena match is on, [`hold_tick`] sets it again when the level or the max HP
+//! slips below what the last SetLevel(15) gave. Every SetLevel logs the level and the max HP it left.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -22,6 +27,9 @@ use super::mem;
 pub(crate) const ARENA_LEVEL: u32 = 15;
 /// The game's SetLevel `exe+0x209E20(PGD*, level)`: writes `+0x68` and recalculates the attributes (MEMORY_MAP §29).
 const RVA_SET_LEVEL: usize = 0x20_9E20;
+/// The game's stat recalculation `exe+0x20DCD0(PGD*)`: base max HP / FP / stamina from the attributes, times the SpEffect
+/// multipliers (`exe+0x6C90E0`, `exe+0x50C1B0`), written to `+0x18` / `+0x14` and siblings (game 1.03.3, MEMORY_MAP §29).
+const RVA_RECALC_STATS: usize = 0x20_DCD0;
 /// `PlayerGameData+0x10C`: the level reached (the skills' level requirement reads it).
 const LEVEL_REACHED: usize = 0x10C;
 /// Our per-game flag for the Bonfire-like Recovery event (as `arenarounds`).
@@ -31,6 +39,14 @@ const CAPTURE_EVERY_MS: u128 = 2_000;
 /// After a Commence the game runs, the capture holds still this long: the game wipes the loadout at the Roundtable right after the
 /// press, before the load screen (seen live: a capture there took the starting kit). Longer than a Commence-to-landing.
 const FREEZE_AFTER_COMMENCE_MS: u128 = 90_000;
+/// `PlayerGameData+0x68`: the character level (MEMORY_MAP §5, §29).
+const PGD_LEVEL: usize = 0x68;
+/// ARENA-LV: the hold sets the level again at most this often.
+const HOLD_EVERY_MS: u128 = 3_000;
+/// ARENA-LV: the max HP (`PlayerGameData+0x14`) the last SetLevel(15) left; 0 = no SetLevel(15) in this match yet.
+static HELD_MAX_HP: AtomicU32 = AtomicU32::new(0);
+/// ARENA-LV: when the hold last asked for a SetLevel (main loop only).
+static LAST_HOLD: Mutex<Option<Instant>> = Mutex::new(None);
 /// The starting flask (Flask of Crimson Tears rows): the expedition hands it out itself.
 const FLASK_ROWS: std::ops::RangeInclusive<u32> = 1000..=1025;
 
@@ -253,7 +269,13 @@ pub(crate) fn apply(base: usize) {
 }
 
 fn apply_level(base: usize) {
+    reapply(base, true);
+}
+
+/// ARENA-LV: SetLevel(15) on the game's thread, then (`heal`) the recovery event that fills HP / FP up to the new maximum.
+pub(crate) fn reapply(base: usize, heal_after: bool) {
     let Ok(pgd) = inventory::local_pgd() else {
+        tracing::warn!("arena_level: no LOCAL PlayerGameData; level not set");
         return;
     };
     inventory::queue(
@@ -261,9 +283,55 @@ fn apply_level(base: usize) {
         "arena_level",
         Box::new(move |base| {
             set_level(base, pgd);
-            heal(base);
+            if heal_after {
+                heal(base);
+            }
         }),
     );
+}
+
+/// ARENA-LV (pure): whether LOCAL's level has slipped: not 15, or a max HP below what the last SetLevel(15) left (`held_max`). Before
+/// the first SetLevel(15) of a match (`held_max` 0) nothing has slipped.
+pub(crate) fn level_slipped(level: u32, max_hp: u32, held_max: u32) -> bool {
+    held_max > 0 && (level != ARENA_LEVEL || max_hp < held_max)
+}
+
+/// ARENA-LV, main loop every tick: while an Arena match is on (`on`), set level 15 again when it slipped (one line each time, at most
+/// every [`HOLD_EVERY_MS`], no heal: a fight may be on). Off: forget the match's max HP.
+pub(crate) fn hold_tick(base: usize, on: bool) {
+    if !on {
+        HELD_MAX_HP.store(0, Ordering::Relaxed);
+        *lock_hold() = None;
+        return;
+    }
+    let held = HELD_MAX_HP.load(Ordering::Relaxed);
+    if held == 0 {
+        return;
+    }
+    let Ok(pgd) = inventory::local_pgd() else {
+        return;
+    };
+    let level = mem::read::<u32>(pgd + PGD_LEVEL).unwrap_or(0);
+    let max_hp = mem::read::<u32>(pgd + super::layout::GAMEDATA_MAX_HP).unwrap_or(0);
+    if level == 0 || !level_slipped(level, max_hp, held) {
+        return;
+    }
+    let mut last = lock_hold();
+    if last.is_some_and(|t| t.elapsed().as_millis() < HOLD_EVERY_MS) {
+        return;
+    }
+    *last = Some(Instant::now());
+    drop(last);
+    tracing::info!(
+        "arena_level: slipped to level {level}, max HP {max_hp} (SetLevel(15) left {held}); setting level {ARENA_LEVEL} again"
+    );
+    reapply(base, false);
+}
+
+fn lock_hold() -> std::sync::MutexGuard<'static, Option<Instant>> {
+    LAST_HOLD
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// GAME THREAD. The game's SetLevel.
@@ -279,9 +347,32 @@ fn set_level(base: usize, pgd: usize) {
     if let Err(e) = mem::write_bytes(pgd + LEVEL_REACHED, &ARENA_LEVEL.to_le_bytes()) {
         tracing::warn!("arena_loadout: +0x10C not written: {e}");
     }
+    // ARENA-LV bug #1: SetLevel writes the attributes but never the base max HP / FP / stamina (`+0x18`, `+0x24`, ...); the game's
+    // own stat recalculation does, and the character's data module follows it (live 2026-11-12: Wylder 240 -> 1120, MEMORY_MAP §29).
+    type RecalcStats = unsafe extern "system" fn(usize) -> u64;
+    // SAFETY: base + a fixed RVA inside the exe image; one argument (`mov rdi, rcx` = PlayerGameData, read as `[rdi+8]`, `[rdi+0x14]`)
+    // from its prologue; ten callers in the exe pass a PlayerGameData; verified live with `rawcall 20DCD0 pgd`. Game thread, as above.
+    let recalc: RecalcStats =
+        unsafe { std::mem::transmute::<usize, RecalcStats>(base + RVA_RECALC_STATS) };
+    // SAFETY: see above.
+    unsafe { recalc(pgd) };
+    let level = mem::read::<u32>(pgd + PGD_LEVEL).unwrap_or(0);
+    let max_hp = mem::read::<u32>(pgd + super::layout::GAMEDATA_MAX_HP).unwrap_or(0);
+    if level == ARENA_LEVEL && max_hp > 0 {
+        HELD_MAX_HP.store(max_hp, Ordering::Relaxed);
+    }
+    // ARENA-LV diagnosis (bug #1: max HP stays at the level-1 value): the attribute bytes SetLevel writes (`+0x34..+0x50`, MEMORY_MAP
+    // §29) and the character's own max HP (data module), next to the PlayerGameData copy.
+    let attrs: Vec<u8> = (0..8)
+        .map(|i| mem::read::<u8>(pgd + 0x34 + 4 * i).unwrap_or(0))
+        .collect();
+    let chr_max = super::teleport::local_chr()
+        .ok()
+        .and_then(|c| mem::read::<usize>(c + super::layout::PLAYER_MODULES))
+        .and_then(mem::read::<usize>)
+        .and_then(|d| mem::read::<u32>(d + super::layout::DATA_MODULE_MAX_HP));
     tracing::info!(
-        "arena_loadout: level -> {}, reached {}",
-        mem::read::<u32>(pgd + 0x68).unwrap_or(0),
+        "arena_loadout: level -> {level}, reached {}, max HP {max_hp} (character {chr_max:?}), attributes {attrs:?}",
         mem::read::<u32>(pgd + LEVEL_REACHED).unwrap_or(0)
     );
 }
@@ -302,6 +393,21 @@ mod tests {
         assert!(frozen(Some(0)));
         assert!(frozen(Some(FREEZE_AFTER_COMMENCE_MS - 1)));
         assert!(!frozen(Some(FREEZE_AFTER_COMMENCE_MS)));
+    }
+
+    #[test]
+    fn the_level_slips_when_it_is_not_15_or_max_hp_drops() {
+        assert!(!level_slipped(1, 220, 0), "no SetLevel(15) yet");
+        assert!(!level_slipped(15, 860, 860));
+        assert!(
+            !level_slipped(15, 900, 860),
+            "more max HP (a passive) is fine"
+        );
+        assert!(level_slipped(14, 820, 860), "a level lost between rounds");
+        assert!(
+            level_slipped(15, 220, 860),
+            "level 15 with level-1 stats (the host, 2026-11-11)"
+        );
     }
 
     #[test]
