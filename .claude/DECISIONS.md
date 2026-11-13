@@ -170,3 +170,11 @@ modes and the saved-loadouts menu. The release workflow builds `dist/gamedata` i
 WitchyBND, ESDLang, Smithbox DLLs, me3; `scripts/prepare-ci-inputs.ps1`) instead of a prebuilt BR-only package, so a change to
 `gamedata/` or `tools/loadouts/` reaches players without a manual rebuild. Why: the split kept the Arena and saved loadouts out of
 every release (v0.1.28 had the code compiled out). How-to: RELEASE.md §6.
+
+## 2026-11-13 — Merge commits only; release versions count up from the workspace version (Leonardo)
+
+The source repository allows only merge commits (squash and rebase merging are off in the repository settings; branch rules
+need a paid plan on a private repository). Why: the squash of the dev → main PR #7 made the next dev → main PR conflict on
+every shared file. Release versions: the workspace version (`Cargo.toml`, now 0.3.0) or one patch above the highest tag in the
+releases repository, drafts included; no run number. Why: the new releases repository started at 0.1.x, below the 0.2.0 testers
+had installed, and the launcher refuses downgrades. How-to: RELEASE.md §6.
