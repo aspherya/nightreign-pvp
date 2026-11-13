@@ -18,17 +18,25 @@ foreach ($asset in @($manifest.zip, $manifest.launcher)) {
     if ((Get-Item -LiteralPath $path).Length -ne $asset.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $asset.sha256) { throw "Release asset verification failed: $($asset.name)" }
 }
 if ($ValidateOnly) { Write-Output "Verified complete release $tag; nothing uploaded."; exit 0 }
-if (-not $env:GH_TOKEN) { throw 'GH_TOKEN must be supplied by GitHub Actions or your GitHub CLI session.' }
+if (-not $env:GH_TOKEN) { throw "GH_TOKEN is empty. In CI, add the RELEASES_PUBLISH_TOKEN secret (fine-grained, Contents: read and write on $Repo); see .claude/RELEASE.md." }
 $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $api = "https://api.github.com/repos/$Repo"
+# Players' launchers read this repository without a token: a private one would lock every launcher out of the update.
+try { Invoke-RestMethod $api -Headers @{ Accept = 'application/vnd.github+json' } | Out-Null }
+catch { throw "$Repo is not publicly readable: launchers could not download this release. Make it public; see .claude/RELEASE.md." }
+$repoInfo = Invoke-RestMethod $api -Headers $headers
+# The source commit does not exist in the releases repository: tags go on its default branch, which needs at least one commit.
+try { Invoke-RestMethod "$api/commits/$($repoInfo.default_branch)" -Headers $headers | Out-Null }
+catch { throw "$Repo has no commits on $($repoInfo.default_branch). Push a README there once so releases can be tagged." }
+$sourceLine = "Built from source commit $Commit."
 $releases = @(Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers)
 $matching = @($releases | Where-Object tag_name -eq $tag)
 if ($matching.Count -gt 1) { throw "Multiple releases claim $tag. Resolve the duplicate drafts before publishing." }
 $release = $matching | Select-Object -First 1
 if ($release) {
-    if (-not $release.draft -or $release.target_commitish -ne $Commit) { throw 'This version is published or targets another commit. Choose a new version.' }
+    if (-not $release.draft -or -not "$($release.body)".Contains($sourceLine)) { throw 'This version is published or was built from another commit. Choose a new version.' }
 } else {
-    $body = @{tag_name=$tag;target_commitish=$Commit;name="Nightreign PvP $tag";body=$manifest.notes;draft=$true;prerelease=$false} | ConvertTo-Json -Depth 4
+    $body = @{tag_name=$tag;name="Nightreign PvP $tag";body="$($manifest.notes)`n`n$sourceLine";draft=$true;prerelease=$false} | ConvertTo-Json -Depth 4
     $release = Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
 }
 foreach ($name in @($manifest.zip.name, $manifest.launcher.name, 'release.json')) {

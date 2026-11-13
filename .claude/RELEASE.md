@@ -117,9 +117,12 @@ If the game crashes on quit (0xC0000374) it is the known bug; note the time and 
 
 ## 5b. Publish for the launcher app (LAUNCH-1)
 
-The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from authenticated GitHub releases of this
-same private repository, `aspherya/nightreign-pvp` (migrated on 2026-11-13; the old repository remains the `upstream` remote). One command builds the zip, the
-launcher and `release.json`, and uploads them:
+The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of a **separate,
+public** repository, `aspherya/nightreign-pvp-releases` (since 2026-11-13). Source stays private in `aspherya/nightreign-pvp`: a
+release there would carry GitHub's automatic source-code archives, and a token able to read its releases could read its source. The
+releases repository holds only a README and the releases (`release.json`, `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`). Releases v0.1.3
+and v0.1.7 were published in the source repository before the move; launchers of those versions keep looking there. One command
+builds the zip, the launcher and `release.json`, and uploads them:
 
 ```powershell
 ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2 -DryRun   # stage in dist\release\, upload nothing
@@ -151,14 +154,21 @@ stable release only after every upload succeeds. This activates launcher and mod
 publication or select **draft**. Never reuse a version or replace already-published assets. Update `releases/notes.txt` before merging.
 
 Main pushes and manual runs with no explicit version select the higher of the workspace version and latest published stable
-version, then add `github.run_number` to its patch component. This produces increasing versions across main pushes and repository
+version (of both the source and the releases repository), then add `github.run_number` to its patch component. This produces increasing versions across main pushes and repository
 migrations. Explicit manual versions and `v*` tags are used as given. A rerun can replace unpublished draft assets only when that
-draft targets the exact same commit; published releases and other commits cannot be overwritten.
+draft was built from the exact same commit (its body names the source commit); published releases cannot be overwritten.
+Tags in the releases repository point at its default branch, since the source commit does not exist there.
 
 One-time setup by the repository owner:
 
-1. Keep `aspherya/nightreign-pvp` private. The workflow uses `github.repository` as the release destination and embeds
-   that value in the launcher. Source, build inputs and player releases all live here; no second repository is needed.
+1. Keep the source repository private and the releases repository **public**. Player releases go to
+   `aspherya/nightreign-pvp-releases` (override with the Actions variable `RELEASES_REPO`); the workflow embeds that name in the
+   launcher, which reads it without a token. Publishing refuses to run while the releases repository is not publicly readable. It
+   must have at least one commit (a README) so releases can be tagged. Build inputs stay as a draft in the source repository.
+   One Actions **secret** in `aspherya/nightreign-pvp`: `RELEASES_PUBLISH_TOKEN`, a fine-grained token, resource owner `aspherya`,
+   **Only select repositories > nightreign-pvp-releases**, Repository permissions **Contents: Read and write**, nothing else. Only
+   CI uses it to create and publish releases; the built-in `GITHUB_TOKEN` cannot write to another repository. Replace it before
+   it expires (an expired one only stops publishing; players keep working).
 2. On the machine holding the pinned game unpack and tools, run `scripts/build-gamedata.ps1` and then:
 
    ```powershell
@@ -176,32 +186,20 @@ One-time setup by the repository owner:
    Regenerate and update the hash when game-data sources/pins change. A hosted Windows runner cannot generate
    game content without the local unpack and tools. The currently installed Arena test package is not a player input.
    The current player input has 21 files, including `menu/05_000_title.gfx`. Regenerate older bundles to include the custom title background.
-3. The workflow's built-in `GITHUB_TOKEN` has `contents: write`, which downloads the input draft and creates player
-   drafts in this same repository. No `RELEASES_TOKEN` secret or personal write token is needed for CI.
+3. The workflow's built-in `GITHUB_TOKEN` downloads the input draft from the source repository; `RELEASES_PUBLISH_TOKEN` creates
+   and publishes player releases in the releases repository.
 4. Push the reviewed change to `main`. The workflow runs launcher/helper tests and player-DLL tests/lint, builds the complete
    package and publishes it. Failures leave the previous stable release active. To test without publishing, use a manual workflow
    run with **draft**, or build locally with `NRPVP_RELEASE_DIR`.
 
-### Read-only token for private launcher updates
+### How the launcher authenticates
 
-Create a **fine-grained** token from GitHub **Settings > Developer settings > Personal access tokens > Fine-grained tokens >
-Generate new token**. Select the repository owner, an expiration date and **Only select repositories > nightreign-pvp**.
-The resource owner and selected repository must be `aspherya/nightreign-pvp`; an old token scoped to the upstream repository
-cannot read this repository's releases. Update the token in each existing launcher installation after switching repositories.
-Under **Repository permissions**, grant **Contents: Read-only**; Metadata read access is automatic. Leave other permissions
-unset. If GitHub requires owner/organization approval, complete that before using the token.
+It does not need one: the releases repository is public. No token is built into the exe or committed. **Settings > Updates
+access** still accepts an optional token (DPAPI-encrypted for the Windows user), sent when present; it would matter only if the
+releases repository became private again (fine-grained, **Only select repositories > nightreign-pvp-releases**, **Contents:
+Read-only**). Without a token GitHub allows 60 API requests per hour per IP; an update check uses a few.
 
-Paste the token into launcher **Settings > Private updates > Connect**. The launcher checks repository release access and
-stores the token using Windows DPAPI encryption for the current Windows user. The token is never embedded in the executable,
-committed, returned to the UI or sent to Seamless Co-op's repository. Each launcher installation needs a valid token.
-An expired/revoked token can be replaced in the same place; **Remove saved token** disconnects private updates.
-
-GitHub does **not** offer a releases-only permission: **Contents: Read-only** permits downloading release assets and reading
-repository source. Treat anyone holding this token as having source access. A user-created token cannot exceed that user's
-repository access. See [GitHub release asset permissions](https://docs.github.com/en/rest/releases/assets#get-a-release-asset)
-and [fine-grained token setup](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens).
-
-The launcher uses the authenticated release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
+The launcher uses the release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
 to download the manifest, launcher and player zip. SHA-256 verification still applies. Tokens go only to constructed
 `api.github.com/repos/<owner>/<repo>/...` URLs; public Seamless Co-op requests remain unauthenticated. Drafts and prereleases
 are excluded from player updates. `NRPVP_RELEASE_DIR` still supports offline release testing without a token.

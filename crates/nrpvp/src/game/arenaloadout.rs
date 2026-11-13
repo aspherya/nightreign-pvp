@@ -272,6 +272,8 @@ pub(crate) fn apply(base: usize) {
                     inventory::pouch_on_game_thread(base, pgd, index);
                 }
             }
+            // The rival's game draws what this broadcast carries; without it the rival saw our starting kit (2026-11-12).
+            inventory::send_player_data_on_game_thread(base);
             heal(base);
         }),
     );
@@ -292,10 +294,23 @@ pub(crate) fn reapply(base: usize, heal_after: bool) {
         "arena_level",
         Box::new(move |base| {
             set_level(base, pgd);
+            // Each reset also sends the equipment again: a rival whose game missed the first broadcast (still loading the arena)
+            // gets it here, at the latest by round 2.
+            inventory::send_player_data_on_game_thread(base);
             if heal_after {
                 heal(base);
             }
         }),
+    );
+}
+
+/// Send LOCAL's player data (equipment, level) to the session again, on the game's thread: when both players are first seen up in
+/// the arena, so a rival still loading at the spawn's broadcast gets it before the fight.
+pub(crate) fn resend(base: usize) {
+    inventory::queue(
+        base,
+        "arena_send",
+        Box::new(inventory::send_player_data_on_game_thread),
     );
 }
 

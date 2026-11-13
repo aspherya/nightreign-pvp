@@ -486,34 +486,17 @@ Then slices: ARENA-1 card + queue (2 players) + arena entry + facing spawns (**d
 level 15 + loadout + max upgrade + round limit (**done 2026-11-09**, solo + `mi-arena-loadout` PASS, testing-log; open: passives, the flask
 count, the quick-slot order, the player build); ARENA-4 offline 1v1 against one level-13 bot (**done 2026-11-10**, `mi-arena-bot` + Leonardo's match PASS, testing-log; bot level 13 kept by Leonardo; an Arena WIN counting as an Everdark win is accepted (DECISIONS 2026-11-10); the end summary now shows the Arena round score, SCOREBOARD 2026-11-10); ARENA-5 Duo / Trio. One PR at a time; one PC with two instances shows ARENA-1..4.
 
-### ARENA-LV — Arena: level 15 holds for the whole match; a rival cannot revive the loser (Arena test 2026-11-11)
-Owner: OPUS | Status: #1 and #3 built on branch `arena-level-hold`, `mi-arena-rounds` PASS ×3 (2026-11-12; run 3: max HP 1120
-on host and client after the game's stat recalculation `exe+0x20DCD0`, MEMORY_MAP §29); waiting for a real-Steam Arena | Depends on: ARENA-3
-Goal: fix the two Arena bugs from the 2026-11-11 test (testing-log 2026-11-11): (#1) the host (OdoKadachi) played both matches with
-level-1 max HP (~220-240; get-up at 110/120 = 50 %) although `level -> 15` was logged at the spawn; (#3) Leonardo started round 3
-at level 14 after OdoKadachi's hits on him while downed completed his revive bar (`bar read 0 while state 1`, state 1 -> 2).
-Root causes: (#3, code) T-041 is off in the Arena (`reviveblock.rs`, `!arena_match()`), so only the late T-039 restore ran; and the
-round reset never sets level 15 again. (#1, VERIFIED 2026-11-12, not host-specific) SetLevel writes the attributes but never runs
-the game's stat recalculation, so max HP stays at the level-1 value; fix: call `exe+0x20DCD0(PGD)` after it.
-Steps: 1. `arenaloadout`: log level and max HP (PGD `+0x68`, `+0x14`) after every SetLevel; remember the max HP it gave. 2. Every
-Arena reset: SetLevel(15) + recovery again. 3. While an Arena match is on: when the level is not 15 or max HP falls below the
-remembered value, log one line and SetLevel(15) again (no heal mid-round; at most every 3 s). 4. `reviveblock`: in the Arena arm only
-the T-041 hit hook (a rival's hit no longer lowers the bar), never the revive block (our own get-up goes through that check), and
-no T-039 clock penalty. Unit tests for the decisions.
-Acceptance: `mi-arena-rounds` PASS with the new lines on both instances (`arena_level:` level 15 after each reset, host and client);
-next real-Steam Arena: both players keep their level-15 HP in every round (logs) and a downed loser is never revived by the winner.
-Out of scope: Bug #2 of the same test (host's first Commence after an Arena starts a vanilla solo run; separate card), the lost
-Sparring loadout in a second match.
-
-### MM-REQ — Host's card pick starts a vanilla run after an Arena the rival left first (Bug #2, 2026-11-11)
-Owner: OPUS | Status: reproduced on one PC (`mi-arena-requeue`, testing-log 2026-11-12), root cause open; workaround: title screen
-and back (Leonardo: acceptable for v1) | Depends on: —
-Goal: the host's next card pick goes through our Commence handler again. Facts: only when the client returned to the Roundtable
-before the host; the card pick itself starts the game's expedition (own lobby B), our Commence (`exe+0x9EEBFB`) and label
-(`exe+0x7AC800`) breakpoints never fire, the Bots predicate does; code bytes intact; keeping the lobby did not help. Next: find the
-menu state that turns a card pick into a direct start (compare the expedition menu object, R14 of the predicate hit, good vs bad;
-an exec watch on the game's lobby-create call to get the call chain), then reset it or route it through our handler.
-Acceptance: `mi-arena-requeue` PASS in the friend-session order; BR checked with the same order.
+### ARENA-FS12 — Three Arena bugs from the 2026-11-12 test: rival's weapons, mid-round respawn, solo run after a match
+Owner: OPUS | Status: **built (branch `arena-fs-fixes`), `mi-arena-loadout` and `mi-arena-requeue` PASS on one PC (2026-11-13,
+testing-log)**; waiting for a real-Steam Arena | Depends on: ARENA-LV (its real-Steam part passed 2026-11-12: max HP held)
+Fixes: (A) the game's player-data broadcast `exe+0xDE20E0` after our loadout / level resets / round-1 start, so the rival draws our
+real weapons; (B) one get-up write, a retry only after 2.5 s (a second write mid-get-up made the game kill and respawn the player with
+a level lost); (C) at the Roundtable after a match, the game's lobby left over with us alone in it is left (`exe+0xDFD940`), so the
+next card pick is our Commence again (was MM-REQ).
+Acceptance (next real-Steam Arena, both players' logs): each player sees the rival's chosen weapons (console `rival_gear` in a dev
+build, or by eye); no `arena_level: slipped` line after a lost round and no mid-round respawn; after each Arena both players queue
+again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
+return orders.
 
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's

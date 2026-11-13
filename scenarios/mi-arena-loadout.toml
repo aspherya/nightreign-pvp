@@ -171,6 +171,16 @@ expect = { console = "inv", contains = ["level 15", "0089588F"] }
 instance = 2
 expect = { console = "inv", contains = ["level 15", "003010B0"] }
 
+# Arena test 2026-11-12: each player saw the rival with its starting weapon. Each game must hold the RIVAL's loadout in its copy of
+# the rival (what it draws), sent by the game's own player-data broadcast after the loadout.
+[[step]]
+instance = 1
+wait = { console = "rival_gear", contains = ["; other 0 [", "003010B0"], timeout_s = 20, every_ms = 1000 }
+
+[[step]]
+instance = 2
+wait = { console = "rival_gear", contains = ["; other 0 [", "0089588F"], timeout_s = 20, every_ms = 1000 }
+
 [[step]]
 instance = 1
 screenshot = "p1_loadout"

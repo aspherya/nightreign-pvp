@@ -117,6 +117,69 @@ pub(crate) fn equip_on_game_thread(base: usize, pgd: usize, slot: u8, index: u32
     now
 }
 
+/// `exe+0xDE20E0()`: packs LOCAL's PlayerGameData (`exe+0x20BDE0(PGD, buf)`) and broadcasts it to the session as packet 0x0C (0x1F8
+/// bytes; skipped by the game itself when not in a session). The other games apply it to their copy of this player
+/// (`GameDataMan+0x10` slots, receive `exe+0xDDAE6B` -> `exe+0x20DCB0`), which is what they draw. The add / equip calls never send
+/// it; the game's ground pickup does, through `exe+0x66EFF0(LOCAL)` right after its equip (MEMORY_MAP §29, 2026-11-13).
+const RVA_SEND_PLAYER_DATA: usize = 0xDE_20E0;
+/// `mov [rsp+8],rbx; push rdi; sub rsp,0x240` (game 1.03.3, exe 1.3.3.0).
+const SEND_PLAYER_DATA_BYTES: [u8; 12] = [
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x81, 0xEC, 0x40, 0x02, 0x00,
+];
+
+/// GAME THREAD ONLY. Tell the other players' games what LOCAL now holds (equipment, level): the game's own player-data broadcast.
+/// Without it, an equip made by us shows only on our own screen (Arena test 2026-11-12: each player saw the rival's starting weapon).
+pub(crate) fn send_player_data_on_game_thread(base: usize) {
+    if mem::read::<[u8; 12]>(base + RVA_SEND_PLAYER_DATA) != Some(SEND_PLAYER_DATA_BYTES) {
+        tracing::warn!(
+            "inventory: the player-data broadcast at exe+0x{RVA_SEND_PLAYER_DATA:X} differs from game 1.03.3; not sent"
+        );
+        return;
+    }
+    type Send = unsafe extern "system" fn() -> u8;
+    // SAFETY: base + a fixed RVA inside the exe image, first bytes checked above; no arguments (it reads GameDataMan itself, checks
+    // the session state, builds the packet on its own stack); the game's thread, like its pickup handler's call. Verified live with
+    // `rawcall DE20E0` on two instances in the Arena (2026-11-13).
+    let sent = unsafe { std::mem::transmute::<usize, Send>(base + RVA_SEND_PLAYER_DATA)() };
+    tracing::info!("inventory: player data sent to the session (returned {sent})");
+}
+
+/// `GameDataMan` (`exe+0x3C078D0`): `+0x10` the other players' `PlayerGameData` copies, 0x8A0 each, `+0x8` = -1 when unused
+/// (MEMORY_MAP §20, §29). What the session told this game about each other player, i.e. what it draws.
+const RVA_GAME_DATA_MAN: usize = 0x3C0_78D0;
+const GDM_REMOTE: usize = 0x10;
+const REMOTE_SIZE: usize = 0x8A0;
+const REMOTE_SLOTS: usize = 5;
+
+/// Console `rival_gear` (read only, any thread): the hand slots this game holds for every other player, next to LOCAL's own.
+pub(crate) fn rival_gear_cmd() -> Result<String, String> {
+    let base = super::puppet::exe_base()?;
+    let gdm = mem::read::<usize>(base + RVA_GAME_DATA_MAN)
+        .filter(|p| mem::is_ptr(*p))
+        .ok_or("no GameDataMan")?;
+    let arr = mem::read::<usize>(gdm + GDM_REMOTE)
+        .filter(|p| mem::is_ptr(*p))
+        .ok_or("no remote PlayerGameData list")?;
+    let hands = |pgd: usize| -> String {
+        (0..HAND_SLOTS)
+            .map(|s| slot_id(pgd, s).map_or("?".into(), |id| format!("{id:08X}")))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mut out = match local_pgd() {
+        Ok(p) => format!("rival_gear: me [{}]", hands(p)),
+        Err(_) => "rival_gear: me [?]".to_string(),
+    };
+    for k in 0..REMOTE_SLOTS {
+        let pgd = arr + k * REMOTE_SIZE;
+        if mem::read::<u32>(pgd + 0x8).is_none_or(|id| id == u32::MAX) {
+            continue;
+        }
+        out.push_str(&format!("; other {k} [{}]", hands(pgd)));
+    }
+    Ok(out)
+}
+
 /// The pouch (quick items): slots 32..49 of the equipment (`exe+0x1F7840`: `slot - 0x20 <= 0x11`), `(handle, index)` pairs from
 /// `PGD+0x428` (slot 32). A good only shows in Nightreign when it sits in one of them (MEMORY_MAP §29).
 const RVA_POUCH_FREE: usize = 0x1F_2540;
