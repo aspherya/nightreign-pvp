@@ -493,15 +493,9 @@ impl Feature for KillFeed {
     }
 }
 
-/// SB-ARENA: LOCAL's Arena rounds while an Arena match is on (only the `arena` build has Arena matches).
-#[cfg(feature = "arena")]
+/// SB-ARENA: LOCAL's Arena rounds while an Arena match is on.
 fn arena_score() -> Option<(u8, u8)> {
     crate::game::arenarounds::score()
-}
-
-#[cfg(not(feature = "arena"))]
-fn arena_score() -> Option<(u8, u8)> {
-    None
 }
 
 impl KillFeed {

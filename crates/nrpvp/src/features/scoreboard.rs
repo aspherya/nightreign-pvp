@@ -539,7 +539,6 @@ mod tests {
         assert!(arena_message(255, 255).encode_utf16().count() < TEXT_UNITS);
     }
 
-    #[cfg(feature = "arena")]
     #[test]
     fn the_arena_win_count_matches_the_rounds_rule() {
         assert_eq!(ARENA_ROUNDS_TO_WIN, crate::game::arenarounds::ROUNDS_TO_WIN);

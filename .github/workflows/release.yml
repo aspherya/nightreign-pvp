@@ -86,12 +86,23 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo build --locked --release -p nrpvp --no-default-features
           exit $LASTEXITCODE
+      # The game-data tools: sbwriter (regulation.bin) builds with the .NET 10 SDK; ESDLang 0.5.1 (saved loadouts) runs on .NET 6.
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            10.0.x
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: x64
       - name: Download build inputs
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Game data and me3, pinned by pins/ci-inputs.json: a draft release of this repository (RELEASE.md §6).
+          # The original game files, the game-data tools and me3, pinned by pins/ci-inputs.json: a draft release of this repository
+          # (RELEASE.md §6; scripts/prepare-ci-inputs.ps1 makes it).
           $pin = Get-Content pins/ci-inputs.json -Raw | ConvertFrom-Json
           $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
           $release = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($pin.release_id)" -Headers $headers
@@ -102,12 +113,18 @@ jobs:
           Invoke-WebRequest "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" -Headers $headers -OutFile dist/ci-inputs.zip
           if ((Get-FileHash dist/ci-inputs.zip).Hash -ne $pin.sha256) { throw 'Build input checksum mismatch.' }
           Expand-Archive -LiteralPath dist/ci-inputs.zip -DestinationPath dist/ci-inputs
-          Copy-Item -LiteralPath dist/ci-inputs/gamedata-player -Destination dist/gamedata-player -Recurse
           $pins = Get-Content pins/nightreign.toml -Raw
           foreach ($file in 'me3.exe', 'me3-launcher.exe', 'me3_mod_host.dll') {
             $expected = [regex]::Match($pins, '"' + [regex]::Escape($file) + '"\s*=\s*"([0-9A-Fa-f]{64})"').Groups[1].Value
             if (-not $expected -or (Get-FileHash "dist/ci-inputs/me3/bin/$file").Hash -ne $expected) { throw "me3 pin mismatch: $file" }
           }
+      - name: Build game data
+        shell: pwsh
+        timeout-minutes: 20
+        run: |
+          # Every release rebuilds dist/gamedata from the pinned originals: Battle Royale + Arena + saved loadouts, one package.
+          $in = "$PWD/dist/ci-inputs"
+          ./scripts/build-gamedata.ps1 -Unpacked "$in/unpacked" -Witchy "$in/tools/WitchyBND/WitchyBND.exe" -Smithbox "$in/tools/Smithbox" -EsdTool "$in/tools/ESDLang/esdtool.exe" -Python (Get-Command python).Source
       - name: Package zip, launcher and manifest
         shell: pwsh
         run: ./scripts/publish-release.ps1 -Version $env:RELEASE_VERSION -NotesFile releases/notes.txt -MatchPlayers 6 -MinPlayers 2 -Me3Dir "$PWD/dist/ci-inputs/me3" -Repo $env:NRPVP_RELEASES_REPO -DryRun

@@ -3,7 +3,7 @@
 #   nrpvp_launcher.exe            double-click to play
 #   NightreignPvP\nrpvp.dll       the mod
 #   NightreignPvP\nrpvp.toml      settings (team size, matchmaking = true (MM-4), mm_max_players = -MatchPlayers (default 2 until release); PvP is always on, no dev_mode)
-#   NightreignPvP\gamedata\...    our game-data package (dist\gamedata-player from scripts\build-gamedata.ps1: Battle Royale texts + Roundtable
+#   NightreignPvP\gamedata\...    our game-data package (dist\gamedata from scripts\build-gamedata.ps1: Battle Royale texts + Roundtable
 #                                 messages, UI-1/UI-2; the hawk crossing line, HAWK-2; regulation.bin with the Battle Royale card
 #                                 row, UI-3); the launcher loads it as an me3 [[packages]] entry
 #   NightreignPvP\me3\...         bundled me3 0.11.0 (MIT / Apache-2.0), so nothing has to be installed
@@ -18,35 +18,32 @@ param(
     [ValidateRange(2, 6)][int]$MatchPlayers = 2,
     # Smallest match after the fill wait (mm_fill_wait_s, 90 s). 0 = same as -MatchPlayers (matches only start full). v1 (2026-11-12,
     # Leonardo): -MatchPlayers 6 -MinPlayers 2, so a group smaller than 6 still plays after the wait.
-    [ValidateRange(0, 6)][int]$MinPlayers = 0,
-    # Test builds only (2026-11-10): also the Arena mode (MODE-02, not released yet). The player DLL gets the cargo feature `arena` (still
-    # no developer tooling) and the zip takes the full dist\gamedata (the Arena card hook needs its warp events and the m18 script).
-    [switch]$Arena
+    [ValidateRange(0, 6)][int]$MinPlayers = 0
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $repo 'dist'
 # UI-1/UI-2: the game-data package (our texts in every language + the Roundtable event script). Built by scripts\build-gamedata.ps1
-# (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry. The zip takes the PLAYER package
-# dist\gamedata-player (2026-11-10): dist\gamedata minus the dev-only events (the Arena, ARENA-0..3, and its m18 event script).
-# With -Arena it takes dist\gamedata, which has them (one file more: event\m18_00_00_00.emevd.dcx).
-$gamedata = Join-Path $dist $(if ($Arena) { 'gamedata' } else { 'gamedata-player' })
-$wantFiles = if ($Arena) { 23 } else { 21 }
-if ($Arena -and -not (Test-Path -LiteralPath (Join-Path $gamedata 'script/talk/m10_00_00_00.talkesdbnd.dcx'))) {
-    throw '-Arena: saved loadout dialogue missing. Rebuild game data with ESDLang configured.'
+# (needs the unpacked game); the launcher loads NightreignPvP\gamedata as an me3 [[packages]] entry. Every build ships the Battle
+# Royale and the Arena together (Leonardo, 2026-11-13): dist\gamedata, 23 files with the Arena's m18 event script and the saved-loadouts
+# dialogue (script\talk).
+$gamedata = Join-Path $dist 'gamedata'
+$wantFiles = 23
+if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'script/talk/m10_00_00_00.talkesdbnd.dcx'))) {
+    throw 'Saved loadout dialogue missing (script\talk). Rebuild game data with ESDLang configured.'
 }
 if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'menu\05_000_title.gfx'))) {
     throw 'The custom title background is missing. Run scripts\build-gamedata.ps1 first.'
 }
-if ($Arena -and -not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m18_00_00_00.emevd.dcx'))) {
-    throw "-Arena: dist\gamedata\event\m18_00_00_00.emevd.dcx missing. Run scripts\build-gamedata.ps1 first."
+if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'event\m18_00_00_00.emevd.dcx'))) {
+    throw "dist\gamedata\event\m18_00_00_00.emevd.dcx missing. Run scripts\build-gamedata.ps1 first."
 }
 $gdFiles = @(Get-ChildItem -LiteralPath $gamedata -Recurse -File -ErrorAction SilentlyContinue)
 # HAWK-2: the crossing line (map\mapstudio\m60_00_00_99.msb.dcx) is part of the package; it is the only file allowed under map\.
 $routes = Join-Path $gamedata 'map\mapstudio\m60_00_00_99.msb.dcx'
 $gdMap = @($gdFiles | Where-Object { $_.FullName -like (Join-Path $gamedata 'map\*') })
 if ($gdMap.Count -ne 1 -or -not (Test-Path -LiteralPath $routes)) {
-    throw "dist\gamedata-player\map must hold exactly map\mapstudio\m60_00_00_99.msb.dcx (the hawk crossing line; found $($gdMap.Count) file(s)). Run scripts\build-gamedata.ps1 (without -VanillaRoutes) first."
+    throw "dist\gamedata\map must hold exactly map\mapstudio\m60_00_00_99.msb.dcx (the hawk crossing line; found $($gdMap.Count) file(s)). Run scripts\build-gamedata.ps1 (without -VanillaRoutes) first."
 }
 $gdMsg = @($gdFiles | Where-Object { $_.Name -eq 'menu_dlc01.msgbnd.dcx' })
 # BOT-5 (2026-11-06): event\common.emevd.dcx holds the bot events, a player feature. event\common_func.emevd.dcx: the no-boss nights (M5-3).
@@ -69,8 +66,7 @@ if ($code -ne 0) { throw "cargo build of the launcher failed ($code)" }
 # (NRPVP_PLAYER_TARGET_DIR) so dependencies compile once.
 $playerTarget = if ($env:NRPVP_PLAYER_TARGET_DIR) { Join-Path $repo $env:NRPVP_PLAYER_TARGET_DIR } else { Join-Path $repo 'target\player' }
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-$featureArgs = if ($Arena) { @('--features', 'arena') } else { @() }
-& $cargo build --locked --release -p nrpvp --no-default-features @featureArgs --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
+& $cargo build --locked --release -p nrpvp --no-default-features --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the player nrpvp.dll failed ($code)" }
 $dll = Join-Path $playerTarget 'release\nrpvp.dll'
@@ -95,7 +91,7 @@ $toml = @(
     '# Nightreign PvP settings. You do not need to change anything here.',
     "team_size = $TeamSize",
     '# Solo Battle Royale matchmaking: table > Matchmaking Settings > Number of Players = Solo > Commence.',
-    $(if ($Arena) { '# Arena (test build): the Arena card > Number of Players = Solo > Commence: best of 3, 1 v 1.' } else { $null }),
+    '# Arena: the Arena card > Number of Players = Solo > Commence: best of 3, 1 v 1.',
     '# Set to false to turn it off.',
     'matchmaking = true',
     '# Players per match (2..6). Pre-release builds use 2 so two friends can test; the final game uses 6. Everyone needs the same number.',
@@ -117,7 +113,7 @@ $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
 $dirty = if (& git -C $repo status --porcelain 2>$null) { 'dirty' } else { 'clean' }
 $gdHash = (Get-FileHash (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx') -Algorithm SHA256).Hash.Substring(0,16)
 $routeHash = (Get-FileHash $routes -Algorithm SHA256).Hash.Substring(0,16)
-$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, hawk routes $routeHash, me3 0.11.0$(if ($Arena) { ', ARENA test build' })"
+$ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, hawk routes $routeHash, me3 0.11.0"
 [IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
 
 $zipName = 'NightreignPvP.zip'

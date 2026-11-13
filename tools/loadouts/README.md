@@ -1,6 +1,6 @@
 # Saved loadouts
 
-Arena builds add **Save loadout** and **Load loadout** to the existing **Change sparring equipment** interaction outside in the
+Every build adds **Save loadout** and **Load loadout** to the existing **Change sparring equipment** interaction outside in the
 Sparring Grounds. This uses the existing interaction, not a newly spawned NPC. There are ten numbered slots; each shows Empty or
 Saved. Saving an occupied slot asks before overwriting. Back/cancel does not overwrite anything.
 
@@ -19,7 +19,7 @@ atomic replacement. Presets are local to the PC and shared across its local game
 ## Build and checks
 
 `build-gamedata.bat -EsdTool <ESDLang-0.5.1/esdtool.exe>` compiles the dialogue, which is included in the full `dist/gamedata`
-package and Arena releases. The BR-only `gamedata-player` package keeps the original interaction. Keep ESDLang's `dist/` folder
+package that every release ships (CI builds it on each release). Keep ESDLang's `dist/` folder
 beside its executable and install the .NET 6 x64 runtime. `scripts/build-loadouts.ps1` can build the dialogue alone.
 
 The builder checks the original NR 1.03.3 bundle's pinned SHA-256, unpacks with WitchyBND, decompiles only `t607001000`, generates
