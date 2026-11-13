@@ -141,6 +141,10 @@ The mod is tied to one game version. **If the game updates, stop:** the addresse
 
 ### Build and run
 
+Windows users can double-click **`build-launcher.bat`**, **`build-mod.bat`** or **`build-all.bat`** in the repository root.
+The portable batch files detect Rust/MSVC and put binaries in `dist/`. Game-data, release and CI-input batch files are also
+provided; see [BUILDING.md](BUILDING.md) for prerequisites, local tool paths and command-line options.
+
 Run from the repository root, with the game closed. The build cannot replace a DLL in use.
 
 ```powershell

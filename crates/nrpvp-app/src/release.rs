@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 pub const RELEASES_REPO: &str = match option_env!("NRPVP_RELEASES_REPO") {
     Some(repo) => repo,
-    None => "notgonnaleo/nightreign-pvp",
+    None => "aspherya/nightreign-pvp",
 };
 /// Seamless Co-op for Nightreign, by Yui. The GitHub repository holds only data files today (no releases); the mod itself is
 /// published on Nexus Mods. The launcher installs from a GitHub release if one ever appears, else guides the Nexus download.
@@ -388,11 +388,7 @@ mod tests {
     use super::*;
     #[test]
     fn authenticated_asset_urls_stay_on_github_and_escape_tag_paths() {
-        let url = github_url(
-            "notgonnaleo/nightreign-pvp",
-            &["releases", "tags", "v1/extra"],
-        )
-        .unwrap();
+        let url = github_url("aspherya/nightreign-pvp", &["releases", "tags", "v1/extra"]).unwrap();
         assert_eq!(url.host_str(), Some("api.github.com"));
         assert!(url.path().ends_with("v1%2Fextra"));
         for repo in [

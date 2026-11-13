@@ -2,12 +2,13 @@ name: Build player release
 
 on:
   push:
+    branches: ['main']
     tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version, e.g. 0.3.0 (never reuse a version)'
-        required: true
+        description: 'Optional version, e.g. 0.3.0; blank generates a new version'
+        required: false
         type: string
       publish_draft:
         description: 'Upload a draft release to this repository'
@@ -32,10 +33,30 @@ jobs:
         shell: pwsh
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME -replace '^v', '' } else { $env:REQUESTED_VERSION }
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          } elseif ($env:REQUESTED_VERSION) {
+            $version = $env:REQUESTED_VERSION
+          } else {
+            $baseText = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
+            if (-not $baseText) { throw 'No workspace version found in Cargo.toml.' }
+            $base = [version]$baseText
+            try {
+              $latest = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/latest" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+              if ($latest.tag_name -match '^v?(\d+\.\d+\.\d+)$') {
+                $published = [version]$matches[1]
+                if ($published -gt $base) { $base = $published }
+              }
+            } catch {
+              if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw 'Could not read the latest release to select a version.' }
+            }
+            $version = '{0}.{1}.{2}' -f $base.Major, $base.Minor, ($base.Build + [int]$env:GITHUB_RUN_NUMBER)
+          }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "NRPVP_BUILD_VERSION=$version" >> $env:GITHUB_ENV
       - name: Rust toolchain
         run: rustup show
       - uses: actions/cache@v4
@@ -45,7 +66,30 @@ jobs:
             ~/.cargo/git
             target
           key: release-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - name: Validate launcher and player build
+        shell: pwsh
+        run: |
+          cargo fmt --all --check
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test --locked --release -p nrpvp-app -p nrpvp-launcher
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --release -p nrpvp-app -p nrpvp-launcher --all-targets -- -D warnings
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo clippy --locked --release -p nrpvp --no-default-features -- -D warnings
+          exit $LASTEXITCODE
+      - name: Build launcher and player binaries
+        shell: pwsh
+        run: |
+          cargo build --locked --release -p nrpvp-app -p nrpvp-launcher
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo build --locked --release -p nrpvp --no-default-features --target-dir target/player
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force dist/release | Out-Null
+          Copy-Item target/release/NightreignPvP.exe dist/release/NightreignPvP-Launcher.exe
+          Copy-Item target/release/nrpvp_launcher.exe dist/release/nrpvp_launcher.exe
+          Copy-Item target/player/release/nrpvp.dll dist/release/nrpvp.dll
       - name: Download draft build inputs
+        if: vars.CI_INPUTS_SHA256 != ''
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -64,18 +108,9 @@ jobs:
             $expected = [regex]::Match($pins, '"' + [regex]::Escape($file) + '"\s*=\s*"([0-9A-Fa-f]{64})"').Groups[1].Value
             if (-not $expected -or (Get-FileHash "dist/ci-inputs/me3/bin/$file").Hash -ne $expected) { throw "me3 pin mismatch: $file" }
           }
-      - name: Validate launcher and player build
-        shell: pwsh
-        run: |
-          cargo fmt --all --check
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --release -p nrpvp-app -p nrpvp-launcher
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --release -p nrpvp-app -p nrpvp-launcher --all-targets -- -D warnings
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --release -p nrpvp --no-default-features -- -D warnings
-          exit $LASTEXITCODE
+          'HAS_BUILD_INPUTS=true' >> $env:GITHUB_ENV
       - name: Build launcher, player DLL and update manifest
+        if: env.HAS_BUILD_INPUTS == 'true'
         shell: pwsh
         run: ./scripts/publish-release.ps1 -Version $env:RELEASE_VERSION -NotesFile releases/notes.txt -MatchPlayers 6 -MinPlayers 2 -Me3Dir "$PWD/dist/ci-inputs/me3" -Repo $env:NRPVP_RELEASES_REPO -DryRun
       - uses: actions/upload-artifact@v4
@@ -84,10 +119,26 @@ jobs:
           path: dist/release/*
           if-no-files-found: error
       - name: Upload draft release
-        if: github.ref_type == 'tag' || inputs.publish_draft
+        if: env.HAS_BUILD_INPUTS == 'true' && (github.event_name == 'push' || inputs.publish_draft)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v$env:RELEASE_VERSION" --repo $env:NRPVP_RELEASES_REPO --target $env:GITHUB_SHA --draft --title "Nightreign PvP v$env:RELEASE_VERSION" --notes-file releases/notes.txt dist/release/NightreignPvP.zip dist/release/NightreignPvP-Launcher.exe dist/release/release.json
+          $existingText = gh release view "v$env:RELEASE_VERSION" --repo $env:NRPVP_RELEASES_REPO --json isDraft,targetCommitish 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $existing = $existingText | ConvertFrom-Json
+            if (-not $existing.isDraft -or $existing.targetCommitish -ne $env:GITHUB_SHA) { throw 'This version already belongs to a published release or another commit. Choose a new version.' }
+            gh release upload "v$env:RELEASE_VERSION" --repo $env:NRPVP_RELEASES_REPO --clobber dist/release/NightreignPvP.zip dist/release/NightreignPvP-Launcher.exe dist/release/release.json
+          } else {
+            gh release create "v$env:RELEASE_VERSION" --repo $env:NRPVP_RELEASES_REPO --target $env:GITHUB_SHA --draft --title "Nightreign PvP v$env:RELEASE_VERSION" --notes-file releases/notes.txt dist/release/NightreignPvP.zip dist/release/NightreignPvP-Launcher.exe dist/release/release.json
+          }
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build summary
+        shell: pwsh
+        run: |
+          "Built version $env:RELEASE_VERSION from $env:GITHUB_SHA." >> $env:GITHUB_STEP_SUMMARY
+          if ($env:HAS_BUILD_INPUTS -eq 'true') {
+            'The complete updater package is in the workflow artifact. Publish its draft release when approved for players.' >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            'Launcher, helper and player DLL are available in the workflow artifact. Configure CI_INPUTS_SHA256 and the draft build-inputs bundle in this repository to also generate the complete mod zip and updater manifest.' >> $env:GITHUB_STEP_SUMMARY
+          }

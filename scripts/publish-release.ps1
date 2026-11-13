@@ -15,7 +15,7 @@ param(
     # Shown to players; must agree with the hashes in pins/nightreign.toml.
     [string]$GameVersion = '1.03.3',
     [string]$ScVersion = '1.1.3',
-    [string]$Repo = 'notgonnaleo/nightreign-pvp',
+    [string]$Repo = 'aspherya/nightreign-pvp',
     [switch]$DryRun,
     [switch]$AllowDirty
 )
