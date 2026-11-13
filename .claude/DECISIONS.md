@@ -155,10 +155,10 @@ link, no passwords of our own, never needed to play. No rankings (no anti-cheat,
 (ASP.NET Core) on Leonardo's Lightsail with his Postgres; log files on disk, never in Postgres; no personal data by default (a random
 install id; Steam IDs in logs hashed by the launcher). Design: [CLOUD.md](CLOUD.md).
 
-## 2026-11-13 — Player releases live in their own repository, the launcher carries a read-only token (Leonardo)
+## 2026-11-13 — Player releases live in their own public repository; the launcher needs no token (Leonardo)
 
 Releases moved from `aspherya/nightreign-pvp` to `aspherya/nightreign-pvp-releases`: a release in the source repository ships
-GitHub's source archives, and a token that can read its releases can read its source. The launcher embeds a fine-grained,
-read-only token scoped to the releases repository only, so players need no setup. Anyone with the exe can recover that token;
-that is accepted because it reads only releases. Making the releases repository public would remove the token entirely and is
-the simpler option if private releases stop mattering. How-to: RELEASE.md §6.
+GitHub's source archives, and a token that can read its releases can read its source. The releases repository is public, so the
+launcher reads it without a token and nothing secret is in the exe. A read-only token built into the launcher was implemented
+first and dropped once the repository went public: anyone with the exe could have recovered it, and it would have expired on
+every player. Only CI holds a token (`RELEASES_PUBLISH_TOKEN`, write to the releases repository only). How-to: RELEASE.md §6.

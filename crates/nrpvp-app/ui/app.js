@@ -156,7 +156,7 @@ function render() {
   $('#setSc').textContent = d.scOk ? (d.scMatch === false ? 'Installed (a different version than this release needs)' : 'Installed') : 'Not installed';
   $('#setVer').textContent = st.launcher_version ? 'Launcher v' + st.launcher_version + (d.newLauncher ? ' · a newer one is out' : '') : '';
   $('#setRepair').disabled = !d.gameOk || !r || !!S.busy;
-  $('#githubAuthStatus').textContent = st.github_token_set ? 'Your saved GitHub token is used for updates.' : st.github_builtin ? 'Updates use the launcher\'s built-in access. Add a token only if updates stop working.' : 'This launcher has no built-in update access. Add a read-only GitHub token to download releases.';
+  $('#githubAuthStatus').textContent = st.github_token_set ? 'Your saved GitHub token is used for updates.' : 'Updates download from the public releases page. No token is needed.';
   $('#githubAuthSave').disabled = !!S.busy;
   $('#githubAuthClear').disabled = !!S.busy || !st.github_token_set;
   const player = st.player || {}, characters = player.characters || [];

@@ -117,17 +117,16 @@ If the game crashes on quit (0xC0000374) it is the known bug; note the time and 
 
 ## 5b. Publish for the launcher app (LAUNCH-1)
 
-The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of a **separate**
-private repository, `aspherya/nightreign-pvp-releases` (since 2026-11-13). Source stays in `aspherya/nightreign-pvp`: a release
-there would carry GitHub's automatic source-code archives, and a token able to read its releases could read its source. The releases
-repository holds only a README and the releases (`release.json`, `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`). Releases v0.1.3
+The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of a **separate,
+public** repository, `aspherya/nightreign-pvp-releases` (since 2026-11-13). Source stays private in `aspherya/nightreign-pvp`: a
+release there would carry GitHub's automatic source-code archives, and a token able to read its releases could read its source. The
+releases repository holds only a README and the releases (`release.json`, `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`). Releases v0.1.3
 and v0.1.7 were published in the source repository before the move; launchers of those versions keep looking there. One command
 builds the zip, the launcher and `release.json`, and uploads them:
 
 ```powershell
 ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2 -DryRun   # stage in dist\release\, upload nothing
 $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launcher.exe     # try the staged release locally
-$env:NRPVP_RELEASES_TOKEN = '<read-only token>'                                            # embedded in the launcher
 ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2           # publish (gh auth login once)
 ```
 
@@ -162,18 +161,14 @@ Tags in the releases repository point at its default branch, since the source co
 
 One-time setup by the repository owner:
 
-1. Keep both repositories private. Player releases go to `aspherya/nightreign-pvp-releases` (override with the Actions variable
-   `RELEASES_REPO`); the workflow embeds that name in the launcher. It must have at least one commit (a README) so releases can be
-   tagged. Build inputs stay as a draft in the source repository. Two Actions **secrets** in `aspherya/nightreign-pvp`:
-   - `RELEASES_READ_TOKEN`: fine-grained token, resource owner `aspherya`, **Only select repositories > nightreign-pvp-releases**,
-     Repository permissions **Contents: Read-only**, nothing else. CI embeds it (XOR-masked) in the launcher, so every player's
-     launcher can download updates with no setup. Anyone with the exe can recover it: that is acceptable only because it reads
-     nothing but the releases repository. Give it a long expiry and replace it before it expires (players then need the new launcher,
-     or a token in **Settings > Updates access**). Publishing fails with a clear error while this secret is missing and the releases
-     repository is private.
-   - `RELEASES_PUBLISH_TOKEN`: fine-grained token, same single repository, **Contents: Read and write**. Only CI uses it to create
-     and publish releases; the built-in `GITHUB_TOKEN` cannot write to another repository.
-   If the releases repository is ever made public, `RELEASES_READ_TOKEN` can be removed: the launcher then reads it without a token.
+1. Keep the source repository private and the releases repository **public**. Player releases go to
+   `aspherya/nightreign-pvp-releases` (override with the Actions variable `RELEASES_REPO`); the workflow embeds that name in the
+   launcher, which reads it without a token. Publishing refuses to run while the releases repository is not publicly readable. It
+   must have at least one commit (a README) so releases can be tagged. Build inputs stay as a draft in the source repository.
+   One Actions **secret** in `aspherya/nightreign-pvp`: `RELEASES_PUBLISH_TOKEN`, a fine-grained token, resource owner `aspherya`,
+   **Only select repositories > nightreign-pvp-releases**, Repository permissions **Contents: Read and write**, nothing else. Only
+   CI uses it to create and publish releases; the built-in `GITHUB_TOKEN` cannot write to another repository. Replace it before
+   it expires (an expired one only stops publishing; players keep working).
 2. On the machine holding the pinned game unpack and tools, run `scripts/build-gamedata.ps1` and then:
 
    ```powershell
@@ -199,13 +194,10 @@ One-time setup by the repository owner:
 
 ### How the launcher authenticates
 
-Token order, first match wins: a token the player saved in **Settings > Updates access** (DPAPI-encrypted for the Windows user),
-the read-only token CI embedded from `RELEASES_READ_TOKEN`, or none (works only while the releases repository is public). Players
-normally never touch Settings; the saved token is a fallback for when the embedded one expired or was revoked. A saved token must
-also be fine-grained, **Only select repositories > nightreign-pvp-releases**, **Contents: Read-only**.
-
-The token is masked in the exe so secret scanners and `strings` do not flag it (`crates/nrpvp-app/build.rs`); this is not
-protection. Never give the embedded token access to the source repository or any other repository. Never commit a token.
+It does not need one: the releases repository is public. No token is built into the exe or committed. **Settings > Updates
+access** still accepts an optional token (DPAPI-encrypted for the Windows user), sent when present; it would matter only if the
+releases repository became private again (fine-grained, **Only select repositories > nightreign-pvp-releases**, **Contents:
+Read-only**). Without a token GitHub allows 60 API requests per hour per IP; an update check uses a few.
 
 The launcher uses the release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
 to download the manifest, launcher and player zip. SHA-256 verification still applies. Tokens go only to constructed

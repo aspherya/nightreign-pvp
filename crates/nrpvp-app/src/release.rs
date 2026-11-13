@@ -1,13 +1,12 @@
 //! Where releases come from, and the `release.json` manifest that describes one.
 //!
-//! Player releases live in their own repository ([`RELEASES_REPO`], `aspherya/nightreign-pvp-releases`), apart from the
-//! source repository, so release access never grants source access.
-//! Every release carries three assets: `release.json` (this manifest), the player zip, and the launcher exe. GitHub release/asset
-//! API requests download the manifest and assets; their SHA-256 is checked before install. `scripts\publish-ci-release.ps1`
-//! uploads the release from CI.
+//! Player releases live in their own **public** repository ([`RELEASES_REPO`], `aspherya/nightreign-pvp-releases`), apart from
+//! the private source repository. Every release carries three assets: `release.json` (this manifest), the player zip, and the
+//! launcher exe. GitHub release/asset API requests download the manifest and assets without a token; their SHA-256 is checked
+//! before install. `scripts\publish-ci-release.ps1` uploads the release from CI.
 //!
-//! Token used for those requests, first match wins: a token the player saved in Settings (Windows-protected local storage), the
-//! read-only token embedded at build time (`NRPVP_RELEASES_TOKEN`, see build.rs), or none (works once the repository is public).
+//! A token the player saved in Settings (Windows-protected local storage) is sent when present: only needed if the releases
+//! repository ever becomes private again.
 //!
 //! For testing without GitHub: `NRPVP_RELEASE_DIR=<folder holding release.json and the zip>` reads a local folder instead;
 //! `NRPVP_RELEASES_REPO=<owner/name>` points at another repository.
@@ -23,30 +22,6 @@ pub const RELEASES_REPO: &str = match option_env!("NRPVP_RELEASES_REPO") {
     Some(repo) => repo,
     None => "aspherya/nightreign-pvp-releases",
 };
-
-mod embedded {
-    include!(concat!(env!("OUT_DIR"), "/releases_token.rs"));
-}
-
-/// Must match `mask` in build.rs.
-fn mask(i: usize) -> u8 {
-    (i as u8).wrapping_mul(31).wrapping_add(0x5A)
-}
-
-fn unmask(masked: &[u8]) -> Option<String> {
-    let bytes: Vec<u8> = masked
-        .iter()
-        .enumerate()
-        .map(|(i, b)| b ^ mask(i))
-        .collect();
-    String::from_utf8(bytes).ok().filter(|t| !t.is_empty())
-}
-
-/// The read-only releases token built into this exe, if the build had one.
-pub fn builtin_token() -> Option<String> {
-    // black_box: without it the optimizer unmasks the constant at compile time and stores the plain token in the exe.
-    unmask(std::hint::black_box(embedded::MASKED))
-}
 /// Seamless Co-op for Nightreign, by Yui. The GitHub repository holds only data files today (no releases); the mod itself is
 /// published on Nexus Mods. The launcher installs from a GitHub release if one ever appears, else guides the Nexus download.
 pub const SC_GITHUB_REPO: &str = "yuiamoroll/NightreignSeamlessCoopRelease";
@@ -187,16 +162,16 @@ fn github_get(
         .map_err(|_| "Could not reach GitHub. Check your connection and try again.")?;
     match response.status().as_u16() {
         200..=299 => Ok(response),
-        401 => Err("The launcher's access to updates expired. Download the newest launcher, or add a token in Settings > Updates access.".into()),
-        403 => Err("GitHub denied access or its API limit was reached. Try again later.".into()),
-        404 => Err("No published release was found, or this launcher cannot read the releases repository. Download the newest launcher, or add a token in Settings > Updates access.".into()),
+        401 => Err("The GitHub token saved in Settings > Updates access is invalid or expired. Remove or replace it.".into()),
+        403 => Err("GitHub's download limit was reached for now. Try again in an hour.".into()),
+        404 => Err("No published release was found yet. Try again later.".into()),
         status => Err(format!("GitHub answered {status}; try again later.")),
     }
 }
 
-/// A token saved in Settings wins over the built-in one; a saved token Windows cannot read falls back to the built-in one.
+/// Optional: the token saved in Settings, if any (a saved token Windows cannot read is ignored).
 fn github_token() -> Option<String> {
-    crate::auth::token().ok().flatten().or_else(builtin_token)
+    crate::auth::token().ok().flatten()
 }
 
 pub fn validate_token(token: &str) -> Result<(), String> {
@@ -424,19 +399,6 @@ pub fn sc_github_release() -> Result<Option<ScRelease>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn masked_token_round_trips() {
-        let token = "github_pat_test-only-not-a-real-credential";
-        let masked: Vec<u8> = token
-            .bytes()
-            .enumerate()
-            .map(|(i, b)| b ^ mask(i))
-            .collect();
-        assert!(!masked.windows(10).any(|w| w == b"github_pat"));
-        assert_eq!(unmask(&masked).as_deref(), Some(token));
-        assert_eq!(unmask(&[]), None);
-    }
-
     #[test]
     fn authenticated_asset_urls_stay_on_github_and_escape_tag_paths() {
         let url = github_url("aspherya/nightreign-pvp", &["releases", "tags", "v1/extra"]).unwrap();

@@ -1,7 +1,6 @@
 # Publishes a player release for the launcher app (crates/nrpvp-app): builds the player zip and the launcher exe, writes release.json,
 # and uploads all three as a GitHub release in the releases repository (aspherya/nightreign-pvp-releases, never the source repo).
 # The launcher downloads release.json via the GitHub release asset API; the latest stable release is what players get.
-# Set NRPVP_RELEASES_TOKEN (read-only token for the releases repo) before a real publish, or the launcher has no built-in access.
 #
 #   ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -DryRun     # build + write dist\release\, upload nothing
 #   ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt             # build + upload (needs `gh auth login`)
@@ -28,8 +27,6 @@ $tag = "v$Version"
 
 if (-not (Test-Path -LiteralPath $NotesFile)) { throw "Notes file not found: $NotesFile" }
 if (-not $AllowDirty -and (& git -C $repoRoot status --porcelain)) { throw 'The working tree has changes. Commit them first (or pass -AllowDirty for a dry run).' }
-if (-not $DryRun -and -not $env:NRPVP_RELEASES_TOKEN) { throw 'Set NRPVP_RELEASES_TOKEN (read-only token for the releases repository) so the launcher can download updates.' }
-
 # Pins: the game exe and Seamless Co-op this release was built and tested with (pins/nightreign.toml, TECHNICAL_NOTES §1).
 $pins = Get-Content -LiteralPath (Join-Path $repoRoot 'pins\nightreign.toml') -Raw
 function Pin([string]$key) {

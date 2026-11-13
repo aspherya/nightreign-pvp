@@ -21,12 +21,9 @@ if ($ValidateOnly) { Write-Output "Verified complete release $tag; nothing uploa
 if (-not $env:GH_TOKEN) { throw "GH_TOKEN is empty. In CI, add the RELEASES_PUBLISH_TOKEN secret (fine-grained, Contents: read and write on $Repo); see .claude/RELEASE.md." }
 $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
 $api = "https://api.github.com/repos/$Repo"
-# Players' launchers read this repository with the token embedded at build time; a private repository without one locks them out.
-if ($env:HAS_READ_TOKEN -eq 'false') {
-    $public = $true
-    try { Invoke-RestMethod $api -Headers @{ Accept = 'application/vnd.github+json' } | Out-Null } catch { $public = $false }
-    if (-not $public) { throw "$Repo is private and the RELEASES_READ_TOKEN secret is empty: the launcher could not download this release. Add the secret; see .claude/RELEASE.md." }
-}
+# Players' launchers read this repository without a token: a private one would lock every launcher out of the update.
+try { Invoke-RestMethod $api -Headers @{ Accept = 'application/vnd.github+json' } | Out-Null }
+catch { throw "$Repo is not publicly readable: launchers could not download this release. Make it public; see .claude/RELEASE.md." }
 $repoInfo = Invoke-RestMethod $api -Headers $headers
 # The source commit does not exist in the releases repository: tags go on its default branch, which needs at least one commit.
 try { Invoke-RestMethod "$api/commits/$($repoInfo.default_branch)" -Headers $headers | Out-Null }

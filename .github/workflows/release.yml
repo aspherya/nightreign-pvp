@@ -95,9 +95,6 @@ jobs:
           exit $LASTEXITCODE
       - name: Build launcher and player binaries
         shell: pwsh
-        env:
-          # Read-only token for the releases repository, embedded (masked) in the launcher; see crates/nrpvp-app/build.rs.
-          NRPVP_RELEASES_TOKEN: ${{ secrets.RELEASES_READ_TOKEN }}
         run: |
           cargo build --locked --release -p nrpvp-app -p nrpvp-launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -149,8 +146,6 @@ jobs:
       - name: Build launcher, player DLL and update manifest
         if: env.HAS_BUILD_INPUTS == 'true'
         shell: pwsh
-        env:
-          NRPVP_RELEASES_TOKEN: ${{ secrets.RELEASES_READ_TOKEN }}
         run: ./scripts/publish-release.ps1 -Version $env:RELEASE_VERSION -NotesFile releases/notes.txt -MatchPlayers 6 -MinPlayers 2 -Me3Dir "$PWD/dist/ci-inputs/me3" -Repo $env:NRPVP_RELEASES_REPO -DryRun
       - uses: actions/upload-artifact@v4
         with:
@@ -163,7 +158,6 @@ jobs:
         env:
           # github.token cannot write to another repository: a fine-grained token with Contents: read and write on the releases repo.
           GH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
-          HAS_READ_TOKEN: ${{ secrets.RELEASES_READ_TOKEN != '' }}
           KEEP_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
         run: ./scripts/publish-ci-release.ps1 -Repo $env:NRPVP_RELEASES_REPO -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Draft:($env:KEEP_DRAFT -eq 'true')
       - name: Build summary
