@@ -14,9 +14,7 @@ crate-type = ["cdylib"]
 # scripts/build.ps1 builds the developer DLL (default features); scripts/package-release.ps1 builds the player DLL with
 # `--no-default-features`, which has none of it.
 default = ["dev"]
-dev = ["arena"]
-# The Arena mode (MODE-02), dev only until it ships; `package-release.ps1 -Arena` builds a player DLL with it for tests.
-arena = []
+dev = []
 
 [dependencies]
 tracing = "0.1"

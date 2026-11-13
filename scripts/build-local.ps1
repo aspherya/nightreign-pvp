@@ -13,7 +13,6 @@ param(
     [string]$GameData,
     [ValidateRange(2, 6)][int]$MatchPlayers = 6,
     [ValidateRange(0, 6)][int]$MinPlayers = 2,
-    [switch]$Arena,
     [switch]$NonInteractive,
     [switch]$CheckOnly
 )
@@ -109,16 +108,15 @@ try {
         foreach ($required in 'bin/me3.exe', 'bin/me3-launcher.exe', 'bin/me3_mod_host.dll', 'LICENSE-MIT', 'LICENSE-APACHE') {
             if (-not (Test-Path -LiteralPath (Join-Path $Me3Dir $required))) { throw "me3 is incomplete: missing $required in $Me3Dir" }
         }
-        if (-not $GameData) { $GameData = Join-Path $repoRoot 'dist/gamedata-player' }
-        $GameData = Resolve-LocalPath $GameData
-        if (-not (Test-Path -LiteralPath (Join-Path $GameData 'menu/05_000_title.gfx'))) {
-            throw 'Player game data is missing. Run build-gamedata.bat first, or supply the approved gamedata-player package.'
-        }
-        if ($Task -eq 'Release' -and $GameData -ne (Resolve-LocalPath 'dist/gamedata-player')) {
-            throw 'For release builds, put the approved game-data package in dist/gamedata-player.'
+        if ($Task -eq 'Release') {
+            if (-not $GameData) { $GameData = Join-Path $repoRoot 'dist/gamedata' }
+            $GameData = Resolve-LocalPath $GameData
+            if ($GameData -ne (Resolve-LocalPath 'dist/gamedata') -or -not (Test-Path -LiteralPath (Join-Path $GameData 'script/talk/m10_00_00_00.talkesdbnd.dcx'))) {
+                throw 'Game data is missing or incomplete. Run build-gamedata.bat first (it writes dist/gamedata).'
+            }
         }
     }
-    if ($Task -eq 'GameData') {
+    if ($Task -in 'GameData', 'CIInputs') {
         $Unpacked = Find-ToolPath 'Unpacked' $Unpacked 'Unpacked pinned game folder (1.03.3)' @((Join-Path $repoRoot 'tools/local/unpacked'))
         $Witchy = Find-ToolPath 'Witchy' $Witchy 'WitchyBND.exe' @((Join-Path $repoRoot 'tools/local/WitchyBND/WitchyBND.exe'))
         $Smithbox = Find-ToolPath 'Smithbox' $Smithbox 'Smithbox 2.2.6 folder' @((Join-Path $repoRoot 'tools/local/Smithbox'))
@@ -134,7 +132,7 @@ try {
             $env:PATH = (Join-Path $env:ProgramFiles 'dotnet') + ';' + $env:PATH
             $dotnetCommand = Get-Command dotnet.exe -ErrorAction SilentlyContinue
         }
-        if (-not $dotnetCommand -or -not (& $dotnetCommand.Source --list-sdks | Where-Object { $_ -match '^10\.' })) {
+        if ($Task -eq 'GameData' -and (-not $dotnetCommand -or -not (& $dotnetCommand.Source --list-sdks | Where-Object { $_ -match '^10\.' }))) {
             throw 'Game-data generation requires the .NET 10 SDK. Install it from https://dotnet.microsoft.com/download/dotnet/10.0.'
         }
     }
@@ -144,7 +142,6 @@ try {
         if (-not $NotesFile) { $NotesFile = Join-Path $repoRoot 'releases/notes.txt' }
         $NotesFile = Resolve-LocalPath $NotesFile
         if (-not (Test-Path -LiteralPath $NotesFile)) { throw "Release notes not found: $NotesFile" }
-        if ($Arena) { throw 'Use scripts/package-release.ps1 -Arena for an Arena test zip. The updater release is the player build.' }
     }
     if ($CheckOnly) { Write-Host "Prerequisites detected for $Task; no build was started."; exit 0 }
     switch ($Task) {
@@ -155,7 +152,6 @@ try {
         }
         'Mod' {
             $arguments = @('build', '--locked', '--release', '-p', 'nrpvp', '--no-default-features', '--target-dir', (Join-Path $repoRoot 'target/player'))
-            if ($Arena) { $arguments += @('--features', 'arena') }
             Invoke-Cargo -CargoArguments $arguments
             Copy-BuildOutput 'target/player/release/nrpvp.dll' 'nrpvp.dll'
         }
@@ -172,7 +168,7 @@ try {
             & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $Version -NotesFile $NotesFile -Me3Dir $Me3Dir -MatchPlayers $MatchPlayers -MinPlayers $MinPlayers -DryRun -AllowDirty
         }
         'CIInputs' {
-            & (Join-Path $PSScriptRoot 'prepare-ci-inputs.ps1') -GameData $GameData -Me3Dir $Me3Dir
+            & (Join-Path $PSScriptRoot 'prepare-ci-inputs.ps1') -Unpacked $Unpacked -Witchy $Witchy -Smithbox $Smithbox -EsdTool $EsdTool -Me3Dir $Me3Dir
         }
     }
     Write-Host 'Build completed successfully.' -ForegroundColor Green

@@ -17,7 +17,7 @@ Owner doc for build, deploy, test tooling and logs. What the mod does is in STAT
 | Tool | Command | Note |
 |---|---|---|
 | Build the dev mod | `powershell -NoProfile -File scripts\build.ps1` | `dist\nrpvp.dll`; fails to copy while a game uses it, and at the `nro.exe` link while `nro desk` runs: then use `scripts\build-mod.ps1` (nrpvp.dll + nrcon.exe only) |
-| Build game data | `powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1` | `dist\gamedata` + `dist\gamedata-player` (needs the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`, Python) |
+| Build game data | `powershell -ExecutionPolicy Bypass -File scripts\build-gamedata.ps1` | `dist\gamedata`, one package with BR + Arena + saved loadouts (needs the 1.03.3 unpack in `Z:\Tools\nr-unpacked\1.03.3\`, Python) |
 | Menu / HUD files (GFx) | `Z:\Tools\FFDJPEXS\ffdec-cli.exe -swf2xml` / `-xml2swf`, `tools\gfx\add_text_field.py` | [re/GFX_UI.md](re/GFX_UI.md) §4; scenario `gfx-override-lab` |
 | Build the orchestrator | `cargo build --release -p nro -p nro-mcp` | `target\release\nro.exe`, `nro-mcp.exe` (`.mcp.json` registers the MCP server `nightreign`) |
 | Orchestrator guide | [orchestrator/GUIDE.md](orchestrator/GUIDE.md) | commands, examples, scenarios; release: [RELEASE.md](RELEASE.md) |

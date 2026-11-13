@@ -11,9 +11,9 @@
 #   NPC bot instructions 2003:97 / 2003:98, started by our flags 10007300+; research\OFF-3-bots.md).
 #   event\common.emevd.dcx + event\common_func.emevd.dcx (M5-3, research\M5-no-boss-nights.md): nights with no boss and no minions
 #   (gamedata\emevd-nights-func.json replaces the shared boss/minion events, gamedata\emevd-nights.json adds the timed night end).
-#   Several event files may target one game file: they are applied in the order of $eventsFiles. Files marked dev-only (the Arena events,
-#   ARENA-0..3) are left out of dist\gamedata-player\, the complete PLAYER package that package-release.ps1 zips: every file of
-#   dist\gamedata, event scripts rebuilt without their dev-only events, and game files that only dev-only events touch (m18) left out.
+#   Several event files may target one game file: they are applied in the order of $eventsFiles. Every build ships the Battle Royale and
+#   the Arena together (Leonardo, 2026-11-13), so there is one package: dist\gamedata is what package-release.ps1 zips.
+#   script\talk\m10_00_00_00.talkesdbnd.dcx: saved loadouts at the Sparring Equipment (scripts\build-loadouts.ps1, needs ESDLang 0.5.1).
 #   map\mapstudio\m60_00_00_99.msb.dcx (HAWK-2, the hawk crossing): every start-hawk route replaced by the one crossing line
 #   (.claude\archive\experiments\HAWK-0\patch_routes.py, needs Python 3 and the game's oo2core_9_win64.dll). In the player zip too.
 #   regulation.bin (UI-3, the Battle Royale card in the expedition list): the pinned regulation.bin with the param rows of
@@ -60,20 +60,21 @@ $pinnedEmevd = @{
     # event\m18_00_00_00.emevd.dcx of game 1.03.3 (ARENA-0: Heolstor's arena).
     'event/m18_00_00_00.emevd.dcx' = '685531433FB79CB955E9D6B864098128E9DBD0097610E5AA6B3C1FDCC1A4FED4'
 }
-# Our event scripts (each names its target in "file"), applied in this order; Dev = left out of the player copy.
+# Our event scripts (each names its target in "file"), applied in this order.
 $eventsFiles = @(
-    @{ Path = (Join-Path $repo 'gamedata\emevd-events.json'); Dev = $false },
-    # BOT-5 (2026-11-06): the bot events are a player feature (Bots On in Matchmaking Settings), so no longer dev-only.
-    @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json'); Dev = $false },
-    @{ Path = (Join-Path $repo 'gamedata\emevd-nights.json'); Dev = $false },
-    @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json'); Dev = $false },
-    # ARENA-0 (2026-11-08): the warp to Heolstor's arena (our flag 10007500), dev only until the Arena mode is built.
-    @{ Path = (Join-Path $repo 'gamedata\emevd-arena.json'); Dev = $true },
-    # ARENA-0 1b: Heolstor kept off in his arena (m18), dev only.
-    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-m18.json'); Dev = $true },
-    # ARENA-0: Heolstor's fight never starts (no 7511, no boss bar), dev only.
-    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-func.json'); Dev = $true }
+    @{ Path = (Join-Path $repo 'gamedata\emevd-events.json') },
+    # BOT-5 (2026-11-06): the bot events (Bots On in Matchmaking Settings).
+    @{ Path = (Join-Path $repo 'gamedata\emevd-bots.json') },
+    @{ Path = (Join-Path $repo 'gamedata\emevd-nights.json') },
+    @{ Path = (Join-Path $repo 'gamedata\emevd-nights-func.json') },
+    # ARENA-0 (2026-11-08): the warp to Heolstor's arena (our flag 10007500).
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena.json') },
+    # ARENA-0 1b: Heolstor kept off in his arena (m18).
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-m18.json') },
+    # ARENA-0: Heolstor's fight never starts (no 7511, no boss bar).
+    @{ Path = (Join-Path $repo 'gamedata\emevd-arena-func.json') }
 )
+# The old split player package; removed if an earlier build left it, so nothing packs a stale copy.
 $outPlayer = Join-Path $repo 'dist\gamedata-player'
 
 if (-not (Test-Path $Witchy)) { throw "WitchyBND not found at $Witchy" }
@@ -170,23 +171,13 @@ function Build-Emevd([string]$rel, $files, [string]$tag) {
     Invoke-Witchy @($plain)
     return $dcx
 }
-$devOnlyRels = @()
 foreach ($rel in $byFile.Keys) {
     $files = $byFile[$rel]
-    $dcx = Build-Emevd $rel $files 'dev'
+    $dcx = Build-Emevd $rel $files 'all'
     $dst = Join-Path $out (Split-Path ($rel -replace '/', '\') -Parent)
     New-Item -ItemType Directory -Force $dst | Out-Null
     Copy-Item $dcx $dst
     Write-Host ("{0}  {1}  {2}  ({3} event file(s))" -f $rel, (Get-Item $dcx).Length, (Get-FileHash $dcx).Hash.Substring(0, 16), $files.Count)
-    $player = @($files | Where-Object { -not $_.Dev })
-    if ($player.Count -ne $files.Count -and $player.Count -gt 0) {
-        $pdcx = Build-Emevd $rel $player 'player'
-        $pdst = Join-Path $outPlayer (Split-Path ($rel -replace '/', '\') -Parent)
-        New-Item -ItemType Directory -Force $pdst | Out-Null
-        Copy-Item $pdcx $pdst
-        Write-Host ("{0}  {1}  {2}  (player copy, {3} event file(s), no dev-only events)" -f $rel, (Get-Item $pdcx).Length, (Get-FileHash $pdcx).Hash.Substring(0, 16), $player.Count)
-    }
-    if ($player.Count -eq 0) { $devOnlyRels += ($rel -replace '/', '\') }
 }
 
 # HAWK-1b/HAWK-2: the crossing line for every start-hawk route (TECHNICAL_NOTES 4c, PROJECT_PLAN 13 B1).
@@ -237,19 +228,7 @@ Write-Host ("UI-3: regulation.bin  {0}  {1}" -f (Get-Item $regOut).Length, (Get-
 & $py -I (Join-Path $repo 'tools\gfx\title_background.py') (Join-Path $Unpacked 'menu\05_000_title.gfx') (Join-Path $out 'menu\05_000_title.gfx')
 if ($LASTEXITCODE -ne 0) { throw 'Title background build failed; check the pinned title movie and image assets.' }
 
-# The player package (dist\gamedata-player, zipped by package-release.ps1): every other file of dist\gamedata as it is, except game
-# files that only dev-only events change (they stay vanilla for players).
-# Arena builds include saved loadouts at the Sparring Equipment interaction; BR-only builds keep the original dialogue.
+# Saved loadouts at the Sparring Equipment interaction (every build).
 & (Join-Path $PSScriptRoot 'build-loadouts.ps1') -Unpacked $Unpacked -Witchy $Witchy -EsdTool $EsdTool -Python $py -Output (Join-Path $out 'script/talk/m10_00_00_00.talkesdbnd.dcx')
-$devOnlyRels += 'script\talk\m10_00_00_00.talkesdbnd.dcx'
-$outFull = (Resolve-Path $out).Path
-foreach ($f in Get-ChildItem -LiteralPath $out -Recurse -File) {
-    $rel = $f.FullName.Substring($outFull.Length + 1)
-    if ($devOnlyRels -contains $rel) { continue }
-    $dst = Join-Path $outPlayer $rel
-    if (Test-Path -LiteralPath $dst) { continue }
-    New-Item -ItemType Directory -Force (Split-Path $dst -Parent) | Out-Null
-    Copy-Item -LiteralPath $f.FullName $dst
-}
-$nPlayer = @(Get-ChildItem -LiteralPath $outPlayer -Recurse -File).Count
-Write-Host ("player package: {0}  {1} file(s), dev-only left out: {2}" -f $outPlayer, $nPlayer, $(if ($devOnlyRels) { $devOnlyRels -join ', ' } else { 'none' }))
+$n = @(Get-ChildItem -LiteralPath $out -Recurse -File).Count
+Write-Host ("game-data package: {0}  {1} file(s)" -f $out, $n)

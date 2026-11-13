@@ -262,7 +262,6 @@ mod tests {
                 "toastfilter",
                 "hawk",
                 "killfeed",
-                #[cfg(feature = "arena")]
                 "saved_loadouts"
             ]
         );

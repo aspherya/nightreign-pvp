@@ -269,14 +269,11 @@ impl Feature for BotsFeature {
     fn tick(&mut self, world: &World, ctx: &mut Ctx) {
         let now = self.now();
         let arena_on = crate::mm::arena_bots();
-        // ARENA-4: the Arena (its card, warp and rounds) is behind the `arena` feature; without it no Arena bots match starts.
-        #[cfg(feature = "arena")]
+        // ARENA-4: the Arena (its card, warp and rounds); every build has it since 2026-11-13.
         let (warped, placed) = (
             crate::game::arenacard::warped(),
             crate::game::arenacard::placed(),
         );
-        #[cfg(not(feature = "arena"))]
-        let (warped, placed) = (false, false);
         let seen = ArenaSeen {
             on: arena_on,
             warped,
@@ -295,14 +292,12 @@ impl Feature for BotsFeature {
             crate::mm::set_arena_bots(false);
         }
         self.fill.set_bots_match(bots_match());
-        #[cfg(feature = "arena")]
         self.fill.set_arena(fill::ArenaIn {
             on: arena_on && !over,
             placed,
             events: crate::game::arenarounds::bot_events(),
         });
         self.fill.step(now, super::mode::current(), world, ctx);
-        #[cfg(feature = "arena")]
         crate::game::arenarounds::set_arena_bot(self.fill.arena_bot());
         PENDING.store(self.fill.pending(), std::sync::atomic::Ordering::Relaxed);
         if self.fill.take_over() {

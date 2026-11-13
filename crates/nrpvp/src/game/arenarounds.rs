@@ -779,7 +779,7 @@ mod tests {
         );
         assert!(revive_due(Some(REVIVE_EVERY_MS)));
         // A retry still fits before the reset when the first write did nothing.
-        assert!(REVIVE_AFTER_MS + REVIVE_EVERY_MS < RESET_AFTER_MS);
+        const { assert!(REVIVE_AFTER_MS + REVIVE_EVERY_MS < RESET_AFTER_MS) };
     }
 
     #[test]

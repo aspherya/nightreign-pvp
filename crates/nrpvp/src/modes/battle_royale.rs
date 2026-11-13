@@ -29,7 +29,6 @@ pub(crate) fn list(cfg: &Config) -> Vec<Box<dyn Feature>> {
         Box::new(hooks::ToastFilter),
         Box::new(hooks::Hawk),
         Box::new(crate::features::killfeed::KillFeed::new()),
-        #[cfg(feature = "arena")]
         Box::new(crate::game::saved_loadouts::SavedLoadouts::default()),
     ]
 }
