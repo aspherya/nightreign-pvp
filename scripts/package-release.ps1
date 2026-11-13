@@ -65,7 +65,9 @@ $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'   # cargo wr
 & $cargo build --locked --release -p nrpvp-launcher --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
 $code = $LASTEXITCODE; $ErrorActionPreference = $prev
 if ($code -ne 0) { throw "cargo build of the launcher failed ($code)" }
-$playerTarget = Join-Path $repo 'target\player'
+# A separate folder keeps a local dev build of nrpvp.dll (target\release) from being overwritten; CI shares `target` instead
+# (NRPVP_PLAYER_TARGET_DIR) so dependencies compile once.
+$playerTarget = if ($env:NRPVP_PLAYER_TARGET_DIR) { Join-Path $repo $env:NRPVP_PLAYER_TARGET_DIR } else { Join-Path $repo 'target\player' }
 $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
 $featureArgs = if ($Arena) { @('--features', 'arena') } else { @() }
 & $cargo build --locked --release -p nrpvp --no-default-features @featureArgs --target-dir $playerTarget --manifest-path (Join-Path $repo 'Cargo.toml') 2>&1 | Out-Null
