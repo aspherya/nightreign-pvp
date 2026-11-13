@@ -1,7 +1,9 @@
 # Copy to build.local.psd1 and enter your own locations, or let the batch files prompt once.
 # Relative paths resolve against the repository root. build.local.psd1 is gitignored.
 @{
-    Unpacked = ''  # Pinned unpacked game 1.03.3: menu, msg, event, map, regulation.bin
+    # ESDLang 0.5.1 (keep its dist/ folder beside the executable; requires the .NET 6 x64 runtime).
+    EsdTool = ''   # Full path to ESDLang 0.5.1 esdtool.exe
+    Unpacked = ''  # Pinned unpacked game 1.03.3: menu, msg, event, map, script/talk, regulation.bin
     Witchy = ''    # Full path to WitchyBND.exe
     Smithbox = ''  # Smithbox 2.2.6 directory containing Andre.SoulsFormats.dll
     Python = ''    # Optional if python.exe or py.exe is on PATH

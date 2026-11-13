@@ -187,6 +187,7 @@ const COMMANDS: &[Spec] = &[
     Spec { name: "give", args: "<id hex> [qty] [slot]", help: "ARENA-3 research: add an item to LOCAL's inventory with the game's own add-item call (exe+0x1F05F0) and, with a slot 0..5 (L1 R1 L2 R2 L3 R3), equip it there (exe+0x1F3430); both run on the game's thread (MEMORY_MAP §29). A weapon not in a hand slot does not show in Nightreign. Logs `give:`", run: give },
     Spec { name: "arena_limit", args: "[secs]", help: "ARENA-3: the Arena round time limit (default 180 s; a value sets a shorter one for tests in this game, 0 = back to the default). At the limit the host judges by HP percent and sends the verdict", run: |a| crate::game::arenarounds::limit_cmd(a).map(Act::Reply) },
     Spec { name: "arena_loadout", args: "[apply]", help: "ARENA-3: the loadout captured at the Roundtable for the Arena (weapons per slot with their custom row and skill, goods); `apply` gives it now (level 15, max upgrade, skills, goods, recovery) as the arena spawn does, e.g. in a normal expedition", run: arena_loadout },
+    Spec { name: "saved_loadouts", args: "[sandbox | save|load <slot>]", help: "Training presets: status in log; sandbox uses an isolated temporary store; save/load equipment slots 1..10 on any current character. Hub idle only. Logs saved_loadouts:", run: saved_loadouts },
     Spec { name: "gaitem", args: "[handle hex]", help: "ARENA-3 research: dump the game's instance (GaitemIns) of an item handle, or of each hand slot's weapon, as u32 words (read only, pipe thread; also logged as `gaitem:`)", run: |a| crate::game::invspy::gaitem_cmd(a).map(Act::Reply) },
     Spec { name: "drop_gear", args: "[dry]", help: "RW-3 test aid: what a rival's defeat drops (LOCAL's equipped weapons, talismans and picked-up consumables) and whether this game is the host; without `dry` it drops it NOW at LOCAL's spot (the host makes the drop, the game shows it to everyone) without a defeat", run: drop_gear },
     Spec { name: "mm_open_lobby", args: "", help: "MM-3g: the game makes its multiplayer lobby now, as Invite Members does, with no menu and no Steam window (next frame, game thread)", run: |_| { crate::game::matchstart::request_lobby(); Ok(Act::Reply("mm_open_lobby: requested".into())) } },
@@ -874,6 +875,14 @@ fn arena_loadout(args: &[String]) -> Result<Act, String> {
     }
 }
 
+fn saved_loadouts(args: &[String]) -> Result<Act, String> {
+    let command = crate::game::saved_loadouts::parse_console(args)?;
+    Ok(Act::Main(MainReq::Run(
+        vec![Command::SavedLoadouts(command)],
+        "saved_loadouts: requested (details in the saved_loadouts log)".into(),
+    )))
+}
+
 fn give(args: &[String]) -> Result<Act, String> {
     let id = args
         .first()
@@ -1451,6 +1460,31 @@ mod tests {
             ran.push(c)
         });
         assert_eq!(ran, vec![Command::ArenaCard(a::REQ_REMOVE)]);
+    }
+
+    #[test]
+    fn saved_loadouts_validate_slots_and_use_main_loop_commands() {
+        use crate::game::saved_loadouts::ConsoleCmd;
+        assert!(saved_loadouts(&["save".into(), "0".into()]).is_err());
+        assert!(saved_loadouts(&["load".into(), "11".into()]).is_err());
+        assert!(saved_loadouts(&["save".into(), "1".into(), "0".into()]).is_err());
+        assert!(saved_loadouts(&["sandbox".into(), "extra".into()]).is_err());
+        let Ok(Act::Main(request)) = saved_loadouts(&["load".into(), "10".into()]) else {
+            panic!("Expected a main-loop request");
+        };
+        let mut ran = Vec::new();
+        answer(request, &snap(), &mut |c| ran.push(c));
+        assert_eq!(
+            ran,
+            vec![Command::SavedLoadouts(ConsoleCmd::Request {
+                save: false,
+                slot: 9,
+            })]
+        );
+        assert!(matches!(
+            saved_loadouts(&["sandbox".into()]),
+            Ok(Act::Main(MainReq::Run(_, _)))
+        ));
     }
 
     #[test]

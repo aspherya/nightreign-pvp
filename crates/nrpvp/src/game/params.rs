@@ -13,6 +13,8 @@ const PARAM_COUNT: usize = 0x80;
 const PARAM_RES: usize = 0x88;
 /// Param indices (name table `exe+0x39B4AD0`).
 pub(crate) const EQUIP_PARAM_WEAPON: usize = 0x0;
+/// MEMORY_MAP §29: the custom-weapon rows used by Sparring Equipment.
+pub(crate) const EQUIP_PARAM_CUSTOM_WEAPON: usize = 0x9E;
 pub(crate) const REINFORCE_PARAM_WEAPON: usize = 0x4;
 /// `EquipParamWeapon.reinforceTypeId` (s16), Smithbox NR paramdef.
 const WEAPON_REINFORCE_TYPE: usize = 0xDA;
