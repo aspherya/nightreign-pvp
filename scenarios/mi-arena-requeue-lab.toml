@@ -1,6 +1,6 @@
 name = "mi-arena-requeue-lab"
 about = "Bug #2 (Arena test 2026-11-11): mi-arena-rounds, then BOTH games queue for the Arena again at the Roundtable; every Commence must be seen by the mod (never a vanilla solo run) and the two must meet again. Base: mi-arena-queue's way into the arena (Arena card, Commence once each), then player 2 is downed twice (hp0, a test aid that downs the player in a session): round messages on both games, the loser gets up, both reset to their spawns, player 1 wins 2-0 (WIN banner) and player 2 loses (LOSE banner), both back at the Roundtable, and both leave the match's Seamless Co-op lobby (random players)"
-tags = ["mi"]
+tags = ["mi", "lab"]
 teardown = "keep"
 # Two emulated-Steam instances (MULTI-INSTANCE.md 20): Steam closed, `nro desk` running, the PC untouched while it runs. Needs the DEV
 # DLL and game data (the Arena card hook, the warp, Heolstor off and his fight off are dev only).

@@ -119,3 +119,12 @@ Read when you touch the area named in a bullet, or before debugging something od
   game-thread call armed its breakpoint (hwbp slot 0), then the main loop and the console pipe stopped for good (`All pipe
   instances are busy`); only `nro stop --all` ended it. The Arena only calls it on the arena spawn, where it works; keep the console
   `apply` for an expedition, or expect to lose the instance.
+- **An item we equip shows only on our own screen** (Arena test 2026-11-12): the game's add / equip calls change LOCAL's inventory and
+  model but never tell the session; every other game keeps drawing the old weapon. After any equipment change made by the mod, call
+  the game's player-data broadcast `exe+0xDE20E0()` on the game thread (`inventory::send_player_data_on_game_thread`; MEMORY_MAP §29).
+  Check with the console `rival_gear` on the other instance, not with your own screenshot.
+- **The Arena get-up must be written once** (Arena test 2026-11-12): a second `PlayerIns+0x732` write while the first get-up was still
+  starting (~1 s) skipped the get-up (state 1 -> 0, no state 2) and ~7 s later the game killed and respawned the player elsewhere with
+  a level lost, mid-round. A retry only after 2.5 s (`arenarounds::REVIVE_EVERY_MS`).
+- **A lobby left over after a match turns the next card pick into a vanilla run** (MM-REQ, 2026-11-13): see MEMORY_MAP §25 "The game's
+  lobby object"; `matchstart::request_leave_if_alone` leaves it when we are its only member.
