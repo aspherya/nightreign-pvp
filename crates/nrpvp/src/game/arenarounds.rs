@@ -51,8 +51,16 @@ pub(crate) const FADE_IN_MS: u64 = 6_000;
 /// ARENA-4: a round start waits at most this long for the bot on its spawn (then goes on without it).
 pub(crate) const RIVAL_WAIT_MS: u64 = 30_000;
 /// One get-up write per this long: the byte is cleared every frame, but a write every tick showed a burst of the game's own downed
-/// messages (Leonardo, 2026-11-08); one write started the get-up within ~1 s.
-const REVIVE_EVERY_MS: u64 = 1_000;
+/// messages (Leonardo, 2026-11-08); one write started the get-up within ~1 s (state 1 -> 2 after 0.97..1.05 s on real Steam).
+/// Arena test 2026-11-12 (real Steam): with 1 s spacing a second write landed while the first get-up was starting, in 3 of 7 downs;
+/// each time the state went 1 -> 0 with no get-up (state 2), and ~7 s later the game killed and respawned the player elsewhere with a
+/// level lost, mid-round. Every single write went 1 -> 2 -> 0 cleanly. So a second write only when the first clearly did nothing.
+pub(crate) const REVIVE_EVERY_MS: u64 = 2_500;
+
+/// Whether a get-up write is due now (pure): the first one at once, another only [`REVIVE_EVERY_MS`] after the last.
+pub(crate) fn revive_due(since_last_ms: Option<u64>) -> bool {
+    since_last_ms.is_none_or(|ms| ms >= REVIVE_EVERY_MS)
+}
 /// A reset move refused (a tilted rotation mid-attack) is retried every tick, then written over the rotation after this long.
 const PLACE_FORCE_AFTER_MS: u64 = 1_000;
 
@@ -543,6 +551,10 @@ pub(crate) fn tick(base: usize, world: &World) {
         && rounds.phase == (Phase::Fighting { armed: true })
     {
         tracing::info!("arena_rounds: both up: a down counts from now");
+        // Both games are surely in the arena now: our equipment once more, so the rival draws our real weapons.
+        if !vs_bot {
+            super::arenaloadout::resend(base);
+        }
     }
     // ARENA-4: offline, 0 HP is a down only with SpEffect 8970061.
     let want = near_death_wanted(vs_bot, on, rounds.phase);
@@ -571,7 +583,7 @@ pub(crate) fn tick(base: usize, world: &World) {
             Do::FadeInFrozen => set_flag(base, FLAG_FADE_IN_FROZEN),
             Do::Revive => {
                 let mut last = lock(&LAST_REVIVE);
-                if last.is_none_or(|t| t.elapsed().as_millis() as u64 >= REVIVE_EVERY_MS) {
+                if revive_due(last.map(|t| t.elapsed().as_millis() as u64)) {
                     *last = Some(Instant::now());
                     match super::mem::write_bytes(local_addr + PLAYER_REVIVE_DONE, &[1]) {
                         Ok(()) => tracing::info!("arena_rounds: get-up asked"),
@@ -754,6 +766,20 @@ mod tests {
             "getting up"
         );
         assert_eq!(r.step(t + 5_000, true, UP, Some(UP)), vec![Do::Reset]);
+    }
+
+    #[test]
+    fn a_second_get_up_write_never_lands_inside_the_first_get_up() {
+        // Real Steam 2026-11-12: the get-up shows as state 2 about 1 s after the write; a second write then broke it.
+        assert!(revive_due(None));
+        assert!(!revive_due(Some(1_000)));
+        assert!(
+            !revive_due(Some(1_100)),
+            "the first get-up is still starting"
+        );
+        assert!(revive_due(Some(REVIVE_EVERY_MS)));
+        // A retry still fits before the reset when the first write did nothing.
+        assert!(REVIVE_AFTER_MS + REVIVE_EVERY_MS < RESET_AFTER_MS);
     }
 
     #[test]

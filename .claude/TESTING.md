@@ -53,6 +53,19 @@ Past regression runs: `testing-log/`.
 
 ## 6. Friend Session runbooks
 
+### FS-ARENA3 — the three Arena fixes on two real PCs (ARENA-FS12; about 30-40 min, three Arenas)
+Zip: `dist\NightreignPvP.zip` of 2026-11-13 15:39 UTC, `VERSION.txt` = `commit b365217 ... nrpvp.dll 6C24A4FD801F9604 ... ARENA test
+build`. Both players install it and compare `VERSION.txt` before the first match.
+1. Both pick the Sparring loadout (different weapons, one each is enough), Arena card, Solo, Commence. Each says out loud which weapon
+   the RIVAL holds on screen: it must be the rival's chosen one, not the class's starting weapon.
+2. Lose a round on purpose once each (round 1 is fine): the loser gets up behind the black screen and starts the next round on the
+   spawn at level 15; no respawn somewhere else, no level 14 later in the round.
+3. After each Arena, both queue again at once with one Commence. Play three Arenas so each player hosts at least once, and once let
+   the HOST press through the end pages last (the old bug's order): nobody may land in a solo run.
+4. After the session collect BOTH players' `Game\NightreignPvP\logs\nrpvp_*.log`. In them: `inventory: player data sent` after each
+   spawn and reset; no `arena_level: slipped`; on a host that returned last, `matchstart: back from a match alone in the game's lobby
+   ... left it` and then `Commence pressed`.
+
 ### FS-HM1 — does a match survive the host leaving? Up to six real players (about 60-90 min, four matches)
 
 **Why:** the game has its own host migration; on one PC it works when the Steam lobby owner moves (HOST_MIGRATION.md). Only real Steam can show whether the owner moves, and in time. **This is the most important open test of the project.**

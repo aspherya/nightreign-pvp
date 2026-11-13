@@ -40,6 +40,15 @@ pub(crate) const PLAYERS_ANY: u8 = 0;
 /// The session object (`[exe+0x3C21FC8]`) and its state byte: 1, 3, 5, 7 = a job is running, 4 = busy (`exe+0x9F4B1E`).
 const SLOT_SESSION: usize = 0x3C2_1FC8;
 const SESSION_STATE: usize = 0x70;
+/// The session object's first dword (non-zero while a lobby is held; the all-ready check `exe+0xDF9420` needs it) and its members
+/// (`+0x30` first, `+0x38` end, 0xF0 each).
+const SESSION_ACTIVE: usize = 0x0;
+const SESSION_MEMBERS: usize = 0x30;
+const SESSION_MEMBER_SIZE: usize = 0xF0;
+/// `session.leave_lobby(reason)`: state 8, then the platform's leave of the lobby id (`exe+0xDFD940`; the game's own callers pass 0,
+/// or 7 when it moves to another lobby). `mov [rsp+8],rbx; push rdi; sub rsp,..` (game 1.03.3, exe 1.3.3.0).
+const RVA_LEAVE_LOBBY: usize = 0xDF_D940;
+const LEAVE_LOBBY_BYTES: [u8; 8] = [0x48, 0x89, 0x5C, 0x24, 0x08, 0x57, 0x48, 0x83];
 /// The online switch the Invite Members item reads (`exe+0x6AEAE0`): `[[exe+0x3C13258]+0xB40]`.
 const SLOT_ONLINE: usize = 0x3C1_3258;
 const ONLINE_BYTE: usize = 0xB40;
@@ -52,6 +61,7 @@ const SET_TARGETS_END: usize = 0x60;
 const SETTINGS_SIZE: usize = 0x80;
 
 static WANT_LOBBY: AtomicBool = AtomicBool::new(false);
+static WANT_LEAVE_ALONE: AtomicBool = AtomicBool::new(false);
 static WANT_START: AtomicBool = AtomicBool::new(false);
 static PLAYERS: AtomicU32 = AtomicU32::new(0);
 static TARGET: AtomicI32 = AtomicI32::new(-1);
@@ -86,6 +96,22 @@ pub(crate) fn request_lobby() {
     WANT_LOBBY.store(true, Ordering::Release);
 }
 
+/// MM-REQ (any thread): on the next frame, leave the game's lobby when this player is its only member. After a match whose other
+/// player went back to the Roundtable first, the host's game keeps that match's lobby with itself alone; a card pick then takes the
+/// party path, where "everyone" (the host) is ready at once, and a vanilla run starts without our Commence (friend sessions
+/// 2026-11-11 and 2026-11-12, `mi-arena-requeue`). The game's own leave clears it; the next Commence is ours again (live 2026-11-13).
+pub(crate) fn request_leave_if_alone() {
+    WANT_LEAVE_ALONE.store(true, Ordering::Release);
+}
+
+/// The state a held lobby sits in (the host's leftover read `active` 1, state 3, one member; the client's game read 0 / 0 / 0).
+const STATE_HELD: u8 = 3;
+
+/// Whether the lobby is a leftover to leave (pure): held (`active` non-zero, state 3, not busy or already leaving) with nobody but us.
+pub(crate) fn alone_in_lobby(active: u32, state: u8, members: usize) -> bool {
+    active != 0 && state == STATE_HELD && members <= 1
+}
+
 /// Mark this player ready, on the next frame (any thread); the party's `leader` sends the settings first: the Number of Players byte and
 /// one target (negative: none).
 pub(crate) fn request_start(leader: bool, players: u8, target: i32) {
@@ -102,6 +128,9 @@ pub(crate) fn pump(base: usize) {
     }
     if WANT_START.swap(false, Ordering::AcqRel) {
         start_now(base);
+    }
+    if WANT_LEAVE_ALONE.swap(false, Ordering::AcqRel) {
+        leave_if_alone(base);
     }
     #[cfg(feature = "dev")]
     trace::log_hit();
@@ -135,6 +164,42 @@ fn lobby_now(base: usize) {
     let ok = unsafe { std::mem::transmute::<usize, LobbyJob>(base + RVA_LOBBY_JOB)(session) };
     tracing::info!(
         "matchstart: lobby job started from state {state} (online switch {online}), returned {ok}"
+    );
+}
+
+fn leave_if_alone(base: usize) {
+    // A queue that found a match makes a new lobby with us alone in it at first: never touch that one.
+    if crate::mm::phase() != crate::mm::PHASE_IDLE {
+        return;
+    }
+    let Some(session) = mem::read::<usize>(base + SLOT_SESSION).filter(|s| *s != 0) else {
+        return;
+    };
+    let (Some(active), Some(state), Some(first), Some(end)) = (
+        mem::read::<u32>(session + SESSION_ACTIVE),
+        mem::read::<u8>(session + SESSION_STATE),
+        mem::read::<usize>(session + SESSION_MEMBERS),
+        mem::read::<usize>(session + SESSION_MEMBERS + 8),
+    ) else {
+        return;
+    };
+    let members = end.saturating_sub(first) / SESSION_MEMBER_SIZE;
+    if !alone_in_lobby(active, state, members) {
+        return;
+    }
+    if mem::read::<[u8; 8]>(base + RVA_LEAVE_LOBBY) != Some(LEAVE_LOBBY_BYTES) {
+        tracing::warn!(
+            "matchstart: the lobby leave differs from game 1.03.3; the leftover lobby stays"
+        );
+        return;
+    }
+    type LeaveLobby = unsafe extern "system" fn(usize, u8) -> u64;
+    // SAFETY: the game's own function, first bytes checked above; the session object from the game's own slot, checked non-null; reason
+    // 0 as its own callers pass; the game's thread (frame hook), where its menu's steps call it. Verified live with `rawcall DFD940`.
+    let r = unsafe { std::mem::transmute::<usize, LeaveLobby>(base + RVA_LEAVE_LOBBY)(session, 0) };
+    let after = mem::read::<u32>(session + SESSION_ACTIVE).unwrap_or(u32::MAX);
+    tracing::info!(
+        "matchstart: back from a match alone in the game's lobby (state {state}, {members} member(s)): left it (returned {r:#x}, active now {after}); the next Commence is ours"
     );
 }
 
@@ -312,6 +377,20 @@ pub(crate) mod trace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_held_lobby_with_nobody_else_is_a_leftover() {
+        // Live 2026-11-13: the host's leftover read active 1, state 3, one member; the client's game 0 / 0 / 0.
+        assert!(alone_in_lobby(1, 3, 1));
+        assert!(!alone_in_lobby(0, 0, 0), "no lobby");
+        assert!(!alone_in_lobby(1, 3, 2), "the other player is still in it");
+        assert!(
+            !alone_in_lobby(1, 1, 1),
+            "a lobby job is running (a new match's lobby)"
+        );
+        assert!(!alone_in_lobby(1, 8, 1), "already leaving");
+        assert!(!alone_in_lobby(1, 4, 1), "busy");
+    }
 
     #[test]
     fn a_new_lobby_job_only_from_the_states_the_game_allows() {

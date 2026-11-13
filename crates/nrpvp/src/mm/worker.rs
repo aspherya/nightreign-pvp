@@ -154,6 +154,23 @@ pub(crate) struct Worker {
     left_fill: Option<usize>,
     /// FS7-4: when the party size is published next.
     next_party: Instant,
+    /// MM-REQ: a match was on since the last Roundtable; at the Roundtable, until this time, a game lobby we are alone in is left.
+    was_in_match: bool,
+    leave_alone_until: Option<Instant>,
+}
+
+/// MM-REQ: how long after the return to the Roundtable a lobby we are alone in counts as the match's leftover.
+const LEAVE_ALONE_WINDOW: Duration = Duration::from_secs(180);
+
+/// MM-REQ (pure): ask the game thread to leave a leftover lobby now: at the Roundtable, queue idle, no premade party (`own_party` 1),
+/// inside the window after a match (`in_window` `Some(true)`).
+pub(crate) fn leave_alone_due(
+    at_roundtable: bool,
+    idle: bool,
+    own_party: usize,
+    in_window: Option<bool>,
+) -> bool {
+    at_roundtable && idle && own_party <= 1 && in_window == Some(true)
 }
 
 impl Worker {
@@ -235,6 +252,8 @@ impl Worker {
             last_match: None,
             left_fill: None,
             next_party: Instant::now(),
+            was_in_match: false,
+            leave_alone_until: None,
         })
     }
 
@@ -496,12 +515,28 @@ impl Worker {
         if let Some(m) = in_match {
             self.last_match = Some(m);
             self.left_fill = None;
+            self.was_in_match = true;
         }
         if now < self.next_party {
             return;
         }
         self.next_party = now + Duration::from_secs(1);
         let at_roundtable = super::local_phase() == Some(super::join::Phase::Roundtable);
+        // MM-REQ: back from a match without a premade party, the game may keep that match's lobby with us alone in it (the other
+        // player returned first); a card pick then starts a vanilla run. The game thread leaves it (only when we are its only member).
+        if at_roundtable && self.was_in_match && self.machine.is_idle() {
+            self.was_in_match = false;
+            self.leave_alone_until = Some(now + LEAVE_ALONE_WINDOW);
+        }
+        let own_party = self.last_match.map_or(1, |m| m.party);
+        if leave_alone_due(
+            at_roundtable,
+            self.machine.is_idle(),
+            own_party,
+            self.leave_alone_until.map(|t| now < t),
+        ) {
+            crate::game::matchstart::request_leave_if_alone();
+        }
         let sc = self.current_sc();
         // MM-FILL part C: back from a Duo / Trio match with random teammates: leave that match's lobby (its members are not a party).
         if super::leave_after_fill(
@@ -640,8 +675,33 @@ impl Worker {
 
 #[cfg(test)]
 mod tests {
-    use super::AutoStart;
+    use super::{leave_alone_due, AutoStart};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_leftover_lobby_is_left_only_at_the_roundtable_idle_without_a_party_after_a_match() {
+        assert!(leave_alone_due(true, true, 1, Some(true)));
+        assert!(
+            !leave_alone_due(false, true, 1, Some(true)),
+            "not at the Roundtable"
+        );
+        assert!(
+            !leave_alone_due(true, false, 1, Some(true)),
+            "a queue is running"
+        );
+        assert!(
+            !leave_alone_due(true, true, 2, Some(true)),
+            "a premade Duo stays together"
+        );
+        assert!(
+            !leave_alone_due(true, true, 1, Some(false)),
+            "the window after the match is over"
+        );
+        assert!(
+            !leave_alone_due(true, true, 1, None),
+            "no match since the start"
+        );
+    }
 
     #[test]
     fn the_lobby_is_asked_for_a_few_times_while_it_is_wanted() {
