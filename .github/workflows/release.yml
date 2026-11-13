@@ -30,7 +30,8 @@ jobs:
   build:
     runs-on: windows-2022
     env:
-      NRPVP_RELEASES_REPO: ${{ github.repository }}
+      # Player releases live in their own repository so a release never ships or exposes this source (RELEASE.md §6).
+      NRPVP_RELEASES_REPO: ${{ vars.RELEASES_REPO || 'aspherya/nightreign-pvp-releases' }}
     steps:
       - uses: actions/checkout@v4
       - name: Select version
@@ -38,6 +39,7 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
         run: |
           if ($env:GITHUB_REF_TYPE -eq 'tag') {
             $version = $env:GITHUB_REF_NAME -replace '^v', ''
@@ -47,14 +49,19 @@ jobs:
             $baseText = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
             if (-not $baseText) { throw 'No workspace version found in Cargo.toml.' }
             $base = [version]$baseText
-            try {
-              $latest = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/latest" -Headers @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
-              if ($latest.tag_name -match '^v?(\d+\.\d+\.\d+)$') {
-                $published = [version]$matches[1]
-                if ($published -gt $base) { $base = $published }
+            # Old releases were published in this repository; new ones go to the releases repository. Never go below either.
+            $sources = @(@{ repo = $env:GITHUB_REPOSITORY; token = $env:GH_TOKEN })
+            if ($env:PUBLISH_TOKEN) { $sources += @{ repo = $env:NRPVP_RELEASES_REPO; token = $env:PUBLISH_TOKEN } }
+            foreach ($source in $sources) {
+              try {
+                $latest = Invoke-RestMethod "https://api.github.com/repos/$($source.repo)/releases/latest" -Headers @{ Authorization = "Bearer $($source.token)"; Accept = 'application/vnd.github+json' }
+                if ($latest.tag_name -match '^v?(\d+\.\d+\.\d+)$') {
+                  $published = [version]$matches[1]
+                  if ($published -gt $base) { $base = $published }
+                }
+              } catch {
+                if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw "Could not read the latest release of $($source.repo) to select a version." }
               }
-            } catch {
-              if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw 'Could not read the latest release to select a version.' }
             }
             $version = '{0}.{1}.{2}' -f $base.Major, $base.Minor, ($base.Build + [int]$env:GITHUB_RUN_NUMBER)
           }
@@ -149,7 +156,8 @@ jobs:
         if: env.HAS_BUILD_INPUTS == 'true' && (github.event_name == 'push' || inputs.publish_release)
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
+          # github.token cannot write to another repository: a fine-grained token with Contents: read and write on the releases repo.
+          GH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
           KEEP_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
         run: ./scripts/publish-ci-release.ps1 -Repo $env:NRPVP_RELEASES_REPO -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Draft:($env:KEEP_DRAFT -eq 'true')
       - name: Build summary
