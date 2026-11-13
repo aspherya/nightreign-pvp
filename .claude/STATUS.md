@@ -42,7 +42,7 @@ Mode: Battle Royale (`MODE-01`, [re/PROJECT_SCOPE.md](re/PROJECT_SCOPE.md)). **A
 
 | Place | What |
 |---|---|
-| `dist\NightreignPvP.zip` in the main checkout | Built 2026-11-07 18:51 UTC from `main` b7c77d2, `-MatchPlayers 3`, Solo, `nrpvp.dll` FAF36FBC275172D3; **installed in Leonardo's `Game\NightreignPvP\` and played by 3 players on 2026-11-07**. `scripts\build.ps1` only updates the repo's `dist\`; the launcher loads `Game\NightreignPvP\` |
+| `dist\NightreignPvP.zip` in the main checkout | **Arena test zip** built 2026-11-13 15:39 UTC from branch `arena-fs-fixes` b365217 (PR aspherya#1, not merged; tree dirty only by the removed `.github/workflows/ci.yml`), `-MatchPlayers 2 -Arena`, `nrpvp.dll` 6C24A4FD801F9604, gamedata emevd 3D158D364389BE3E (rebuilt with the title background). For the FS-ARENA3 runbook (TESTING §6). **Not installed yet** (Leonardo installs; the friend needs this same zip: compare `VERSION.txt`). Do not send the 2026-11-12 build (9F2273B4...) |
 | This checkout's `dist\` after `scripts\build.ps1` | Dev build for `launch.ps1` and `nro` (`nrpvp.toml` = dev toml with `mm_queue` / `br_menu` off) |
 
 
