@@ -32,6 +32,7 @@ param(
     [string]$Smithbox = 'Z:\Tools\Smithbox-2.2.6',
     # Portable wrapper can supply an installed Python or Windows py launcher explicitly.
     [string]$Python = '',
+    [string]$Oodle = '',
     # HAWK-2: the crossing line is built by default (it is part of the game). -VanillaRoutes leaves map\ out (vanilla 200 m start
     # routes; dev comparisons only: package-release.ps1 refuses such a package).
     [switch]$VanillaRoutes,
@@ -190,7 +191,10 @@ if (-not $VanillaRoutes) {
     # map\mapstudio\m60_00_00_99.msb.dcx of game 1.03.3 (HAWK-0).
     $hh = (Get-FileHash $msb).Hash
     if ($hh -ne '7338A794A4FF79C02B65D378607B1F0874BDF2ED1FC4885002432414B5B9EA9C') { throw "m60_00_00_99.msb.dcx hash $hh is not the pinned 1.03.3 hash" }
-    $oodle = 'Z:\SteamLibrary\steamapps\common\ELDEN RING NIGHTREIGN\Game\oo2core_9_win64.dll'
+    $oodle = $Oodle
+    if (-not $oodle -and (Test-Path -LiteralPath (Join-Path $Unpacked 'oo2core_9_win64.dll'))) { $oodle = Join-Path $Unpacked 'oo2core_9_win64.dll' }
+    if (-not $oodle -and (Test-Path -LiteralPath (Join-Path $Smithbox 'oo2core_9_win64.dll'))) { $oodle = Join-Path $Smithbox 'oo2core_9_win64.dll' }
+    if (-not $oodle -or -not (Test-Path -LiteralPath $oodle)) { throw 'Oodle library missing. Pass -Oodle <game-folder/oo2core_9_win64.dll> or put it beside the unpacked game files.' }
     $dst = Join-Path $out 'map\mapstudio\m60_00_00_99.msb.dcx'
     $routeArgs = @($oodle, $msb, $dst)
     if ($HawkLine) { $routeArgs += @('--single', $HawkLine) }

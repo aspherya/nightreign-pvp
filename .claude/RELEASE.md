@@ -127,7 +127,7 @@ $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launc
 ./scripts/publish-release.ps1 -Version 0.2.0 -NotesFile notes.txt -MatchPlayers 2           # publish (gh auth login once)
 ```
 
-- **Do not publish before the final test session with more than 3 players** (Leonardo, 2026-11-06). Until then use `-DryRun` only.
+- **Release policy (2026-11-13):** pull requests are reviewed before merging. A successful push to `main` publishes the new update automatically; no additional draft approval is required. Manual workflow runs can explicitly request a draft.
 - The newest non-draft release is what every launcher installs: publishing is the release. Never reuse a version number.
 - `release.json` pins the game exe and `nrsc.dll` hashes from `pins/nightreign.toml`: the launcher warns a player whose game or Seamless
   Co-op differs. Update the pins when the game or SC changes.
@@ -146,9 +146,9 @@ Each run builds the player DLL without developer features, the helper, and the l
 Without a configured game-data input bundle, the three binaries are uploaded as a workflow artifact, so ordinary pushes can
 compile successfully before game-data packaging is set up. With the bundle configured, the artifact instead contains the complete
 `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`, and SHA-256 `release.json` updater package.
-Main/tag pushes with complete inputs also upload a **draft** to this repository. Manual runs can opt into that draft upload.
-Drafts are invisible to `/releases/latest`; after the final test session, publish the draft as the latest stable release
-to activate updates. Never reuse a version or replace already-published assets. Update `releases/notes.txt` before tagging.
+Main/tag pushes with complete inputs upload all checksum-verified assets to a temporary **draft**, then publish it as the latest
+stable release only after every upload succeeds. This activates launcher and mod updates automatically. Manual runs can disable
+publication or select **draft**. Never reuse a version or replace already-published assets. Update `releases/notes.txt` before merging.
 
 Main pushes and manual runs with no explicit version select the higher of the workspace version and latest published stable
 version, then add `github.run_number` to its patch component. This produces increasing versions across main pushes and repository
@@ -167,17 +167,20 @@ One-time setup by the repository owner:
 
    Upload `dist/ci-inputs.zip` to a **draft** release tagged `build-inputs-v1` in this repository. Keep it a draft so it
    never becomes a player update.
-   Set its Actions variable `CI_INPUTS_SHA256` to the hash printed by the script (`dist/ci-inputs.sha256`). This variable and
-   input draft belong to the new repository; moving Git remotes does not migrate GitHub releases or Actions variables.
-   `CI_INPUTS_TAG` can select a different versioned input release. This bundle contains only the generated player
+   `pins/ci-inputs.json` now records the uploaded draft's release ID and SHA-256; no Actions variables are required for the configured
+   repository. Unpublished draft tags do not resolve through the tag API, so CI downloads the asset by its pinned release ID.
+   When regenerating inputs, upload a new draft and update that file with its ID and the new hash. Find a draft ID with
+   `gh api repos/aspherya/nightreign-pvp/releases --jq '.[] | select(.tag_name == "build-inputs-v1") | .id'`.
+   Legacy `CI_INPUTS_SHA256` / `CI_INPUTS_TAG` variable overrides remain available. This bundle contains only the generated player
    game-data package and pinned me3 binaries/licenses, never Seamless Co-op or a game executable.
    Regenerate and update the hash when game-data sources/pins change. A hosted Windows runner cannot generate
    game content without the local unpack and tools. The currently installed Arena test package is not a player input.
    The current player input has 21 files, including `menu/05_000_title.gfx`. Regenerate older bundles to include the custom title background.
 3. The workflow's built-in `GITHUB_TOKEN` has `contents: write`, which downloads the input draft and creates player
    drafts in this same repository. No `RELEASES_TOKEN` secret or personal write token is needed for CI.
-4. Run a new version through the workflow, download its artifact and test it locally with `NRPVP_RELEASE_DIR` before
-   publishing its draft. The pipeline does not publish a stable release automatically.
+4. Push the reviewed change to `main`. The workflow runs launcher/helper tests and player-DLL tests/lint, builds the complete
+   package and publishes it. Failures leave the previous stable release active. To test without publishing, use a manual workflow
+   run with **draft**, or build locally with `NRPVP_RELEASE_DIR`.
 
 ### Read-only token for private launcher updates
 

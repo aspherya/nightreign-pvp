@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "tag": "build-inputs-v1",
+  "asset": "ci-inputs.zip",
+  "sha256": "76b40bb22991841166fc25be018012e97815b638919927aa737116463256fbd9",
+  "game_version": "1.03.3",
+  "me3_version": "0.11.0",
+  "player_files": 21,
+  "release_id": 444348135
+}

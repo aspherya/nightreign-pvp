@@ -1,9 +1,11 @@
-# R0 (ARCHITECTURE.md §6): format, lint and unit tests on every push and pull request. No game is needed; tests that touch game
+# Full workspace checks on pull requests and non-main pushes. Main's release workflow validates its binaries before publishing.
+# No game is needed; tests that touch game
 # memory use fakes or this process's own memory.
 name: ci
 
 on:
   push:
+    branches-ignore: ['main']
   pull_request:
 
 jobs:

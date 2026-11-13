@@ -1,0 +1,47 @@
+# Upload all verified assets to a draft, then publish atomically as the latest stable update.
+param(
+    [Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$Repo,
+    [Parameter(Mandatory)][ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
+    [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{40}$')][string]$Commit,
+    [string]$Directory = (Join-Path (Split-Path $PSScriptRoot -Parent) 'dist/release'),
+    [switch]$Draft,
+    [switch]$ValidateOnly
+)
+$ErrorActionPreference = 'Stop'
+$tag = "v$Version"
+$manifestPath = Join-Path $Directory 'release.json'
+$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+if ($manifest.schema -ne 1 -or $manifest.version -ne $Version -or $manifest.tag -ne $tag) { throw 'Release manifest version/schema mismatch.' }
+foreach ($asset in @($manifest.zip, $manifest.launcher)) {
+    if (-not $asset -or (Split-Path $asset.name -Leaf) -ne $asset.name) { throw 'Invalid release asset name.' }
+    $path = Join-Path $Directory $asset.name
+    if ((Get-Item -LiteralPath $path).Length -ne $asset.size -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $asset.sha256) { throw "Release asset verification failed: $($asset.name)" }
+}
+if ($ValidateOnly) { Write-Output "Verified complete release $tag; nothing uploaded."; exit 0 }
+if (-not $env:GH_TOKEN) { throw 'GH_TOKEN must be supplied by GitHub Actions or your GitHub CLI session.' }
+$headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+$api = "https://api.github.com/repos/$Repo"
+$releases = @(Invoke-RestMethod "$api/releases?per_page=100" -Headers $headers)
+$matching = @($releases | Where-Object tag_name -eq $tag)
+if ($matching.Count -gt 1) { throw "Multiple releases claim $tag. Resolve the duplicate drafts before publishing." }
+$release = $matching | Select-Object -First 1
+if ($release) {
+    if (-not $release.draft -or $release.target_commitish -ne $Commit) { throw 'This version is published or targets another commit. Choose a new version.' }
+} else {
+    $body = @{tag_name=$tag;target_commitish=$Commit;name="Nightreign PvP $tag";body=$manifest.notes;draft=$true;prerelease=$false} | ConvertTo-Json -Depth 4
+    $release = Invoke-RestMethod "$api/releases" -Method Post -Headers $headers -ContentType 'application/json' -Body $body
+}
+foreach ($name in @($manifest.zip.name, $manifest.launcher.name, 'release.json')) {
+    $path = Join-Path $Directory $name
+    $existing = $release.assets | Where-Object name -eq $name
+    foreach ($asset in $existing) { Invoke-RestMethod "$api/releases/assets/$($asset.id)" -Method Delete -Headers $headers | Out-Null }
+    $encodedName = [Uri]::EscapeDataString($name)
+    $uploaded = Invoke-RestMethod "https://uploads.github.com/repos/$Repo/releases/$($release.id)/assets?name=$encodedName" -Method Post -Headers $headers -InFile $path -ContentType 'application/octet-stream'
+    if ($uploaded.state -ne 'uploaded' -or $uploaded.size -ne (Get-Item -LiteralPath $path).Length) { throw "Incomplete asset upload: $name" }
+    if ($uploaded.digest -and $uploaded.digest -ne ('sha256:' + (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant())) { throw "Uploaded checksum mismatch: $name" }
+}
+if (-not $Draft) {
+    $body = @{draft=$false;prerelease=$false;make_latest='true'} | ConvertTo-Json
+    $release = Invoke-RestMethod "$api/releases/$($release.id)" -Method Patch -Headers $headers -ContentType 'application/json' -Body $body
+}
+Write-Output $(if ($Draft) { "Draft ready: $($release.html_url)" } else { "Published update: $($release.html_url)" })

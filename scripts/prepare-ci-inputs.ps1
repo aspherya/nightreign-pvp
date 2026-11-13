@@ -28,7 +28,7 @@ Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
 $sha = (Get-FileHash -LiteralPath $zip).Hash
 Set-Content -LiteralPath (Join-Path $out 'ci-inputs.sha256') -Value $sha -Encoding ascii
 Write-Output "Upload $zip to a draft release in this repository tagged build-inputs-v1. Keep it a draft."
-Write-Output "Set repository Actions variable CI_INPUTS_SHA256=$sha"
+Write-Output "Update pins/ci-inputs.json with the returned draft release ID and SHA-256: $sha"
 # Only remove the unique staging directory we just created, after validating its absolute parent.
 if ([IO.Path]::GetFullPath((Split-Path $stage -Parent)) -ne [IO.Path]::GetFullPath($out)) { throw 'Unexpected staging directory.' }
 Remove-Item -LiteralPath $stage -Recurse -Force
