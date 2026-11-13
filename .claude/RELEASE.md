@@ -156,8 +156,10 @@ temporary **draft** and publishes it as the latest stable release only after eve
 compiled dependencies between runs. No workflow artifact is uploaded: the release holds the files. A manual run can keep the release
 a **draft** (players never see drafts). Never reuse a version or replace already-published assets. Update `releases/notes.txt` before merging.
 
-Runs with no explicit version select the higher of the workspace version and the latest release of the releases repository, then
-add `github.run_number` to its patch component, so versions always increase. An explicit manual version is used as given. A rerun can replace unpublished draft assets only when that
+Runs with no explicit version take the higher of the workspace version (`Cargo.toml`) and one patch above the highest version ever
+used in the releases repository, drafts included, so versions always increase by one and a test draft's number is never reused. A minor
+or major step is a workspace version bump. (Until 2026-11-13 the run number was added to the patch, and the new repository restarted at
+0.1.x below the 0.2.0 that earlier testers had installed; the launcher refuses downgrades, so the workspace version went to 0.3.0.) An explicit manual version is used as given. A rerun can replace unpublished draft assets only when that
 draft was built from the exact same commit (its body names the source commit); published releases cannot be overwritten.
 Tags in the releases repository point at its default branch, since the source commit does not exist there.
 

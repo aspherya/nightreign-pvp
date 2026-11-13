@@ -131,3 +131,8 @@ Read when you touch the area named in a bullet, or before debugging something od
 - **A saved GitHub token breaks updates from the public releases repository** (2026-11-13): GitHub answers 401 to an expired or
   revoked token even when the repository is public, so a launcher that still sent the old "Private updates" token showed "No release
   found". The launcher sends no token at all and deletes the old token file on startup (RELEASE.md §6).
+- **A squash merge of dev into main makes the next dev → main PR conflict** (2026-11-13): the squash commit shares no history with
+  dev, so git sees every change twice. Fixed once with `git merge -s ours origin/main` on dev (main's tree equalled a dev commit);
+  the repository now allows merge commits only (DECISIONS 2026-11-13).
+- **A release version below the installed one never reaches that player** (2026-11-13): the launcher refuses downgrades, and the
+  new releases repository restarted at 0.1.x below the 0.2.0 testers had. Raise the workspace version instead (RELEASE.md §6).

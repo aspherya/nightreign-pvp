@@ -48,15 +48,19 @@ jobs:
           if (-not $env:GH_TOKEN) { throw "Add the RELEASES_PUBLISH_TOKEN secret (Contents: read and write on $env:NRPVP_RELEASES_REPO); see .claude/RELEASE.md." }
           $version = $env:REQUESTED_VERSION
           if (-not $version) {
-            # The higher of the workspace version and the latest release, plus the run number: always increasing.
-            $base = [version][regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
-            try {
-              $latest = Invoke-RestMethod "https://api.github.com/repos/$env:NRPVP_RELEASES_REPO/releases/latest" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" }
-              if ($latest.tag_name -match '^v(\d+\.\d+\.\d+)$' -and [version]$matches[1] -gt $base) { $base = [version]$matches[1] }
-            } catch {
-              if ([int]$_.Exception.Response.StatusCode -ne 404) { throw "Could not read the latest release of $env:NRPVP_RELEASES_REPO." }
+            # The workspace version, or one patch above the highest version ever used in the releases repository (drafts count,
+            # so a test draft's number is never reused), whichever is higher. Raise the workspace version for a minor or major step.
+            $version = [version][regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
+            # ForEach-Object unrolls the JSON array the same way in Windows PowerShell 5.1 and pwsh 7.
+            $releases = @(Invoke-RestMethod "https://api.github.com/repos/$env:NRPVP_RELEASES_REPO/releases?per_page=100" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" } | ForEach-Object { $_ })
+            foreach ($r in $releases) {
+              if ($r.tag_name -match '^v(\d+\.\d+\.\d+)$') {
+                $used = [version]$matches[1]
+                $next = [version]('{0}.{1}.{2}' -f $used.Major, $used.Minor, ($used.Build + 1))
+                if ($next -gt $version) { $version = $next }
+              }
             }
-            $version = '{0}.{1}.{2}' -f $base.Major, $base.Minor, ($base.Build + [int]$env:GITHUB_RUN_NUMBER)
+            $version = '{0}.{1}.{2}' -f $version.Major, $version.Minor, $version.Build
           }
           if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be major.minor.patch.' }
           "RELEASE_VERSION=$version" >> $env:GITHUB_ENV

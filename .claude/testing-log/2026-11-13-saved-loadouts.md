@@ -40,3 +40,15 @@ bartrace lint allowed; Arena player Clippy passes. The Arena release DLL and ful
 and hash-verified the DLL and 23 game-data files in the user's Game/NightreignPvP folder after confirming the game was closed.
 The previous installed DLL/data were backed up in target/manual-mod-backups. Existing preset/config files were not edited.
 Cross-character gameplay acceptance still needs an in-game check; no game was launched by the agent.
+
+## In-game check on the CI release v0.1.41 (2026-11-13, Leonardo, solo)
+
+Build: v0.1.41 from aspherya/nightreign-pvp-releases, built by the release workflow from commit a0b1b38 (main), installed by the
+launcher's auto-update. Game 1.03.3, Seamless Co-op 1.1.3, me3 0.11.0. Installed VERSION.txt: nrpvp.dll CA9A5FC3A71BBEB9; the
+game-data folder holds 23 files including script/talk/m10_00_00_00.talkesdbnd.dcx (checked on disk by the agent).
+
+Before this release, every published zip lacked the feature (the player DLL was built without the old `arena` flag and the BR-only
+game data had no talk bundle); Leonardo's earlier "Y does nothing" was the 2026-11-12 manual Arena build, which predates it.
+
+Result: **PASS** (Leonardo: "funcionou certinho"). The save-loadout option now appears at the Sparring Equipment and works. The
+README checklist steps were not reported one by one: cross-character load, restart persistence and the Arena hand-off remain unconfirmed.

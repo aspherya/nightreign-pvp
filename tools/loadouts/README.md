@@ -29,7 +29,7 @@ script is committed to source control. Dialogue source is understood by ESDLang,
 Run `python -m unittest discover -s tools/loadouts -p 'test_*.py'` and `cargo test -p nrpvp`. The `saved-loadouts` scenario uses
 `saved_loadouts sandbox` first, so it cannot overwrite real presets. It tests generic equipment restoration through the developer command; it does not prove NPC menu navigation.
 
-## Manual acceptance (pending)
+## Manual acceptance
 
 Use the pinned offline/Seamless launcher and back up the game save before the first native-inventory test.
 
@@ -44,4 +44,5 @@ Use the pinned offline/Seamless launcher and back up the game save before the fi
 6. Immediately queue Arena after loading. Verify the restored weapons/skills/items arrive with the existing arena upgrades, including
    after a round reset. Check that saving/loading is unavailable in a match or while matchmaking is active.
 
-No in-game acceptance has been run for this feature yet.
+First in-game check PASS on 2026-11-13 with the CI release v0.1.41 (Leonardo, testing-log/2026-11-13-saved-loadouts.md). Steps 4-6
+were not reported one by one; re-check them when the feature changes.
