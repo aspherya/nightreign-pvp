@@ -162,3 +162,11 @@ GitHub's source archives, and a token that can read its releases can read its so
 launcher reads it without a token and nothing secret is in the exe. A read-only token built into the launcher was implemented
 first and dropped once the repository went public: anyone with the exe could have recovered it, and it would have expired on
 every player. Only CI holds a token (`RELEASES_PUBLISH_TOKEN`, write to the releases repository only). How-to: RELEASE.md §6.
+
+## 2026-11-13 — Battle Royale and Arena always ship together; CI builds the game data (Leonardo)
+
+No more `arena` cargo feature and no separate BR-only game-data package (`gamedata-player`): every build, dev or player, has both
+modes and the saved-loadouts menu. The release workflow builds `dist/gamedata` itself from pinned inputs (original game files +
+WitchyBND, ESDLang, Smithbox DLLs, me3; `scripts/prepare-ci-inputs.ps1`) instead of a prebuilt BR-only package, so a change to
+`gamedata/` or `tools/loadouts/` reaches players without a manual rebuild. Why: the split kept the Arena and saved loadouts out of
+every release (v0.1.28 had the code compiled out). How-to: RELEASE.md §6.

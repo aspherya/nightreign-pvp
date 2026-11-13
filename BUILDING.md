@@ -10,9 +10,9 @@ and initialize the installed Visual Studio x64 tools automatically. Close the pa
 | Batch file | Builds / output | Extra requirements |
 |---|---|---|
 | `build-launcher.bat` | `dist/NightreignPvP-Launcher.exe` and the game-folder helper `dist/nrpvp_launcher.exe` | Rust + C++ tools only |
-| `build-mod.bat` | Player DLL without developer tooling: `dist/nrpvp.dll` | Rust + C++ tools only; `-Arena` enables the Arena test feature |
+| `build-mod.bat` | Player DLL without developer tooling: `dist/nrpvp.dll` | Rust + C++ tools only (Battle Royale and Arena are always both in) |
 | `build-all.bat` | Entire developer workspace: launcher, developer DLL, console and orchestrator binaries in `dist/` | Rust + C++ tools; use `build-mod.bat` for the player DLL |
-| `build-gamedata.bat` | `dist/gamedata/` and `dist/gamedata-player/`, including the title background | Pinned game unpack, WitchyBND, Smithbox 2.2.6, Python 3 and .NET 10 SDK |
+| `build-gamedata.bat` | `dist/gamedata/` (Battle Royale + Arena + saved loadouts, one package), including the title background | Pinned game unpack, WitchyBND, Smithbox 2.2.6, ESDLang 0.5.1, Python 3, .NET 10 SDK and .NET 6 runtime |
 | `build-release.bat` | Mod zip, launcher and updater `release.json` in `dist/release/` | Generated player game data, pinned me3 0.11.0, Rust + C++ tools; asks for a version |
 | `prepare-ci-inputs.bat` | `dist/ci-inputs.zip` and its SHA-256 for GitHub Actions | Generated player game data and pinned me3 0.11.0 |
 
@@ -32,14 +32,13 @@ Command-line options override the local file:
 build-gamedata.bat -Unpacked "D:\Nightreign unpack\1.03.3" -Witchy "D:\Mod tools\WitchyBND.exe" -Smithbox "D:\Mod tools\Smithbox" -Python "C:\Python314\python.exe"
 build-release.bat -Version 0.3.0 -Me3Dir "D:\Mod tools\me3"
 prepare-ci-inputs.bat -Me3Dir "D:\Mod tools\me3"
-build-mod.bat -Arena
 ```
 
 You can also place tools under `tools/local/` (gitignored): `me3/`, `unpacked/`, `WitchyBND/WitchyBND.exe`, `Smithbox/`.
 The scripts discover these locations automatically. Python can be `python.exe` or the Windows `py.exe` launcher.
 The game unpack and third-party tools are not bundled with the source repository.
 
-Saved loadouts in Arena builds also need ESDLang 0.5.1 (`esdtool.exe` with its `dist/` folder and the .NET 6 x64 runtime).
+Saved loadouts need ESDLang 0.5.1 (`esdtool.exe` with its `dist/` folder and the .NET 6 x64 runtime).
 Set `EsdTool` in `build.local.psd1`, pass `-EsdTool <path>` to `build-gamedata.bat`, or put it in `tools/local/ESDLang/`.
 The game unpack must include `script/talk/m10_00_00_00.talkesdbnd.dcx`. The build patches only the existing training equipment
 interaction; see [the loadout notes](tools/loadouts/README.md) for behavior and the pending in-game checks.

@@ -278,13 +278,11 @@ impl BotFill {
     }
 
     /// ARENA-4: the Arena this tick (before [`BotFill::step`]).
-    #[cfg_attr(not(feature = "arena"), allow(dead_code))]
     pub(crate) fn set_arena(&mut self, a: ArenaIn) {
         self.arena = a;
     }
 
     /// ARENA-4: the current Arena bot (the last kept one that is not replaced, once seen), for `arenarounds`.
-    #[cfg_attr(not(feature = "arena"), allow(dead_code))]
     pub(crate) fn arena_bot(&self) -> Option<ArenaBot> {
         if !self.arena.on {
             return None;
@@ -1297,7 +1295,6 @@ mod tests {
         let mut ctx = Ctx::default();
         d.step(100, GameMode::BattleRoyale, &w, &mut ctx);
         assert_eq!(puts(&ctx), vec![(0xA0, ARENA_BOT_SPAWN)]);
-        #[cfg(feature = "arena")]
         assert_eq!(
             ARENA_BOT_SPAWN,
             crate::game::arenacard::spawn_for(Some(1)).0

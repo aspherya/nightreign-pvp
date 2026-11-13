@@ -66,11 +66,10 @@ powershell -ExecutionPolicy Bypass -File scripts\regress.ps1
 # 3. The zip. 2 players for a test with one friend:
 powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 -MatchPlayers 2
 #    For the real game later:   scripts\package-release.ps1 -MatchPlayers 6
-#    Test build with the Arena too (not released yet): add -Arena (player DLL with the cargo feature `arena`, full dist\gamedata)
 ```
 
-`build-gamedata.ps1` writes `dist\gamedata` (everything, dev events included) and `dist\gamedata-player` (no dev-only events: what the
-normal zip takes). `-Arena` takes `dist\gamedata` instead; its VERSION line ends in `ARENA test build`.
+`build-gamedata.ps1` writes `dist\gamedata`: one package with the Battle Royale, the Arena and saved loadouts (23 files). Every zip
+takes it; there is no separate BR-only package or `-Arena` switch any more (DECISIONS 2026-11-13).
 
 `package-release.ps1` builds the **player** DLL itself (`--no-default-features`, into `target\player\`) and the launcher, then packs. `scripts/build.ps1` is only for developer launches, not for the zip.
 
@@ -172,13 +171,17 @@ One-time setup by the repository owner:
    **Only select repositories > nightreign-pvp-releases**, Repository permissions **Contents: Read and write**, nothing else. Only
    CI uses it to create and publish releases; the built-in `GITHUB_TOKEN` cannot write to another repository. Replace it before
    it expires (an expired one only stops publishing; players keep working).
-2. On the machine holding the pinned game unpack and tools, run `scripts/build-gamedata.ps1` and then:
+2. CI builds the game data itself on every release (`build-gamedata.ps1`, step **Build game data**), from pinned inputs: the
+   original game 1.03.3 files it reads, WitchyBND, ESDLang 0.5.1, the Smithbox 2.2.6 DLLs and me3. Nothing is compiled to make them.
+   On the machine holding the pinned game unpack and tools:
 
    ```powershell
-   ./scripts/prepare-ci-inputs.ps1 -GameData ./dist/gamedata-player -Me3Dir Z:\Tools\me3
+   ./scripts/prepare-ci-inputs.ps1 -Unpacked Z:\Tools
+r-unpacked.03.3 -Witchy Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe -EsdTool Z:\Tools\ESDLang-0.5.1\esdtool-v0.5.1\esdtool.exe -Smithbox Z:\Tools\Smithbox-2.2.6 -Me3Dir Z:\Tools\me3
    ```
 
-   Upload `dist/ci-inputs.zip` to a **draft** release tagged `build-inputs-v1` in this repository. Keep it a draft so it
+   Redo it only after a game patch or a tool update. Upload `dist/ci-inputs.zip` to a **draft** release in this repository (it holds
+   game files: never publish it). Keep it a draft so it
    never becomes a player update.
    `pins/ci-inputs.json` records the uploaded draft's release ID and SHA-256 (the only source CI uses).
    Unpublished draft tags do not resolve through the tag API, so CI downloads the asset by its pinned release ID.
