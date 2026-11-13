@@ -81,7 +81,10 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cargo clippy --locked --release -p nrpvp --no-default-features -- -D warnings
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --release -p nrpvp --no-default-features
+          cargo test --locked --release -p nrpvp
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          # Developer-mode tests require the default features; exercise the player guard separately.
+          cargo test --locked --release -p nrpvp --no-default-features -- dev_mode_needs
           exit $LASTEXITCODE
       - name: Build launcher and player binaries
         shell: pwsh
