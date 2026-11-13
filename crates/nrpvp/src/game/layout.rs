@@ -121,6 +121,12 @@ pub(crate) const GAMEDATA_MAX_HP: usize = 0x14;
 /// Readable RTTI name of the PlayerGameData class (used to recognise the object before reading it).
 pub(crate) const GAMEDATA_CLASS: &str = "CS::PlayerGameData";
 
+// Saved loadouts: NR 1.03.3, static disassembly 2026-11-13 (MEMORY_MAP §29, Saved presets).
+pub(crate) const LOADOUT_REMOVE_RVA: usize = 0x1F_3E90;
+pub(crate) const LOADOUT_REMOVE_BYTES: [u8; 10] =
+    [0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x57, 0x41, 0x54];
+pub(crate) const EQUIPPED_INDICES: usize = 0x1E0;
+
 // ---- Class tables (MEMORY_MAP §1) ----
 /// RVA of the PlayerIns vtable seen by T-007a; only a sanity log against the RTTI result (RTTI is what the code trusts).
 pub(crate) const PLAYER_VTABLE_RVA: usize = 0x2C307F8;

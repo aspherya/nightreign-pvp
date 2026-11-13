@@ -164,3 +164,160 @@ pub(crate) fn set_kind(gaitem: usize, custom: u32, skill: u32) -> Result<(), &'s
     b[4..].copy_from_slice(&skill.to_le_bytes());
     mem::write_bytes(gaitem + GAITEM_CUSTOM, &b)
 }
+
+/// Quick items in pouch order, excluding the starting flask. Handles are resolved against inventory entries,
+/// never persisted: a loaded preset must use the new instances' handles and indices.
+pub(crate) fn quick_goods(pgd: usize) -> Result<Vec<(u32, u32)>, String> {
+    let entries = entry_snapshot(pgd)?;
+    let mut out = Vec::new();
+    for slot in 0..POUCH_SLOTS {
+        let handle = mem::read::<u32>(pgd + POUCH + slot * 8).ok_or("Pouch unavailable")?;
+        if handle == u32::MAX || handle == 0 {
+            continue;
+        }
+        let &(_, id, qty) = entries
+            .iter()
+            .find(|e| e.0 == handle)
+            .ok_or("Pouch item unavailable")?;
+        if qty > 999 {
+            return Err("Invalid quick item quantity".into());
+        }
+        if id >> 28 == 4
+            && qty > 0
+            && !(1000..=1025).contains(&(id & 0x0fff_ffff))
+            && !out.iter().any(|&(other, _)| other == id)
+        {
+            out.push((id, qty));
+        }
+    }
+    Ok(out)
+}
+
+/// Read the live inventory once, so resolving eighteen pouch handles does not issue thousands of process-memory reads.
+fn entry_snapshot(pgd: usize) -> Result<Vec<(u32, u32, u32)>, String> {
+    let used = mem::read::<u32>(pgd + INV_HEADER).ok_or("Inventory unavailable")? as usize;
+    if used > MAX_USED || mem::read::<u32>(pgd + INV_HEADER + 4) != Some(INV_CAP as u32) {
+        return Err("Invalid inventory size".into());
+    }
+    let array = mem::read::<usize>(pgd + INV_HEADER + INV_ARRAY)
+        .filter(|p| mem::is_ptr(*p))
+        .ok_or("Inventory unavailable")?;
+    let mut bytes = vec![0; used * INV_ENTRY];
+    if !mem::copy_out(array, &mut bytes) {
+        return Err("Inventory entries unavailable".into());
+    }
+    Ok(bytes
+        .as_chunks::<INV_ENTRY>()
+        .0
+        .iter()
+        .map(|b| {
+            let word = |off| u32::from_le_bytes(b[off..off + 4].try_into().unwrap());
+            (word(0), word(4), word(8))
+        })
+        .collect())
+}
+
+/// GAME THREAD ONLY. Replace selected equipment, keeping the game-managed flask and relics.
+/// Native remove updates the inventory and clears equipped references; the existing add/equip calls build fresh instances.
+pub(crate) fn restore_preset(
+    base: usize,
+    pgd: usize,
+    loadout: &super::arenaloadout::Loadout,
+) -> Result<(), String> {
+    let mut bytes = [0; layout::LOADOUT_REMOVE_BYTES.len()];
+    if !mem::copy_out(base + layout::LOADOUT_REMOVE_RVA, &mut bytes)
+        || bytes != layout::LOADOUT_REMOVE_BYTES
+    {
+        return Err("Item removal signature does not match this game build".into());
+    }
+    let goods = quick_goods(pgd)?;
+    let indices: Vec<_> = (0..HAND_SLOTS)
+        .filter_map(|slot| {
+            let id = slot_id(pgd, slot)?;
+            super::arenaloadout::real_weapon(id)
+                .then(|| mem::read::<u32>(pgd + layout::EQUIPPED_INDICES + usize::from(slot) * 4))
+                .flatten()
+        })
+        .collect();
+    // The pouch's indices refer to the same inventory as the hand slots. Capture them before removing anything.
+    let mut removals: Vec<(u32, u32)> = indices.into_iter().map(|index| (index, 1)).collect();
+    let entries = entry_snapshot(pgd)?;
+    for slot in 0..POUCH_SLOTS {
+        let handle = mem::read::<u32>(pgd + POUCH + slot * 8).ok_or("Pouch unavailable")?;
+        let index = mem::read::<u32>(pgd + POUCH + slot * 8 + 4).ok_or("Pouch unavailable")?;
+        if index == u32::MAX {
+            continue;
+        }
+        let id = entries.iter().find(|e| e.0 == handle).map(|e| e.1);
+        if let Some(qty) = id.and_then(|id| goods.iter().find(|g| g.0 == id).map(|g| g.1)) {
+            removals.push((index, qty));
+        }
+    }
+    removals.sort_unstable_by_key(|r| r.0);
+    removals.dedup_by_key(|r| r.0);
+    if removals
+        .iter()
+        .any(|&(index, qty)| index == u32::MAX || qty > 999)
+    {
+        return Err("Invalid inventory index or quantity".into());
+    }
+    type Remove = unsafe extern "system" fn(usize, u32, i32, u8) -> i32;
+    // SAFETY: NR 1.03.3 signature verified above, arguments from its caller 0x1F0863;
+    // game-thread-only, live inventory indices, NEGATIVE quantity delta (0x1F5056 adds it to the current count),
+    // r9=1 suppresses automatic replacement of a consumed good.
+    let remove: Remove = unsafe { std::mem::transmute(base + layout::LOADOUT_REMOVE_RVA) };
+    for (index, qty) in removals {
+        unsafe {
+            remove(pgd + GEAR_BLOCK, index, -(qty as i32), 1);
+        }
+    }
+    for slot in 0..HAND_SLOTS {
+        equip_on_game_thread(base, pgd, slot, u32::MAX);
+    }
+    for w in &loadout.weapons {
+        let index = add_on_game_thread(base, pgd, w.id, 1).ok_or("Cannot add weapon")?;
+        if equip_on_game_thread(base, pgd, w.slot, index) != Some(w.id) {
+            return Err("Cannot equip weapon".into());
+        }
+        let instance = slot_handle(pgd, w.slot)
+            .and_then(|h| gaitem_of(base, h))
+            .ok_or("Weapon instance unavailable")?;
+        set_kind(instance, w.custom, w.skill)?;
+    }
+    for &(id, qty) in &loadout.goods {
+        let index = add_on_game_thread(base, pgd, id, qty).ok_or("Cannot add item")?;
+        pouch_on_game_thread(base, pgd, index).ok_or("Cannot equip quick item")?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod preset_tests {
+    use super::*;
+
+    #[test]
+    fn captures_pouch_order_once_per_item_and_excludes_flask_and_unselected_goods() {
+        let entries = [
+            [1u32, 0x4000_03e8, 1, 0, 0],
+            [2, 0x4000_2b06, 2, 0, 0],
+            [3, 0x4000_00c8, 4, 0, 0],
+            [4, 0x4000_00c9, 9, 0, 0],
+        ];
+        let mut pgd = vec![0u8; POUCH + POUCH_SLOTS * 8];
+        pgd[INV_HEADER..INV_HEADER + 4].copy_from_slice(&4u32.to_le_bytes());
+        pgd[INV_HEADER + 4..INV_HEADER + 8].copy_from_slice(&(INV_CAP as u32).to_le_bytes());
+        pgd[INV_HEADER + INV_ARRAY..INV_HEADER + INV_ARRAY + 8]
+            .copy_from_slice(&(entries.as_ptr() as usize).to_le_bytes());
+        for (slot, handle) in [1u32, 3, 2, 3].into_iter().enumerate() {
+            pgd[POUCH + slot * 8..POUCH + slot * 8 + 4].copy_from_slice(&handle.to_le_bytes());
+        }
+        assert_eq!(
+            quick_goods(pgd.as_ptr() as usize).unwrap(),
+            vec![(0x4000_00c8, 4), (0x4000_2b06, 2)]
+        );
+        pgd[POUCH..POUCH + 4].copy_from_slice(&55u32.to_le_bytes());
+        assert!(quick_goods(pgd.as_ptr() as usize).is_err());
+        pgd[INV_HEADER..INV_HEADER + 4].copy_from_slice(&(MAX_USED as u32 + 1).to_le_bytes());
+        assert!(quick_goods(pgd.as_ptr() as usize).is_err());
+    }
+}

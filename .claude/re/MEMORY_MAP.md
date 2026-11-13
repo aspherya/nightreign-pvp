@@ -655,3 +655,25 @@ live by `rawcall` and in `mi-arena-rounds` (ARENA-LV calls it on the game thread
 | **Pouch (quick items)** | Equipment slots 32..49 = the pouch, `(handle, index)` pairs from `PGD+0x428` (slot 32). A good shows in Nightreign only when it sits there. A pickup (`exe+0x57A41D`) asks `exe+0x1F2540(EquipGameData)` for the first free slot (-1 = none), then `exe+0x1F3960(EquipGameData, slot, index)` (-> `exe+0x1F7840(EGD+0x248, slot, index)` writes the pair, then `exe+0x1F11A0`). Our add alone left the goods invisible | `[VERIFIED: write watch on pouch slot 33 during a pickup; static]` |
 | **ARENA-3 solo check** | `arena_loadout apply` in a normal expedition (after the fixes): level 15, staff L1, Blood Uchigatana **+3 with Seppuku** R1, Marais R2, all seen in game (Leonardo); goods added but not shown until the pouch call (added afterwards, not yet seen) | `[VERIFIED: live 2026-11-09]` |
 
+
+### Saved presets (2026-11-13, static evidence; live acceptance pending)
+
+`game/saved_loadouts.rs` and `tools/loadouts/patch_talk.py` reserve flags 10007800..10007999 for ten presets, their hero metadata
+and the local ESD/DLL handshake. Training equipment script `t607001000` x3 opens `OpenSparringEquipmentMenu`; its original x0/x2
+own the prompt, interruption and distance guards. The builder retains those guards and wraps x3 with the preset menus.
+`GetChrHero` (ESD function 309) supplies the hero. A mismatched hero opens `OpenChangeCharacterMenu` (command 1:152, native menu
+35); continuing through a swap is not verified live. [SOURCE: ESDLang 0.5.1 command documentation; VERIFIED: compilation of the
+pinned 1.03.3 t607001000 with added state machines]
+
+`exe+0x1F3E90(EquipGameData*, inventory_index, signed_quantity_delta, u8)` changes/removes an inventory stack. At 0x1F3EB7 it adds
+0x1C8 to the gear block and calls 0x1F4FF0 with the index/delta. At 0x1F5056 the delta is ADDED to the current count: removal needs
+a negative delta. At 0x1F3EDD a positive remainder skips equipped-reference cleanup; zero takes it. r9=1 skips the goods replacement
+branch at 0x1F3F82. Entry bytes `48 89 5C 24 18 55 56 57 41 54` are checked before use. Hand indices use PGD+0x1E0..1F4 and pouch
+handles/indices use the existing PGD+0x428 pairs. Clearing a hand uses the existing equip call with index -1; its lookup (0x753E70)
+returns handle 0 for a missing entry. These new call combinations have not been run in the game.
+[VERIFIED: static disassembly of installed exe 1.3.3.0, 2026-11-13; runtime behavior UNKNOWN]
+
+Update 2026-11-13: presets are now character-independent per the user's revised request. Runtime no longer reads/publishes hero
+metadata or requests a character change. ESD slot summaries use Saved/Empty and contain no GetChrHero or character-menu call.
+Flags 10007833 and 10007840..10007999 are reserved legacy space. Existing file version 1 presets accept and discard their old
+hero field; newly written presets contain equipment only. Loading keeps the current Nightfarer selected.

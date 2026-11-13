@@ -31,7 +31,10 @@ $dist = Join-Path $repo 'dist'
 # dist\gamedata-player (2026-11-10): dist\gamedata minus the dev-only events (the Arena, ARENA-0..3, and its m18 event script).
 # With -Arena it takes dist\gamedata, which has them (one file more: event\m18_00_00_00.emevd.dcx).
 $gamedata = Join-Path $dist $(if ($Arena) { 'gamedata' } else { 'gamedata-player' })
-$wantFiles = if ($Arena) { 22 } else { 21 }
+$wantFiles = if ($Arena) { 23 } else { 21 }
+if ($Arena -and -not (Test-Path -LiteralPath (Join-Path $gamedata 'script/talk/m10_00_00_00.talkesdbnd.dcx'))) {
+    throw '-Arena: saved loadout dialogue missing. Rebuild game data with ESDLang configured.'
+}
 if (-not (Test-Path -LiteralPath (Join-Path $gamedata 'menu\05_000_title.gfx'))) {
     throw 'The custom title background is missing. Run scripts\build-gamedata.ps1 first.'
 }
