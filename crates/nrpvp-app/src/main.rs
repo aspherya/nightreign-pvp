@@ -137,7 +137,6 @@ struct Status {
     private_code: String,
     player: saves::Status,
     auto_update: bool,
-    github_token_set: bool,
 }
 
 #[tauri::command]
@@ -167,7 +166,6 @@ async fn status() -> Result<Status, String> {
             private_code: game.as_deref().map(install::room_code).unwrap_or_default(),
             player: saves::status(game.as_deref(), saves::detect_account()),
             auto_update: !std::env::args().any(|a| a == "--skip-auto-update"),
-            github_token_set: auth::token().ok().flatten().is_some(),
         })
     })
     .await
@@ -232,18 +230,6 @@ fn set_game_dir(path: String) -> Result<String, String> {
 #[tauri::command]
 async fn latest_release() -> Result<Manifest, String> {
     blocking(release::latest).await
-}
-
-#[tauri::command]
-async fn set_github_token(token: String) -> Result<(), String> {
-    blocking(move || {
-        let token = token.trim();
-        if !token.is_empty() {
-            release::validate_token(token)?;
-        }
-        auth::store(token)
-    })
-    .await
 }
 
 #[tauri::command]
@@ -463,6 +449,7 @@ fn main() {
     if update::run_helper() {
         return;
     }
+    auth::forget_saved_token();
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             status,
@@ -470,7 +457,6 @@ fn main() {
             pick_game_dir,
             set_game_dir,
             latest_release,
-            set_github_token,
             install_mod,
             sc_github,
             install_sc_github,

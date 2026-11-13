@@ -192,17 +192,18 @@ One-time setup by the repository owner:
    package and publishes it. Failures leave the previous stable release active. To test without publishing, use a manual workflow
    run with **draft**, or build locally with `NRPVP_RELEASE_DIR`.
 
-### How the launcher authenticates
+### How the launcher reads releases
 
-It does not need one: the releases repository is public. No token is built into the exe or committed. **Settings > Updates
-access** still accepts an optional token (DPAPI-encrypted for the Windows user), sent when present; it would matter only if the
-releases repository became private again (fine-grained, **Only select repositories > nightreign-pvp-releases**, **Contents:
-Read-only**). Without a token GitHub allows 60 API requests per hour per IP; an update check uses a few.
+Without any token: the releases repository is public. The launcher never sends one, and none is built into the exe or committed.
+Launchers up to v0.1.x had a **Settings > Private updates** token field; a token saved there made GitHub answer 401 ("invalid or
+expired") even for the public repository, so the current launcher removed that field and deletes
+`%LOCALAPPDATA%\NightreignPvP\github-token.dpapi` on startup (TRAPS). Without a token GitHub allows 60 API requests per hour per
+IP; an update check uses a few.
 
 The launcher uses the release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
-to download the manifest, launcher and player zip. SHA-256 verification still applies. Tokens go only to constructed
-`api.github.com/repos/<owner>/<repo>/...` URLs; public Seamless Co-op requests remain unauthenticated. Drafts and prereleases
-are excluded from player updates. `NRPVP_RELEASE_DIR` still supports offline release testing without a token.
+to download the manifest, launcher and player zip, building every URL from `api.github.com/repos/<owner>/<repo>/...` and the
+numeric asset ID (never from a URL in the manifest). SHA-256 verification still applies. Drafts and prereleases are excluded from
+player updates. `NRPVP_RELEASE_DIR` still supports offline release testing.
 
 ### Player save setup and name changes
 
