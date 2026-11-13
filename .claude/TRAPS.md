@@ -128,3 +128,6 @@ Read when you touch the area named in a bullet, or before debugging something od
   a level lost, mid-round. A retry only after 2.5 s (`arenarounds::REVIVE_EVERY_MS`).
 - **A lobby left over after a match turns the next card pick into a vanilla run** (MM-REQ, 2026-11-13): see MEMORY_MAP §25 "The game's
   lobby object"; `matchstart::request_leave_if_alone` leaves it when we are its only member.
+- **A saved GitHub token breaks updates from the public releases repository** (2026-11-13): GitHub answers 401 to an expired or
+  revoked token even when the repository is public, so a launcher that still sent the old "Private updates" token showed "No release
+  found". The launcher sends no token at all and deletes the old token file on startup (RELEASE.md §6).
