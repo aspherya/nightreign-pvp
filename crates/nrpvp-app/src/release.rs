@@ -1,9 +1,13 @@
 //! Where releases come from, and the `release.json` manifest that describes one.
 //!
-//! Source and player releases share the same private repository ([`RELEASES_REPO`]).
-//! Every release carries three assets: `release.json` (this manifest), the player zip, and the launcher exe. The launcher reads
-//! Authenticated GitHub release/asset API requests download the manifest and assets; their SHA-256 is checked before install.
-//! `scripts\publish-release.ps1` writes the manifest and uploads the release. Tokens are held in Windows-protected local storage.
+//! Player releases live in their own repository ([`RELEASES_REPO`], `aspherya/nightreign-pvp-releases`), apart from the
+//! source repository, so release access never grants source access.
+//! Every release carries three assets: `release.json` (this manifest), the player zip, and the launcher exe. GitHub release/asset
+//! API requests download the manifest and assets; their SHA-256 is checked before install. `scripts\publish-ci-release.ps1`
+//! uploads the release from CI.
+//!
+//! Token used for those requests, first match wins: a token the player saved in Settings (Windows-protected local storage), the
+//! read-only token embedded at build time (`NRPVP_RELEASES_TOKEN`, see build.rs), or none (works once the repository is public).
 //!
 //! For testing without GitHub: `NRPVP_RELEASE_DIR=<folder holding release.json and the zip>` reads a local folder instead;
 //! `NRPVP_RELEASES_REPO=<owner/name>` points at another repository.
@@ -17,8 +21,32 @@ use sha2::{Digest, Sha256};
 
 pub const RELEASES_REPO: &str = match option_env!("NRPVP_RELEASES_REPO") {
     Some(repo) => repo,
-    None => "aspherya/nightreign-pvp",
+    None => "aspherya/nightreign-pvp-releases",
 };
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/releases_token.rs"));
+}
+
+/// Must match `mask` in build.rs.
+fn mask(i: usize) -> u8 {
+    (i as u8).wrapping_mul(31).wrapping_add(0x5A)
+}
+
+fn unmask(masked: &[u8]) -> Option<String> {
+    let bytes: Vec<u8> = masked
+        .iter()
+        .enumerate()
+        .map(|(i, b)| b ^ mask(i))
+        .collect();
+    String::from_utf8(bytes).ok().filter(|t| !t.is_empty())
+}
+
+/// The read-only releases token built into this exe, if the build had one.
+pub fn builtin_token() -> Option<String> {
+    // black_box: without it the optimizer unmasks the constant at compile time and stores the plain token in the exe.
+    unmask(std::hint::black_box(embedded::MASKED))
+}
 /// Seamless Co-op for Nightreign, by Yui. The GitHub repository holds only data files today (no releases); the mod itself is
 /// published on Nexus Mods. The launcher installs from a GitHub release if one ever appears, else guides the Nexus download.
 pub const SC_GITHUB_REPO: &str = "yuiamoroll/NightreignSeamlessCoopRelease";
@@ -138,12 +166,14 @@ fn github_url(repo: &str, endpoint: &[&str]) -> Result<reqwest::Url, String> {
 fn github_get(
     repo: &str,
     endpoint: &[&str],
-    token: &str,
+    token: Option<&str>,
     binary: bool,
 ) -> Result<reqwest::blocking::Response, String> {
-    let response = client()?
-        .get(github_url(repo, endpoint)?)
-        .bearer_auth(token)
+    let mut request = client()?.get(github_url(repo, endpoint)?);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    let response = request
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header(
             "Accept",
@@ -157,17 +187,16 @@ fn github_get(
         .map_err(|_| "Could not reach GitHub. Check your connection and try again.")?;
     match response.status().as_u16() {
         200..=299 => Ok(response),
-        401 => Err("The GitHub token expired or is invalid. Update it in Settings > Private updates.".into()),
-        403 => Err("GitHub denied access or its API limit was reached. The token needs Contents: read-only for this repository.".into()),
-        404 => Err("No published release was found, or your token cannot access this private repository. Check Settings > Private updates.".into()),
+        401 => Err("The launcher's access to updates expired. Download the newest launcher, or add a token in Settings > Updates access.".into()),
+        403 => Err("GitHub denied access or its API limit was reached. Try again later.".into()),
+        404 => Err("No published release was found, or this launcher cannot read the releases repository. Download the newest launcher, or add a token in Settings > Updates access.".into()),
         status => Err(format!("GitHub answered {status}; try again later.")),
     }
 }
 
-fn github_token() -> Result<String, String> {
-    crate::auth::token()?.ok_or_else(|| {
-        "Add a read-only GitHub token in Settings > Private updates to download releases.".into()
-    })
+/// A token saved in Settings wins over the built-in one; a saved token Windows cannot read falls back to the built-in one.
+fn github_token() -> Option<String> {
+    crate::auth::token().ok().flatten().or_else(builtin_token)
 }
 
 pub fn validate_token(token: &str) -> Result<(), String> {
@@ -177,11 +206,15 @@ pub fn validate_token(token: &str) -> Result<(), String> {
     let Source::GitHub(repo) = source() else {
         return Err("Disable NRPVP_RELEASE_DIR before connecting private GitHub updates.".into());
     };
-    github_get(&repo, &["releases"], token, false)?;
+    github_get(&repo, &["releases"], Some(token), false)?;
     Ok(())
 }
 
-fn github_release(repo: &str, tag: Option<&str>, token: &str) -> Result<GitHubRelease, String> {
+fn github_release(
+    repo: &str,
+    tag: Option<&str>,
+    token: Option<&str>,
+) -> Result<GitHubRelease, String> {
     let endpoint = match tag {
         Some(tag) => vec!["releases", "tags", tag],
         None => vec!["releases", "latest"],
@@ -199,7 +232,7 @@ fn github_asset(
     repo: &str,
     release: &GitHubRelease,
     name: &str,
-    token: &str,
+    token: Option<&str>,
 ) -> Result<reqwest::blocking::Response, String> {
     let asset = release
         .assets
@@ -221,9 +254,9 @@ pub fn latest() -> Result<Manifest, String> {
         Source::Local(dir) => std::fs::read_to_string(dir.join("release.json"))
             .map_err(|e| format!("No release.json in {}: {e}", dir.display()))?,
         Source::GitHub(repo) => {
-            let token = github_token()?;
-            let release = github_release(&repo, None, &token)?;
-            let text = github_asset(&repo, &release, "release.json", &token)?
+            let token = github_token();
+            let release = github_release(&repo, None, token.as_deref())?;
+            let text = github_asset(&repo, &release, "release.json", token.as_deref())?
                 .text()
                 .map_err(|_| "Could not read the release manifest.")?;
             if parse(&text)?.tag != release.tag_name {
@@ -261,12 +294,17 @@ pub fn fetch_asset(
                 .map_err(|e| format!("Could not open {}: {e}", asset.name))?,
         ),
         Source::GitHub(repo) => {
-            let token = github_token()?;
-            let release = github_release(&repo, Some(&m.tag), &token)?;
+            let token = github_token();
+            let release = github_release(&repo, Some(&m.tag), token.as_deref())?;
             if release.tag_name != m.tag {
                 return Err("The GitHub release tag changed.".into());
             }
-            Box::new(github_asset(&repo, &release, &asset.name, &token)?)
+            Box::new(github_asset(
+                &repo,
+                &release,
+                &asset.name,
+                token.as_deref(),
+            )?)
         }
     };
     let hash = copy_hashed(reader, dest, asset.size, progress)?;
@@ -386,6 +424,19 @@ pub fn sc_github_release() -> Result<Option<ScRelease>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn masked_token_round_trips() {
+        let token = "github_pat_test-only-not-a-real-credential";
+        let masked: Vec<u8> = token
+            .bytes()
+            .enumerate()
+            .map(|(i, b)| b ^ mask(i))
+            .collect();
+        assert!(!masked.windows(10).any(|w| w == b"github_pat"));
+        assert_eq!(unmask(&masked).as_deref(), Some(token));
+        assert_eq!(unmask(&[]), None);
+    }
+
     #[test]
     fn authenticated_asset_urls_stay_on_github_and_escape_tag_paths() {
         let url = github_url("aspherya/nightreign-pvp", &["releases", "tags", "v1/extra"]).unwrap();

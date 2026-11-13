@@ -138,6 +138,8 @@ struct Status {
     player: saves::Status,
     auto_update: bool,
     github_token_set: bool,
+    /// This exe carries a built-in read-only token for the releases repository.
+    github_builtin: bool,
 }
 
 #[tauri::command]
@@ -168,6 +170,7 @@ async fn status() -> Result<Status, String> {
             player: saves::status(game.as_deref(), saves::detect_account()),
             auto_update: !std::env::args().any(|a| a == "--skip-auto-update"),
             github_token_set: auth::token().ok().flatten().is_some(),
+            github_builtin: release::builtin_token().is_some(),
         })
     })
     .await
