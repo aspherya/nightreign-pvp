@@ -119,7 +119,12 @@ If the game crashes on quit (0xC0000374) it is the known bug; note the time and 
 The launcher app (`crates/nrpvp-app`, `NightreignPvP.exe`) installs and updates the mod from GitHub releases of a **separate,
 public** repository, `aspherya/nightreign-pvp-releases` (since 2026-11-13). Source stays private in `aspherya/nightreign-pvp`: a
 release there would carry GitHub's automatic source-code archives, and a token able to read its releases could read its source. The
-releases repository holds only a README and the releases (`release.json`, `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`). Releases v0.1.3
+releases repository holds only a README, the releases (`release.json`, `NightreignPvP.zip`, `NightreignPvP-Launcher.exe`) and the
+**download page** in `docs/` (static `index.html` + `site.css` on Bootstrap 5, theme tokens in `design/tokens.json` → `node
+design/build-tokens.mjs` → `docs/ui/tokens.css`; GitHub Pages from `main` `/docs`, https://aspherya.github.io/nightreign-pvp-releases/,
+since 2026-11-13; no game art, the copy sells Battle Royale and Arena as PvP). Its buttons link `releases/latest/download/NightreignPvP-Launcher.exe`, so a new release needs no page edit; the
+version line and "What's new" come from the GitHub API in the browser. That repository has no workflows: editing the page never builds
+or publishes a release (the build runs only on pushes to `main` here that touch shipped code). Releases v0.1.3
 and v0.1.7 were published in the source repository before the move; launchers of those versions keep looking there. One command
 builds the zip, the launcher and `release.json`, and uploads them:
 
