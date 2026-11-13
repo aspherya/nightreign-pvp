@@ -1,25 +1,27 @@
 name: Build player release
 
+# Every push to main that changes shipped code builds, tests and publishes a player release to the public releases repository.
+# Docs-only pushes do not run: Windows minutes count double on a private repository (RELEASE.md §6).
 on:
   push:
     branches: ['main']
-    tags: ['v*']
+    paths-ignore:
+      - '.claude/**'
+      - '**/*.md'
+      - 'scenarios/**'
   workflow_dispatch:
     inputs:
       version:
         description: 'Optional version, e.g. 0.3.0; blank generates a new version'
         required: false
         type: string
-      publish_release:
-        description: 'Publish the complete update package'
-        default: true
-        type: boolean
       draft:
-        description: 'Manual run only: keep the release as a draft'
+        description: 'Keep the release as a draft (players never see drafts)'
         default: false
         type: boolean
 
 permissions:
+  # write: reading the pinned build-inputs *draft* of this repository needs push access.
   contents: write
 
 concurrency:
@@ -30,38 +32,29 @@ jobs:
   build:
     runs-on: windows-2022
     env:
-      # Player releases live in their own repository so a release never ships or exposes this source (RELEASE.md §6).
+      # Player releases live in their own public repository so a release never ships or exposes this source (RELEASE.md §6).
       NRPVP_RELEASES_REPO: ${{ vars.RELEASES_REPO || 'aspherya/nightreign-pvp-releases' }}
+      # One target folder for the launcher and the player DLL, so dependencies compile once (scripts/package-release.ps1).
+      NRPVP_PLAYER_TARGET_DIR: target
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
       - name: Select version
         shell: pwsh
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
-          PUBLISH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
         run: |
-          if ($env:GITHUB_REF_TYPE -eq 'tag') {
-            $version = $env:GITHUB_REF_NAME -replace '^v', ''
-          } elseif ($env:REQUESTED_VERSION) {
-            $version = $env:REQUESTED_VERSION
-          } else {
-            $baseText = [regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
-            if (-not $baseText) { throw 'No workspace version found in Cargo.toml.' }
-            $base = [version]$baseText
-            # Old releases were published in this repository; new ones go to the releases repository. Never go below either.
-            $sources = @(@{ repo = $env:GITHUB_REPOSITORY; token = $env:GH_TOKEN })
-            if ($env:PUBLISH_TOKEN) { $sources += @{ repo = $env:NRPVP_RELEASES_REPO; token = $env:PUBLISH_TOKEN } }
-            foreach ($source in $sources) {
-              try {
-                $latest = Invoke-RestMethod "https://api.github.com/repos/$($source.repo)/releases/latest" -Headers @{ Authorization = "Bearer $($source.token)"; Accept = 'application/vnd.github+json' }
-                if ($latest.tag_name -match '^v?(\d+\.\d+\.\d+)$') {
-                  $published = [version]$matches[1]
-                  if ($published -gt $base) { $base = $published }
-                }
-              } catch {
-                if (-not $_.Exception.Response -or [int]$_.Exception.Response.StatusCode -ne 404) { throw "Could not read the latest release of $($source.repo) to select a version." }
-              }
+          if (-not $env:GH_TOKEN) { throw "Add the RELEASES_PUBLISH_TOKEN secret (Contents: read and write on $env:NRPVP_RELEASES_REPO); see .claude/RELEASE.md." }
+          $version = $env:REQUESTED_VERSION
+          if (-not $version) {
+            # The higher of the workspace version and the latest release, plus the run number: always increasing.
+            $base = [version][regex]::Match((Get-Content Cargo.toml -Raw), '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"').Groups[1].Value
+            try {
+              $latest = Invoke-RestMethod "https://api.github.com/repos/$env:NRPVP_RELEASES_REPO/releases/latest" -Headers @{ Authorization = "Bearer $env:GH_TOKEN" }
+              if ($latest.tag_name -match '^v(\d+\.\d+\.\d+)$' -and [version]$matches[1] -gt $base) { $base = [version]$matches[1] }
+            } catch {
+              if ([int]$_.Exception.Response.StatusCode -ne 404) { throw "Could not read the latest release of $env:NRPVP_RELEASES_REPO." }
             }
             $version = '{0}.{1}.{2}' -f $base.Major, $base.Minor, ($base.Build + [int]$env:GITHUB_RUN_NUMBER)
           }
@@ -70,71 +63,44 @@ jobs:
           "NRPVP_BUILD_VERSION=$version" >> $env:GITHUB_ENV
       - name: Rust toolchain
         run: rustup show
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: release-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-      - name: Validate launcher and player build
+      - uses: Swatinem/rust-cache@v2
+      - name: Test and lint
         shell: pwsh
+        # Debug profile: the release profile (thin LTO, one codegen unit) is only worth its compile time for shipped binaries.
         run: |
           cargo fmt --all --check
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --release -p nrpvp-app -p nrpvp-launcher
+          cargo clippy --locked -p nrpvp-app -p nrpvp-launcher --all-targets -- -D warnings
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --release -p nrpvp-app -p nrpvp-launcher --all-targets -- -D warnings
+          cargo clippy --locked -p nrpvp --no-default-features -- -D warnings
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo clippy --locked --release -p nrpvp --no-default-features -- -D warnings
+          cargo test --locked -p nrpvp-app -p nrpvp-launcher -p nrpvp
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo test --locked --release -p nrpvp
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          # Developer-mode tests require the default features; exercise the player guard separately.
-          cargo test --locked --release -p nrpvp --no-default-features -- dev_mode_needs
+          # Developer-mode tests need the default features; the player guard is checked without them.
+          cargo test --locked -p nrpvp --no-default-features -- dev_mode_needs
           exit $LASTEXITCODE
-      - name: Build launcher and player binaries
+      - name: Build release binaries
         shell: pwsh
         run: |
           cargo build --locked --release -p nrpvp-app -p nrpvp-launcher
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cargo build --locked --release -p nrpvp --no-default-features --target-dir target/player
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          New-Item -ItemType Directory -Force dist/release | Out-Null
-          Copy-Item target/release/NightreignPvP.exe dist/release/NightreignPvP-Launcher.exe
-          Copy-Item target/release/nrpvp_launcher.exe dist/release/nrpvp_launcher.exe
-          Copy-Item target/player/release/nrpvp.dll dist/release/nrpvp.dll
-      - name: Download draft build inputs
-        if: vars.CI_INPUTS_SHA256 != '' || hashFiles('pins/ci-inputs.json') != ''
+          cargo build --locked --release -p nrpvp --no-default-features
+          exit $LASTEXITCODE
+      - name: Download build inputs
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          INPUTS_SHA256: ${{ vars.CI_INPUTS_SHA256 }}
-          INPUTS_TAG: ${{ vars.CI_INPUTS_TAG }}
         run: |
-          $hasTagOverride = -not [string]::IsNullOrWhiteSpace($env:INPUTS_TAG)
-          $pin = $null
-          if (Test-Path pins/ci-inputs.json) {
-            $pin = Get-Content pins/ci-inputs.json -Raw | ConvertFrom-Json
-            if (-not $env:INPUTS_SHA256) { $env:INPUTS_SHA256 = $pin.sha256 }
-            if (-not $env:INPUTS_TAG) { $env:INPUTS_TAG = $pin.tag }
-          }
-          if (-not $env:INPUTS_TAG) { $env:INPUTS_TAG = 'build-inputs-v1' }
-          if ($env:INPUTS_SHA256 -notmatch '^[0-9A-Fa-f]{64}$') { throw 'Configure CI_INPUTS_SHA256 after running scripts/prepare-ci-inputs.ps1; see .claude/RELEASE.md.' }
+          # Game data and me3, pinned by pins/ci-inputs.json: a draft release of this repository (RELEASE.md §6).
+          $pin = Get-Content pins/ci-inputs.json -Raw | ConvertFrom-Json
+          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
+          $release = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($pin.release_id)" -Headers $headers
+          $asset = $release.assets | Where-Object name -eq $pin.asset | Select-Object -First 1
+          if (-not $asset) { throw "The pinned input draft is missing $($pin.asset)." }
+          $headers.Accept = 'application/octet-stream'
           New-Item -ItemType Directory -Force dist | Out-Null
-          if ($pin.release_id -and -not $hasTagOverride) {
-            # Unpublished draft tags do not resolve through /releases/tags; use the pinned release ID.
-            $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; Accept = 'application/vnd.github+json' }
-            $inputRelease = Invoke-RestMethod "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($pin.release_id)" -Headers $headers
-            $asset = $inputRelease.assets | Where-Object name -eq 'ci-inputs.zip' | Select-Object -First 1
-            if (-not $asset) { throw 'The pinned input draft is missing ci-inputs.zip.' }
-            $headers.Accept = 'application/octet-stream'
-            Invoke-WebRequest "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" -Headers $headers -OutFile dist/ci-inputs.zip
-          } else {
-            gh release download $env:INPUTS_TAG --repo $env:GITHUB_REPOSITORY --pattern ci-inputs.zip --dir dist
-            if ($LASTEXITCODE) { throw 'Upload ci-inputs.zip to this repository draft build-inputs release first.' }
-          }
-          if ((Get-FileHash dist/ci-inputs.zip).Hash -ne $env:INPUTS_SHA256) { throw 'Build input checksum mismatch.' }
+          Invoke-WebRequest "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($asset.id)" -Headers $headers -OutFile dist/ci-inputs.zip
+          if ((Get-FileHash dist/ci-inputs.zip).Hash -ne $pin.sha256) { throw 'Build input checksum mismatch.' }
           Expand-Archive -LiteralPath dist/ci-inputs.zip -DestinationPath dist/ci-inputs
           Copy-Item -LiteralPath dist/ci-inputs/gamedata-player -Destination dist/gamedata-player -Recurse
           $pins = Get-Content pins/nightreign.toml -Raw
@@ -142,30 +108,15 @@ jobs:
             $expected = [regex]::Match($pins, '"' + [regex]::Escape($file) + '"\s*=\s*"([0-9A-Fa-f]{64})"').Groups[1].Value
             if (-not $expected -or (Get-FileHash "dist/ci-inputs/me3/bin/$file").Hash -ne $expected) { throw "me3 pin mismatch: $file" }
           }
-          'HAS_BUILD_INPUTS=true' >> $env:GITHUB_ENV
-      - name: Build launcher, player DLL and update manifest
-        if: env.HAS_BUILD_INPUTS == 'true'
+      - name: Package zip, launcher and manifest
         shell: pwsh
         run: ./scripts/publish-release.ps1 -Version $env:RELEASE_VERSION -NotesFile releases/notes.txt -MatchPlayers 6 -MinPlayers 2 -Me3Dir "$PWD/dist/ci-inputs/me3" -Repo $env:NRPVP_RELEASES_REPO -DryRun
-      - uses: actions/upload-artifact@v4
-        with:
-          name: NightreignPvP-${{ env.RELEASE_VERSION }}-windows-x64
-          path: dist/release/*
-          if-no-files-found: error
-      - name: Publish update release
-        if: env.HAS_BUILD_INPUTS == 'true' && (github.event_name == 'push' || inputs.publish_release)
+      - name: Publish release
         shell: pwsh
         env:
           # github.token cannot write to another repository: a fine-grained token with Contents: read and write on the releases repo.
           GH_TOKEN: ${{ secrets.RELEASES_PUBLISH_TOKEN }}
           KEEP_DRAFT: ${{ github.event_name == 'workflow_dispatch' && inputs.draft }}
-        run: ./scripts/publish-ci-release.ps1 -Repo $env:NRPVP_RELEASES_REPO -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Draft:($env:KEEP_DRAFT -eq 'true')
-      - name: Build summary
-        shell: pwsh
         run: |
-          "Built version $env:RELEASE_VERSION from $env:GITHUB_SHA." >> $env:GITHUB_STEP_SUMMARY
-          if ($env:HAS_BUILD_INPUTS -eq 'true') {
-            'The complete updater package is in the workflow artifact. Pushes to main publish it as the latest release for automatic launcher and mod updates.' >> $env:GITHUB_STEP_SUMMARY
-          } else {
-            'Launcher, helper and player DLL are available in the workflow artifact. Configure CI_INPUTS_SHA256 and the draft build-inputs bundle in this repository to also generate the complete mod zip and updater manifest.' >> $env:GITHUB_STEP_SUMMARY
-          }
+          ./scripts/publish-ci-release.ps1 -Repo $env:NRPVP_RELEASES_REPO -Version $env:RELEASE_VERSION -Commit $env:GITHUB_SHA -Draft:($env:KEEP_DRAFT -eq 'true')
+          "Built v$env:RELEASE_VERSION from $env:GITHUB_SHA and published it to $env:NRPVP_RELEASES_REPO (draft: $env:KEEP_DRAFT)." >> $env:GITHUB_STEP_SUMMARY

@@ -30,6 +30,7 @@ param(
     [string]$Witchy = 'Z:\Tools\WitchyBND-3.0.1.0\WitchyBND.exe',
     # UI-3: Smithbox install whose SoulsFormats DLLs build regulation.bin (referenced at build time, never copied into the repo).
     [string]$Smithbox = 'Z:\Tools\Smithbox-2.2.6',
+    [string]$EsdTool = 'Z:\Tools\ESDLang-0.5.1\esdtool.exe',
     # Portable wrapper can supply an installed Python or Windows py launcher explicitly.
     [string]$Python = '',
     [string]$Oodle = '',
@@ -76,6 +77,10 @@ $eventsFiles = @(
 $outPlayer = Join-Path $repo 'dist\gamedata-player'
 
 if (-not (Test-Path $Witchy)) { throw "WitchyBND not found at $Witchy" }
+if (-not (Test-Path -LiteralPath $EsdTool)) { throw "ESDLang 0.5.1 not found at $EsdTool. Pass -EsdTool <esdtool.exe>." }
+$talkBundle = Join-Path $Unpacked 'script/talk/m10_00_00_00.talkesdbnd.dcx'
+if (-not (Test-Path -LiteralPath $talkBundle)) { throw "Unpacked training dialogue missing: $talkBundle" }
+if ((Get-FileHash -LiteralPath $talkBundle).Hash -ne '43D5005F1934A37121CA2589C58684E73964F2440B1D13BB79443AC689796CD1') { throw 'Training dialogue is not the pinned NR 1.03.3 bundle.' }
 $engus = Join-Path $Unpacked 'msg\engus\menu_dlc01.msgbnd.dcx'
 if (-not (Test-Path $engus)) { throw "Unpacked game not found: $engus" }
 $h = (Get-FileHash $engus).Hash
@@ -234,6 +239,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Title background build failed; check the pinne
 
 # The player package (dist\gamedata-player, zipped by package-release.ps1): every other file of dist\gamedata as it is, except game
 # files that only dev-only events change (they stay vanilla for players).
+# Arena builds include saved loadouts at the Sparring Equipment interaction; BR-only builds keep the original dialogue.
+& (Join-Path $PSScriptRoot 'build-loadouts.ps1') -Unpacked $Unpacked -Witchy $Witchy -EsdTool $EsdTool -Python $py -Output (Join-Path $out 'script/talk/m10_00_00_00.talkesdbnd.dcx')
+$devOnlyRels += 'script\talk\m10_00_00_00.talkesdbnd.dcx'
 $outFull = (Resolve-Path $out).Path
 foreach ($f in Get-ChildItem -LiteralPath $out -Recurse -File) {
     $rel = $f.FullName.Substring($outFull.Length + 1)

@@ -3,7 +3,7 @@
 //!
 //! The expedition start wipes the Sparring items and rebuilds the starting kit, so:
 //! 1. **Capture** ([`capture_tick`], main loop): while LOCAL is at the Roundtable and the queue is idle or searching, remember the six
-//!    hand slots (id, and the instance's custom row + skill: Seppuku lives there) and the consumables (every good but the flask),
+//!    hand slots (id, and the instance's custom row + skill: Seppuku lives there) and the pouch consumables (except the flask),
 //!    every [`CAPTURE_EVERY_MS`]. The last capture before the match is the loadout.
 //! 2. **Apply** ([`apply`], once LOCAL stands on its arena spawn): on the game's thread, SetLevel(15), then for each captured weapon
 //!    add its max-upgrade id, equip it into the same slot and write the custom row + skill into the new instance; then give back
@@ -51,7 +51,7 @@ static LAST_HOLD: Mutex<Option<Instant>> = Mutex::new(None);
 const FLASK_ROWS: std::ops::RangeInclusive<u32> = 1000..=1025;
 
 /// One hand-slot weapon as captured.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Weapon {
     pub slot: u8,
     pub id: u32,
@@ -61,7 +61,7 @@ pub(crate) struct Weapon {
     pub skill: u32,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Loadout {
     pub weapons: Vec<Weapon>,
     /// `(good id, quantity)`.
@@ -147,7 +147,7 @@ pub(crate) fn capture(base: usize) -> Result<Loadout, String> {
     }
     Ok(Loadout {
         weapons,
-        goods: goods_of(&inventory::entries(pgd)),
+        goods: inventory::quick_goods(pgd)?,
     })
 }
 
@@ -198,6 +198,15 @@ pub(crate) fn capture_tick(base: usize, at_roundtable: bool) {
 /// The last captured loadout (console).
 pub(crate) fn captured() -> Option<Loadout> {
     lock().loadout.clone()
+}
+
+/// A saved preset was restored at the hub. Update immediately so a departure within two seconds carries the new equipment.
+pub(crate) fn remember_current(base: usize) {
+    if let Ok(loadout) = capture(base) {
+        let mut state = lock();
+        state.loadout = Some(loadout);
+        state.last_capture = Some(Instant::now());
+    }
 }
 
 /// Once LOCAL stands on its arena spawn: level 15, the captured loadout at max upgrade, the goods back, then full HP / FP.

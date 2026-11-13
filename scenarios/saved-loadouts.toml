@@ -1,0 +1,42 @@
+name = "saved-loadouts"
+about = "Saved presets in an isolated temporary store: save slot 10, replace its weapon, load it twice and check that the arena capture contains the saved weapon. Does not overwrite player presets. Native inventory and NPC UI still require the manual checks in tools/loadouts/README.md."
+tags = ["arena", "inventory"]
+
+[config]
+mode = "offline"
+mm_queue = false
+team_size = 1
+ui_flag_watch = false
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+console = "saved_loadouts sandbox"
+[[step]]
+wait_log = { contains = "saved_loadouts: isolated test store", timeout_s = 10, since = "run" }
+[[step]]
+console = "give 0089588C 1 1"
+[[step]]
+sleep_ms = 3000
+[[step]]
+console = "saved_loadouts save 10"
+[[step]]
+wait_log = { contains = "saved_loadouts: saved slot 10", timeout_s = 10, since = "run" }
+[[step]]
+console = "give 003010B0 1 1"
+[[step]]
+sleep_ms = 3000
+[[step]]
+console = "saved_loadouts load 10"
+[[step]]
+wait_log = { contains = "saved_loadouts: load completed", timeout_s = 20, since = "run" }
+[[step]]
+expect = { console = "arena_loadout", contains = "0089588C" }
+[[step]]
+mark = "repeat"
+[[step]]
+console = "saved_loadouts load 10"
+[[step]]
+wait_log = { contains = "saved_loadouts: load completed", timeout_s = 20, since = "mark:repeat" }
+[[step]]
+expect = { console = "arena_loadout", contains = "0089588C" }

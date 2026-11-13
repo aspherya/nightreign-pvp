@@ -42,6 +42,8 @@ pub(crate) mod inventory;
 pub(crate) mod invspy;
 pub(crate) mod itemdrop;
 pub(crate) mod layout;
+#[cfg(feature = "arena")]
+pub(crate) mod loadout_store;
 pub(crate) mod maphide;
 pub(crate) mod matchstart;
 pub(crate) mod mem;
@@ -62,6 +64,8 @@ pub(crate) mod rawcall;
 pub(crate) mod reviveblock;
 pub(crate) mod rtti;
 pub(crate) mod runeshare;
+#[cfg(feature = "arena")]
+pub(crate) mod saved_loadouts;
 #[cfg(feature = "dev")]
 pub(crate) mod sessionprobe;
 pub(crate) mod singletons;
@@ -608,6 +612,12 @@ fn watch(
                 #[cfg(feature = "dev")]
                 Command::ArenaLoadout => arenaloadout::apply(base),
                 #[cfg(feature = "dev")]
+                Command::SavedLoadouts(command) => {
+                    if let Some(f) = features.get_mut::<saved_loadouts::SavedLoadouts>() {
+                        f.console(&world, command);
+                    }
+                }
+                #[cfg(feature = "dev")]
                 Command::DropGear(dry) => defeatdrop::aid(base, world.local, dry),
                 #[cfg(feature = "dev")]
                 Command::ArenaCard(req) => arenacard::console_cmd(base, req),
@@ -785,6 +795,8 @@ fn run_command(cmd: Command, src: &str, team: &mut team::TeamCtl) {
         Command::Give(..) => {}
         #[cfg(feature = "dev")]
         Command::ArenaLoadout => {}
+        #[cfg(feature = "dev")]
+        Command::SavedLoadouts(..) => {}
         #[cfg(feature = "dev")]
         Command::DropGear(..) => {}
         #[cfg(feature = "dev")]

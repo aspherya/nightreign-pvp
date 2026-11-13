@@ -71,6 +71,8 @@ pub(crate) enum Command {
     /// ARENA-3 (dev only): `arena_loadout apply` (`game::arenaloadout::apply`).
     #[cfg(feature = "dev")]
     ArenaLoadout,
+    #[cfg(feature = "dev")]
+    SavedLoadouts(crate::game::saved_loadouts::ConsoleCmd),
     /// RW-3 (dev only): `drop_gear [dry]`: what a defeat would drop, or drop it now without a defeat (`game::defeatdrop`).
     #[cfg(feature = "dev")]
     DropGear(bool),

@@ -144,18 +144,21 @@ $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launc
 
 ### GitHub Actions release setup
 
-`.github/workflows/release.yml` runs on every push to **main**, `v*` tags, or **Actions > Build player release > Run workflow**.
-Each run builds the player DLL without developer features, the helper, and the launcher (with its release version embedded).
-Without a configured game-data input bundle, the three binaries are uploaded as a workflow artifact, so ordinary pushes can
-compile successfully before game-data packaging is set up. With the bundle configured, the artifact instead contains the complete
-`NightreignPvP.zip`, `NightreignPvP-Launcher.exe`, and SHA-256 `release.json` updater package.
-Main/tag pushes with complete inputs upload all checksum-verified assets to a temporary **draft**, then publish it as the latest
-stable release only after every upload succeeds. This activates launcher and mod updates automatically. Manual runs can disable
-publication or select **draft**. Never reuse a version or replace already-published assets. Update `releases/notes.txt` before merging.
+`.github/workflows/release.yml` runs on every push to **main** that changes more than docs, or **Actions > Build player release >
+Run workflow**. Pushes that only touch `.claude/**`, `*.md` or `scenarios/**` do not run: Windows runner minutes count double on a
+private repository, and a docs change needs no release. There is no CI on pull requests (removed 2026-11-13 to save minutes); run
+`cargo test` / `cargo clippy` locally before merging.
 
-Main pushes and manual runs with no explicit version select the higher of the workspace version and latest published stable
-version (of both the source and the releases repository), then add `github.run_number` to its patch component. This produces increasing versions across main pushes and repository
-migrations. Explicit manual versions and `v*` tags are used as given. A rerun can replace unpublished draft assets only when that
+One job, in order: tests and clippy in the **debug** profile (the release profile's thin LTO with one codegen unit is slow and only
+needed for shipped binaries); a release build of the launcher, helper and player DLL (no developer features) in one shared `target`
+folder (`NRPVP_PLAYER_TARGET_DIR`), so dependencies compile once; the pinned build inputs; `publish-release.ps1 -DryRun` packages
+`NightreignPvP.zip`, `NightreignPvP-Launcher.exe` and the SHA-256 `release.json`; `publish-ci-release.ps1` uploads them to a
+temporary **draft** and publishes it as the latest stable release only after every upload succeeds. `Swatinem/rust-cache` keeps
+compiled dependencies between runs. No workflow artifact is uploaded: the release holds the files. A manual run can keep the release
+a **draft** (players never see drafts). Never reuse a version or replace already-published assets. Update `releases/notes.txt` before merging.
+
+Runs with no explicit version select the higher of the workspace version and the latest release of the releases repository, then
+add `github.run_number` to its patch component, so versions always increase. An explicit manual version is used as given. A rerun can replace unpublished draft assets only when that
 draft was built from the exact same commit (its body names the source commit); published releases cannot be overwritten.
 Tags in the releases repository point at its default branch, since the source commit does not exist there.
 
@@ -177,11 +180,11 @@ One-time setup by the repository owner:
 
    Upload `dist/ci-inputs.zip` to a **draft** release tagged `build-inputs-v1` in this repository. Keep it a draft so it
    never becomes a player update.
-   `pins/ci-inputs.json` now records the uploaded draft's release ID and SHA-256; no Actions variables are required for the configured
-   repository. Unpublished draft tags do not resolve through the tag API, so CI downloads the asset by its pinned release ID.
+   `pins/ci-inputs.json` records the uploaded draft's release ID and SHA-256 (the only source CI uses).
+   Unpublished draft tags do not resolve through the tag API, so CI downloads the asset by its pinned release ID.
    When regenerating inputs, upload a new draft and update that file with its ID and the new hash. Find a draft ID with
    `gh api repos/aspherya/nightreign-pvp/releases --jq '.[] | select(.tag_name == "build-inputs-v1") | .id'`.
-   Legacy `CI_INPUTS_SHA256` / `CI_INPUTS_TAG` variable overrides remain available. This bundle contains only the generated player
+   This bundle contains only the generated player
    game-data package and pinned me3 binaries/licenses, never Seamless Co-op or a game executable.
    Regenerate and update the hash when game-data sources/pins change. A hosted Windows runner cannot generate
    game content without the local unpack and tools. The currently installed Arena test package is not a player input.
@@ -192,17 +195,18 @@ One-time setup by the repository owner:
    package and publishes it. Failures leave the previous stable release active. To test without publishing, use a manual workflow
    run with **draft**, or build locally with `NRPVP_RELEASE_DIR`.
 
-### How the launcher authenticates
+### How the launcher reads releases
 
-It does not need one: the releases repository is public. No token is built into the exe or committed. **Settings > Updates
-access** still accepts an optional token (DPAPI-encrypted for the Windows user), sent when present; it would matter only if the
-releases repository became private again (fine-grained, **Only select repositories > nightreign-pvp-releases**, **Contents:
-Read-only**). Without a token GitHub allows 60 API requests per hour per IP; an update check uses a few.
+Without any token: the releases repository is public. The launcher never sends one, and none is built into the exe or committed.
+Launchers up to v0.1.x had a **Settings > Private updates** token field; a token saved there made GitHub answer 401 ("invalid or
+expired") even for the public repository, so the current launcher removed that field and deletes
+`%LOCALAPPDATA%\NightreignPvP\github-token.dpapi` on startup (TRAPS). Without a token GitHub allows 60 API requests per hour per
+IP; an update check uses a few.
 
 The launcher uses the release API to locate `release.json`, then the asset API with `Accept: application/octet-stream`
-to download the manifest, launcher and player zip. SHA-256 verification still applies. Tokens go only to constructed
-`api.github.com/repos/<owner>/<repo>/...` URLs; public Seamless Co-op requests remain unauthenticated. Drafts and prereleases
-are excluded from player updates. `NRPVP_RELEASE_DIR` still supports offline release testing without a token.
+to download the manifest, launcher and player zip, building every URL from `api.github.com/repos/<owner>/<repo>/...` and the
+numeric asset ID (never from a URL in the manifest). SHA-256 verification still applies. Drafts and prereleases are excluded from
+player updates. `NRPVP_RELEASE_DIR` still supports offline release testing.
 
 ### Player save setup and name changes
 

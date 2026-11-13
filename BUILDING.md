@@ -39,6 +39,11 @@ You can also place tools under `tools/local/` (gitignored): `me3/`, `unpacked/`,
 The scripts discover these locations automatically. Python can be `python.exe` or the Windows `py.exe` launcher.
 The game unpack and third-party tools are not bundled with the source repository.
 
+Saved loadouts in Arena builds also need ESDLang 0.5.1 (`esdtool.exe` with its `dist/` folder and the .NET 6 x64 runtime).
+Set `EsdTool` in `build.local.psd1`, pass `-EsdTool <path>` to `build-gamedata.bat`, or put it in `tools/local/ESDLang/`.
+The game unpack must include `script/talk/m10_00_00_00.talkesdbnd.dcx`. The build patches only the existing training equipment
+interaction; see [the loadout notes](tools/loadouts/README.md) for behavior and the pending in-game checks.
+
 ## Terminal / automation use
 
 Use `-CheckOnly -NonInteractive` to check prerequisites without compiling or prompting. Set `NRPVP_NO_PAUSE=1` to prevent

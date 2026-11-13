@@ -290,3 +290,7 @@ Leonardo delegated these; Claude decided.
 5. Command list: §3 as written; new commands are added with their feature from now on.
 6. **Targets** (§3.1): `me` / `p1`…`p6` / slots / `allies` / `rivals` / `all`. Owner-only writes on another player are routed
    by `nrcon` to that player's game; names come after MM-6. Targets ship in CON-1 (parser) and CON-3 (routing).
+
+Saved presets (Arena/dev): `saved_loadouts` logs the store path and availability. `saved_loadouts sandbox` switches to a temporary
+store without touching player presets. `saved_loadouts save|load <slot 1..10>` submits the character-independent ESD operation. Main-loop commands require an idle hub; native inventory work uses the game-thread queue. Results
+are logged as `saved_loadouts:`.

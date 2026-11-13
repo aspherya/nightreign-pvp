@@ -658,3 +658,25 @@ live by `rawcall` and in `mi-arena-rounds` (ARENA-LV calls it on the game thread
 | **What other players draw: the player-data broadcast** | Each game draws another player from its own copy of that player's `PlayerGameData` (`[GameDataMan+0x10] + k*0x8A0`, `+0x8` = -1 when unused; hand ids at `+0x30C`, as LOCAL's). The copy is written when packet **0x0C** (0x1F8 bytes) arrives (`exe+0xDDAE6B` receive into `exe+0x3C21A90`, then `exe+0x20DCB0(copy, buf)` -> ... `exe+0x3821F0`). It is sent by **`exe+0xDE20E0()`** (no arguments: reads `GameDataMan`, sends only while `exe+0x1FE4F0()` == 2 = in a session, packs LOCAL's PGD with `exe+0x20BDE0(PGD, buf)`, broadcasts with `exe+0xDF24D0(.., 0xC, buf, 0x1F8)`; a one-peer send sits at `exe+0xDDFFD1`). The ground pickup calls it through `exe+0x66EFF0(LOCAL)` right after its equip (`exe+0x57A786`). **Our add + equip never call it**, so the rival's game kept our starting kit (Arena test 2026-11-12). Calling it after the equips sends every hand slot at once | `[VERIFIED: two instances in the Arena 2026-11-13: rival copy = starting kit after our loadout and after a later give; a ground pickup and `rawcall DE20E0` each updated all six slots on the other game (write watch on the copy: rip `exe+0x38224D`, return chain `exe+0x382F00`, `exe+0x20C477`, `exe+0xDDAEA8`); static]` |
 | PGD ChrAsm vs the character's | `PGD+0x270` (= `EquipGameData+0x98`) is copied every frame into `[PlayerIns+0x670]` by `exe+0x675D20` (a player vfunc), which also reads and clears the per-slot changed bytes `PGD+0x260..` (set by the equip at `EquipGameData+0x88+slot`); `exe+0x66F8A0` copies the other way on the weapon-switch animation events (`exe+0x410E5F`). None of this sends anything | `[VERIFIED: static]` |
 
+
+### Saved presets (2026-11-13, static evidence; live acceptance pending)
+
+`game/saved_loadouts.rs` and `tools/loadouts/patch_talk.py` reserve flags 10007800..10007999 for ten presets, their hero metadata
+and the local ESD/DLL handshake. Training equipment script `t607001000` x3 opens `OpenSparringEquipmentMenu`; its original x0/x2
+own the prompt, interruption and distance guards. The builder retains those guards and wraps x3 with the preset menus.
+`GetChrHero` (ESD function 309) supplies the hero. A mismatched hero opens `OpenChangeCharacterMenu` (command 1:152, native menu
+35); continuing through a swap is not verified live. [SOURCE: ESDLang 0.5.1 command documentation; VERIFIED: compilation of the
+pinned 1.03.3 t607001000 with added state machines]
+
+`exe+0x1F3E90(EquipGameData*, inventory_index, signed_quantity_delta, u8)` changes/removes an inventory stack. At 0x1F3EB7 it adds
+0x1C8 to the gear block and calls 0x1F4FF0 with the index/delta. At 0x1F5056 the delta is ADDED to the current count: removal needs
+a negative delta. At 0x1F3EDD a positive remainder skips equipped-reference cleanup; zero takes it. r9=1 skips the goods replacement
+branch at 0x1F3F82. Entry bytes `48 89 5C 24 18 55 56 57 41 54` are checked before use. Hand indices use PGD+0x1E0..1F4 and pouch
+handles/indices use the existing PGD+0x428 pairs. Clearing a hand uses the existing equip call with index -1; its lookup (0x753E70)
+returns handle 0 for a missing entry. These new call combinations have not been run in the game.
+[VERIFIED: static disassembly of installed exe 1.3.3.0, 2026-11-13; runtime behavior UNKNOWN]
+
+Update 2026-11-13: presets are now character-independent per the user's revised request. Runtime no longer reads/publishes hero
+metadata or requests a character change. ESD slot summaries use Saved/Empty and contain no GetChrHero or character-menu call.
+Flags 10007833 and 10007840..10007999 are reserved legacy space. Existing file version 1 presets accept and discard their old
+hero field; newly written presets contain equipment only. Loading keeps the current Nightfarer selected.

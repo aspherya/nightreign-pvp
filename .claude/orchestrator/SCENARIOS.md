@@ -135,3 +135,7 @@ Not covered by any scenario (needs two real PCs, see TESTING §6): the rival kil
 5. Run it twice; a step that is flaky after two attempts goes to the friend-session list instead (TESTING §6), not into the set.
 6. Add a row to the catalog above (what it proves, key steps, time), name the scenario in the card, and log the run (`testing-log/`).
    A new console command a scenario needs: `add-console-command` skill.
+
+`saved-loadouts` (Arena, pending): isolated temporary store, save slot 10, replace/load a weapon twice, verify the Arena capture.
+Does not overwrite player presets. NPC navigation, cross-character equipment loading, restart and consumable/skill
+fidelity require the checklist in tools/loadouts/README.md. Scenario authored, not run.

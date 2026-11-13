@@ -156,9 +156,6 @@ function render() {
   $('#setSc').textContent = d.scOk ? (d.scMatch === false ? 'Installed (a different version than this release needs)' : 'Installed') : 'Not installed';
   $('#setVer').textContent = st.launcher_version ? 'Launcher v' + st.launcher_version + (d.newLauncher ? ' · a newer one is out' : '') : '';
   $('#setRepair').disabled = !d.gameOk || !r || !!S.busy;
-  $('#githubAuthStatus').textContent = st.github_token_set ? 'Your saved GitHub token is used for updates.' : 'Updates download from the public releases page. No token is needed.';
-  $('#githubAuthSave').disabled = !!S.busy;
-  $('#githubAuthClear').disabled = !!S.busy || !st.github_token_set;
   const player = st.player || {}, characters = player.characters || [];
   $('#playerSteamId').textContent = player.steam_id || 'Start Steam and sign in. No manual SteamID is needed.';
   const playerMessage = player.problem || (player.present ? 'Your Seamless Co-op save is installed.' : 'The bundled starter save will be installed during setup.');
@@ -241,17 +238,11 @@ function renderWizard() {
       h += `<div class="release-line"><span class="v">v${esc(r.version)}</span><span class="meta">${esc(r.published)} · ${mb(r.zip.size)}${r.match_players ? ` · ${r.match_players} players per match` : ''}</span></div>`;
       h += `<div class="card notes" style="max-height:170px;overflow:auto">${notesHtml(r.notes)}</div>`;
     } else {
-      h += `<div class="card warn"><h4>No release found</h4><p class="muted" style="margin:0">${esc(S.releaseError || 'Looking…')}</p><div class="row"><button class="btn" id="wzRetry">Try again</button><button class="btn" id="wzConnectGithub">Connect private updates</button></div></div>`;
+      h += `<div class="card warn"><h4>No release found</h4><p class="muted" style="margin:0">${esc(S.releaseError || 'Looking…')}</p><div class="row"><button class="btn" id="wzRetry">Try again</button></div></div>`;
     }
     if (d.modOk && !d.update) h = `<div class="field"><span class="mark ok"></span><span><b>Nightreign PvP is installed</b><small>${d.modVersion ? 'v' + esc(d.modVersion) : 'installed by hand'}</small></span></div>` + h;
     $('#wzMod').innerHTML = h;
     $('#wzRetry') && ($('#wzRetry').onclick = loadRelease);
-    $('#wzConnectGithub') && ($('#wzConnectGithub').onclick = () => {
-      $('#wizard').hidden = true;
-      $('#settings').hidden = false;
-      render();
-      $('#githubAuthForm').scrollIntoView({ block: 'center' });
-    });
     if (d.modOk && !d.update) { next.textContent = 'Continue'; next.disabled = !!S.busy; }
     else { next.textContent = d.modOk ? 'Update' : 'Install'; next.disabled = !r || !!S.busy; }
   }
@@ -390,13 +381,6 @@ async function setupPlayer(name = '') {
 }
 $('#playerSetup').onclick = () => setupPlayer();
 $('#playerRefresh').onclick = refresh;
-async function connectGitHub(token) {
-  const connected = await job('Connecting private updates…', () => invoke('set_github_token', { token }), token ? 'GitHub connected. Restart the launcher to apply available updates automatically.' : 'Saved GitHub token removed.');
-  $('#githubToken').value = '';
-  if (connected) await loadRelease();
-}
-$('#githubAuthForm').onsubmit = e => { e.preventDefault(); if ($('#githubToken').value.trim()) connectGitHub($('#githubToken').value); };
-$('#githubAuthClear').onclick = () => connectGitHub('');
 async function confirmSaveReplacement(source) {
   await refresh();
   if (!S.status?.player?.steam_id || S.status.game_running || S.busy) return;
@@ -522,7 +506,6 @@ function mockInvoke(cmd, args) {
     case 'replace_starter_save': return wait(100, null);
     case 'import_steam_save': return wait(100, true);
     case 'rename_player': mockPlayer.characters[0].name = args.name; return wait(100, null);
-    case 'set_github_token': return wait(100, null);
     case 'set_private_code': {
       const c = String(args.code).trim().toLowerCase();
       if (c.length > 32) return Promise.reject('The code can be 32 characters at most.');

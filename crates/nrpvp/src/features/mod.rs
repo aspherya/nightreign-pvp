@@ -261,7 +261,9 @@ mod tests {
                 "maphide",
                 "toastfilter",
                 "hawk",
-                "killfeed"
+                "killfeed",
+                #[cfg(feature = "arena")]
+                "saved_loadouts"
             ]
         );
         let phases: Vec<Phase> = f.0.iter().map(|f| f.phase()).collect();

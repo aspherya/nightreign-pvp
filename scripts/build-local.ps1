@@ -8,6 +8,7 @@ param(
     [string]$Unpacked,
     [string]$Witchy,
     [string]$Smithbox,
+    [string]$EsdTool,
     [string]$Python,
     [string]$GameData,
     [ValidateRange(2, 6)][int]$MatchPlayers = 6,
@@ -121,6 +122,7 @@ try {
         $Unpacked = Find-ToolPath 'Unpacked' $Unpacked 'Unpacked pinned game folder (1.03.3)' @((Join-Path $repoRoot 'tools/local/unpacked'))
         $Witchy = Find-ToolPath 'Witchy' $Witchy 'WitchyBND.exe' @((Join-Path $repoRoot 'tools/local/WitchyBND/WitchyBND.exe'))
         $Smithbox = Find-ToolPath 'Smithbox' $Smithbox 'Smithbox 2.2.6 folder' @((Join-Path $repoRoot 'tools/local/Smithbox'))
+        $EsdTool = Find-ToolPath 'EsdTool' $EsdTool 'ESDLang 0.5.1 esdtool.exe' @((Join-Path $repoRoot 'tools/local/ESDLang/esdtool.exe'))
         $pythonCandidates = @()
         foreach ($name in 'python.exe', 'py.exe') {
             $command = Get-Command $name -ErrorAction SilentlyContinue
@@ -164,7 +166,7 @@ try {
             }
         }
         'GameData' {
-            & (Join-Path $PSScriptRoot 'build-gamedata.ps1') -Unpacked $Unpacked -Witchy $Witchy -Smithbox $Smithbox -Python $Python
+            & (Join-Path $PSScriptRoot 'build-gamedata.ps1') -Unpacked $Unpacked -Witchy $Witchy -Smithbox $Smithbox -EsdTool $EsdTool -Python $Python
         }
         'Release' {
             & (Join-Path $PSScriptRoot 'publish-release.ps1') -Version $Version -NotesFile $NotesFile -Me3Dir $Me3Dir -MatchPlayers $MatchPlayers -MinPlayers $MinPlayers -DryRun -AllowDirty

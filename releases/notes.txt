@@ -8,6 +8,6 @@ Launcher updates and player setup
 - Steam account detection refreshes automatically whenever you press Play.
 - Import your local Steam save with all its original names and progress from Settings > Player. The vanilla save is kept unchanged and the existing mod save is backed up.
 - Custom main-menu background, stretched across the full game title screen.
-- Private updates use a read-only GitHub token stored encrypted for your Windows user; source and releases share this repository.
+- Updates download from the public releases page; no GitHub token is needed. A token saved by an older launcher is removed automatically.
 
 Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.
