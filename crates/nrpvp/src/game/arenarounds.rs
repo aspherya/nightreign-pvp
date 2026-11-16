@@ -8,8 +8,8 @@
 //!   an Arena match is on, the Battle Royale rules, the rival re-down rule and the revive block stand aside
 //!   ([`crate::mm::arena_match`]); the downed rule stays, so a rival's hit never revives a downed player.
 //! - **Between rounds, behind a black screen.** [`FADE_OUT_MS`] after the down the screen fades to black and the player is frozen
-//!   (Fade to Black 2004:77). [`REVIVE_AFTER_MS`] after the down the loser's game asks the game's own get-up (`+0x732` = 1, once a
-//!   second until it is up; MEMORY_MAP §6). At [`RESET_AFTER_MS`] each game restores its player (Bonfire-like Recovery 2004:47 on flag
+//!   (Fade to Black 2004:77). [`REVIVE_AFTER_MS`] after the down the loser's game asks the game's own get-up the way a teammate's
+//!   revive does (the revive bar to 0, every tick until it is up; never the byte `+0x732`, MEMORY_MAP §6). At [`RESET_AFTER_MS`] each game restores its player (Bonfire-like Recovery 2004:47 on flag
 //!   10007410, Refill Estus 2004:87 on flag 10007514; the ultimate gauge is not touched) and puts it on its spawn
 //!   ([`super::arenacard::place`]). At [`FADE_IN_MS`] the screen comes back, the player is free, the next round starts. A round counts
 //!   a down only once both players have been seen up.
@@ -25,6 +25,7 @@
 //!   session). The round events ([`bot_events`]) tell the bots feature when to park, heal, replace or remove the bot, and every fade-in
 //!   that starts a round waits (at most [`RIVAL_WAIT_MS`]) until the bot stands on its spawn.
 
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
@@ -50,12 +51,64 @@ pub(crate) const RESET_AFTER_MS: u64 = 5_000;
 pub(crate) const FADE_IN_MS: u64 = 6_000;
 /// ARENA-4: a round start waits at most this long for the bot on its spawn (then goes on without it).
 pub(crate) const RIVAL_WAIT_MS: u64 = 30_000;
-/// One get-up write per this long: the byte is cleared every frame, but a write every tick showed a burst of the game's own downed
-/// messages (Leonardo, 2026-11-08); one write started the get-up within ~1 s (state 1 -> 2 after 0.97..1.05 s on real Steam).
-/// Arena test 2026-11-12 (real Steam): with 1 s spacing a second write landed while the first get-up was starting, in 3 of 7 downs;
-/// each time the state went 1 -> 0 with no get-up (state 2), and ~7 s later the game killed and respawned the player elsewhere with a
-/// level lost, mid-round. Every single write went 1 -> 2 -> 0 cleanly. So a second write only when the first clearly did nothing.
+/// The get-up is asked the way a teammate's revive does it: the revive bar `+0x714` to 0 and the pause `+0x71C` up, every tick while
+/// LOCAL is downed in the get-up window. The player script then plays its revival, the animation sets "revive completed" and the
+/// game's state 2 follows (MEMORY_MAP §6). Never the byte `+0x732` itself: it makes the code lead, and a write later than ~3.5 s after
+/// the down skipped the get-up (state 1 -> 0, no state 2) and the player died ~3 s later with a level lost (real Steam 2026-11-15,
+/// 8 of 8 on one PC 2026-11-16; the bar route 16 of 16, testing-log 2026-11-16-arena-getup-spike). The log line is written once per
+/// this long.
 pub(crate) const REVIVE_EVERY_MS: u64 = 2_500;
+
+/// Test aid: the get-up asked from this long after the down (0 = [`REVIVE_AFTER_MS`]); console `arena_getup`.
+static REVIVE_AFTER_OVERRIDE_MS: AtomicU64 = AtomicU64::new(0);
+/// Test aid: rounds to win the match (0 = [`ROUNDS_TO_WIN`]); a big value keeps a test match going for many downs. Console `arena_bo`.
+static ROUNDS_TO_WIN_OVERRIDE: AtomicU8 = AtomicU8::new(0);
+/// LOCAL's bar is being emptied for the get-up (the downed rule must not restore it as if a rival had hit it).
+static BAR_GETUP: AtomicBool = AtomicBool::new(false);
+/// After a get-up that still went 1 -> 0 with no state 2 (the game may kill the player a few seconds later): until then LOCAL counts
+/// as neither up nor down (no round starts, no down counts), then LOCAL is put on its spawn again.
+static SKIP_GUARD: Mutex<Option<Instant>> = Mutex::new(None);
+const SKIP_GUARD_MS: u64 = 12_000;
+
+fn rounds_to_win() -> u8 {
+    match ROUNDS_TO_WIN_OVERRIDE.load(Ordering::Relaxed) {
+        0 => ROUNDS_TO_WIN,
+        n => n,
+    }
+}
+
+fn revive_after_ms() -> u64 {
+    match REVIVE_AFTER_OVERRIDE_MS.load(Ordering::Relaxed) {
+        0 => REVIVE_AFTER_MS,
+        n => n.min(RESET_AFTER_MS - 500),
+    }
+}
+
+/// The downed rule leaves LOCAL's bar alone while the Arena get-up empties it.
+pub(crate) fn bar_getup_active() -> bool {
+    BAR_GETUP.load(Ordering::Relaxed)
+}
+
+/// `arena_getup [after_ms]`: when the get-up is asked after the down (test aid; 0 = the default).
+pub(crate) fn getup_cmd(args: &[String]) -> Result<String, String> {
+    if let Some(a) = args.first() {
+        let ms: u64 = a.parse().map_err(|_| "after_ms must be a number")?;
+        REVIVE_AFTER_OVERRIDE_MS.store(ms, Ordering::Relaxed);
+    }
+    Ok(format!(
+        "arena_getup: asked {} ms after the down (revive bar to 0)",
+        revive_after_ms()
+    ))
+}
+
+/// `arena_bo [n]`: rounds to win (0 = the default 2).
+pub(crate) fn bo_cmd(args: &[String]) -> Result<String, String> {
+    if let Some(a) = args.first() {
+        let n: u8 = a.parse().map_err(|_| "n must be 0..255")?;
+        ROUNDS_TO_WIN_OVERRIDE.store(n, Ordering::Relaxed);
+    }
+    Ok(format!("arena_bo: {} round(s) to win", rounds_to_win()))
+}
 
 /// Whether a get-up write is due now (pure): the first one at once, another only [`REVIVE_EVERY_MS`] after the last.
 pub(crate) fn revive_due(since_last_ms: Option<u64>) -> bool {
@@ -75,8 +128,6 @@ const FLAG_FADE_IN_FROZEN: u32 = 10_007_517;
 /// ARENA-4: while ON this game's player holds SpEffect 8970061 (event 99100919): offline a solo player at 0 HP in the arena dies at
 /// once ("YOU DIED", `mi-arena-bot` 2026-11-10); with it 0 HP is a down. A down uses it up: OFF at each reset, ON at each round start.
 const FLAG_NEAR_DEATH: u32 = 10_007_519;
-/// `PlayerIns+0x732`: "revive completed"; the game starts the get-up while it is not 0 (re/MEMORY_MAP.md §6).
-const PLAYER_REVIVE_DONE: usize = crate::game::reviveblock::PLAYER_REVIVE_DONE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
@@ -242,7 +293,7 @@ impl Rounds {
     }
 
     fn decided(&self) -> bool {
-        self.won >= ROUNDS_TO_WIN || self.lost >= ROUNDS_TO_WIN
+        self.won >= rounds_to_win() || self.lost >= rounds_to_win()
     }
 
     /// The ultimate is held empty in rounds 1 and 2 (DECISIONS "Ultimate only in the last round"): from the start of the match until
@@ -360,9 +411,9 @@ impl Rounds {
                     stage = 1;
                     out.push(Do::FadeOut);
                 }
-                if stage == 1
+                if stage <= 1
                     && lost
-                    && (REVIVE_AFTER_MS..RESET_AFTER_MS).contains(&t)
+                    && (revive_after_ms()..RESET_AFTER_MS).contains(&t)
                     && local.down
                 {
                     out.push(Do::Revive);
@@ -380,7 +431,7 @@ impl Rounds {
                     if self.decided() {
                         self.phase = Phase::MatchOver;
                         out.push(Do::FadeInFrozen);
-                        out.push(if self.won >= ROUNDS_TO_WIN {
+                        out.push(if self.won >= rounds_to_win() {
                             Do::Win
                         } else {
                             Do::Lose
@@ -474,6 +525,72 @@ fn set_flag(base: usize, flag: u32) {
     }
 }
 
+/// LOCAL's last state byte and HP, when the current down started, and whether state 2 was seen since.
+struct Diag {
+    state: u8,
+    hp: u32,
+    down_at: Option<Instant>,
+    saw_getup: bool,
+}
+static DIAG: Mutex<Option<Diag>> = Mutex::new(None);
+
+/// One line per change of LOCAL's state byte, and a death (HP 0 while state 0), timed from the down; a 1 -> 0 with HP above 0
+/// and no state 2 seen is the skipped get-up.
+fn getup_diag(on: bool, state: u8, hp: u32) {
+    let mut d = lock(&DIAG);
+    if !on {
+        *d = None;
+        return;
+    }
+    let Some(p) = d.as_mut() else {
+        *d = Some(Diag {
+            state,
+            hp,
+            down_at: None,
+            saw_getup: false,
+        });
+        return;
+    };
+    let since = |p: &Diag| {
+        p.down_at.map_or("-".to_string(), |t| {
+            format!("+{} ms", t.elapsed().as_millis())
+        })
+    };
+    if state != p.state {
+        if state == 1 {
+            p.down_at = Some(Instant::now());
+            p.saw_getup = false;
+        }
+        if state == 2 {
+            p.saw_getup = true;
+        }
+        let skip = p.state == 1 && state == 0 && !p.saw_getup && hp > 0;
+        if skip {
+            *lock(&SKIP_GUARD) = Some(Instant::now());
+        }
+        tracing::info!(
+            "arena_getup: LOCAL state {} -> {state}, hp {hp}, {} after the down{}",
+            p.state,
+            since(p),
+            if skip {
+                " SKIP: up with no get-up (state 2 never seen); this player's rounds wait until it is safe"
+            } else {
+                ""
+            }
+        );
+        p.state = state;
+    }
+    if state == 0 && hp == 0 && p.hp > 0 {
+        // A death in the Arena (only after a skipped get-up): the comeback takes ~7 s more, the guard waits for it.
+        *lock(&SKIP_GUARD) = Some(Instant::now());
+        tracing::info!(
+            "arena_getup: DEATH: LOCAL hp 0 in state 0, {} after the down; this player's rounds wait for the comeback",
+            since(p)
+        );
+    }
+    p.hp = hp;
+}
+
 /// Main loop, every tick (after `arenacard::tick`).
 pub(crate) fn tick(base: usize, world: &World) {
     let on = crate::mm::arena_match() && super::arenacard::placed();
@@ -484,17 +601,40 @@ pub(crate) fn tick(base: usize, world: &World) {
     let mut rival = None;
     let mut rival_addr = None;
     let vs_bot = crate::mm::arena_bots();
+    let mut local_raw = None;
     for f in world.fighters.iter().flatten() {
         if f.local {
+            local_raw = Some((f.state, f.hp));
             local = Some((f.addr, Seen::of(f.state, f.hp)));
         } else if rival.is_none() && !vs_bot {
             rival = Some(Seen::of(f.state, f.hp));
             rival_addr = Some(f.addr);
         }
     }
-    let Some((local_addr, local_seen)) = local else {
+    let Some((local_addr, mut local_seen)) = local else {
         return;
     };
+    if !on {
+        BAR_GETUP.store(false, Ordering::Relaxed);
+        *lock(&SKIP_GUARD) = None;
+    }
+    if let Some((state, hp)) = local_raw {
+        getup_diag(on, state, hp);
+    }
+    // After a skipped get-up (or the death that can follow it): no round starts and no down counts until the guard ends, then LOCAL
+    // goes back to its spawn (a comeback puts the player elsewhere).
+    {
+        let mut g = lock(&SKIP_GUARD);
+        if let Some(t) = *g {
+            if (t.elapsed().as_millis() as u64) < SKIP_GUARD_MS {
+                local_seen = Seen::default();
+            } else {
+                *g = None;
+                *lock(&PLACE_SINCE) = Some(Instant::now());
+                tracing::info!("arena_getup: guard over; back to the spawn");
+            }
+        }
+    }
     // ARENA-4: the bot is the rival (down at 0 HP; its HP in percent of its spawn HP for the time limit).
     let arena_bot = if vs_bot { *lock(&ARENA_BOT) } else { None };
     let bot_hp = arena_bot.and_then(|b| world.bot(b.handle).map(|c| (b, c.hp)));
@@ -582,11 +722,23 @@ pub(crate) fn tick(base: usize, world: &World) {
             Do::FadeIn => set_flag(base, FLAG_FADE_IN),
             Do::FadeInFrozen => set_flag(base, FLAG_FADE_IN_FROZEN),
             Do::Revive => {
+                // Every tick while LOCAL is downed in the window (repeats are harmless: `+0x732` is never touched).
+                BAR_GETUP.store(true, Ordering::Relaxed);
+                let r = super::mem::write_bytes(
+                    local_addr + crate::game::layout::PLAYER_REVIVE_BAR,
+                    &0f32.to_le_bytes(),
+                )
+                .and_then(|()| {
+                    super::mem::write_bytes(
+                        local_addr + crate::game::layout::PLAYER_PAUSE,
+                        &3.5f32.to_le_bytes(),
+                    )
+                });
                 let mut last = lock(&LAST_REVIVE);
                 if revive_due(last.map(|t| t.elapsed().as_millis() as u64)) {
                     *last = Some(Instant::now());
-                    match super::mem::write_bytes(local_addr + PLAYER_REVIVE_DONE, &[1]) {
-                        Ok(()) => tracing::info!("arena_rounds: get-up asked"),
+                    match r {
+                        Ok(()) => tracing::info!("arena_rounds: get-up asked (revive bar 0)"),
                         Err(e) => tracing::warn!("arena_rounds: get-up write failed: {e}"),
                     }
                 }
@@ -600,6 +752,7 @@ pub(crate) fn tick(base: usize, world: &World) {
                     ev.resets += 1;
                 }
                 drop(ev);
+                BAR_GETUP.store(false, Ordering::Relaxed);
                 set_flag(base, FLAG_HEAL);
                 set_flag(base, FLAG_REFILL_ESTUS);
                 *lock(&PLACE_SINCE) = Some(Instant::now());

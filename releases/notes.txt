@@ -1,13 +1,5 @@
-Launcher updates and player setup
+Arena fix
 
-- The launcher automatically installs newer published launcher and mod releases while the game is closed.
-- First setup installs the bundled starter save for your Steam account when no Seamless Co-op save exists.
-- Change your character's in-game name from Settings > Player. Name edits keep a backup.
-- Existing saves and private room codes are preserved during updates.
-- Use the all-unlocked save anytime from Settings, with confirmation and a backup first.
-- Steam account detection refreshes automatically whenever you press Play.
-- Import your local Steam save with all its original names and progress from Settings > Player. The vanilla save is kept unchanged and the existing mod save is backed up.
-- Custom main-menu background, stretched across the full game title screen.
-- Updates download from the public releases page; no GitHub token is needed. A token saved by an older launcher is removed automatically.
+- A player who loses an Arena round now always gets up for the next round. Before, the get-up could fail: the player died a few seconds into the next round, lost that round and a level.
 
 Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.

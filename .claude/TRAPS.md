@@ -123,9 +123,11 @@ Read when you touch the area named in a bullet, or before debugging something od
   model but never tell the session; every other game keeps drawing the old weapon. After any equipment change made by the mod, call
   the game's player-data broadcast `exe+0xDE20E0()` on the game thread (`inventory::send_player_data_on_game_thread`; MEMORY_MAP §29).
   Check with the console `rival_gear` on the other instance, not with your own screenshot.
-- **The Arena get-up must be written once** (Arena test 2026-11-12): a second `PlayerIns+0x732` write while the first get-up was still
-  starting (~1 s) skipped the get-up (state 1 -> 0, no state 2) and ~7 s later the game killed and respawned the player elsewhere with
-  a level lost, mid-round. A retry only after 2.5 s (`arenarounds::REVIVE_EVERY_MS`).
+- **Never get a player up by writing `PlayerIns+0x732`** (Arena tests 2026-11-12 and 2026-11-15, spike 2026-11-16): the byte makes the
+  game's code lead and the revival animation must follow on the next frame. A write later than ~3.5 s after the down skips the get-up
+  (state 1 -> 0, no state 2) and the player dies ~3 s later, with a level lost: 8 of 8 on one PC, and Samuel's lost round on real
+  Steam. Spacing the retries (1 s, then 2.5 s) only moved the problem. Empty the revive bar instead (`+0x714` = 0, pause `+0x71C` up),
+  as a teammate's revive does: MEMORY_MAP §6.
 - **A lobby left over after a match turns the next card pick into a vanilla run** (MM-REQ, 2026-11-13): see MEMORY_MAP §25 "The game's
   lobby object"; `matchstart::request_leave_if_alone` leaves it when we are its only member.
 - **A saved GitHub token breaks updates from the public releases repository** (2026-11-13): GitHub answers 401 to an expired or

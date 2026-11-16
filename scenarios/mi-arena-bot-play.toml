@@ -1,0 +1,69 @@
+name = "mi-arena-bot-play"
+about = "Play-test lab: mi-arena-bot's way into an offline Arena match against one bot (Bots On, Solo, the Arena card, Commence), stopped once round 1 is armed and the game left open for a human to play (teardown keep)"
+tags = ["mi", "lab"]
+teardown = "keep"
+# One emulated-Steam instance: Steam closed, `nro desk` running, the PC untouched until round 1 starts. Needs the DEV DLL and game data.
+# Run: nro run scenarios\mi-arena-bot-play.toml ; end with nro stop --all.
+[config]
+mm_queue = true
+br_menu = true
+mm_probe = true
+team_size = 1
+ui_flag_watch = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[step]]
+navigate = "title_to_world"
+[[step]]
+keys = "wait 10000ms"   # a tp right after the load is undone by the spawn
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 3000ms; F; wait 3000ms"
+# A save that won an Arena match shows the game's Sovereign Sigils tutorial at the table, on every launch (a killed game never saves it
+# as seen; 2026-11-10). Esc closes it (or the menu, when there is none), then F opens the expedition menu.
+[[step]]
+keys = "ESC; wait 2000ms"
+[[step]]
+console = "tp 0.8 10.66 69.5 -170"
+[[step]]
+keys = "wait 2000ms; F; wait 3000ms"
+[[step]]
+wait = { console = "pos", contains = "menu 0x200004", timeout_s = 5 }
+# Matchmaking Settings once (FS7-3: the mod sets Bots Off the first time the menu is seen), then Bots On and Solo by the console.
+[[step]]
+keys = "F2; wait 1500ms"
+[[step]]
+wait_log = { contains = ["Bots switch reset to Off"], timeout_s = 10, since = "run" }
+[[step]]
+console = "bots_switch on solo"
+[[step]]
+expect = { console = "bots_switch", contains = "On" }
+# Back to the cards: Battle Royale is first, DOWN is the Arena card, F picks it.
+[[step]]
+keys = "F1; wait 1500ms; DOWN; wait 800ms; F; wait 2000ms"
+[[step]]
+expect = { console = "br_card", contains = "arena yes" }
+[[step]]
+screenshot = "arena_card"
+[[step]]
+mark = "pressed"
+[[step]]
+keys = "F; wait 3000ms"   # Commence: no dialog, no search
+[[step]]
+wait_log = { contains = ["decision code 0x4", "arena: match against a bot requested"], timeout_s = 20, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena: flag 10007500 ON"], timeout_s = 180, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena: roster team None"], timeout_s = 90, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["bots: Arena match against a bot: 1 bot (table 30000)", "bots: round 1: table 30000 (flag 10007305)"], timeout_s = 20, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["kept bot", "stands on its spawn"], timeout_s = 60, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena_rounds: Round 1: fight!", "arena_rounds: SpEffect 8970061 (0 HP downs) given"], timeout_s = 40, since = "mark:pressed" }
+[[step]]
+wait_log = { contains = ["arena_rounds: both up: a down counts from now"], timeout_s = 20, since = "mark:pressed" }

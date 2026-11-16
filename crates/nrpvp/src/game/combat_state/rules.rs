@@ -429,7 +429,8 @@ impl Core {
             },
         };
         let mut lines = Vec::new();
-        if st.bar_before - bar > BAR_HIT_EPS {
+        // The Arena get-up empties the bar on purpose (arenarounds): it is no rival's hit.
+        if st.bar_before - bar > BAR_HIT_EPS && !crate::game::arenarounds::bar_getup_active() {
             // A hit landed since the last tick.
             let infos = player_infos(mem, subjects);
             let raw = [OFF_LAST_ATTACKER, OFF_CUR_ATTACKER]
