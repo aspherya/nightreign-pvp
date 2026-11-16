@@ -1,0 +1,86 @@
+name = "mi-arena-getup-lab"
+about = "Arena get-up spike (2026-11-16), lab: mi-arena-rounds' way into the arena (Arena card, Commence once each), then a long match (arena_bo 50) and both games left open, so the downs are driven by hand: `nro cmd \"arena_getup <byte|bar|none> <after_ms>\" --i 2`, `nro cmd hp0 --i 2`, and the `arena_getup:` lines (state changes timed from the down, SKIP, DEATH) read from instance 2's log"
+tags = ["mi", "lab"]
+teardown = "keep"
+# Two emulated-Steam instances (MULTI-INSTANCE.md 20): Steam closed, `nro desk` running, the PC untouched until the arena is reached.
+# Needs the DEV DLL and game data. Run: nro run scenarios\mi-arena-getup-lab.toml
+
+[config]            # every instance, as mi-arena-rounds
+team_size = 1
+ui_flag_watch = false
+mm_probe = true
+mm_queue = true
+mm_match_players = 2
+mm_join = true
+mm_quiet_invite = true
+mm_auto_start = true
+br_menu = true
+mm_host_create = false
+
+[[instance]]
+n = 1
+role = "host"
+
+[[instance]]
+n = 2
+role = "client"
+
+[[step]]
+instance = 1
+navigate = "title_to_world"
+
+[[step]]
+instance = 2
+navigate = "title_to_world"
+
+[[step]]
+instance = 1
+navigate = "queue_arena"
+
+[[step]]
+instance = 1
+wait = { console = "mm_status", contains = "searching", timeout_s = 20 }
+
+[[step]]
+instance = 2
+navigate = "queue_arena"
+
+[[step]]
+instance = 1
+mark = "pressed"
+
+[[step]]
+instance = 2
+mark = "pressed"
+
+[[step]]
+instance = 1
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 240, every_ms = 2000 }
+
+[[step]]
+instance = 2
+wait = { console = "status", contains = ["world loaded, 2 player(s)", "team_type 2"], timeout_s = 90, every_ms = 2000 }
+
+[[step]]
+instance = 1
+wait_log = { contains = ["arena: roster team"], timeout_s = 90, since = "mark:pressed" }
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena: roster team"], timeout_s = 90, since = "mark:pressed" }
+
+[[step]]
+instance = 1
+console = "arena_bo 50"
+
+[[step]]
+instance = 2
+console = "arena_bo 50"
+
+[[step]]
+instance = 2
+wait_log = { contains = ["arena_rounds: both up: a down counts from now"], timeout_s = 30, since = "mark:pressed" }
+
+[[step]]
+instance = 2
+screenshot = "p2_in_arena"

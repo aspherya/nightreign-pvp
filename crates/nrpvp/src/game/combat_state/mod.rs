@@ -345,6 +345,9 @@ impl CombatCtl {
 
     /// T-041 hit hook: clear LOCAL's pause timer again (the game writes it right after the cancelled hit's store).
     pub(crate) fn clear_pause(&mut self) {
+        if crate::game::arenarounds::bar_getup_active() {
+            return;
+        }
         if let Some((addr, 1)) = self.local_state() {
             if read_f32(&self.mem, addr + OFF_PAUSE).is_some_and(|p| p > 0.0) {
                 let _ = self.mem.write(addr + OFF_PAUSE, &0f32.to_le_bytes());
