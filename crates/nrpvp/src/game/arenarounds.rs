@@ -223,6 +223,14 @@ pub(crate) struct Timer {
 /// Console override of the round limit (ms; 0 = the default).
 static LIMIT_OVERRIDE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The round limit in force (the console override, else [`ROUND_LIMIT_MS`]).
+pub(crate) fn round_limit_ms() -> u64 {
+    match LIMIT_OVERRIDE_MS.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => ROUND_LIMIT_MS,
+        v => v,
+    }
+}
+
 /// `arena_limit [secs]`: set (0 = back to the default) or show the round limit.
 pub(crate) fn limit_cmd(args: &[String]) -> Result<String, String> {
     use std::sync::atomic::Ordering;
@@ -787,6 +795,11 @@ pub(crate) fn tick(base: usize, world: &World) {
             }
         }
     }
+    // ARENA-CLOCK: the round's seconds left in the rune counter (the old count back once the match is over).
+    super::arenaclock::show(
+        local_addr,
+        super::arenaclock::seconds_left(rounds, now_ms, round_limit_ms()),
+    );
     // ARENA-LV: hold level 15 only while rounds are played (mi-arena-rounds 2026-11-12: after the match, back at the Roundtable,
     // `on` still held for ~30 s and the hold set level 15 on the Roundtable's level 1).
     super::arenaloadout::hold_tick(base, on && rounds.in_play());
