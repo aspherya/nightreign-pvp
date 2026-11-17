@@ -524,6 +524,29 @@ build, or by eye); no `arena_level: slipped` line after a lost round and no mid-
 again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
 return orders.
 
+### ARENA-R17 — One ultimate per round, consumables back every round (Leonardo, 2026-11-17)
+Owner: OPUS | Status: **built (branch `arena-round-ult`), unit tests PASS; not yet seen in game** | Rules: PROJECT_SCOPE §Arena,
+DECISIONS 2026-11-17
+Built: `arenarounds::UltOnce` fills LOCAL's gauge at every round start and, once it drops (used), holds it at the lowest charge
+seen until the next reset (never cuts a draining ultimate short); each reset calls `arenaloadout::refill_goods` (the captured pouch
+consumables, minus what is still held, added on the game's thread and put in the pouch).
+Acceptance: `mi-arena-bot` PASS (now waits for `ultimate filled for this round` and `arena_refill:` at the round-2 reset). HUMAN solo
+(Arena vs bot, a consumable in the Sparring pouch): use the ultimate and one consumable in round 1; after it the gauge does not refill
+from hits; round 2 starts with the gauge full and the consumable count back (log `arena_rounds: ultimate used`, `arena_refill: 1
+good(s)`).
+
+### ARENA-ULT-DMG — Some ultimates deal no damage to a rival player (Leonardo, 2026-11-17)
+Owner: OPUS | Status: **open: which ultimates is UNKNOWN** (ask Leonardo) | Depends on: nothing
+Static check done (2026-11-17, regulation 1.03.3 + Smithbox 2.2.6 defs and row names, read-only exporter in the scratchpad): the
+ultimate rows (`Bullet` 3090xxxx, `AtkParam_Pc` 7000001xx-7000004xx, Executor `Bullet` 10135-10700) look like attacks that do hit
+players: `opposeTarget` 1, `friendlyTarget` 0 everywhere; `Bullet.isHitBothTeam` 0 and `dmgCalcSide` 0 on every row of the game,
+working ones included; their SpEffects (706100, 706120, 705022, 704100) target Player and AI alike. What differs: ultimates have
+`atkPhys` 0 with `subCategory1` 123 (Ultimate Art), `isPenetrateChr` 1, and Recluse / Revenant work through SpEffects, not damage.
+So the cause is in the engine, not in a param flag `[HYPOTHESIS]`.
+Next: (1) Leonardo names the ultimates that did not hurt (and whether the rival flinched); (2) two-instance lab: the ultimate on
+the rival with `ult full`, rival HP before / after, per Nightfarer; (3) if only some fail, compare those rows with the working ones;
+try the rival's copy at team 6 (Enemy) instead of 29 in the Arena only (MEMORY_MAP §4) as the cheapest live test.
+
 ### ARENA-CLOCK / ARENA-OT — Round time left on screen, and overtime (Leonardo 2026-11-17)
 Owner: OPUS | Status: **solo against the bot PASS (2026-11-17, testing-log 2026-11-17-arena-clock-overtime); left: two players in
 overtime (next Arena FS)** | Depends on: none

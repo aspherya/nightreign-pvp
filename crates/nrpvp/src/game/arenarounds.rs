@@ -14,7 +14,8 @@
 //! - **Between rounds, behind a black screen.** [`FADE_OUT_MS`] after the down the screen fades to black and the player is frozen
 //!   (Fade to Black 2004:77). [`REVIVE_AFTER_MS`] after the down the loser's game asks the game's own get-up the way a teammate's
 //!   revive does (the revive bar to 0, every tick until it is up; never the byte `+0x732`, MEMORY_MAP §6). At [`RESET_AFTER_MS`] each game restores its player (Bonfire-like Recovery 2004:47 on flag
-//!   10007410, Refill Estus 2004:87 on flag 10007514; the ultimate gauge is not touched) and puts it on its spawn
+//!   10007410, Refill Estus 2004:87 on flag 10007514; the captured consumables back, [`super::arenaloadout::refill_goods`]) and
+//!   puts it on its spawn
 //!   ([`super::arenacard::place`]). At [`FADE_IN_MS`] the screen comes back, the player is free, the next round starts. A round counts
 //!   a down only once both players have been seen up.
 //! - **Round time limit ([`ROUND_LIMIT_MS`], ARENA-3).** A round with no down by then goes to the side with more HP in percent of
@@ -28,6 +29,8 @@
 //! - **First to [`ROUNDS_TO_WIN`].** The last round ends the same way (both reset at their spawns), but the screen comes back with the
 //!   players still frozen and the endings play: WIN in the winner's game (flag 10007411: banner 4000, 10 s, 7000), LOSE in the
 //!   loser's (10007412: banner 4010, 10 s, 7001).
+//! - **One ultimate per round ([`UltOnce`], Leonardo 2026-11-17).** Every round starts with LOCAL's gauge full; once it is used it
+//!   cannot charge again until the next round's reset.
 //! - **ARENA-4, against a bot.** In an Arena match against a bot ([`crate::mm::arena_bots`]) the rival is the bot the bots feature
 //!   publishes ([`set_arena_bot`]): down at 0 HP, its HP in percent of the HP it had at its spawn. LOCAL judges the round limit (no
 //!   session). The round events ([`bot_events`]) tell the bots feature when to park, heal, replace or remove the bot, and every fade-in
@@ -173,8 +176,6 @@ pub(crate) enum Do {
     FadeInFrozen,
     Revive,
     Reset,
-    /// Fill LOCAL's ultimate (the reset before round 3).
-    UltFull,
     /// The host's verdict on a timed-out bout (key, outcome from the host's side) for the other game.
     Verdict(u8, Outcome),
     Win,
@@ -335,12 +336,6 @@ impl Rounds {
         self.won >= rounds_to_win() || self.lost >= rounds_to_win()
     }
 
-    /// The ultimate is held empty in rounds 1 and 2 (DECISIONS "Ultimate only in the last round"): from the start of the match until
-    /// two rounds are played. Round 3 starts with it full ([`Do::UltFull`]) and leaves it alone.
-    pub(crate) fn ult_held(&self) -> bool {
-        !matches!(self.phase, Phase::Off | Phase::MatchOver) && self.won + self.lost < 2
-    }
-
     /// One tick with no round timer input (pure; the tests of the down rules).
     #[cfg(test)]
     pub(crate) fn step(
@@ -494,9 +489,6 @@ impl Rounds {
                 if stage == 1 && t >= RESET_AFTER_MS {
                     stage = 2;
                     out.push(Do::Reset);
-                    if self.won + self.lost == 2 && !self.decided() {
-                        out.push(Do::UltFull);
-                    }
                 }
                 let rival_wait =
                     !self.decided() && timer.rival_missing && t < FADE_IN_MS + RIVAL_WAIT_MS;
@@ -529,6 +521,52 @@ impl Rounds {
         }
     }
 }
+
+/// A gauge at this fraction of the charge needed or more counts as full.
+const ULT_FULL_WITHIN: f32 = 0.999;
+
+/// One ultimate per round (DECISIONS "One ultimate per round", Leonardo 2026-11-17; replaces "Ultimate only in the last round"). Pure:
+/// a round starts with the gauge filled; once it has been full and drops (the ultimate was used), it may fall further (an ultimate that
+/// drains as it plays is never cut short) but never rise again (no recharge from hits) until [`UltOnce::default`] at the next reset.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct UltOnce {
+    /// Seen full this round.
+    full: bool,
+    /// Used this round: the lowest charge seen since.
+    low: Option<f32>,
+}
+
+impl UltOnce {
+    /// The charge to write now (`None` = leave the gauge alone), from the charge now and the charge needed.
+    pub(crate) fn step(&mut self, now: f32, needed: f32) -> Option<f32> {
+        if let Some(low) = self.low {
+            if now > low {
+                return Some(low);
+            }
+            self.low = Some(now);
+            return None;
+        }
+        if now >= needed * ULT_FULL_WITHIN {
+            self.full = true;
+            None
+        } else if self.full {
+            self.low = Some(now);
+            None
+        } else {
+            Some(needed)
+        }
+    }
+
+    pub(crate) fn used(&self) -> bool {
+        self.low.is_some()
+    }
+}
+
+/// LOCAL's ultimate this round (main loop only).
+static ULT: Mutex<UltOnce> = Mutex::new(UltOnce {
+    full: false,
+    low: None,
+});
 
 /// ARENA-4: the types shared with the bots feature (defined there: that feature is in both builds, this module is dev only).
 use crate::features::bots::fill::{ArenaBot, BotEvents};
@@ -856,13 +894,13 @@ pub(crate) fn tick(base: usize, world: &World) {
                 tracing::info!("arena_rounds: reset: recovery, estus, back to the spawn");
                 // ARENA-LV: a level lost in the round (2026-11-11: level 14 after a revive by the rival) never carries over.
                 super::arenaloadout::reapply(base, true);
-            }
-            Do::UltFull => match super::ultgauge::set(local_addr, 1.0) {
-                Ok((b, a)) => {
-                    tracing::info!("arena_rounds: round 3: ultimate filled ({b:.1} -> {a:.1})")
+                // Consumables used in the round come back for the next one (Leonardo, 2026-11-17).
+                super::arenaloadout::refill_goods(base);
+                // The next round has its own ultimate.
+                if !rounds.decided() {
+                    *lock(&ULT) = UltOnce::default();
                 }
-                Err(e) => tracing::warn!("arena_rounds: ultimate not filled: {e}"),
-            },
+            }
             Do::Verdict(key, o) => {
                 let sent = crate::net::bus::publish(
                     crate::net::bus::topic::ARENA_ROUND,
@@ -892,19 +930,32 @@ pub(crate) fn tick(base: usize, world: &World) {
     // ARENA-LV: hold level 15 only while rounds are played (mi-arena-rounds 2026-11-12: after the match, back at the Roundtable,
     // `on` still held for ~30 s and the hold set level 15 on the Roundtable's level 1).
     super::arenaloadout::hold_tick(base, on && rounds.in_play());
-    // The ultimate stays empty until round 3 (only written when it holds a charge).
-    if on && rounds.ult_held() {
-        if let Some((_, now, _)) = super::ultgauge::read(local_addr) {
-            if now > 0.0 {
-                match super::ultgauge::set(local_addr, 0.0) {
-                    Ok((b, _)) => {
-                        tracing::debug!("arena_rounds: ultimate held empty ({b:.1} -> 0)")
-                    }
-                    Err(e) => tracing::warn!("arena_rounds: ultimate not emptied: {e}"),
+    // One ultimate per round: full at each round's start, no recharge once used.
+    let mut ult = lock(&ULT);
+    if on && rounds.in_play() {
+        if let Some((_, now, needed)) = super::ultgauge::read(local_addr) {
+            let was_used = ult.used();
+            if let Some(v) = ult.step(now, needed) {
+                match super::ultgauge::set(local_addr, v / needed) {
+                    Ok((b, a)) if a >= needed * ULT_FULL_WITHIN => tracing::info!(
+                        "arena_rounds: ultimate filled for this round ({b:.1} -> {a:.1})"
+                    ),
+                    Ok((b, a)) => tracing::debug!(
+                        "arena_rounds: ultimate held after its use ({b:.1} -> {a:.1})"
+                    ),
+                    Err(e) => tracing::warn!("arena_rounds: ultimate not written: {e}"),
                 }
             }
+            if ult.used() && !was_used {
+                tracing::info!(
+                    "arena_rounds: ultimate used ({now:.1} / {needed:.1}); none more this round"
+                );
+            }
         }
+    } else {
+        *ult = UltOnce::default();
     }
+    drop(ult);
     let mut pending = lock(&PLACE_SINCE);
     if let Some(t) = *pending {
         let force = t.elapsed().as_millis() as u64 >= PLACE_FORCE_AFTER_MS;
@@ -1096,41 +1147,46 @@ mod tests {
     }
 
     #[test]
-    fn the_ultimate_is_held_in_rounds_one_and_two_and_filled_for_round_three() {
-        let mut r = Rounds::default();
-        assert!(!r.ult_held(), "no match");
-        let mut t = start(&mut r);
-        assert!(r.ult_held(), "round 1");
-        // Round 1 won, round 2 lost: 1-1.
-        r.step(t, true, UP, Some(DOWN));
-        r.step(t + 1_000, true, UP, Some(DOWN));
-        assert_eq!(r.step(t + 5_000, true, UP, Some(UP)), vec![Do::Reset]);
-        r.step(t + 6_000, true, UP, Some(UP));
-        r.step(t + 6_050, true, UP, Some(UP));
-        assert!(r.ult_held(), "round 2");
-        t += 10_000;
-        r.step(t, true, DOWN, Some(UP));
-        r.step(t + 1_000, true, DOWN, Some(UP));
+    fn the_ultimate_is_filled_once_per_round_and_never_recharges_after_its_use() {
+        let mut u = UltOnce::default();
+        assert_eq!(u.step(0.0, 1000.0), Some(1000.0), "a round starts full");
+        assert_eq!(u.step(1000.0, 1000.0), None, "full: left alone");
+        assert!(!u.used());
+        assert_eq!(u.step(1000.0, 1000.0), None, "unused: left alone");
+        assert_eq!(u.step(0.0, 1000.0), None, "used");
+        assert!(u.used());
         assert_eq!(
-            r.step(t + 5_000, true, UP, Some(UP)),
-            vec![Do::Reset, Do::UltFull],
-            "the reset before round 3 fills it"
+            u.step(35.0, 1000.0),
+            Some(0.0),
+            "a hit's recharge is taken back"
         );
-        assert!(!r.ult_held(), "round 3 is free");
+        assert_eq!(u.step(0.0, 1000.0), None);
+        assert_eq!(
+            u.step(1000.0, 1000.0),
+            Some(0.0),
+            "never full again this round"
+        );
+        let mut u = UltOnce::default();
+        assert_eq!(
+            u.step(0.0, 1000.0),
+            Some(1000.0),
+            "the next round's reset: full again"
+        );
     }
 
     #[test]
-    fn a_two_nil_match_never_fills_the_ultimate() {
-        let mut r = Rounds::default();
-        let mut t = start(&mut r);
-        for _ in 0..2 {
-            r.step(t, true, UP, Some(DOWN));
-            r.step(t + 1_000, true, UP, Some(DOWN));
-            assert!(!r.step(t + 5_000, true, UP, Some(UP)).contains(&Do::UltFull));
-            r.step(t + 6_000, true, UP, Some(UP));
-            r.step(t + 6_050, true, UP, Some(UP));
-            t += 10_000;
-        }
+    fn an_ultimate_that_drains_while_it_plays_is_not_cut_short() {
+        let mut u = UltOnce::default();
+        u.step(1000.0, 1000.0);
+        assert_eq!(u.step(700.0, 1000.0), None);
+        assert_eq!(u.step(300.0, 1000.0), None, "falling: left alone");
+        assert_eq!(
+            u.step(320.0, 1000.0),
+            Some(300.0),
+            "rising: held at the lowest"
+        );
+        assert_eq!(u.step(0.0, 1000.0), None);
+        assert_eq!(u.step(10.0, 1000.0), Some(0.0));
     }
 
     #[test]

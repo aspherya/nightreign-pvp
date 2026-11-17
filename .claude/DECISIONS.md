@@ -129,6 +129,7 @@ One line per decision with date and who decided. Product intent: `re/PROJECT_SCO
   **Ultimate only in the last round** (Leonardo, 2026-11-08, after ARENA-2's fights, where the gauge never charged in the arena):
   rounds 1 and 2 have no ultimate (the gauge held empty), round 3 starts with it full. Replaces "the gauge keeps charging across
   rounds" above. Agent's note: simpler than charging it, and it makes the deciding round special; a 2-0 match never sees an ultimate.
+  **Superseded 2026-11-17, "One ultimate per round" below.**
   **Session after an Arena match** (Leonardo, 2026-11-08): random players leave the session when they return to the Roundtable;
   players who are Steam friends or came in through a direct invite stay together. Today nobody leaves: the game's SC lobby outlives
   the match (MATCHMAKING "Old SC lobby still around"), not an emulation artifact. Built with spike 6 / ARENA-2.
@@ -184,6 +185,15 @@ For the whole Arena match each game holds its player immortal (Set Character Imm
 a real hit stops at 1 HP and that ends the round (`arenarounds::BEATEN_HP`). Nobody is downed, so no get-up is needed. Why: the
 get-up after a down killed the loser early in the next round on real Steam twice (2026-11-15, 2026-11-17, 0.3.0). The bar get-up of
 2026-11-16 stays only as the fallback should a down still happen.
+
+## 2026-11-17 — Arena: one ultimate per round, consumables back every round (Leonardo)
+- **One ultimate per round:** every round starts with the ultimate gauge full; once used, it cannot charge again in that round
+  (hits that would charge it are taken back). Replaces "Ultimate only in the last round" (2026-11-08). Built in
+  `game/arenarounds.rs` (`UltOnce`): an ultimate whose gauge drains while it plays is never cut short, the gauge is only kept from rising.
+- **Consumables reset every round:** each round reset gives back the pouch consumables captured at the Roundtable
+  (`arenaloadout::refill_goods`), as the flasks already were.
+- **Ultimates must hurt the rival like any enemy:** some ultimates deal no damage to a rival player (Leonardo, 2026-11-17). Open:
+  which ones, and why (TASKS ARENA-ULT-DMG).
 
 ## 2026-11-17 — Arena timeout: overtime with an HP drain, then HP % (Leonardo)
 At the 3-minute limit nobody wins on the spot: for up to 60 s (`arenarounds::OVERTIME_MS`) each game drains its own player's HP,
