@@ -279,6 +279,42 @@ pub(crate) fn apply(base: usize) {
     );
 }
 
+/// Each round reset (Leonardo, 2026-11-17: a round started with the consumables used in the last one gone): give back, on the game's
+/// thread, every captured good LOCAL holds fewer of now, and put it in the pouch when it left it.
+pub(crate) fn refill_goods(base: usize) {
+    let captured = lock()
+        .loadout
+        .as_ref()
+        .map(|l| l.goods.clone())
+        .unwrap_or_default();
+    if captured.is_empty() {
+        tracing::info!(
+            "arena_refill: no consumables captured at the Roundtable; nothing to give back"
+        );
+        return;
+    }
+    inventory::queue(
+        base,
+        "arena_refill",
+        Box::new(move |base| {
+            let Ok(pgd) = inventory::local_pgd() else {
+                tracing::warn!("arena_refill: no LOCAL PlayerGameData; consumables not refilled");
+                return;
+            };
+            let goods = goods_to_give(&captured, &goods_of(&inventory::entries(pgd)));
+            tracing::info!(
+                "arena_refill: {} good(s) to give back {goods:08X?}",
+                goods.len()
+            );
+            for (id, qty) in &goods {
+                if let Some(index) = inventory::add_on_game_thread(base, pgd, *id, *qty) {
+                    inventory::pouch_on_game_thread(base, pgd, index);
+                }
+            }
+        }),
+    );
+}
+
 fn apply_level(base: usize) {
     reapply(base, true);
 }

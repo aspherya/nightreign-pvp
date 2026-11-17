@@ -132,9 +132,10 @@ A short PvP duel mode with no expedition: players land straight in a Nightlord's
 - **Level:** every player is always **level 15**.
 - **Match:** best of 3 (the first player or team to win two rounds wins). Replaces "win three rounds" of the first draft.
 - **Arena:** always **Heolstor's** arena (the Night Aspect, the final Nightlord). Heolstor is not spawned; only the players are there.
-- **Between rounds:** everyone goes back to their spawn with full HP, FP and flasks, skill cooldown reset, a short countdown before
-  the fight. **The ultimate (Ultimate Art) is available only in the last round** (Leonardo, 2026-11-08; replaces "the gauge
-  keeps charging across the rounds"): empty and held empty in rounds 1 and 2, full at the start of round 3 (a 2-0 match has none).
+- **Between rounds:** everyone goes back to their spawn with full HP, FP and flasks, **the consumables they brought**, skill cooldown
+  reset, a short countdown before the fight. **One ultimate (Ultimate Art) per round** (Leonardo, 2026-11-17; replaces "only in the
+  last round"): every round starts with the gauge full, and once used it does not charge again until the next round.
+- **Ultimates hurt a rival like any enemy** (Leonardo, 2026-11-17): today some do not (TASKS ARENA-ULT-DMG).
 - **Round time limit: 3 minutes**, to be tuned in testing. At the limit the side with more HP (sum in teams) wins the round
   `[the HP tiebreak is the agent's proposal, not objected to]`. Built (ARENA-3, 2026-11-09): HP in percent of each player's
   maximum; within 0.5 % it is a draw, nobody scores and the round is played again `[agent's choice]`; the host judges and sends the
