@@ -1,6 +1,6 @@
 name = "saved-loadouts"
 about = "Saved presets in an isolated temporary store: save slot 10, replace its weapon, load it twice and check that the arena capture contains the saved weapon. Does not overwrite player presets. Native inventory and NPC UI still require the manual checks in tools/loadouts/README.md."
-tags = ["arena", "inventory"]
+tags = ["rules"]
 
 [config]
 mode = "offline"
