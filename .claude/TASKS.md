@@ -524,17 +524,6 @@ build, or by eye); no `arena_level: slipped` line after a lost round and no mid-
 again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
 return orders.
 
-### ARENA-R17 — One ultimate per round, consumables back every round (Leonardo, 2026-11-17)
-Owner: OPUS | Status: **built (branch `arena-round-ult`), unit tests PASS; not yet seen in game** | Rules: PROJECT_SCOPE §Arena,
-DECISIONS 2026-11-17
-Built: `arenarounds::UltOnce` fills LOCAL's gauge at every round start and, once it drops (used), holds it at the lowest charge
-seen until the next reset (never cuts a draining ultimate short); each reset calls `arenaloadout::refill_goods` (the captured pouch
-consumables, minus what is still held, added on the game's thread and put in the pouch).
-Acceptance: `mi-arena-bot` PASS (now waits for `ultimate filled for this round` and `arena_refill:` at the round-2 reset). HUMAN solo
-(Arena vs bot, a consumable in the Sparring pouch): use the ultimate and one consumable in round 1; after it the gauge does not refill
-from hits; round 2 starts with the gauge full and the consumable count back (log `arena_rounds: ultimate used`, `arena_refill: 1
-good(s)`).
-
 ### ARENA-ULT-DMG — Some ultimates deal no damage to a rival player (Leonardo, 2026-11-17)
 Owner: OPUS | Status: **open: which ultimates is UNKNOWN** (ask Leonardo) | Depends on: nothing
 Static check done (2026-11-17, regulation 1.03.3 + Smithbox 2.2.6 defs and row names, read-only exporter in the scratchpad): the
