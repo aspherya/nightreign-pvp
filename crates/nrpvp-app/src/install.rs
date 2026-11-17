@@ -9,9 +9,9 @@ use serde::Serialize;
 
 use crate::release::Manifest;
 use nrpvp_launch::MOD_DIR;
+// INSTALLED_MANIFEST: the installed release's manifest, written into the mod folder after an install; the version gate reads it too.
+use nrpvp_launch::version::{Installed, INSTALLED_MANIFEST};
 
-/// The installed release's manifest, written into the mod folder after an install.
-const INSTALLED_MANIFEST: &str = "release.json";
 /// Folders inside the mod folder that belong to the release and are replaced as a whole (no stale files from an old version).
 const REPLACED_DIRS: [&str; 2] = ["gamedata", "me3"];
 const SC_SETTINGS: &str = "SeamlessCoop/nrsc_settings.ini";
@@ -226,9 +226,10 @@ pub fn find_sc_zip_in_downloads() -> Option<PathBuf> {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModState {
-    /// The installed release, when the launcher installed it.
+    /// The installed release's version (`VERSION.txt`, else the app's `release.json`), the same one the version gate reads.
     pub version: Option<String>,
-    pub tag: Option<String>,
+    /// A zip built on a developer PC (`version local`): never auto-updated, never blocked.
+    pub local_build: bool,
     /// `None` = every file the game start needs is there; else what is missing, in player words.
     pub problem: Option<String>,
     /// The mod folder exists (installed by hand or by the launcher).
@@ -236,13 +237,13 @@ pub struct ModState {
 }
 
 pub fn mod_state(game: &Path) -> ModState {
-    let installed: Option<Manifest> =
-        fs::read_to_string(game.join(MOD_DIR).join(INSTALLED_MANIFEST))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok());
+    let installed = nrpvp_launch::version::installed(game);
     ModState {
-        version: installed.as_ref().map(|m| m.version.clone()),
-        tag: installed.map(|m| m.tag),
+        version: match &installed {
+            Installed::Release(v) => Some(v.to_string()),
+            _ => None,
+        },
+        local_build: installed == Installed::Local,
         problem: nrpvp_launch::check(game),
         present: game.join(MOD_DIR).join("nrpvp.dll").is_file(),
     }

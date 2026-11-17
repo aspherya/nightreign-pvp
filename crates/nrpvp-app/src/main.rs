@@ -6,7 +6,6 @@
 mod auth;
 mod game;
 mod install;
-mod release;
 mod room;
 mod save_format;
 mod saves;
@@ -19,6 +18,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
+// The release lookup lives in the launcher crate, shared with the version gate of nrpvp_launcher.exe (LAUNCH-GATE).
+use nrpvp_launch::release;
 use release::{Manifest, ScRelease};
 
 // ---- settings ---------------------------------------------------------------------------------------------------------------
@@ -427,7 +428,8 @@ async fn import_steam_save(steam_id: String) -> Result<bool, String> {
     blocking(move || saves::import_steam(&need_game()?, &steam_id)).await
 }
 
-/// Starts the game, then closes the launcher.
+/// Starts the game, then closes the launcher. `nrpvp_launch::launch` runs the version gate: an old mod install is refused with the
+/// player message (the UI then shows its Update button).
 #[tauri::command]
 async fn play(app: AppHandle) -> Result<(), String> {
     blocking(|| {
@@ -438,7 +440,7 @@ async fn play(app: AppHandle) -> Result<(), String> {
             return Err("The game is already running.".into());
         }
         saves::require_account(&id)?;
-        nrpvp_launch::launch(&game)
+        nrpvp_launch::launch(&game).map_err(|e| e.to_string())
     })
     .await?;
     app.exit(0);

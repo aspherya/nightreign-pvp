@@ -1,5 +1,7 @@
-Arena fix
+Arena fixes and a version check
 
-- A player who loses an Arena round now always gets up for the next round. Before, the get-up could fail: the player died a few seconds into the next round, lost that round and a level.
+- An Arena round now ends when a player's HP drops to 1. Nobody goes down any more, so the loser no longer dies at the start of the next round and no level is lost.
+- Arena rounds have a clock: a "One minute left!" message, then at the 3-minute limit an overtime of up to 60 seconds where both players slowly lose HP; the first to reach 1 HP loses the round.
+- The launcher no longer starts an old version of the mod. Update through the launcher app (it does it by itself) or download the new zip. It checks for the latest version before every start, so it needs an internet connection.
 
 Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.

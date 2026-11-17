@@ -178,3 +178,28 @@ need a paid plan on a private repository). Why: the squash of the dev → main P
 every shared file. Release versions: the workspace version (`Cargo.toml`, now 0.3.0) or one patch above the highest tag in the
 releases repository, drafts included; no run number. Why: the new releases repository started at 0.1.x, below the 0.2.0 testers
 had installed, and the launcher refuses downgrades. How-to: RELEASE.md §6.
+
+## 2026-11-17 — An Arena round ends at 1 HP, with no down (Leonardo)
+For the whole Arena match each game holds its player immortal (Set Character Immortality 2004:12, flag 10007520, event 99100920):
+a real hit stops at 1 HP and that ends the round (`arenarounds::BEATEN_HP`). Nobody is downed, so no get-up is needed. Why: the
+get-up after a down killed the loser early in the next round on real Steam twice (2026-11-15, 2026-11-17, 0.3.0). The bar get-up of
+2026-11-16 stays only as the fallback should a down still happen.
+
+## 2026-11-17 — Arena timeout: overtime with an HP drain, then HP % (Leonardo)
+At the 3-minute limit nobody wins on the spot: for up to 60 s (`arenarounds::OVERTIME_MS`) each game drains its own player's HP,
+2 % of the maximum per second (the bot's too in a bot match), and the first to fall to 1 HP loses the round through the 1 HP rule.
+In overtime only the host judges and sends the verdict (both at 1 HP in its view = a draw, played again); nobody at 1 HP at the end
+of the overtime = the old HP % judgement. A "One minute left!" message comes 60 s before the limit and the rune counter shows the
+seconds left (ARENA-CLOCK). Why: the HP % rule alone rewarded running away after a first hit in a large arena, and flasks skewed it;
+the drain forces a fight, keeps a comeback possible and needs no new lag-sensitive judgement. Options weighed: HP % (kept as the
+fallback), sudden death (host advantage under lag), replay-only draws (endless).
+
+## 2026-11-17 — The launcher refuses an old mod, and refuses to start without the version check (Leonardo)
+`nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod (`VERSION.txt`'s `version` line, else
+the app's `release.json`) is older than the newest published release, or has no version at all. **When the newest version cannot be
+learnt** (offline, GitHub's 60-per-hour limit, an error, 10 s per request) **the game does not start either**: the player is told to
+connect and try again, and `launcher.log` says why. Why: everyone in a match needs the same version, and the old "Play without
+updating" link let players into mismatched matches. Claude first proposed starting anyway when GitHub is unreachable; Leonardo
+chose to block ("simply does not let the game open"). Accepted cost: a GitHub outage, or a shared IP over the 60-per-hour limit,
+stops every player until it passes. Zips built locally without `-Version` say `version local` and are never checked, so
+friend-test zips keep working; `NRPVP_SKIP_VERSION_CHECK=1` is the developer escape. How-to: RELEASE.md §5c.

@@ -7,6 +7,10 @@
 //! - **A round ends with a down.** LOCAL downed (`PlayerIns+0x710` = 1, or HP 0) = round lost; the rival downed = round won. While
 //!   an Arena match is on, the Battle Royale rules, the rival re-down rule and the revive block stand aside
 //!   ([`crate::mm::arena_match`]); the downed rule stays, so a rival's hit never revives a downed player.
+//! - **ARENA-HP1: a round ends at 1 HP, normally with no down at all.** For the whole Arena match each game holds its player immortal
+//!   (Set Character Immortality 2004:12 on flag [`FLAG_IMMORTAL`], MEMORY_MAP §6): a real hit stops at 1 HP. LOCAL at [`BEATEN_HP`]
+//!   or less = round lost, the rival the same = round won. The down and the get-up below stay only as the fallback, should a down
+//!   still happen (the get-up after a down broke the next round on real Steam, 2026-11-15 and 2026-11-17).
 //! - **Between rounds, behind a black screen.** [`FADE_OUT_MS`] after the down the screen fades to black and the player is frozen
 //!   (Fade to Black 2004:77). [`REVIVE_AFTER_MS`] after the down the loser's game asks the game's own get-up the way a teammate's
 //!   revive does (the revive bar to 0, every tick until it is up; never the byte `+0x732`, MEMORY_MAP §6). At [`RESET_AFTER_MS`] each game restores its player (Bonfire-like Recovery 2004:47 on flag
@@ -17,6 +21,10 @@
 //!   its maximum (a draw within [`DRAW_WITHIN`]: nobody scores, the round is played again). The **host** judges and publishes the
 //!   verdict (`net::bus` topic `ARENA_ROUND`, key = the bout number, value 1 host won / 2 host lost / 3 draw) so both games agree;
 //!   the other game takes it, or judges by itself after [`VERDICT_WAIT_MS`] more without one.
+//! - **Overtime (ARENA-OT, Leonardo 2026-11-17).** At the limit nobody wins on the spot: for up to [`OVERTIME_MS`] each game drains its
+//!   own player's HP ([`OVERTIME_DRAIN_PER_SEC`] of the maximum per second; the bot too in a bot match), so the first to fall to 1 HP
+//!   loses. In overtime only the host judges (the downs it sees; both at once = a draw) and sends the verdict; at the end of the
+//!   overtime with nobody at 1 HP the HP judgement above decides.
 //! - **First to [`ROUNDS_TO_WIN`].** The last round ends the same way (both reset at their spawns), but the screen comes back with the
 //!   players still frozen and the endings play: WIN in the winner's game (flag 10007411: banner 4000, 10 s, 7000), LOSE in the
 //!   loser's (10007412: banner 4010, 10 s, 7001).
@@ -35,6 +43,13 @@ use crate::game::world::World;
 pub(crate) const ROUNDS_TO_WIN: u8 = 2;
 /// ARENA-3: a round with no down ends after this long (PROJECT_SCOPE §Arena: 3 minutes, to be tuned).
 pub(crate) const ROUND_LIMIT_MS: u64 = 180_000;
+/// ARENA-CLOCK: a message warns the players when this much of the round is left (only with a longer limit).
+pub(crate) const WARN_LEFT_MS: u64 = 60_000;
+/// ARENA-OT: after the limit the round goes on this long with both players' HP draining ([`OVERTIME_DRAIN_PER_SEC`]); the first at
+/// 1 HP loses; nobody by then = the HP judgement ([`judge`]).
+pub(crate) const OVERTIME_MS: u64 = 60_000;
+/// ARENA-OT: the share of its maximum HP each player loses per second in overtime (full HP lasts 50 s).
+pub(crate) const OVERTIME_DRAIN_PER_SEC: f32 = 0.02;
 /// The non-host game waits this long past the limit for the host's verdict, then judges by itself.
 pub(crate) const VERDICT_WAIT_MS: u64 = 3_000;
 /// HP fractions closer than this are a draw.
@@ -49,6 +64,8 @@ pub(crate) const REVIVE_AFTER_MS: u64 = 2_000;
 pub(crate) const RESET_AFTER_MS: u64 = 5_000;
 /// From the down: the screen comes back.
 pub(crate) const FADE_IN_MS: u64 = 6_000;
+/// ARENA-HP1: a player at this HP or less has lost the round (immortality stops a hit at 1 HP).
+pub(crate) const BEATEN_HP: u32 = 1;
 /// ARENA-4: a round start waits at most this long for the bot on its spawn (then goes on without it).
 pub(crate) const RIVAL_WAIT_MS: u64 = 30_000;
 /// The get-up is asked the way a teammate's revive does it: the revive bar `+0x714` to 0 and the pause `+0x71C` up, every tick while
@@ -128,6 +145,8 @@ const FLAG_FADE_IN_FROZEN: u32 = 10_007_517;
 /// ARENA-4: while ON this game's player holds SpEffect 8970061 (event 99100919): offline a solo player at 0 HP in the arena dies at
 /// once ("YOU DIED", `mi-arena-bot` 2026-11-10); with it 0 HP is a down. A down uses it up: OFF at each reset, ON at each round start.
 const FLAG_NEAR_DEATH: u32 = 10_007_519;
+/// ARENA-HP1: while ON this game's player is immortal (event 99100920, re-applied every 0.5 s): a hit stops at 1 HP, no down.
+const FLAG_IMMORTAL: u32 = 10_007_520;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
@@ -146,6 +165,8 @@ pub(crate) enum Phase {
 /// What the main loop does (pure output of [`Rounds::step`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Do {
+    /// ARENA-OT: overtime: drain this game's player's HP (and the bot's), every tick while the round is undecided.
+    Drain,
     Message(String),
     FadeOut,
     FadeIn,
@@ -163,15 +184,19 @@ pub(crate) enum Do {
 /// One player as the rules see it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Seen {
+    /// The round is lost: at [`BEATEN_HP`] or less, or downed.
     pub down: bool,
     pub up: bool,
+    /// Really downed (state 1): only then is a get-up asked (a player at 1 HP and standing needs none).
+    pub downed: bool,
 }
 
 impl Seen {
     pub(crate) fn of(state: u8, hp: u32) -> Seen {
         Seen {
-            down: state == 1 || hp == 0,
-            up: state == 0 && hp > 0,
+            down: state == 1 || hp <= BEATEN_HP,
+            up: state == 0 && hp > BEATEN_HP,
+            downed: state == 1,
         }
     }
 }
@@ -223,6 +248,14 @@ pub(crate) struct Timer {
 /// Console override of the round limit (ms; 0 = the default).
 static LIMIT_OVERRIDE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The round limit in force (the console override, else [`ROUND_LIMIT_MS`]).
+pub(crate) fn round_limit_ms() -> u64 {
+    match LIMIT_OVERRIDE_MS.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => ROUND_LIMIT_MS,
+        v => v,
+    }
+}
+
 /// `arena_limit [secs]`: set (0 = back to the default) or show the round limit.
 pub(crate) fn limit_cmd(args: &[String]) -> Result<String, String> {
     use std::sync::atomic::Ordering;
@@ -265,6 +298,10 @@ pub(crate) struct Rounds {
     pub fight_since_ms: u64,
     /// Bouts ended so far, draws included (the verdict key).
     pub bouts: u8,
+    /// ARENA-CLOCK: the "one minute left" message was shown in this round.
+    pub warned: bool,
+    /// ARENA-OT: the overtime message was shown in this round.
+    pub overtime_said: bool,
 }
 
 impl Default for Rounds {
@@ -275,6 +312,8 @@ impl Default for Rounds {
             phase: Phase::Off,
             fight_since_ms: 0,
             bouts: 0,
+            warned: false,
+            overtime_said: false,
         }
     }
 }
@@ -342,6 +381,8 @@ impl Rounds {
                 }
                 self.phase = Phase::Fighting { armed: false };
                 self.fight_since_ms = now_ms;
+                self.warned = false;
+                self.overtime_said = false;
                 vec![Do::FadeIn, Do::Message("Round 1: fight!".into())]
             }
             Phase::Fighting { armed: false } => {
@@ -352,29 +393,61 @@ impl Rounds {
             }
             Phase::Fighting { armed: true } => {
                 let mut out = Vec::new();
-                let (outcome, timed) = if local.down {
-                    (Outcome::Lost, false)
-                } else if rival.down {
-                    (Outcome::Won, false)
+                let t = now_ms.saturating_sub(self.fight_since_ms);
+                let limit = if timer.limit_ms == 0 {
+                    ROUND_LIMIT_MS
                 } else {
-                    let t = now_ms.saturating_sub(self.fight_since_ms);
-                    let limit = if timer.limit_ms == 0 {
-                        ROUND_LIMIT_MS
+                    timer.limit_ms
+                };
+                let (outcome, timed) = if t < limit {
+                    // The round proper: each game judges the downs it sees.
+                    if local.down {
+                        (Outcome::Lost, false)
+                    } else if rival.down {
+                        (Outcome::Won, false)
+                    } else if let Some(v) = timer.verdict {
+                        (v, true)
                     } else {
-                        timer.limit_ms
+                        if !self.warned && limit > WARN_LEFT_MS && t >= limit - WARN_LEFT_MS {
+                            self.warned = true;
+                            return vec![Do::Message("One minute left!".into())];
+                        }
+                        return Vec::new();
+                    }
+                } else {
+                    // ARENA-OT: overtime. Each game drains its own player (and the bot); the host alone judges, so a fall to 1 HP on
+                    // both games at about the same moment cannot give both a lost round.
+                    if !self.overtime_said {
+                        self.overtime_said = true;
+                        out.push(Do::Message(
+                            "Overtime! HP drains until someone falls".into(),
+                        ));
+                    }
+                    let capped = t >= limit + OVERTIME_MS;
+                    let by_downs = match (local.down, rival.down) {
+                        (true, true) => Some(Outcome::Draw),
+                        (true, false) => Some(Outcome::Lost),
+                        (false, true) => Some(Outcome::Won),
+                        (false, false) => None,
                     };
                     let o = if let Some(v) = timer.verdict {
-                        v
-                    } else if t < limit {
-                        return Vec::new();
+                        Some(v)
                     } else if timer.host {
-                        let o = judge(timer.hp);
-                        out.push(Do::Verdict(self.bouts + 1, o));
+                        let o = by_downs.or_else(|| capped.then(|| judge(timer.hp)));
+                        if let Some(o) = o {
+                            out.push(Do::Verdict(self.bouts + 1, o));
+                        }
                         o
-                    } else if t >= limit + VERDICT_WAIT_MS {
-                        judge(timer.hp)
+                    } else if t >= limit + OVERTIME_MS + VERDICT_WAIT_MS {
+                        Some(by_downs.unwrap_or_else(|| judge(timer.hp)))
                     } else {
-                        return Vec::new();
+                        None
+                    };
+                    let Some(o) = o else {
+                        if !capped {
+                            out.push(Do::Drain);
+                        }
+                        return out;
                     };
                     (o, true)
                 };
@@ -414,7 +487,7 @@ impl Rounds {
                 if stage <= 1
                     && lost
                     && (revive_after_ms()..RESET_AFTER_MS).contains(&t)
-                    && local.down
+                    && local.downed
                 {
                     out.push(Do::Revive);
                 }
@@ -439,6 +512,8 @@ impl Rounds {
                     } else {
                         self.phase = Phase::Fighting { armed: false };
                         self.fight_since_ms = now_ms;
+                        self.warned = false;
+                        self.overtime_said = false;
                         out.push(Do::FadeIn);
                         out.push(Do::Message(format!(
                             "Round {}: fight!",
@@ -518,6 +593,8 @@ pub(crate) fn near_death_wanted(vs_bot: bool, on: bool, phase: Phase) -> bool {
 
 /// The value last written to [`FLAG_NEAR_DEATH`] (main loop only; `None` = never written).
 static NEAR_DEATH: Mutex<Option<bool>> = Mutex::new(None);
+/// The value last written to [`FLAG_IMMORTAL`] (main loop only; `None` = never written).
+static IMMORTAL: Mutex<Option<bool>> = Mutex::new(None);
 
 fn set_flag(base: usize, flag: u32) {
     if let Err(e) = crate::game::flags::set(base, flag, true) {
@@ -712,8 +789,28 @@ pub(crate) fn tick(base: usize, world: &World) {
         }
     }
     drop(nd);
+    // ARENA-HP1: immortal for the whole Arena match (a hit stops at 1 HP = the round end), mortal again once it is over.
+    let mut imm = lock(&IMMORTAL);
+    if *imm != Some(on) && (on || imm.is_some()) {
+        match crate::game::flags::set(base, FLAG_IMMORTAL, on) {
+            Ok(_) => {
+                tracing::info!(
+                    "arena_rounds: immortality {} (a round ends at {BEATEN_HP} HP)",
+                    if on { "on" } else { "off" }
+                );
+                *imm = Some(on);
+            }
+            Err(e) => tracing::warn!("arena_rounds: flag {FLAG_IMMORTAL} not set: {e}"),
+        }
+    }
+    drop(imm);
+    // ARENA-OT: overtime drains this game's player and, in a bot match, the bot.
+    let bot_chr = arena_bot.and_then(|b| world.bot(b.handle)).map(|c| c.chr);
+    let chrs: Vec<usize> = std::iter::once(local_addr).chain(bot_chr).collect();
+    super::arenaclock::drain(dos.contains(&Do::Drain), &chrs);
     for d in dos {
         match d {
+            Do::Drain => {}
             Do::Message(m) => {
                 tracing::info!("arena_rounds: {m}");
                 crate::game::gametoast::show(&m);
@@ -787,6 +884,11 @@ pub(crate) fn tick(base: usize, world: &World) {
             }
         }
     }
+    // ARENA-CLOCK: the round's seconds left in the rune counter (the old count back once the match is over).
+    super::arenaclock::show(
+        local_addr,
+        super::arenaclock::seconds_left(rounds, now_ms, round_limit_ms()),
+    );
     // ARENA-LV: hold level 15 only while rounds are played (mi-arena-rounds 2026-11-12: after the match, back at the Roundtable,
     // `on` still held for ~30 s and the hold set level 15 on the Roundtable's level 1).
     super::arenaloadout::hold_tick(base, on && rounds.in_play());
@@ -819,10 +921,18 @@ mod tests {
     const UP: Seen = Seen {
         down: false,
         up: true,
+        downed: false,
     };
     const DOWN: Seen = Seen {
         down: true,
         up: false,
+        downed: true,
+    };
+    /// ARENA-HP1: standing at 1 HP (immortal): the round is lost, nobody is downed.
+    const BEATEN: Seen = Seen {
+        down: true,
+        up: false,
+        downed: false,
     };
 
     /// Off -> Starting -> fade in, round 1, armed; returns the next free time.
@@ -843,15 +953,35 @@ mod tests {
         assert_eq!(Seen::of(0, 240), UP);
         assert_eq!(Seen::of(1, 0), DOWN);
         assert_eq!(Seen::of(1, 50), DOWN);
-        assert_eq!(Seen::of(0, 0), DOWN);
+        assert_eq!(Seen::of(0, 0), BEATEN);
         assert_eq!(
-            Seen::of(2, 120),
-            Seen {
-                down: false,
-                up: false
-            },
-            "getting up: neither"
+            Seen::of(0, BEATEN_HP),
+            BEATEN,
+            "ARENA-HP1: 1 HP ends the round"
         );
+        assert_eq!(Seen::of(0, BEATEN_HP + 1), UP);
+        assert_eq!(Seen::of(2, 120), Seen::default(), "getting up: neither");
+    }
+
+    #[test]
+    fn a_round_lost_at_one_hp_asks_no_get_up() {
+        let mut r = Rounds::default();
+        let t = start(&mut r);
+        assert_eq!(
+            r.step(t, true, BEATEN, Some(UP)),
+            vec![Do::Message("Round 1: you lost (0-1)".into())]
+        );
+        assert_eq!(r.step(t + 1_000, true, BEATEN, Some(UP)), vec![Do::FadeOut]);
+        for ms in [2_000, 3_000, 4_500] {
+            assert!(r.step(t + ms, true, BEATEN, Some(UP)).is_empty(), "{ms}");
+        }
+        assert_eq!(r.step(t + 5_000, true, BEATEN, Some(UP)), vec![Do::Reset]);
+        assert_eq!(
+            r.step(t + 6_000, true, UP, Some(UP)),
+            vec![Do::FadeIn, Do::Message("Round 2: fight!".into())]
+        );
+        r.step(t + 6_050, true, UP, Some(UP));
+        assert_eq!(r.phase, Phase::Fighting { armed: true });
     }
 
     #[test]
@@ -1157,27 +1287,55 @@ mod tests {
         );
     }
 
+    const OT_MSG: &str = "Overtime! HP drains until someone falls";
+
     #[test]
-    fn the_host_judges_a_timed_out_round_by_hp_percent_and_publishes_it() {
+    fn at_the_limit_overtime_starts_and_drains_until_the_host_sees_a_fall() {
         let mut r = Rounds::default();
         start(&mut r);
         let t0 = r.fight_since_ms;
         let at = |d| t0 + d;
-        assert!(r
-            .step_timed(
+        let hp = Some((0.6, 0.4));
+        // The first tick past the one-minute mark only warns.
+        assert_eq!(
+            r.step_timed(
                 at(ROUND_LIMIT_MS - 1),
                 true,
                 UP,
                 Some(UP),
-                timed(true, Some((0.6, 0.4)), None)
-            )
-            .is_empty());
+                timed(true, hp, None)
+            ),
+            vec![Do::Message("One minute left!".into())]
+        );
+        // The limit: no winner yet, overtime is announced once and drains every tick.
+        assert_eq!(
+            r.step_timed(
+                at(ROUND_LIMIT_MS),
+                true,
+                UP,
+                Some(UP),
+                timed(true, hp, None)
+            ),
+            vec![Do::Message(OT_MSG.into()), Do::Drain]
+        );
+        assert_eq!(
+            r.step_timed(
+                at(ROUND_LIMIT_MS + 100),
+                true,
+                UP,
+                Some(UP),
+                timed(true, hp, None)
+            ),
+            vec![Do::Drain]
+        );
+        assert_eq!((r.won, r.lost, r.bouts), (0, 0, 0));
+        // The rival falls to 1 HP: the host wins the round and publishes it.
         let out = r.step_timed(
-            at(ROUND_LIMIT_MS),
+            at(ROUND_LIMIT_MS + 20_000),
             true,
             UP,
-            Some(UP),
-            timed(true, Some((0.6, 0.4)), None),
+            Some(DOWN),
+            timed(true, hp, None),
         );
         assert_eq!(out[0], Do::Verdict(1, Outcome::Won));
         assert!(matches!(&out[1], Do::Message(m) if m.contains("time!") && m.contains("you won")));
@@ -1185,34 +1343,71 @@ mod tests {
     }
 
     #[test]
-    fn the_other_game_takes_the_hosts_verdict_or_judges_itself_after_the_wait() {
+    fn nobody_falling_in_overtime_goes_to_the_hp_judgement() {
         let mut r = Rounds::default();
         start(&mut r);
         let t0 = r.fight_since_ms;
-        // No verdict yet: waits past the limit.
-        assert!(r
-            .step_timed(
+        r.step_timed(
+            t0 + ROUND_LIMIT_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(true, Some((0.3, 0.6)), None),
+        );
+        let out = r.step_timed(
+            t0 + ROUND_LIMIT_MS + OVERTIME_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(true, Some((0.3, 0.6)), None),
+        );
+        assert_eq!(out[0], Do::Verdict(1, Outcome::Lost));
+        assert_eq!((r.won, r.lost), (0, 1));
+    }
+
+    #[test]
+    fn in_overtime_the_other_game_waits_for_the_hosts_verdict_even_at_one_hp() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        let hp = Some((0.1, 0.9));
+        assert_eq!(
+            r.step_timed(
                 t0 + ROUND_LIMIT_MS + 100,
                 true,
                 UP,
                 Some(UP),
-                timed(false, Some((0.9, 0.1)), None)
-            )
-            .is_empty());
-        // The host's verdict wins over its own HP view.
+                timed(false, hp, None)
+            ),
+            vec![Do::Message(OT_MSG.into()), Do::Drain]
+        );
+        // Its own player at 1 HP: no lost round without the host.
+        assert_eq!(
+            r.step_timed(
+                t0 + ROUND_LIMIT_MS + 5_000,
+                true,
+                DOWN,
+                Some(UP),
+                timed(false, hp, None)
+            ),
+            vec![Do::Drain]
+        );
+        assert_eq!((r.won, r.lost), (0, 0));
+        // The host's verdict decides.
         r.step_timed(
-            t0 + ROUND_LIMIT_MS + 200,
+            t0 + ROUND_LIMIT_MS + 5_100,
             true,
-            UP,
+            DOWN,
             Some(UP),
-            timed(false, Some((0.9, 0.1)), Some(Outcome::Lost)),
+            timed(false, hp, Some(Outcome::Lost)),
         );
         assert_eq!((r.won, r.lost), (0, 1));
+        // No verdict at all: it judges by itself after the overtime and the wait.
         let mut r = Rounds::default();
         start(&mut r);
         let t0 = r.fight_since_ms;
         r.step_timed(
-            t0 + ROUND_LIMIT_MS + VERDICT_WAIT_MS,
+            t0 + ROUND_LIMIT_MS + OVERTIME_MS + VERDICT_WAIT_MS,
             true,
             UP,
             Some(UP),
@@ -1223,24 +1418,78 @@ mod tests {
 
     #[test]
     fn a_draw_scores_nothing_and_the_round_is_played_again() {
+        // Both at 1 HP in the host's view.
         let mut r = Rounds::default();
         start(&mut r);
         let t0 = r.fight_since_ms;
-        let out = r.step_timed(
+        r.step_timed(
             t0 + ROUND_LIMIT_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(true, None, None),
+        );
+        let out = r.step_timed(
+            t0 + ROUND_LIMIT_MS + 30_000,
+            true,
+            DOWN,
+            Some(DOWN),
+            timed(true, None, None),
+        );
+        assert_eq!(out[0], Do::Verdict(1, Outcome::Draw));
+        assert_eq!((r.won, r.lost, r.bouts), (0, 0, 1));
+        assert!(matches!(&out[1], Do::Message(m) if m.contains("Round 1") && m.contains("draw")));
+        // Even HP at the end of the overtime.
+        let mut r = Rounds::default();
+        start(&mut r);
+        let t0 = r.fight_since_ms;
+        r.step_timed(
+            t0 + ROUND_LIMIT_MS,
+            true,
+            UP,
+            Some(UP),
+            timed(true, None, None),
+        );
+        let out = r.step_timed(
+            t0 + ROUND_LIMIT_MS + OVERTIME_MS,
             true,
             UP,
             Some(UP),
             timed(true, Some((0.5, 0.502)), None),
         );
         assert_eq!(out[0], Do::Verdict(1, Outcome::Draw));
-        assert_eq!((r.won, r.lost, r.bouts), (0, 0, 1));
-        assert!(matches!(&out[1], Do::Message(m) if m.contains("Round 1") && m.contains("draw")));
         assert_eq!(judge(None), Outcome::Draw);
         assert_eq!(
             Outcome::from_host_wire(Outcome::Won.wire()),
             Some(Outcome::Lost)
         );
+    }
+
+    #[test]
+    fn one_minute_before_the_limit_a_message_warns_once_per_round() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let f = r.fight_since_ms;
+        let warn = Do::Message("One minute left!".into());
+        let at = |t| f + t;
+        let tick = |r: &mut Rounds, t| r.step_timed(t, true, UP, Some(UP), timed(true, None, None));
+        assert!(tick(&mut r, at(ROUND_LIMIT_MS - WARN_LEFT_MS - 1)).is_empty());
+        assert_eq!(
+            tick(&mut r, at(ROUND_LIMIT_MS - WARN_LEFT_MS)),
+            vec![warn.clone()]
+        );
+        assert!(tick(&mut r, at(ROUND_LIMIT_MS - 1_000)).is_empty());
+        // A short test limit gives no warning.
+        let mut r = Rounds::default();
+        start(&mut r);
+        let f = r.fight_since_ms;
+        let short = Timer {
+            limit_ms: 30_000,
+            ..timed(true, None, None)
+        };
+        assert!(r
+            .step_timed(f + 29_000, true, UP, Some(UP), short)
+            .is_empty());
     }
 
     #[test]

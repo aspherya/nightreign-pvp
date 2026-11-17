@@ -165,6 +165,32 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
 - **VER-1 — Version gate** (refined in the 2026-10-24 review). `startup.rs` only logs the exe FileVersion. Build a pure `version::gate(file_version, pinned) -> Open | Closed(reason)` in `startup::run`; `Closed` (also when unreadable): one log warning and **no** `hwbp::set`, VEH, memory write, event flag, `poswrite` or teleport; the Steam worker and read-only `World` may run. `deathhold` and `reviveblock` already byte-check their RVAs; `menuflow`, `quietinvite`, `hawk` and the flag writes do not, so the gate is what protects a patched exe. Acceptance: unit tests, a dev override env `NRPVP_FAKE_EXE_VERSION` and a scenario `version-mismatch` (gate line logged, no `hwbp:` lines). Owner: SONNET/implementer. Rule source: ARCHITECTURE §6 "Modding rules".
 - **HWBP-1 — Claim/release API for the debug registers** (2026-10-24 review; ties into the decoupling refactor). `hwbp::set` silently overwrites a slot's holder, `is_free` then `set` is not atomic, and features mix fixed slots (quiet invite 0/1, Commence 2, labels 3) with "first free" (deathhold, reviveblock, puppets, itemdrop). Build `hwbp::claim(owner, addr) -> Result<Slot, Busy>` (CAS per slot, owner beside the address), `release(Slot)` by the owner only, `holders()` for the log and `status`; a refused claim logs the holder. Write the peak budget table into ARCHITECTURE (player build worst case: menuflow 2 + reviveblock 2 = 4, so a death hold during a downed state has no slot). Acceptance: unit tests (double claim, release by a non-owner, budget exhausted), `defeat-rival` and `match-loss` PASS, `hwbp:` log shows owners. Owner: OPUS design, SONNET/implementer.
 
+## Launcher
+
+### LAUNCH-GATE — The launcher refuses an old mod
+Owner: OPUS (built) → HUMAN (acceptance) | Status: review | Depends on: — | Branch: `launcher-version-gate`
+Goal: `nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod is older than the latest
+published release, and tell the player how to update. Rules and behaviour: RELEASE.md §5c; no check (offline) = no start either
+(DECISIONS 2026-11-17, Leonardo).
+Built: `crates/nrpvp-launcher/src/version.rs` (installed version from `VERSION.txt` / `release.json`, `decide`, message),
+`release.rs` moved there from the app (one lookup for both), `launch()` runs the gate and returns `LaunchError::Outdated`; the
+launcher exe's box offers the download page; the app's dock shows "Update required" and has no "Play without updating" any more;
+`package-release.ps1 -Version` writes `version X.Y.Z` (publish passes it), without it `version local`. Unit tests: comparison,
+`VERSION.txt` parsing, latest / outdated / unknown / local decisions.
+Acceptance (HUMAN-solo, game installed with a zip that has the gate; needs internet; ~10 min, no match needed):
+1. Note the latest release on https://github.com/aspherya/nightreign-pvp-releases/releases/latest (vB).
+2. Edit `<Game>\NightreignPvP\VERSION.txt`: first line `version 0.0.1`. Double-click `nrpvp_launcher.exe` → a box "Your Nightreign
+   PvP is v0.0.1, but vB is out" with Yes/No, the game does **not** start; `NightreignPvP\launcher.log` = `version gate: BLOCKED`.
+   Yes opens the releases page.
+3. Same file, open the launcher app (`NightreignPvP-Launcher.exe` with `--skip-auto-update`, so it does not update by itself) →
+   the bottom bar says "Update required: vB" with Update; no Play. Run it without the flag → it updates and shows Ready.
+4. First line `version vB` (the real one) → `nrpvp_launcher.exe` starts the game; `launcher.log` starts with `version gate: OK`.
+   Same from the app's Play.
+5. Real version, network cable out / Wi-Fi off → `nrpvp_launcher.exe` says it could not check and the game does **not** start;
+   `launcher.log` = `version gate: BLOCKED, latest unknown (...)`. The app shows "Could not check for updates" with Retry; network
+   back, Retry → Play.
+Out of scope: blocking a mismatched Seamless Co-op or game exe (the app only warns); a cached latest version.
+
 ## Test tooling
 
 The orchestrator (`nro`, scenarios, puppet players) is in this repo and is the primary test route: `TOOLS.md`, `orchestrator/README.md`.
@@ -497,6 +523,21 @@ Acceptance (next real-Steam Arena, both players' logs): each player sees the riv
 build, or by eye); no `arena_level: slipped` line after a lost round and no mid-round respawn; after each Arena both players queue
 again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
 return orders.
+
+### ARENA-CLOCK / ARENA-OT — Round time left on screen, and overtime (Leonardo 2026-11-17)
+Owner: OPUS | Status: **solo against the bot PASS (2026-11-17, testing-log 2026-11-17-arena-clock-overtime); left: two players in
+overtime (next Arena FS)** | Depends on: none
+- **Clock:** the rune counter (top right) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have
+  no use in the Arena): the limit before a round, counting down while it is fought (0 in overtime), frozen at the round's end, the
+  full limit again from the reset; the old rune count is put back at the endings. Console `arena_clock [0|1]`. A real text clock
+  (GFX-1/2, re/GFX_UI.md §5) can replace it later.
+- **One minute left:** the game's message "One minute left!" once per round (only with a limit above 60 s).
+- **Overtime (DECISIONS 2026-11-17):** at the limit "Overtime! HP drains until someone falls"; each game drains its own player 2 %
+  of max HP per second (and the bot), never below 1 HP; the first at 1 HP loses (the host judges); after 60 s the HP % rule.
+Acceptance (one PC, against the bot; `arena_limit 70` for a short round): the counter counts down; "One minute left!" at 60 s
+left; at 0 the overtime message, both HP bars fall about 2 % a second, the one lower at the start reaches 1 HP first and loses
+the round ("time! you won/lost"); the next round starts at the full limit; after WIN / LOSE the counter is back to the old count.
+Two PCs (next Arena FS): both games agree on an overtime round.
 
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's
