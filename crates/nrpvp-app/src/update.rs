@@ -11,15 +11,7 @@ pub const VERSION: &str = match option_env!("NRPVP_BUILD_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
-pub fn newer(remote: &str, local: &str) -> bool {
-    match (
-        semver::Version::parse(remote),
-        semver::Version::parse(local),
-    ) {
-        (Ok(r), Ok(l)) => r > l,
-        _ => false,
-    }
-}
+use nrpvp_launch::version::newer;
 
 pub fn prepare(progress: impl FnMut(u64, u64)) -> Result<bool, String> {
     let manifest = release::latest()?;
@@ -155,13 +147,6 @@ pub fn run_helper() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn versions_never_downgrade_or_loop() {
-        assert!(newer("0.10.0", "0.2.0"));
-        assert!(!newer("0.2.0", "0.10.0"));
-        assert!(!newer("0.2.0", "0.2.0"));
-        assert!(!newer("broken", "0.2.0"));
-    }
     #[test]
     fn update_keeps_previous_binary_and_rolls_back_failed_restart() {
         let nonce = SystemTime::now()

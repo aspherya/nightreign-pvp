@@ -60,9 +60,14 @@ function derive() {
     scMatch: r && st.sc_sha256 ? same(r.seamless_coop.nrsc_sha256, st.sc_sha256) : null,
     modOk: !!(m && m.present && !m.problem),
     modVersion: m && m.version,
+    localBuild: !!(m && m.local_build),
     gameMatch: r && S.exeHash ? same(r.game.exe_sha256, S.exeHash) : null,
   };
-  d.update = !!(r && d.modOk && (!d.modVersion || newer(r.version, d.modVersion)));
+  // LAUNCH-GATE: an install older than the latest release (or with no version) cannot be played; the Rust side refuses it too.
+  d.update = !!(r && d.modOk && !d.localBuild && (!d.modVersion || newer(r.version, d.modVersion)));
+  // LAUNCH-GATE: no Play until the latest version is known (the Rust side refuses too); a local test build needs no check.
+  d.checking = !r && !S.releaseError && !d.localBuild;
+  d.noCheck = !r && !!S.releaseError && !d.localBuild;
   d.newLauncher = !!(r && r.launcher && newer(r.version, st.launcher_version) && st.launcher_sha256 && !same(r.launcher.sha256, st.launcher_sha256));
   d.ready = d.gameOk && d.scOk && d.modOk;
   return d;
@@ -115,7 +120,7 @@ function render() {
     row(d.scOk ? (d.scMatch === false ? 'warn' : 'ok') : 'bad', 'Seamless Co-op',
       d.scOk ? (d.scMatch === false ? `Installed, but not v${r.seamless_coop.version} (the version this release needs)` : `Installed${r ? ' · v' + r.seamless_coop.version : ''}`) : 'Not installed'),
     row(d.modOk ? (d.update ? 'warn' : 'ok') : 'bad', 'Nightreign PvP',
-      d.modOk ? (d.modVersion ? 'v' + d.modVersion : 'Installed by hand (unknown version)') + (d.update ? ` · v${r.version} available` : '') : (st.mod && st.mod.present ? st.mod.problem : 'Not installed')),
+      d.modOk ? (d.modVersion ? 'v' + d.modVersion : d.localBuild ? 'Local test build' : 'Installed by hand (unknown version)') + (d.update ? ` · v${r.version} required` : '') : (st.mod && st.mod.present ? st.mod.problem : 'Not installed')),
   ].join('') + (d.newLauncher ? row('warn', 'New launcher available', 'Restart the launcher to retry the automatic update, or download it from Settings › All releases.') : '')
     + (st.foreign && st.foreign.length ? row('bad', 'Files from another tool in the game folder',
       `${st.foreign.join(', ')}: they make the game load other code and break matches. Move them out of the game folder, then use Steam's "Verify integrity of game files".`) : '');
@@ -123,7 +128,6 @@ function render() {
   // dock
   const dot = $('#dockDot'), text = $('#dockText'), sub = $('#dockSub'), btn = $('#btnPrimary'), label = $('#primaryLabel');
   btn.classList.toggle('busy', !!S.busy);
-  $('#btnPlayAnyway').hidden = !(d.update && !S.busy);
   if (S.busy) {
     dot.className = 'dot busy'; text.textContent = S.busy; btn.disabled = true; label.textContent = 'Working';
   } else if (!S.status) {
@@ -136,8 +140,13 @@ function render() {
     sub.textContent = r ? `v${r.version} · ${mb(r.zip.size)}` : (S.releaseError || 'Looking for the latest release…');
     btn.disabled = !r; label.textContent = st.mod && st.mod.present ? 'Repair' : 'Install';
   } else if (d.update) {
-    dot.className = 'dot warn'; text.textContent = `Update available: v${r.version}`;
-    sub.textContent = 'Everyone in a match needs the same version.'; btn.disabled = false; label.textContent = 'Update';
+    dot.className = 'dot bad'; text.textContent = `Update required: v${r.version}`;
+    sub.textContent = `This version cannot be played: everyone in a match needs v${r.version}.`; btn.disabled = false; label.textContent = 'Update';
+  } else if (d.checking) {
+    dot.className = 'dot busy'; text.textContent = 'Checking for updates…'; sub.textContent = ''; btn.disabled = true; label.textContent = 'Play';
+  } else if (d.noCheck) {
+    dot.className = 'dot bad'; text.textContent = 'Could not check for updates';
+    sub.textContent = `${S.releaseError} The game starts only after this check.`; btn.disabled = false; label.textContent = 'Retry';
   } else if (st.foreign && st.foreign.length && !st.game_running) {
     dot.className = 'dot bad'; text.textContent = 'Files from another tool in the game folder';
     sub.textContent = `${st.foreign.join(', ')}: matches will fail. Install tab › how to fix.`; btn.disabled = false; label.textContent = 'Play';
@@ -152,7 +161,7 @@ function render() {
 
   // settings drawer
   $('#setGame').textContent = st.game_dir || 'Not found';
-  $('#setMod').textContent = d.modOk ? (d.modVersion ? 'v' + d.modVersion : 'installed by hand') : 'Not installed';
+  $('#setMod').textContent = d.modOk ? (d.modVersion ? 'v' + d.modVersion : d.localBuild ? 'local test build' : 'installed by hand') : 'Not installed';
   $('#setSc').textContent = d.scOk ? (d.scMatch === false ? 'Installed (a different version than this release needs)' : 'Installed') : 'Not installed';
   $('#setVer').textContent = st.launcher_version ? 'Launcher v' + st.launcher_version + (d.newLauncher ? ' · a newer one is out' : '') : '';
   $('#setRepair').disabled = !d.gameOk || !r || !!S.busy;
@@ -249,7 +258,7 @@ function renderWizard() {
 
   if (S.step === 3) {
     next.textContent = 'Play now';
-    next.disabled = !d.ready || !!S.busy || !!st.game_running;
+    next.disabled = !d.ready || d.checking || d.noCheck || !!S.busy || !!st.game_running;
   }
 }
 
@@ -324,9 +333,12 @@ async function play() {
   try {
     await invoke('play'); // the launcher closes itself once the game is starting
   } catch (e) {
+    // The version gate may have refused an old install the page still showed as current: reload the release so the dock shows
+    // "Update required".
     toast(String(e));
     S.busy = null;
     refresh();
+    loadRelease();
   }
 }
 
@@ -334,6 +346,8 @@ function primary() {
   const d = derive();
   if (!d.gameOk || !d.scOk) return openWizard();
   if (!d.modOk || d.update) return installMod();
+  if (d.noCheck) return loadRelease();
+  if (d.checking) return;
   return play();
 }
 
@@ -344,6 +358,7 @@ async function refresh() {
   if (S.status && S.status.game_dir) invoke('game_exe_sha256').then((h) => { S.exeHash = h; render(); }).catch(() => {});
 }
 async function loadRelease() {
+  if (S.releaseError) { S.releaseError = null; render(); } // a retry shows "Checking for updates…"
   try { S.release = await invoke('latest_release'); S.releaseError = null; } catch (e) { S.releaseError = String(e); }
   render();
 }
@@ -359,7 +374,6 @@ $('#btnSettings').onclick = () => { $('#settings').hidden = false; render(); };
 $('#btnCloseSettings').onclick = () => ($('#settings').hidden = true);
 $('#settings').onclick = (e) => { if (e.target.id === 'settings') $('#settings').hidden = true; };
 $('#btnPrimary').onclick = primary;
-$('#btnPlayAnyway').onclick = play;
 $('#btnRerunSetup').onclick = () => openWizard(0);
 $('#wzNext').onclick = wizardNext;
 $('#wzBack').onclick = () => { S.step = Math.max(0, S.step - 1); render(); };
@@ -494,10 +508,11 @@ function mockInvoke(cmd, args) {
   switch (cmd) {
     case 'status': return wait(120, { launcher_version: '0.1.0', game_dir: fresh ? null : 'Z:\\SteamLibrary\\steamapps\\common\\ELDEN RING NIGHTREIGN\\Game',
       sc_installed: !fresh, sc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E', sc_launcher: true,
-      mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', tag: 'v0.2.0', problem: null, present: true }, game_running: false,
+      mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', local_build: false, problem: null, present: true }, game_running: false,
       foreign: q.has('foreign') ? ['OnlineFix.ini', 'dlllist.txt', 'winmm.dll'] : [], private_code: (mockRoom ??= q.get('room') || ''),
       auto_update: false, player: (mockPlayer ??= { steam_id: '76561198000000000', present: !fresh, characters: fresh ? [] : [{ slot: 0, name: 'Nightfarer' }], problem: null }) });
-    case 'latest_release': return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
+    case 'latest_release': if (q.has('offline')) return Promise.reject('Could not reach GitHub. Check your connection and try again.');
+      return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
       notes: 'The first build for players outside the test group.\n\n- Battle Royale card in the Roundtable: Solo queue, no click after Commence\n- Killfeed as the game\'s own toasts\n- Sites of Grace switch off during a PvP fight\n- Rivals are hidden from the map, compass and name tags\n\nEveryone in a match needs this version.',
       zip: { name: 'NightreignPvP.zip', sha256: '', size: 31457280 }, game: { version: '1.03.3', exe_sha256: 'X' }, seamless_coop: { version: '1.1.3', nrsc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E' } });
     case 'game_exe_sha256': return wait(200, 'X');

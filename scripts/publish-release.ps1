@@ -38,7 +38,7 @@ $gameSha = Pin 'nightreign.exe'
 $nrscSha = Pin 'SeamlessCoop/nrsc.dll'
 
 # 1. The player zip.
-& (Join-Path $PSScriptRoot 'package-release.ps1') -MatchPlayers $MatchPlayers -MinPlayers $MinPlayers -Me3Dir $Me3Dir
+& (Join-Path $PSScriptRoot 'package-release.ps1') -MatchPlayers $MatchPlayers -MinPlayers $MinPlayers -Me3Dir $Me3Dir -Version $Version
 $zip = Join-Path $dist 'NightreignPvP.zip'
 
 # 2. The launcher app.

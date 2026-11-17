@@ -85,6 +85,12 @@ IF SOMETHING GOES WRONG
   you put the files in the wrong place. Go back to INSTALL, step 1.
 * A message says Seamless Co-op was not found: install Seamless Co-op first.
 * The game does not start: make sure Steam is running, then try again.
+* A message says your Nightreign PvP is out of date: a newer version is out and
+  everyone in a match needs the same one. Open the Nightreign PvP launcher app (it
+  updates by itself), or download the new NightreignPvP.zip from the page the message
+  names and install it over this one (INSTALL, step 2).
+* A message says the latest version could not be checked: the launcher checks for
+  updates before every start and needs the internet for it. Connect and try again.
 * Still stuck? Send the "logs" folder that is inside "NightreignPvP"
   to the person who gave you this mod.
 

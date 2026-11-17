@@ -30,7 +30,8 @@ rewrites the handler's settings, logs go to `dist\nucleus-logs\`).
 
 ## 3. Verify the zip before handing it over
 
-- The script prints `OK: ...zip (N MB)` and the VERSION line: build time, commit, clean/dirty, `nrpvp.dll <hash16>`, gamedata hash.
+- The script prints `OK: ...zip (N MB)` and the two VERSION lines: `version local` (or `version X.Y.Z` with `-Version`; the
+  launcher's version gate never blocks `local`, RELEASE.md §5c), then build time, commit, clean/dirty, `nrpvp.dll <hash16>`, gamedata hash.
 - The zip holds `nrpvp_launcher.exe`, `HOW TO INSTALL.txt`, and `NightreignPvP\` with `nrpvp.dll`, `nrpvp.toml`, `VERSION.txt`,
   `gamedata\` (17 files: 15 languages + the Roundtable event script + the hawk crossing line `map\mapstudio\m60_00_00_99.msb.dcx`, HAWK-2;
   since BOT-5 (2026-11-06) `event\common.emevd.dcx` with the bot events goes into the zip as it is (players use Bots On);

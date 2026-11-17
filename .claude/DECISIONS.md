@@ -195,3 +195,21 @@ get-up after a down killed the loser early in the next round on real Steam twice
 - **Ultimates must hurt the rival like any enemy:** some ultimates deal no damage to a rival player (Leonardo, 2026-11-17). Open:
   which ones, and why (TASKS ARENA-ULT-DMG).
 
+## 2026-11-17 — Arena timeout: overtime with an HP drain, then HP % (Leonardo)
+At the 3-minute limit nobody wins on the spot: for up to 60 s (`arenarounds::OVERTIME_MS`) each game drains its own player's HP,
+2 % of the maximum per second (the bot's too in a bot match), and the first to fall to 1 HP loses the round through the 1 HP rule.
+In overtime only the host judges and sends the verdict (both at 1 HP in its view = a draw, played again); nobody at 1 HP at the end
+of the overtime = the old HP % judgement. A "One minute left!" message comes 60 s before the limit and the rune counter shows the
+seconds left (ARENA-CLOCK). Why: the HP % rule alone rewarded running away after a first hit in a large arena, and flasks skewed it;
+the drain forces a fight, keeps a comeback possible and needs no new lag-sensitive judgement. Options weighed: HP % (kept as the
+fallback), sudden death (host advantage under lag), replay-only draws (endless).
+
+## 2026-11-17 — The launcher refuses an old mod, and refuses to start without the version check (Leonardo)
+`nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod (`VERSION.txt`'s `version` line, else
+the app's `release.json`) is older than the newest published release, or has no version at all. **When the newest version cannot be
+learnt** (offline, GitHub's 60-per-hour limit, an error, 10 s per request) **the game does not start either**: the player is told to
+connect and try again, and `launcher.log` says why. Why: everyone in a match needs the same version, and the old "Play without
+updating" link let players into mismatched matches. Claude first proposed starting anyway when GitHub is unreachable; Leonardo
+chose to block ("simply does not let the game open"). Accepted cost: a GitHub outage, or a shared IP over the 60-per-hour limit,
+stops every player until it passes. Zips built locally without `-Version` say `version local` and are never checked, so
+friend-test zips keep working; `NRPVP_SKIP_VERSION_CHECK=1` is the developer escape. How-to: RELEASE.md §5c.
