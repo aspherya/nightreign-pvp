@@ -6,11 +6,11 @@
 //! `scripts\package-release.ps1`), else from `NightreignPvP\release.json` (written by the launcher app after an install). The latest
 //! version is the newest stable release's `release.json` ([`crate::release::latest`]).
 //!
-//! Decisions (DECISIONS 2026-11-17, RELEASE.md §5b):
+//! Decisions (DECISIONS 2026-11-17, RELEASE.md §5c):
 //! - installed older than latest, or no version recorded at all (a zip from before the gate) → **blocked**;
 //! - installed same or newer → start;
-//! - the latest version cannot be learnt (offline, GitHub's limit, an error) → **start anyway** and write it in `launcher.log`: a
-//!   network hiccup must not lock players out;
+//! - the latest version cannot be learnt (offline, GitHub's limit, an error) → **blocked** too (Leonardo: the game does not open
+//!   without the check); the message says to connect and try again, and `launcher.log` says why;
 //! - a locally built zip (`version local`, `package-release.ps1` without `-Version`) → start, no network asked (friend-test zips);
 //! - `NRPVP_SKIP_VERSION_CHECK=1` → start (developer escape). The developer paths (`scripts\launch.ps1`, `nro`) never come here.
 
@@ -104,7 +104,7 @@ pub enum Gate {
     },
     /// A zip built on a developer PC: start without asking.
     LocalBuild,
-    /// The latest version could not be learnt: start anyway (fail open).
+    /// The latest version could not be learnt: do not start (fail closed, Leonardo 2026-11-17).
     Unknown { why: String },
     /// [`SKIP_ENV`] is set: start.
     Skipped,
@@ -112,7 +112,7 @@ pub enum Gate {
 
 impl Gate {
     pub fn blocks(&self) -> bool {
-        matches!(self, Gate::Outdated { .. })
+        matches!(self, Gate::Outdated { .. } | Gate::Unknown { .. })
     }
 
     /// One line for `launcher.log`.
@@ -129,7 +129,7 @@ impl Gate {
             ),
             Gate::LocalBuild => "version gate: skipped, local build".to_string(),
             Gate::Unknown { why } => {
-                format!("version gate: latest unknown, starting anyway ({why})")
+                format!("version gate: BLOCKED, latest unknown ({why})")
             }
             Gate::Skipped => format!("version gate: skipped ({SKIP_ENV})"),
         }
@@ -179,6 +179,14 @@ pub fn blocked_message(installed: Option<&Version>, latest: &Version, page: &str
          To update, do one of these:\n\
          - Open the Nightreign PvP launcher app (NightreignPvP.exe): it updates the mod by itself, then press Play.\n\
          - Or download the new NightreignPvP.zip from {page} and drag its files into the game folder (choose \"Replace the files\")."
+    )
+}
+
+/// What the player reads when the latest version could not be learnt (`why` = what went wrong, in player words).
+pub fn unknown_message(why: &str) -> String {
+    format!(
+        "Nightreign PvP could not check for the latest version, so the game will not start.\n\n{why}\n\n\
+         The game only starts after this check (everyone in a match needs the same version). Connect to the internet and try again."
     )
 }
 
@@ -287,13 +295,16 @@ mod tests {
                 latest: v("0.3.4")
             }
         );
-        // The latest version is not known: start (fail open), whatever is installed.
-        for inst in [rel("0.1.0"), Installed::Unknown] {
+        // The latest version is not known: blocked (fail closed), whatever is installed, even the newest.
+        for inst in [rel("0.1.0"), rel("99.0.0"), Installed::Unknown] {
             let g = decide(&inst, Err("Could not reach GitHub."));
-            assert!(!g.blocks(), "{g:?}");
-            assert!(g.log_line().contains("Could not reach GitHub."));
+            assert!(g.blocks(), "{g:?}");
+            assert!(
+                g.log_line().contains("BLOCKED")
+                    && g.log_line().contains("Could not reach GitHub.")
+            );
         }
-        assert!(!decide(&rel("0.1.0"), Ok("garbage")).blocks());
+        assert!(decide(&rel("0.1.0"), Ok("garbage")).blocks());
         // A local build never blocks and needs no answer.
         assert_eq!(decide(&Installed::Local, Ok("9.9.9")), Gate::LocalBuild);
         assert_eq!(decide(&Installed::Local, Err("offline")), Gate::LocalBuild);
@@ -305,6 +316,12 @@ mod tests {
         assert!(m.contains("v0.3.1") && m.contains("v0.3.4"));
         assert!(m.contains("NightreignPvP.exe") && m.contains("https://x/releases/latest"));
         assert!(blocked_message(None, &v("0.3.4"), "p").contains("old version"));
+        let u = unknown_message("Could not reach GitHub.");
+        assert!(
+            u.contains("will not start")
+                && u.contains("Could not reach GitHub.")
+                && u.contains("Connect")
+        );
     }
 
     #[test]

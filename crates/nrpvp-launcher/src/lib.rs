@@ -19,7 +19,7 @@
 //! the same shape as profiles/nrpvp-sc.me3.toml (UI-1/UI-2 solo runs).
 //!
 //! Before starting, [`launch`] runs the version gate ([`version::gate`]): an install older than the latest published release does
-//! not start (LAUNCH-GATE).
+//! not start, and neither does any install when the latest version cannot be learnt (LAUNCH-GATE).
 
 pub mod release;
 pub mod version;
@@ -147,12 +147,18 @@ pub fn launch(game: &Path) -> Result<(), LaunchError> {
     let mod_dir = game.join(MOD_DIR);
     let log_path = mod_dir.join("launcher.log");
     let gate = version::gate(game);
-    if let version::Gate::Outdated { installed, latest } = &gate {
+    if gate.blocks() {
         let _ = fs::write(&log_path, gate.log_line() + "\n");
-        let page = release::download_page();
-        return Err(LaunchError::Outdated {
-            message: version::blocked_message(installed.as_ref(), latest, &page),
-            page,
+        return Err(match &gate {
+            version::Gate::Outdated { installed, latest } => {
+                let page = release::download_page();
+                LaunchError::Outdated {
+                    message: version::blocked_message(installed.as_ref(), latest, &page),
+                    page,
+                }
+            }
+            version::Gate::Unknown { why } => LaunchError::Failed(version::unknown_message(why)),
+            _ => LaunchError::Failed(gate.log_line()),
         });
     }
     let profile = mod_dir.join("nrpvp.me3.toml");
