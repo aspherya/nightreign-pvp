@@ -165,6 +165,31 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
 - **VER-1 — Version gate** (refined in the 2026-10-24 review). `startup.rs` only logs the exe FileVersion. Build a pure `version::gate(file_version, pinned) -> Open | Closed(reason)` in `startup::run`; `Closed` (also when unreadable): one log warning and **no** `hwbp::set`, VEH, memory write, event flag, `poswrite` or teleport; the Steam worker and read-only `World` may run. `deathhold` and `reviveblock` already byte-check their RVAs; `menuflow`, `quietinvite`, `hawk` and the flag writes do not, so the gate is what protects a patched exe. Acceptance: unit tests, a dev override env `NRPVP_FAKE_EXE_VERSION` and a scenario `version-mismatch` (gate line logged, no `hwbp:` lines). Owner: SONNET/implementer. Rule source: ARCHITECTURE §6 "Modding rules".
 - **HWBP-1 — Claim/release API for the debug registers** (2026-10-24 review; ties into the decoupling refactor). `hwbp::set` silently overwrites a slot's holder, `is_free` then `set` is not atomic, and features mix fixed slots (quiet invite 0/1, Commence 2, labels 3) with "first free" (deathhold, reviveblock, puppets, itemdrop). Build `hwbp::claim(owner, addr) -> Result<Slot, Busy>` (CAS per slot, owner beside the address), `release(Slot)` by the owner only, `holders()` for the log and `status`; a refused claim logs the holder. Write the peak budget table into ARCHITECTURE (player build worst case: menuflow 2 + reviveblock 2 = 4, so a death hold during a downed state has no slot). Acceptance: unit tests (double claim, release by a non-owner, budget exhausted), `defeat-rival` and `match-loss` PASS, `hwbp:` log shows owners. Owner: OPUS design, SONNET/implementer.
 
+## Launcher
+
+### LAUNCH-GATE — The launcher refuses an old mod
+Owner: OPUS (built) → HUMAN (acceptance) | Status: review | Depends on: — | Branch: `launcher-version-gate`
+Goal: `nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod is older than the latest
+published release, and tell the player how to update. Rules and behaviour: RELEASE.md §5c; offline = start anyway (DECISIONS
+2026-11-17, Leonardo to confirm).
+Built: `crates/nrpvp-launcher/src/version.rs` (installed version from `VERSION.txt` / `release.json`, `decide`, message),
+`release.rs` moved there from the app (one lookup for both), `launch()` runs the gate and returns `LaunchError::Outdated`; the
+launcher exe's box offers the download page; the app's dock shows "Update required" and has no "Play without updating" any more;
+`package-release.ps1 -Version` writes `version X.Y.Z` (publish passes it), without it `version local`. Unit tests: comparison,
+`VERSION.txt` parsing, latest / outdated / unknown / local decisions.
+Acceptance (HUMAN-solo, game installed with a zip that has the gate; needs internet; ~10 min, no match needed):
+1. Note the latest release on https://github.com/aspherya/nightreign-pvp-releases/releases/latest (vB).
+2. Edit `<Game>\NightreignPvP\VERSION.txt`: first line `version 0.0.1`. Double-click `nrpvp_launcher.exe` → a box "Your Nightreign
+   PvP is v0.0.1, but vB is out" with Yes/No, the game does **not** start; `NightreignPvP\launcher.log` = `version gate: BLOCKED`.
+   Yes opens the releases page.
+3. Same file, open the launcher app (`NightreignPvP-Launcher.exe` with `--skip-auto-update`, so it does not update by itself) →
+   the bottom bar says "Update required: vB" with Update; no Play. Run it without the flag → it updates and shows Ready.
+4. First line `version vB` (the real one) → `nrpvp_launcher.exe` starts the game; `launcher.log` starts with `version gate: OK`.
+   Same from the app's Play.
+5. Optional: `version 0.0.1` with the network cable out / Wi-Fi off → the game starts; `launcher.log` = `latest unknown, starting
+   anyway`.
+Out of scope: blocking a mismatched Seamless Co-op or game exe (the app only warns); a cached latest version.
+
 ## Test tooling
 
 The orchestrator (`nro`, scenarios, puppet players) is in this repo and is the primary test route: `TOOLS.md`, `orchestrator/README.md`.

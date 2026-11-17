@@ -193,3 +193,13 @@ of the overtime = the old HP % judgement. A "One minute left!" message comes 60 
 seconds left (ARENA-CLOCK). Why: the HP % rule alone rewarded running away after a first hit in a large arena, and flasks skewed it;
 the drain forces a fight, keeps a comeback possible and needs no new lag-sensitive judgement. Options weighed: HP % (kept as the
 fallback), sudden death (host advantage under lag), replay-only draws (endless).
+
+## 2026-11-17 — The launcher refuses an old mod; a failed version check starts anyway (Claude; Leonardo to confirm)
+`nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod (`VERSION.txt`'s `version` line, else
+the app's `release.json`) is older than the newest published release, or has no version at all. When the newest version cannot be
+learnt (offline, GitHub's 60-per-hour limit, an error, 10 s per request) the game **starts anyway** and `launcher.log` says why.
+Why: everyone in a match needs the same version, and the old "Play without updating" link let players into mismatched matches; but
+GitHub being unreachable must not lock a player out of a game that otherwise works (matchmaking's `proto` lobby filter still keeps
+incompatible builds apart). Rejected: block when unknown (an outage or a shared IP over the limit would stop every player); a cached
+"last seen latest" (more moving parts for a rare case). Zips built locally without `-Version` say `version local` and are never
+blocked, so friend-test zips keep working. How-to: RELEASE.md §5c.

@@ -12,3 +12,11 @@ path = "src/main.rs"
 [lib]
 name = "nrpvp_launch"
 path = "src/lib.rs"
+
+[dependencies]
+# The release lookup and version gate (src/release.rs, src/version.rs), shared with the launcher app.
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+semver = "1"
