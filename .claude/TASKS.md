@@ -499,8 +499,8 @@ again with one Commence (no `session: role none -> other` without a `Commence pr
 return orders.
 
 ### ARENA-CLOCK / ARENA-OT — Round time left on screen, and overtime (Leonardo 2026-11-17)
-Owner: OPUS | Status: **clock seen in game against the bot (Leonardo 2026-11-17: "the result is nice"); the one-minute message and
-the overtime are built and unit-tested, not seen in game yet** (branch `arena-round-timer`) | Depends on: none
+Owner: OPUS | Status: **solo against the bot PASS (2026-11-17, testing-log 2026-11-17-arena-clock-overtime); left: two players in
+overtime (next Arena FS)** | Depends on: none
 - **Clock:** the rune counter (top right) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have
   no use in the Arena): the limit before a round, counting down while it is fought (0 in overtime), frozen at the round's end, the
   full limit again from the reset; the old rune count is put back at the endings. Console `arena_clock [0|1]`. A real text clock
