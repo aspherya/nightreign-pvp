@@ -170,8 +170,8 @@ Done on `main` (SMOKE-2 PASS 2026-10-21): **R5**, **CON-4**, **R2** half (`game/
 ### LAUNCH-GATE — The launcher refuses an old mod
 Owner: OPUS (built) → HUMAN (acceptance) | Status: review | Depends on: — | Branch: `launcher-version-gate`
 Goal: `nrpvp_launcher.exe` and the launcher app's Play do not start the game when the installed mod is older than the latest
-published release, and tell the player how to update. Rules and behaviour: RELEASE.md §5c; offline = start anyway (DECISIONS
-2026-11-17, Leonardo to confirm).
+published release, and tell the player how to update. Rules and behaviour: RELEASE.md §5c; no check (offline) = no start either
+(DECISIONS 2026-11-17, Leonardo).
 Built: `crates/nrpvp-launcher/src/version.rs` (installed version from `VERSION.txt` / `release.json`, `decide`, message),
 `release.rs` moved there from the app (one lookup for both), `launch()` runs the gate and returns `LaunchError::Outdated`; the
 launcher exe's box offers the download page; the app's dock shows "Update required" and has no "Play without updating" any more;
@@ -186,8 +186,9 @@ Acceptance (HUMAN-solo, game installed with a zip that has the gate; needs inter
    the bottom bar says "Update required: vB" with Update; no Play. Run it without the flag → it updates and shows Ready.
 4. First line `version vB` (the real one) → `nrpvp_launcher.exe` starts the game; `launcher.log` starts with `version gate: OK`.
    Same from the app's Play.
-5. Optional: `version 0.0.1` with the network cable out / Wi-Fi off → the game starts; `launcher.log` = `latest unknown, starting
-   anyway`.
+5. Real version, network cable out / Wi-Fi off → `nrpvp_launcher.exe` says it could not check and the game does **not** start;
+   `launcher.log` = `version gate: BLOCKED, latest unknown (...)`. The app shows "Could not check for updates" with Retry; network
+   back, Retry → Play.
 Out of scope: blocking a mismatched Seamless Co-op or game exe (the app only warns); a cached latest version.
 
 ## Test tooling

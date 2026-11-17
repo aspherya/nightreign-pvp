@@ -160,10 +160,13 @@ installed mod is older than the latest published release** (both run the same co
   `https://github.com/aspherya/nightreign-pvp-releases/releases/latest` and replace the files", with **Yes** = open that page. The app
   shows **Update required: vB** in red at the bottom with the Update button (the old "Play without updating" link is gone); if Play
   is pressed with a stale page, it shows the same message and turns to Update.
-- **Same or newer:** starts. **GitHub not reachable** (offline, the 60-per-hour limit, an error; 10 s limit per request): **starts
-  anyway**, so a network hiccup never locks players out (DECISIONS 2026-11-17). **`version local`** (a zip built without
-  `-Version`): starts without asking GitHub. **`NRPVP_SKIP_VERSION_CHECK=1`**: starts (developer escape).
-- Every start writes one `version gate: ...` line at the top of `NightreignPvP\launcher.log` (OK / BLOCKED / latest unknown, why).
+- **Same or newer:** starts. **GitHub not reachable** (offline, the 60-per-hour limit, an error; 10 s limit per request): **does
+  not start** (DECISIONS 2026-11-17, Leonardo). The exe says "could not check for the latest version ... connect to the internet and
+  try again" with the reason; the app shows "Could not check for updates" with **Retry** instead of Play. A GitHub outage therefore
+  stops every player until it passes. **`version local`** (a zip built without `-Version`): starts without asking GitHub.
+  **`NRPVP_SKIP_VERSION_CHECK=1`**: starts (developer escape).
+- Every start writes one `version gate: ...` line at the top of `NightreignPvP\launcher.log` (OK, or BLOCKED with the versions or
+  "latest unknown (why)"). UI mock: `?update` (old version), `?offline` (no check).
 - Developer launches (`scripts\launch.ps1`, `nro`) never go through `nrpvp_launch`, so the gate never touches them.
 - Launchers and zips from before the gate do not have it: a player is first gated once their zip or app has it.
 
@@ -278,3 +281,4 @@ Steam synchronize it. This imports the local Steam save, not a direct Steam Clou
 | Players never meet | different `-MatchPlayers`, different mod build, different SC version, or different `private_code` |
 | The zip's commit says `dirty` | build from a clean `main` for a session you want to be reproducible |
 | "Your Nightreign PvP is vA, but vB is out" | the version gate (§5c): update through the launcher app or the new zip; a friend-test zip must be built without `-Version` (`version local`) |
+| "could not check for the latest version" / "Could not check for updates" | no internet, GitHub down, or GitHub's 60-per-hour limit for that IP (§5c, "How the launcher reads releases"): connect, or wait and retry |

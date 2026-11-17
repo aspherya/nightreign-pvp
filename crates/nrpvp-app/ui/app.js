@@ -65,6 +65,9 @@ function derive() {
   };
   // LAUNCH-GATE: an install older than the latest release (or with no version) cannot be played; the Rust side refuses it too.
   d.update = !!(r && d.modOk && !d.localBuild && (!d.modVersion || newer(r.version, d.modVersion)));
+  // LAUNCH-GATE: no Play until the latest version is known (the Rust side refuses too); a local test build needs no check.
+  d.checking = !r && !S.releaseError && !d.localBuild;
+  d.noCheck = !r && !!S.releaseError && !d.localBuild;
   d.newLauncher = !!(r && r.launcher && newer(r.version, st.launcher_version) && st.launcher_sha256 && !same(r.launcher.sha256, st.launcher_sha256));
   d.ready = d.gameOk && d.scOk && d.modOk;
   return d;
@@ -139,6 +142,11 @@ function render() {
   } else if (d.update) {
     dot.className = 'dot bad'; text.textContent = `Update required: v${r.version}`;
     sub.textContent = `This version cannot be played: everyone in a match needs v${r.version}.`; btn.disabled = false; label.textContent = 'Update';
+  } else if (d.checking) {
+    dot.className = 'dot busy'; text.textContent = 'Checking for updates…'; sub.textContent = ''; btn.disabled = true; label.textContent = 'Play';
+  } else if (d.noCheck) {
+    dot.className = 'dot bad'; text.textContent = 'Could not check for updates';
+    sub.textContent = `${S.releaseError} The game starts only after this check.`; btn.disabled = false; label.textContent = 'Retry';
   } else if (st.foreign && st.foreign.length && !st.game_running) {
     dot.className = 'dot bad'; text.textContent = 'Files from another tool in the game folder';
     sub.textContent = `${st.foreign.join(', ')}: matches will fail. Install tab › how to fix.`; btn.disabled = false; label.textContent = 'Play';
@@ -250,7 +258,7 @@ function renderWizard() {
 
   if (S.step === 3) {
     next.textContent = 'Play now';
-    next.disabled = !d.ready || !!S.busy || !!st.game_running;
+    next.disabled = !d.ready || d.checking || d.noCheck || !!S.busy || !!st.game_running;
   }
 }
 
@@ -338,6 +346,8 @@ function primary() {
   const d = derive();
   if (!d.gameOk || !d.scOk) return openWizard();
   if (!d.modOk || d.update) return installMod();
+  if (d.noCheck) return loadRelease();
+  if (d.checking) return;
   return play();
 }
 
@@ -348,6 +358,7 @@ async function refresh() {
   if (S.status && S.status.game_dir) invoke('game_exe_sha256').then((h) => { S.exeHash = h; render(); }).catch(() => {});
 }
 async function loadRelease() {
+  if (S.releaseError) { S.releaseError = null; render(); } // a retry shows "Checking for updates…"
   try { S.release = await invoke('latest_release'); S.releaseError = null; } catch (e) { S.releaseError = String(e); }
   render();
 }
@@ -500,7 +511,8 @@ function mockInvoke(cmd, args) {
       mod: fresh ? null : { version: q.has('update') ? '0.1.0' : '0.2.0', local_build: false, problem: null, present: true }, game_running: false,
       foreign: q.has('foreign') ? ['OnlineFix.ini', 'dlllist.txt', 'winmm.dll'] : [], private_code: (mockRoom ??= q.get('room') || ''),
       auto_update: false, player: (mockPlayer ??= { steam_id: '76561198000000000', present: !fresh, characters: fresh ? [] : [{ slot: 0, name: 'Nightfarer' }], problem: null }) });
-    case 'latest_release': return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
+    case 'latest_release': if (q.has('offline')) return Promise.reject('Could not reach GitHub. Check your connection and try again.');
+      return wait(300, { schema: 1, version: '0.2.0', tag: 'v0.2.0', published: '2026-11-06', match_players: 2,
       notes: 'The first build for players outside the test group.\n\n- Battle Royale card in the Roundtable: Solo queue, no click after Commence\n- Killfeed as the game\'s own toasts\n- Sites of Grace switch off during a PvP fight\n- Rivals are hidden from the map, compass and name tags\n\nEveryone in a match needs this version.',
       zip: { name: 'NightreignPvP.zip', sha256: '', size: 31457280 }, game: { version: '1.03.3', exe_sha256: 'X' }, seamless_coop: { version: '1.1.3', nrsc_sha256: '243EEC929A97B71E1E2E3B4215778B89C37D629436B8DD5403E830593D3CE24E' } });
     case 'game_exe_sha256': return wait(200, 'X');
