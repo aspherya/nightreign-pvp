@@ -499,11 +499,11 @@ again with one Commence (no `session: role none -> other` without a `Commence pr
 return orders.
 
 ### ARENA-CLOCK — Round time left on screen (Leonardo 2026-11-17)
-Owner: OPUS | Status: **built (branch `arena-round-timer`), unit tests PASS; the in-game look is not checked yet** | Depends on: none
+Owner: OPUS | Status: **counter seen in game against the bot (Leonardo 2026-11-17: "the result is nice"; round 1 timed out at 3:00 and was judged by HP); the one-minute message is built, not seen yet** | Depends on: none
 The player sees how long the round has left, all the time. Simplest route that needs no new UI: the rune counter (top right of the
 HUD) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have no use in the Arena). The limit
 before a round, counting down while it is fought, frozen at the down, the full limit again from the reset; the old rune count is put
-back at the endings. Console `arena_clock [0|1]`. A real text clock (GFX-1/2, re/GFX_UI.md §5) can replace it later.
+back at the endings. With one minute left the game's message shows "One minute left!" once per round (only with a limit above 60 s). Console `arena_clock [0|1]`. A real text clock (GFX-1/2, re/GFX_UI.md §5) can replace it later.
 Acceptance (one PC, against the bot): Bots On + Solo + Arena card; the counter reads 180 at the fade-in and counts down 1 per second;
 after a down it stays put behind the black screen and reads 180 again at the next fade-in; `arena_limit 20` shows 20 and the round
 ends on time at 0; after WIN / LOSE the counter is back to the old count. Check also: any "+N" / "-N" popup at each change.

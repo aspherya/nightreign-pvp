@@ -39,6 +39,8 @@ use crate::game::world::World;
 pub(crate) const ROUNDS_TO_WIN: u8 = 2;
 /// ARENA-3: a round with no down ends after this long (PROJECT_SCOPE §Arena: 3 minutes, to be tuned).
 pub(crate) const ROUND_LIMIT_MS: u64 = 180_000;
+/// ARENA-CLOCK: a message warns the players when this much of the round is left (only with a longer limit).
+pub(crate) const WARN_LEFT_MS: u64 = 60_000;
 /// The non-host game waits this long past the limit for the host's verdict, then judges by itself.
 pub(crate) const VERDICT_WAIT_MS: u64 = 3_000;
 /// HP fractions closer than this are a draw.
@@ -285,6 +287,8 @@ pub(crate) struct Rounds {
     pub fight_since_ms: u64,
     /// Bouts ended so far, draws included (the verdict key).
     pub bouts: u8,
+    /// ARENA-CLOCK: the "one minute left" message was shown in this round.
+    pub warned: bool,
 }
 
 impl Default for Rounds {
@@ -295,6 +299,7 @@ impl Default for Rounds {
             phase: Phase::Off,
             fight_since_ms: 0,
             bouts: 0,
+            warned: false,
         }
     }
 }
@@ -362,6 +367,7 @@ impl Rounds {
                 }
                 self.phase = Phase::Fighting { armed: false };
                 self.fight_since_ms = now_ms;
+                self.warned = false;
                 vec![Do::FadeIn, Do::Message("Round 1: fight!".into())]
             }
             Phase::Fighting { armed: false } => {
@@ -386,6 +392,10 @@ impl Rounds {
                     let o = if let Some(v) = timer.verdict {
                         v
                     } else if t < limit {
+                        if !self.warned && limit > WARN_LEFT_MS && t >= limit - WARN_LEFT_MS {
+                            self.warned = true;
+                            return vec![Do::Message("One minute left!".into())];
+                        }
                         return Vec::new();
                     } else if timer.host {
                         let o = judge(timer.hp);
@@ -459,6 +469,7 @@ impl Rounds {
                     } else {
                         self.phase = Phase::Fighting { armed: false };
                         self.fight_since_ms = now_ms;
+                        self.warned = false;
                         out.push(Do::FadeIn);
                         out.push(Do::Message(format!(
                             "Round {}: fight!",
@@ -1233,15 +1244,17 @@ mod tests {
         start(&mut r);
         let t0 = r.fight_since_ms;
         let at = |d| t0 + d;
-        assert!(r
-            .step_timed(
+        // The first tick past the one-minute mark only warns.
+        assert_eq!(
+            r.step_timed(
                 at(ROUND_LIMIT_MS - 1),
                 true,
                 UP,
                 Some(UP),
                 timed(true, Some((0.6, 0.4)), None)
-            )
-            .is_empty());
+            ),
+            vec![Do::Message("One minute left!".into())]
+        );
         let out = r.step_timed(
             at(ROUND_LIMIT_MS),
             true,
@@ -1311,6 +1324,33 @@ mod tests {
             Outcome::from_host_wire(Outcome::Won.wire()),
             Some(Outcome::Lost)
         );
+    }
+
+    #[test]
+    fn one_minute_before_the_limit_a_message_warns_once_per_round() {
+        let mut r = Rounds::default();
+        start(&mut r);
+        let f = r.fight_since_ms;
+        let warn = Do::Message("One minute left!".into());
+        let at = |t| f + t;
+        let tick = |r: &mut Rounds, t| r.step_timed(t, true, UP, Some(UP), timed(true, None, None));
+        assert!(tick(&mut r, at(ROUND_LIMIT_MS - WARN_LEFT_MS - 1)).is_empty());
+        assert_eq!(
+            tick(&mut r, at(ROUND_LIMIT_MS - WARN_LEFT_MS)),
+            vec![warn.clone()]
+        );
+        assert!(tick(&mut r, at(ROUND_LIMIT_MS - 1_000)).is_empty());
+        // A short test limit gives no warning.
+        let mut r = Rounds::default();
+        start(&mut r);
+        let f = r.fight_since_ms;
+        let short = Timer {
+            limit_ms: 30_000,
+            ..timed(true, None, None)
+        };
+        assert!(r
+            .step_timed(f + 29_000, true, UP, Some(UP), short)
+            .is_empty());
     }
 
     #[test]
