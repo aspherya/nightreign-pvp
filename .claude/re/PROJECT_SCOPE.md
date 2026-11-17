@@ -139,6 +139,9 @@ A short PvP duel mode with no expedition: players land straight in a Nightlord's
   `[the HP tiebreak is the agent's proposal, not objected to]`. Built (ARENA-3, 2026-11-09): HP in percent of each player's
   maximum; within 0.5 % it is a draw, nobody scores and the round is played again `[agent's choice]`; the host judges and sends the
   verdict so both games agree.
+  **Overtime (Leonardo, 2026-11-17, DECISIONS):** at the limit the round goes on for up to 60 s while both players lose 2 % of their
+  max HP per second; the first at 1 HP loses; after that the HP % rule above decides. The round's seconds left show in the rune
+  counter, with a "One minute left!" message.
 - **No item drops (Leonardo, 2026-11-09):** a down or a lost match never drops a player's items (the Battle Royale defeat drop,
   RW-3, stays off in Arena; today the Arena match skips the BR rules that ask for it, `features/br_match`).
 - **Relics are ON:** each player brings their own relics. The point of Arena is to try any relic build with any weapons and talismans.

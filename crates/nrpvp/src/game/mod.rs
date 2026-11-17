@@ -9,6 +9,7 @@
 //! `crate::features` (R3 rest), which shrinks this file.
 
 pub(crate) mod arenacard;
+pub(crate) mod arenaclock;
 pub(crate) mod arenaloadout;
 pub(crate) mod arenarounds;
 #[cfg(feature = "dev")]

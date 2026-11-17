@@ -498,6 +498,21 @@ build, or by eye); no `arena_level: slipped` line after a lost round and no mid-
 again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
 return orders.
 
+### ARENA-CLOCK / ARENA-OT — Round time left on screen, and overtime (Leonardo 2026-11-17)
+Owner: OPUS | Status: **solo against the bot PASS (2026-11-17, testing-log 2026-11-17-arena-clock-overtime); left: two players in
+overtime (next Arena FS)** | Depends on: none
+- **Clock:** the rune counter (top right) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have
+  no use in the Arena): the limit before a round, counting down while it is fought (0 in overtime), frozen at the round's end, the
+  full limit again from the reset; the old rune count is put back at the endings. Console `arena_clock [0|1]`. A real text clock
+  (GFX-1/2, re/GFX_UI.md §5) can replace it later.
+- **One minute left:** the game's message "One minute left!" once per round (only with a limit above 60 s).
+- **Overtime (DECISIONS 2026-11-17):** at the limit "Overtime! HP drains until someone falls"; each game drains its own player 2 %
+  of max HP per second (and the bot), never below 1 HP; the first at 1 HP loses (the host judges); after 60 s the HP % rule.
+Acceptance (one PC, against the bot; `arena_limit 70` for a short round): the counter counts down; "One minute left!" at 60 s
+left; at 0 the overtime message, both HP bars fall about 2 % a second, the one lower at the start reaches 1 HP first and loses
+the round ("time! you won/lost"); the next round starts at the full limit; after WIN / LOSE the counter is back to the old count.
+Two PCs (next Arena FS): both games agree on an overtime round.
+
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's
 list holds ~609 entries in an expedition (553 relics, MEMORY_MAP §29), so a rival kill drops only the equipped weapons. Fix: the
