@@ -17,8 +17,15 @@
 //! to be installed and no Steam library lookup is needed. Profile shape verified in T-004 (TECHNICAL_NOTES §3):
 //! nrsc.dll `load_early = true` with no initializer, nrpvp.dll `load_after` it. The game-data package is a `[[packages]]` entry,
 //! the same shape as profiles/nrpvp-sc.me3.toml (UI-1/UI-2 solo runs).
+//!
+//! Before starting, [`launch`] runs the version gate ([`version::gate`]): an install older than the latest published release does
+//! not start (LAUNCH-GATE).
+
+pub mod release;
+pub mod version;
 
 use std::fs;
+use std::io::Write;
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -105,13 +112,49 @@ pub fn check(game: &Path) -> Option<String> {
         .map(|(_, why)| (*why).to_string())
 }
 
-/// Starts the game with Seamless Co-op and nrpvp through the bundled me3, from the game folder `game`. Returns once me3 is past
-/// [`EARLY_EXIT_WINDOW`] (still running = the game is starting) or has exited cleanly; an early error exit is an `Err` in player words.
-pub fn launch(game: &Path) -> Result<(), String> {
+/// Why the game did not start.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LaunchError {
+    /// The version gate blocked an old install: `message` for the player, `page` = where the new zip is.
+    Outdated { message: String, page: String },
+    /// Anything else, in player words.
+    Failed(String),
+}
+
+impl std::fmt::Display for LaunchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LaunchError::Outdated { message, .. } | LaunchError::Failed(message) => {
+                f.write_str(message)
+            }
+        }
+    }
+}
+
+impl From<String> for LaunchError {
+    fn from(why: String) -> Self {
+        LaunchError::Failed(why)
+    }
+}
+
+/// Starts the game with Seamless Co-op and nrpvp through the bundled me3, from the game folder `game`, after the file checks and
+/// the version gate. Returns once me3 is past [`EARLY_EXIT_WINDOW`] (still running = the game is starting) or has exited cleanly; an
+/// early error exit is an `Err` in player words.
+pub fn launch(game: &Path) -> Result<(), LaunchError> {
     if let Some(why) = check(game) {
-        return Err(why);
+        return Err(why.into());
     }
     let mod_dir = game.join(MOD_DIR);
+    let log_path = mod_dir.join("launcher.log");
+    let gate = version::gate(game);
+    if let version::Gate::Outdated { installed, latest } = &gate {
+        let _ = fs::write(&log_path, gate.log_line() + "\n");
+        let page = release::download_page();
+        return Err(LaunchError::Outdated {
+            message: version::blocked_message(installed.as_ref(), latest, &page),
+            page,
+        });
+    }
     let profile = mod_dir.join("nrpvp.me3.toml");
     fs::write(
         &profile,
@@ -128,9 +171,10 @@ pub fn launch(game: &Path) -> Result<(), String> {
         )
     })?;
 
-    let log_path = mod_dir.join("launcher.log");
-    let log = fs::File::create(&log_path)
+    let mut log = fs::File::create(&log_path)
         .map_err(|e| format!("Could not write {}:\n{e}", log_path.display()))?;
+    // LAUNCH-GATE: the verdict first; me3 appends its output after it (the cloned handle shares the file position).
+    let _ = writeln!(log, "{}", gate.log_line());
     let log2 = log.try_clone().map_err(|e| e.to_string())?;
     let mut child = Command::new(mod_dir.join("me3").join("me3.exe"))
         .arg("launch")
@@ -155,10 +199,10 @@ pub fn launch(game: &Path) -> Result<(), String> {
     while waited < EARLY_EXIT_WINDOW {
         if let Ok(Some(status)) = child.try_wait() {
             if !status.success() {
-                return Err(format!(
+                return Err(LaunchError::Failed(format!(
                     "The game did not start (the mod loader stopped with {status}).\n\nMake sure Steam is running, then try again.\nDetails: {}",
                     log_path.display()
-                ));
+                )));
             }
             break;
         }

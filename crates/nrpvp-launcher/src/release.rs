@@ -1,4 +1,5 @@
-//! Where releases come from, and the `release.json` manifest that describes one.
+//! Where releases come from, and the `release.json` manifest that describes one. Shared by the launcher app (install, updates)
+//! and by [`crate::launch`]'s version gate ([`crate::version`]), so both ask GitHub the same way.
 //!
 //! Player releases live in their own **public** repository ([`RELEASES_REPO`], `aspherya/nightreign-pvp-releases`), apart from
 //! the private source repository. Every release carries three assets: `release.json` (this manifest), the player zip, and the
@@ -89,14 +90,26 @@ pub fn releases_page() -> String {
     }
 }
 
-fn client() -> Result<reqwest::blocking::Client, String> {
+/// How long a small request (release info, `release.json`) may take in all. The version gate waits on it before the game starts.
+const SMALL_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `total` = the whole request's time limit; `None` for large downloads (the zip), which may take minutes.
+/// Where a player downloads the newest zip by hand (the version gate's message).
+pub fn download_page() -> String {
+    match source() {
+        Source::GitHub(repo) => format!("https://github.com/{repo}/releases/latest"),
+        Source::Local(dir) => dir.display().to_string(),
+    }
+}
+
+fn client(total: Option<Duration>) -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .user_agent(concat!(
             "NightreignPvP-Launcher/",
             env!("CARGO_PKG_VERSION")
         ))
-        .connect_timeout(Duration::from_secs(15))
-        .timeout(None)
+        .connect_timeout(Duration::from_secs(8))
+        .timeout(total)
         .build()
         .map_err(|e| format!("Could not start the download client: {e}"))
 }
@@ -140,8 +153,9 @@ fn github_get(
     repo: &str,
     endpoint: &[&str],
     binary: bool,
+    total: Option<Duration>,
 ) -> Result<reqwest::blocking::Response, String> {
-    let response = client()?
+    let response = client(total)?
         .get(github_url(repo, endpoint)?)
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header(
@@ -169,7 +183,7 @@ fn github_release(repo: &str, tag: Option<&str>) -> Result<GitHubRelease, String
         Some(tag) => vec!["releases", "tags", tag],
         None => vec!["releases", "latest"],
     };
-    let release: GitHubRelease = github_get(repo, &endpoint, false)?
+    let release: GitHubRelease = github_get(repo, &endpoint, false, Some(SMALL_REQUEST_TIMEOUT))?
         .json()
         .map_err(|_| "GitHub returned invalid release information.")?;
     if release.draft || release.prerelease {
@@ -182,6 +196,7 @@ fn github_asset(
     repo: &str,
     release: &GitHubRelease,
     name: &str,
+    total: Option<Duration>,
 ) -> Result<reqwest::blocking::Response, String> {
     let asset = release
         .assets
@@ -189,7 +204,12 @@ fn github_asset(
         .find(|asset| asset.name == name)
         .ok_or_else(|| format!("The release is missing {name}."))?;
     // Construct the API URL from the numeric asset ID; never follow URLs supplied by a manifest.
-    github_get(repo, &["releases", "assets", &asset.id.to_string()], true)
+    github_get(
+        repo,
+        &["releases", "assets", &asset.id.to_string()],
+        true,
+        total,
+    )
 }
 
 /// The latest release's manifest.
@@ -199,7 +219,7 @@ pub fn latest() -> Result<Manifest, String> {
             .map_err(|e| format!("No release.json in {}: {e}", dir.display()))?,
         Source::GitHub(repo) => {
             let release = github_release(&repo, None)?;
-            let text = github_asset(&repo, &release, "release.json")?
+            let text = github_asset(&repo, &release, "release.json", Some(SMALL_REQUEST_TIMEOUT))?
                 .text()
                 .map_err(|_| "Could not read the release manifest.")?;
             if parse(&text)?.tag != release.tag_name {
@@ -241,7 +261,7 @@ pub fn fetch_asset(
             if release.tag_name != m.tag {
                 return Err("The GitHub release tag changed.".into());
             }
-            Box::new(github_asset(&repo, &release, &asset.name)?)
+            Box::new(github_asset(&repo, &release, &asset.name, None)?)
         }
     };
     let hash = copy_hashed(reader, dest, asset.size, progress)?;
@@ -257,7 +277,7 @@ pub fn fetch_asset(
 
 /// GET `url` (redirects followed); an error unless 2xx.
 pub fn open_url(url: &str) -> Result<reqwest::blocking::Response, String> {
-    let resp = client()?
+    let resp = client(None)?
         .get(url)
         .send()
         .map_err(|e| format!("Download failed: {e}"))?;
@@ -334,7 +354,7 @@ pub fn sc_github_release() -> Result<Option<ScRelease>, String> {
         size: u64,
     }
     let url = format!("https://api.github.com/repos/{SC_GITHUB_REPO}/releases/latest");
-    let resp = client()?
+    let resp = client(Some(SMALL_REQUEST_TIMEOUT))?
         .get(&url)
         .header("Accept", "application/vnd.github+json")
         .send()

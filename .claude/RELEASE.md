@@ -73,8 +73,10 @@ takes it; there is no separate BR-only package or `-Arena` switch any more (DECI
 
 `package-release.ps1` builds the **player** DLL itself (`--no-default-features`, into `target\player\`) and the launcher, then packs. `scripts/build.ps1` is only for developer launches, not for the zip.
 
-It prints `OK: ...\dist\NightreignPvP.zip (N MB)` and the VERSION line, for example:
+It prints `OK: ...\dist\NightreignPvP.zip (N MB)` and the two `VERSION.txt` lines, for example `version local` and
 `built 2026-11-01 18:30 UTC, commit abc1234 (clean), nrpvp.dll 1A2B3C4D5E6F7788, gamedata emevd ..., hawk routes ..., me3 0.11.0`.
+The first line is what the version gate (§5c) reads: `version X.Y.Z` when `-Version X.Y.Z` is given (`publish-release.ps1` and CI
+always pass it), else `version local`, a test zip the gate never blocks.
 **Build from a clean `main`** so the zip's commit is a real commit (the line says `dirty` otherwise).
 
 ### What is in the zip
@@ -143,6 +145,27 @@ $env:NRPVP_RELEASE_DIR = "$PWD\dist\release"; .\dist\release\NightreignPvP-Launc
 - **Private room** (RW-6): the launcher's Private room tab writes `private_code` into the installed `nrpvp.toml` (before the first table); an update keeps it. Friends save the same code, then queue as usual. Mock: `?room=night-owls`.
 - The launcher warns (Install tab and the bottom bar, red) when files of another tool sit in the game folder and make the game load other code: `winmm.dll`, `dlllist.txt`, `OnlineFix*`, `steam_emu.ini`, `ColdClientLoader.ini`, `steam_settings` (an OnlineFix package broke every run on 2026-11-08, TRAPS). It removes nothing. Mock: `?foreign`.
 - UI look without building: `.claude/launch.json` config `launcher-ui-mock` serves `crates/nrpvp-app/ui` on a mock (`?fresh`, `?update`).
+
+## 5c. Version gate: an old mod does not start (LAUNCH-GATE)
+
+Everyone in a match needs the same version, so **`nrpvp_launcher.exe` and the launcher app's Play refuse to start the game when the
+installed mod is older than the latest published release** (both run the same code, `nrpvp_launch::launch` → `version::gate` in
+`crates/nrpvp-launcher`, which uses the same release lookup as the app's updater).
+
+- **Installed version:** the `version X.Y.Z` line of `NightreignPvP\VERSION.txt`; if that file has none, the version the app recorded
+  in `NightreignPvP\release.json`. **Latest:** the newest stable release's `release.json` (GitHub, no token; `NRPVP_RELEASE_DIR` /
+  `NRPVP_RELEASES_REPO` work here too).
+- **Older, or no version at all** (a zip from before the gate): blocked. `nrpvp_launcher.exe` shows a box: "Your Nightreign PvP is
+  vA, but vB is out ... open the launcher app (it updates by itself) or download the new NightreignPvP.zip from
+  `https://github.com/aspherya/nightreign-pvp-releases/releases/latest` and replace the files", with **Yes** = open that page. The app
+  shows **Update required: vB** in red at the bottom with the Update button (the old "Play without updating" link is gone); if Play
+  is pressed with a stale page, it shows the same message and turns to Update.
+- **Same or newer:** starts. **GitHub not reachable** (offline, the 60-per-hour limit, an error; 10 s limit per request): **starts
+  anyway**, so a network hiccup never locks players out (DECISIONS 2026-11-17). **`version local`** (a zip built without
+  `-Version`): starts without asking GitHub. **`NRPVP_SKIP_VERSION_CHECK=1`**: starts (developer escape).
+- Every start writes one `version gate: ...` line at the top of `NightreignPvP\launcher.log` (OK / BLOCKED / latest unknown, why).
+- Developer launches (`scripts\launch.ps1`, `nro`) never go through `nrpvp_launch`, so the gate never touches them.
+- Launchers and zips from before the gate do not have it: a player is first gated once their zip or app has it.
 
 ## 6. Quick troubleshooting
 
@@ -254,3 +277,4 @@ Steam synchronize it. This imports the local Steam save, not a direct Steam Clou
 | Launcher says Seamless Co-op was not found | player must install SC v1.1.3 first |
 | Players never meet | different `-MatchPlayers`, different mod build, different SC version, or different `private_code` |
 | The zip's commit says `dirty` | build from a clean `main` for a session you want to be reproducible |
+| "Your Nightreign PvP is vA, but vB is out" | the version gate (§5c): update through the launcher app or the new zip; a friend-test zip must be built without `-Version` (`version local`) |

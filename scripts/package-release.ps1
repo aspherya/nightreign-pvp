@@ -18,7 +18,11 @@ param(
     [ValidateRange(2, 6)][int]$MatchPlayers = 2,
     # Smallest match after the fill wait (mm_fill_wait_s, 90 s). 0 = same as -MatchPlayers (matches only start full). v1 (2026-11-12,
     # Leonardo): -MatchPlayers 6 -MinPlayers 2, so a group smaller than 6 still plays after the wait.
-    [ValidateRange(0, 6)][int]$MinPlayers = 0
+    [ValidateRange(0, 6)][int]$MinPlayers = 0,
+    # LAUNCH-GATE: the release version written as the first line of VERSION.txt (`version X.Y.Z`); the launcher refuses to start an
+    # install older than the latest published release. publish-release.ps1 passes it. Empty = `version local`: a zip built here for a
+    # friend test, which the gate never blocks (and never asks GitHub about).
+    [ValidatePattern('^(\d+\.\d+\.\d+)?$')][string]$Version = ''
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
@@ -114,7 +118,8 @@ $dirty = if (& git -C $repo status --porcelain 2>$null) { 'dirty' } else { 'clea
 $gdHash = (Get-FileHash (Join-Path $gamedata 'event\m10_00_00_00.emevd.dcx') -Algorithm SHA256).Hash.Substring(0,16)
 $routeHash = (Get-FileHash $routes -Algorithm SHA256).Hash.Substring(0,16)
 $ver = "built $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm')) UTC, commit $commit ($dirty), nrpvp.dll $((Get-FileHash $dll -Algorithm SHA256).Hash.Substring(0,16)), gamedata emevd $gdHash, hawk routes $routeHash, me3 0.11.0"
-[IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $ver + "`r`n", $ascii)
+$versionLine = if ($Version) { "version $Version" } else { 'version local' }
+[IO.File]::WriteAllText((Join-Path $mod 'VERSION.txt'), $versionLine + "`r`n" + $ver + "`r`n", $ascii)
 
 $zipName = 'NightreignPvP.zip'
 $zip = Join-Path $dist $zipName
@@ -122,4 +127,5 @@ if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
 Remove-Item -LiteralPath $stage -Recurse -Force
 Write-Output "OK: $zip ($([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB)"
+Write-Output $versionLine
 Write-Output $ver
