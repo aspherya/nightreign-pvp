@@ -178,3 +178,9 @@ need a paid plan on a private repository). Why: the squash of the dev → main P
 every shared file. Release versions: the workspace version (`Cargo.toml`, now 0.3.0) or one patch above the highest tag in the
 releases repository, drafts included; no run number. Why: the new releases repository started at 0.1.x, below the 0.2.0 testers
 had installed, and the launcher refuses downgrades. How-to: RELEASE.md §6.
+
+## 2026-11-17 — An Arena round ends at 1 HP, with no down (Leonardo)
+For the whole Arena match each game holds its player immortal (Set Character Immortality 2004:12, flag 10007520, event 99100920):
+a real hit stops at 1 HP and that ends the round (`arenarounds::BEATEN_HP`). Nobody is downed, so no get-up is needed. Why: the
+get-up after a down killed the loser early in the next round on real Steam twice (2026-11-15, 2026-11-17, 0.3.0). The bar get-up of
+2026-11-16 stays only as the fallback should a down still happen.

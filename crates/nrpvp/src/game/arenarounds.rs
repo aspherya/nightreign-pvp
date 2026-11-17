@@ -7,6 +7,10 @@
 //! - **A round ends with a down.** LOCAL downed (`PlayerIns+0x710` = 1, or HP 0) = round lost; the rival downed = round won. While
 //!   an Arena match is on, the Battle Royale rules, the rival re-down rule and the revive block stand aside
 //!   ([`crate::mm::arena_match`]); the downed rule stays, so a rival's hit never revives a downed player.
+//! - **ARENA-HP1: a round ends at 1 HP, normally with no down at all.** For the whole Arena match each game holds its player immortal
+//!   (Set Character Immortality 2004:12 on flag [`FLAG_IMMORTAL`], MEMORY_MAP §6): a real hit stops at 1 HP. LOCAL at [`BEATEN_HP`]
+//!   or less = round lost, the rival the same = round won. The down and the get-up below stay only as the fallback, should a down
+//!   still happen (the get-up after a down broke the next round on real Steam, 2026-11-15 and 2026-11-17).
 //! - **Between rounds, behind a black screen.** [`FADE_OUT_MS`] after the down the screen fades to black and the player is frozen
 //!   (Fade to Black 2004:77). [`REVIVE_AFTER_MS`] after the down the loser's game asks the game's own get-up the way a teammate's
 //!   revive does (the revive bar to 0, every tick until it is up; never the byte `+0x732`, MEMORY_MAP §6). At [`RESET_AFTER_MS`] each game restores its player (Bonfire-like Recovery 2004:47 on flag
@@ -49,6 +53,8 @@ pub(crate) const REVIVE_AFTER_MS: u64 = 2_000;
 pub(crate) const RESET_AFTER_MS: u64 = 5_000;
 /// From the down: the screen comes back.
 pub(crate) const FADE_IN_MS: u64 = 6_000;
+/// ARENA-HP1: a player at this HP or less has lost the round (immortality stops a hit at 1 HP).
+pub(crate) const BEATEN_HP: u32 = 1;
 /// ARENA-4: a round start waits at most this long for the bot on its spawn (then goes on without it).
 pub(crate) const RIVAL_WAIT_MS: u64 = 30_000;
 /// The get-up is asked the way a teammate's revive does it: the revive bar `+0x714` to 0 and the pause `+0x71C` up, every tick while
@@ -128,6 +134,8 @@ const FLAG_FADE_IN_FROZEN: u32 = 10_007_517;
 /// ARENA-4: while ON this game's player holds SpEffect 8970061 (event 99100919): offline a solo player at 0 HP in the arena dies at
 /// once ("YOU DIED", `mi-arena-bot` 2026-11-10); with it 0 HP is a down. A down uses it up: OFF at each reset, ON at each round start.
 const FLAG_NEAR_DEATH: u32 = 10_007_519;
+/// ARENA-HP1: while ON this game's player is immortal (event 99100920, re-applied every 0.5 s): a hit stops at 1 HP, no down.
+const FLAG_IMMORTAL: u32 = 10_007_520;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
@@ -163,15 +171,19 @@ pub(crate) enum Do {
 /// One player as the rules see it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Seen {
+    /// The round is lost: at [`BEATEN_HP`] or less, or downed.
     pub down: bool,
     pub up: bool,
+    /// Really downed (state 1): only then is a get-up asked (a player at 1 HP and standing needs none).
+    pub downed: bool,
 }
 
 impl Seen {
     pub(crate) fn of(state: u8, hp: u32) -> Seen {
         Seen {
-            down: state == 1 || hp == 0,
-            up: state == 0 && hp > 0,
+            down: state == 1 || hp <= BEATEN_HP,
+            up: state == 0 && hp > BEATEN_HP,
+            downed: state == 1,
         }
     }
 }
@@ -422,7 +434,7 @@ impl Rounds {
                 if stage <= 1
                     && lost
                     && (revive_after_ms()..RESET_AFTER_MS).contains(&t)
-                    && local.down
+                    && local.downed
                 {
                     out.push(Do::Revive);
                 }
@@ -526,6 +538,8 @@ pub(crate) fn near_death_wanted(vs_bot: bool, on: bool, phase: Phase) -> bool {
 
 /// The value last written to [`FLAG_NEAR_DEATH`] (main loop only; `None` = never written).
 static NEAR_DEATH: Mutex<Option<bool>> = Mutex::new(None);
+/// The value last written to [`FLAG_IMMORTAL`] (main loop only; `None` = never written).
+static IMMORTAL: Mutex<Option<bool>> = Mutex::new(None);
 
 fn set_flag(base: usize, flag: u32) {
     if let Err(e) = crate::game::flags::set(base, flag, true) {
@@ -720,6 +734,21 @@ pub(crate) fn tick(base: usize, world: &World) {
         }
     }
     drop(nd);
+    // ARENA-HP1: immortal for the whole Arena match (a hit stops at 1 HP = the round end), mortal again once it is over.
+    let mut imm = lock(&IMMORTAL);
+    if *imm != Some(on) && (on || imm.is_some()) {
+        match crate::game::flags::set(base, FLAG_IMMORTAL, on) {
+            Ok(_) => {
+                tracing::info!(
+                    "arena_rounds: immortality {} (a round ends at {BEATEN_HP} HP)",
+                    if on { "on" } else { "off" }
+                );
+                *imm = Some(on);
+            }
+            Err(e) => tracing::warn!("arena_rounds: flag {FLAG_IMMORTAL} not set: {e}"),
+        }
+    }
+    drop(imm);
     for d in dos {
         match d {
             Do::Message(m) => {
@@ -832,10 +861,18 @@ mod tests {
     const UP: Seen = Seen {
         down: false,
         up: true,
+        downed: false,
     };
     const DOWN: Seen = Seen {
         down: true,
         up: false,
+        downed: true,
+    };
+    /// ARENA-HP1: standing at 1 HP (immortal): the round is lost, nobody is downed.
+    const BEATEN: Seen = Seen {
+        down: true,
+        up: false,
+        downed: false,
     };
 
     /// Off -> Starting -> fade in, round 1, armed; returns the next free time.
@@ -856,15 +893,35 @@ mod tests {
         assert_eq!(Seen::of(0, 240), UP);
         assert_eq!(Seen::of(1, 0), DOWN);
         assert_eq!(Seen::of(1, 50), DOWN);
-        assert_eq!(Seen::of(0, 0), DOWN);
+        assert_eq!(Seen::of(0, 0), BEATEN);
         assert_eq!(
-            Seen::of(2, 120),
-            Seen {
-                down: false,
-                up: false
-            },
-            "getting up: neither"
+            Seen::of(0, BEATEN_HP),
+            BEATEN,
+            "ARENA-HP1: 1 HP ends the round"
         );
+        assert_eq!(Seen::of(0, BEATEN_HP + 1), UP);
+        assert_eq!(Seen::of(2, 120), Seen::default(), "getting up: neither");
+    }
+
+    #[test]
+    fn a_round_lost_at_one_hp_asks_no_get_up() {
+        let mut r = Rounds::default();
+        let t = start(&mut r);
+        assert_eq!(
+            r.step(t, true, BEATEN, Some(UP)),
+            vec![Do::Message("Round 1: you lost (0-1)".into())]
+        );
+        assert_eq!(r.step(t + 1_000, true, BEATEN, Some(UP)), vec![Do::FadeOut]);
+        for ms in [2_000, 3_000, 4_500] {
+            assert!(r.step(t + ms, true, BEATEN, Some(UP)).is_empty(), "{ms}");
+        }
+        assert_eq!(r.step(t + 5_000, true, BEATEN, Some(UP)), vec![Do::Reset]);
+        assert_eq!(
+            r.step(t + 6_000, true, UP, Some(UP)),
+            vec![Do::FadeIn, Do::Message("Round 2: fight!".into())]
+        );
+        r.step(t + 6_050, true, UP, Some(UP));
+        assert_eq!(r.phase, Phase::Fighting { armed: true });
     }
 
     #[test]
