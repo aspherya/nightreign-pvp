@@ -1,5 +1,5 @@
 Arena fix
 
-- A player who loses an Arena round now always gets up for the next round. Before, the get-up could fail: the player died a few seconds into the next round, lost that round and a level.
+- An Arena round now ends when a player's HP drops to 1. Nobody goes down any more, so the loser no longer dies at the start of the next round and no level is lost.
 
 Everyone in a match needs the same mod version. This player build supports up to 6 players and starts with at least 2 after the fill wait.

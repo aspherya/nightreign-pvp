@@ -121,6 +121,22 @@ def speffect_instrs(ev):
     ]
 
 
+def immortal_instrs(ev):
+    """ARENA-HP1: a per-game switch. While our flag is ON the local player (10000) is immortal (Set Character Immortality 2004:12,
+    u32 entity, u8 on, pad3: real hits stop at 1 HP, no down); re-applied every `secs` while ON, so a game call that clears it
+    (recovery, level change) is undone at once; when the flag goes OFF it is turned off. The DLL owns the flag."""
+    flag = ev['flag']
+    return [
+        (2000, 2, struct.pack('<B3x', 0)),
+        flag_cond(MAIN, True, flag),
+        (2004, 12, struct.pack('<iB3x', 10000, 1)),
+        (1001, 0, struct.pack('<f', float(ev.get('secs', 0.5)))),
+        (1003, 2, struct.pack('<BBBxI', 1, 1, 0, flag)),         # still ON: restart (apply again)
+        (2004, 12, struct.pack('<iB3x', 10000, 0)),
+        (1000, 4, struct.pack('<B3x', 1)),
+    ]
+
+
 def mirror_instrs(ev):
     """RW-5 verdict transport: while the local flag `from` is ON the network-connected flag `to` is ON in every game, OFF when it goes
     OFF. One game's DLL sets `from` (a local write there); every game's DLL reads `to`. Then the event restarts."""
@@ -216,6 +232,8 @@ def build_event_instrs(ev):
         return night_end_instrs(ev)
     if 'speffect' in ev:
         return speffect_instrs(ev)
+    if ev.get('immortal'):
+        return immortal_instrs(ev)
     if ev.get('heal') or 'ending' in ev:
         return local_instrs(ev)
     flag, msg, kind = ev['flag'], ev.get('message'), ev.get('display')
