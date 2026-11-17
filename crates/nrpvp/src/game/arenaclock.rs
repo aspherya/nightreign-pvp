@@ -6,6 +6,10 @@
 //! round is fought, frozen at the down until the reset behind the black screen, then the full limit again for the next round. The
 //! rune count from before the clock's first write is put back when the match is over (the endings) or ends, if LOCAL's
 //! `PlayerGameData` is still the same. Console `arena_clock [0|1]`.
+//!
+//! ARENA-OT also lives here: in overtime ([`super::arenarounds::OVERTIME_MS`]) [`drain`] takes HP from this game's player (and from
+//! the bot in a bot match) through the character data module's HP field (`[[chr+0x1B8]+0]+0x140`, the field `hp0` and the bots'
+//! `set_hp` write, MEMORY_MAP §5), never below 1 HP: the Arena's 1 HP rule then ends the round.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -89,6 +93,71 @@ pub(crate) fn show(local: usize, secs: Option<u32>) {
     }
 }
 
+/// ARENA-OT: when HP was last drained (`None` = not in overtime).
+static DRAIN_AT: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+/// Drain at most this often (the HP bar moves in small steps, the writes stay few).
+const DRAIN_EVERY_MS: u128 = 250;
+
+/// The HP left after `secs` of overtime drain (pure): `rate` of `max` per second, never below `floor`; HP at or below `floor` stays.
+pub(crate) fn drained(hp: u32, max: u32, rate: f32, secs: f32, floor: u32) -> u32 {
+    if hp <= floor {
+        return hp;
+    }
+    let take = (max as f32 * rate * secs).round().max(1.0) as u32;
+    hp.saturating_sub(take).max(floor)
+}
+
+/// Main loop: `on` = the rounds asked for a drain this tick ([`super::arenarounds::Do::Drain`]); `chrs` = this game's player and,
+/// in a bot match, the bot.
+pub(crate) fn drain(on: bool, chrs: &[usize]) {
+    let mut at = DRAIN_AT.lock().unwrap_or_else(|e| e.into_inner());
+    if !on {
+        *at = None;
+        return;
+    }
+    let Some(last) = *at else {
+        *at = Some(std::time::Instant::now());
+        tracing::info!("arena_ot: overtime: HP drains");
+        return;
+    };
+    let dt = last.elapsed();
+    if dt.as_millis() < DRAIN_EVERY_MS {
+        return;
+    }
+    *at = Some(std::time::Instant::now());
+    for &chr in chrs {
+        let Some(dm) = super::mem::read::<usize>(chr + super::layout::PLAYER_MODULES)
+            .filter(|p| super::mem::is_ptr(*p))
+            .and_then(super::mem::read::<usize>)
+            .filter(|p| super::mem::is_ptr(*p))
+        else {
+            continue;
+        };
+        let (Some(hp), Some(max)) = (
+            super::mem::read::<u32>(dm + super::layout::DATA_MODULE_HP),
+            super::mem::read::<u32>(dm + super::layout::DATA_MODULE_MAX_HP),
+        ) else {
+            continue;
+        };
+        let to = drained(
+            hp,
+            max,
+            super::arenarounds::OVERTIME_DRAIN_PER_SEC,
+            dt.as_secs_f32(),
+            super::arenarounds::BEATEN_HP,
+        );
+        if to != hp {
+            if let Err(e) =
+                super::mem::write_bytes(dm + super::layout::DATA_MODULE_HP, &to.to_le_bytes())
+            {
+                tracing::debug!("arena_ot: drain write failed: {e}");
+            } else if to <= super::arenarounds::BEATEN_HP {
+                tracing::info!("arena_ot: chr 0x{chr:X} drained to {to} HP");
+            }
+        }
+    }
+}
+
 /// Console `arena_clock [0|1]`: show or hide the round clock (no argument: the state).
 pub(crate) fn cmd(args: &[String]) -> Result<String, String> {
     if let Some(a) = args.first() {
@@ -160,6 +229,15 @@ mod tests {
         assert_eq!(seconds_left(&over(0), 72_000, LIMIT), Some(120));
         assert_eq!(seconds_left(&over(1), 75_000, LIMIT), Some(120));
         assert_eq!(seconds_left(&over(2), 76_000, LIMIT), Some(180));
+    }
+
+    #[test]
+    fn the_overtime_drain_takes_a_share_of_max_and_stops_at_one_hp() {
+        assert_eq!(drained(1000, 1000, 0.02, 0.5, 1), 990);
+        assert_eq!(drained(5, 1000, 0.02, 1.0, 1), 1);
+        assert_eq!(drained(1, 1000, 0.02, 1.0, 1), 1);
+        // A tiny step still takes 1 HP.
+        assert_eq!(drained(100, 100, 0.02, 0.01, 1), 99);
     }
 
     #[test]

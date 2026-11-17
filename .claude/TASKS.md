@@ -498,15 +498,20 @@ build, or by eye); no `arena_level: slipped` line after a lost round and no mid-
 again with one Commence (no `session: role none -> other` without a `Commence pressed` before it), as host and as client, in both
 return orders.
 
-### ARENA-CLOCK — Round time left on screen (Leonardo 2026-11-17)
-Owner: OPUS | Status: **counter seen in game against the bot (Leonardo 2026-11-17: "the result is nice"; round 1 timed out at 3:00 and was judged by HP); the one-minute message is built, not seen yet** | Depends on: none
-The player sees how long the round has left, all the time. Simplest route that needs no new UI: the rune counter (top right of the
-HUD) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have no use in the Arena). The limit
-before a round, counting down while it is fought, frozen at the down, the full limit again from the reset; the old rune count is put
-back at the endings. With one minute left the game's message shows "One minute left!" once per round (only with a limit above 60 s). Console `arena_clock [0|1]`. A real text clock (GFX-1/2, re/GFX_UI.md §5) can replace it later.
-Acceptance (one PC, against the bot): Bots On + Solo + Arena card; the counter reads 180 at the fade-in and counts down 1 per second;
-after a down it stays put behind the black screen and reads 180 again at the next fade-in; `arena_limit 20` shows 20 and the round
-ends on time at 0; after WIN / LOSE the counter is back to the old count. Check also: any "+N" / "-N" popup at each change.
+### ARENA-CLOCK / ARENA-OT — Round time left on screen, and overtime (Leonardo 2026-11-17)
+Owner: OPUS | Status: **clock seen in game against the bot (Leonardo 2026-11-17: "the result is nice"); the one-minute message and
+the overtime are built and unit-tested, not seen in game yet** (branch `arena-round-timer`) | Depends on: none
+- **Clock:** the rune counter (top right) shows the round's seconds left while an Arena match is on (`game/arenaclock.rs`; runes have
+  no use in the Arena): the limit before a round, counting down while it is fought (0 in overtime), frozen at the round's end, the
+  full limit again from the reset; the old rune count is put back at the endings. Console `arena_clock [0|1]`. A real text clock
+  (GFX-1/2, re/GFX_UI.md §5) can replace it later.
+- **One minute left:** the game's message "One minute left!" once per round (only with a limit above 60 s).
+- **Overtime (DECISIONS 2026-11-17):** at the limit "Overtime! HP drains until someone falls"; each game drains its own player 2 %
+  of max HP per second (and the bot), never below 1 HP; the first at 1 HP loses (the host judges); after 60 s the HP % rule.
+Acceptance (one PC, against the bot; `arena_limit 70` for a short round): the counter counts down; "One minute left!" at 60 s
+left; at 0 the overtime message, both HP bars fall about 2 % a second, the one lower at the start reaches 1 HP first and loses
+the round ("time! you won/lost"); the next round starts at the full limit; after WIN / LOSE the counter is back to the old count.
+Two PCs (next Arena FS): both games agree on an overtime round.
 
 ### RW3-BIGINV — Defeat drop skips talismans and consumables on a save with many relics (found 2026-11-09)
 Owner: SONNET/implementer | Status: open, small | `defeatdrop::read_inventory` rejects a list with `used > 0x180`, but Leonardo's
