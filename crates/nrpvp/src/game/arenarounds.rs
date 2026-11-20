@@ -629,6 +629,13 @@ pub(crate) fn near_death_wanted(vs_bot: bool, on: bool, phase: Phase) -> bool {
         }
 }
 
+/// Whether a saved Arena flag must be written now (pure). Our flag group is saved with the character (TRAPS: flag 10007520), so a
+/// session's first tick writes the wanted value even when it is OFF: a game closed during an Arena match keeps the flag ON in the save,
+/// and the player was immortal in a later Battle Royale match (2026-11-20). Afterwards only changes are written.
+pub(crate) fn saved_flag_write_due(last: Option<bool>, want: bool) -> bool {
+    last != Some(want)
+}
+
 /// The value last written to [`FLAG_NEAR_DEATH`] (main loop only; `None` = never written).
 static NEAR_DEATH: Mutex<Option<bool>> = Mutex::new(None);
 /// The value last written to [`FLAG_IMMORTAL`] (main loop only; `None` = never written).
@@ -814,7 +821,7 @@ pub(crate) fn tick(base: usize, world: &World) {
     // ARENA-4: offline, 0 HP is a down only with SpEffect 8970061.
     let want = near_death_wanted(vs_bot, on, rounds.phase);
     let mut nd = lock(&NEAR_DEATH);
-    if *nd != Some(want) && (want || nd.is_some()) {
+    if saved_flag_write_due(*nd, want) {
         match crate::game::flags::set(base, FLAG_NEAR_DEATH, want) {
             Ok(_) => {
                 tracing::info!(
@@ -829,7 +836,7 @@ pub(crate) fn tick(base: usize, world: &World) {
     drop(nd);
     // ARENA-HP1: immortal for the whole Arena match (a hit stops at 1 HP = the round end), mortal again once it is over.
     let mut imm = lock(&IMMORTAL);
-    if *imm != Some(on) && (on || imm.is_some()) {
+    if saved_flag_write_due(*imm, on) {
         match crate::game::flags::set(base, FLAG_IMMORTAL, on) {
             Ok(_) => {
                 tracing::info!(
@@ -1272,6 +1279,23 @@ mod tests {
             false,
             Phase::Fighting { armed: true }
         ));
+    }
+
+    #[test]
+    fn a_saved_arena_flag_is_cleared_on_the_first_tick_even_when_off_is_wanted() {
+        // 2026-11-20: the game closed during an Arena match left 10007520 ON in the save; a BR match was immortal.
+        assert!(
+            saved_flag_write_due(None, false),
+            "first tick: clear what the save holds"
+        );
+        assert!(saved_flag_write_due(None, true));
+        assert!(
+            !saved_flag_write_due(Some(false), false),
+            "then only changes"
+        );
+        assert!(!saved_flag_write_due(Some(true), true));
+        assert!(saved_flag_write_due(Some(true), false));
+        assert!(saved_flag_write_due(Some(false), true));
     }
 
     fn missing(m: bool) -> Timer {
