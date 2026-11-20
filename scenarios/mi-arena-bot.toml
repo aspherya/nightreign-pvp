@@ -1,5 +1,5 @@
 name = "mi-arena-bot"
-about = "ARENA-4 acceptance: the player's way into an offline Arena match against one bot: Matchmaking Settings > Bots On, Solo, the Arena card, Commence: no search, the warp, LOCAL on spawn A, one level-13 bot put on spawn B; round 1 won (bots_kill: a new bot for round 2), round 2 lost (hp0, a down thanks to SpEffect 8970061: the bot is parked, then healed and put back), round 3 won with the ultimate filled: WIN 2-1, then back at the Roundtable with the Arena bots match over"
+about = "ARENA-4 acceptance: the player's way into an offline Arena match against one bot: Matchmaking Settings > Bots On, Solo, the Arena card, Commence: no search, the warp, LOCAL on spawn A, one level-13 bot put on spawn B; round 1 won (bots_kill: a new bot for round 2), round 2 lost (hp0, a down thanks to SpEffect 8970061: the bot is parked, then healed and put back), round 3 won (the ultimate filled at every round start, the consumables given back at every reset): WIN 2-1, then back at the Roundtable with the Arena bots match over"
 tags = ["mi"]
 # One emulated-Steam instance (MULTI-INSTANCE.md §20): Steam closed, `nro desk` running. Needs the DEV DLL and game data (the Arena card
 # hook, the warp, Heolstor off and his fight off are dev only; event 99100705 arms the level-13 bot table 30000).
@@ -106,7 +106,7 @@ console = "bots_list"
 [[step]]
 screenshot = "round2_new_bot"
 
-# Round 2: LOCAL goes down. The bot is parked, then healed and put back; LOCAL gets up; the ultimate is filled for round 3.
+# Round 2: LOCAL goes down. The bot is parked, then healed and put back; LOCAL gets up; the ultimate is filled for round 3 (as for every round) and the consumables come back.
 [[step]]
 mark = "r2"
 [[step]]
@@ -118,7 +118,7 @@ wait_log = { contains = ["bots: Arena round over: bot", "parked until the reset"
 [[step]]
 screenshot = "round2_local_down"   # a down (offline, SpEffect 8970061), not YOU DIED
 [[step]]
-wait_log = { contains = ["arena_rounds: get-up asked", "bots: Arena reset: bot", "back to its spawn, HP", "round 3: ultimate filled"], timeout_s = 15, since = "mark:r2" }
+wait_log = { contains = ["arena_rounds: get-up asked", "bots: Arena reset: bot", "back to its spawn, HP", "ultimate filled for this round", "arena_refill:"], timeout_s = 15, since = "mark:r2" }
 [[step]]
 wait_log = { contains = ["arena_rounds: Round 3: fight!"], timeout_s = 40, since = "mark:r2" }
 [[step]]
